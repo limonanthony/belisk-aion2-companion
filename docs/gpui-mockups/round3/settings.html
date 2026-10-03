@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Round 3: Settings</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      /* Overlay preview column (choice "prev" a). */
+      .pv {
+        position: sticky;
+        top: 0;
+        width: 262px;
+        flex-shrink: 0;
+        margin-top: 18px;
+      }
+
+      .pv-stage {
+        padding: 14px 12px;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .pv-note {
+        margin-top: 8px;
+        color: var(--a-faint);
+        font-size: 11.5px;
+      }
+
+      .pv .ov.o {
+        --bg-a: 0.588;
+        --scale: 1;
+        width: 236px;
+        padding: 6px 7px 7px;
+      }
+
+      .pv-head {
+        display: flex;
+        align-items: center;
+        height: 20px;
+        padding: 0 3px;
+        color: var(--o-muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .pv-head b {
+        margin-left: auto;
+        color: var(--o-text);
+      }
+
+      .pv-gauge {
+        display: flex;
+        gap: 2px;
+        height: 14px;
+        align-items: center;
+        padding: 0 3px;
+      }
+
+      .pv-gauge i {
+        flex: 1;
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(255, 240, 225, 0.12);
+      }
+
+      .pv-gauge i.on {
+        background: #e8735f;
+      }
+
+      .pv .o-row,
+      .pv .o-track {
+        height: 19px;
+      }
+
+      .pv .o-rk {
+        width: 16px;
+        height: 16px;
+        font-size: 10.5px;
+      }
+
+      .pv .o-name small {
+        color: rgba(255, 246, 236, 0.82);
+      }
+
+      body.prev-a .sl-track {
+        width: 120px;
+      }
+
+      /* Shortcut row control */
+      .sc {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .sc .inp {
+        min-width: 190px;
+      }
+
+      .sc .keys {
+        flex: 1;
+      }
+
+      .hint {
+        color: var(--a-faint);
+        font-size: 11.5px;
+      }
+
+      .rec-live {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--a-bad);
+        font-family: var(--a-display);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .rec-live .i {
+        width: 10px;
+        height: 10px;
+      }
+
+      .tbl-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px 4px;
+      }
+
+      .tbl-head .row-desc {
+        flex: 1;
+        margin: 0;
+      }
+
+      .credit-tag {
+        margin-left: 6px;
+      }
+
+      .tip-anchor {
+        position: relative;
+        display: inline-flex;
+      }
+
+      .tip-anchor .tip {
+        bottom: 22px;
+        left: -16px;
+      }
+
+      .sel-wrap {
+        position: relative;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Round 3">
+        <a href="index.html">Round 3</a>
+        <a href="gate.html">Startup gate</a>
+        <a href="home.html">Home</a>
+        <a href="settings.html" aria-current="page">Settings</a>
+        <a href="../approved/index.html">Approved</a>
+      </nav>
+      <h1>Settings <small>round 3 exploration</small></h1>
+      <ul class="rationale">
+        <li>Everything kept, nothing dropped: overlay look and rows, meter behaviour, the three shortcuts, capture (backend, connection status, recording and replay, log folder), personal bests, language and About. Rows are label and one sentence on the left, the control on a stable right edge; changes apply at once, there is no Save.</li>
+        <li>Open choices. Navigation: a, sidebar (recommended); b, top tabs; c, title-bar tabs and one scrolling page with an index. Overlay preview: a, a live meter beside the overlay settings (recommended); b, none. Type: a, Segoe UI for text with Bahnschrift for titles and figures (recommended); b, Bahnschrift everywhere.</li>
+        <li>Same warm near-black, cream primary and status colours as the overlays (approved/tokens.md), in Kit components: Switch, Slider, Select, segmented Tabs, Kbd, Table, Tooltip, Dialog.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour carried over</h2>
+      <ul>
+        <li>Shortcuts: a duplicate combination is refused before it is saved; a combination another program holds is reported per shortcut and the previous one keeps working. Blank turns a shortcut off.</li>
+        <li>Personal bests: Reset asks for a second click; bests survive deleting history. Up to six were listed before; here the whole table scrolls.</li>
+        <li>Recording: the first two minutes on an unfamiliar server are recorded automatically (newest five kept, never leave the PC). Replay runs a recording through the live meter and needs the meter running.</li>
+        <li>Not shown, by the brief's list: snapshot interval, packet size threshold and the resync delays (developer tuning today, under Advanced). Tell me if any should come back.</li>
+        <li>[INFERENCE] Clear cache: today it clears the web storage (settings, shortcuts). In the port the dialog says history, personal bests and recordings are kept; that needs confirming against the Rust storage.</li>
+      </ul>
+      <h2>GPUI Kit notes</h2>
+      <ul>
+        <li>Available in gpui-component as far as I know (verify against the pinned version): <code>TitleBar</code>, <code>Sidebar</code>, <code>Tabs</code>, <code>Button</code>, <code>Switch</code>, <code>Slider</code>, <code>Dropdown</code>/<code>Select</code>, <code>Table</code>, <code>Tooltip</code>, <code>Modal</code>/<code>Dialog</code>, <code>Kbd</code>, <code>Tag</code>/<code>Badge</code>, scrollable containers.</li>
+        <li>Custom work: the shortcut recorder (capture a key combination, Esc to cancel, show conflicts); the overlay preview (render the real meter view with sample data); the status tiles; the recording and replay rows.</li>
+      </ul>
+    </section>
+
+    <script src="app.js"></script>
+    <script>
+      (function () {
+        const { icon, C } = App;
+        const row = C.row;
+        const group = C.group;
+
+        // ---- Overlay preview -------------------------------------------------
+        function preview() {
+          const P = [
+            [1, "Vaelith", "sorcerer", "232, 121, 249", "41,820", "61.2K", 1],
+            [2, "Mirelle", "ranger", "163, 230, 53", "38,904", "48.2K", 0.787, true],
+            [3, "Korrinth", "gladiator", "251, 146, 60", "40,112", "39.9K", 0.651],
+            [4, "Saebrin", "assassin", "168, 85, 247", "36,455", "34.6K", 0.565],
+            [5, "Tobiah", "elementalist", "34, 211, 238", "35,020", "28.9K", 0.473],
+          ];
+          const rows = P.map(
+            ([rk, n, cls, rgb, cp, dps, s, you]) => `<div class="o-row${you ? " is-you" : ""}"><span class="o-rk">${rk}</span><span class="o-track" style="--rgb:${rgb}"><span class="o-fill" style="width:${(s * 100).toFixed(0)}%"></span><img class="o-icon" src="../../../public/aion2/class/${cls}.png" alt="${cls}"><span class="o-name">${n}<small>${cp}</small></span><span class="o-num" style="font-weight:600">${dps}</span></span></div>`
+          ).join("");
+          const gauge = Array.from({ length: 10 }, (_, i) => `<i class="${i < 6 ? "on" : ""}"></i>`).join("");
+          return `<div class="pv"><div class="grp-title is-first" style="margin-top:0">Preview</div><div class="pv-stage scene--busy"><div class="ov o"><div class="pv-head">Veilwarden Orsikh<b>3:41</b></div><div class="pv-gauge">${gauge}</div><div class="o-rows">${rows}</div></div></div><div class="pv-note">Sample data. Follows every change on this page.</div></div>`;
+        }
+
+        // ---- Sections --------------------------------------------------------
+        const head = (title, lead) => `<div class="h1">${title}</div>${lead ? `<p class="lead">${lead}</p>` : ""}`;
+
+        const S = {
+          overlay(ctx) {
+            const settings =
+              group(
+                "Look",
+                row("Background opacity", "Lower is more see-through. The text keeps its own plates.", C.slider(59, "59%")) +
+                  row("Content scale", "70 to 150%.", C.slider(37.5, "100%")) +
+                  row("Layout", "Capsule is one line: your DPS, place and time. It opens on pointer over.", C.seg(["Full", "Capsule"], "Full")) +
+                  row("Font", "", C.sel("Bahnschrift")) +
+                  row("Percentage", "Contribution is based on the visible list; share on the whole fight.", C.seg(["Contribution", "Share"], "Contribution")),
+                true
+              ) +
+              group(
+                "Shown on each row",
+                row("Boss HP gauge", "", C.sw(true)) +
+                  row("Player name", "Off hides names; icons and figures stay.", C.sw(true)) +
+                  row("Mask nicknames", "Shows Mi****e instead of the name, for streams and screenshots.", C.sw(false)) +
+                  row("Server", "", C.sw(false)) +
+                  row("Combat power", "Beside the name, where the game reported it.", C.sw(true)) +
+                  row("Total damage", "", C.sw(false)) +
+                  row("DPS", "", C.sw(true))
+              ) +
+              group(
+                "Boss fights",
+                row("Fight summary", "When a boss dies: your DPS and place, top skills and personal best. One click copies it.", C.sw(true)) +
+                  row("Pace against your personal best", "After 10 s of a boss fight, ahead or behind your best on that boss.", C.sw(true))
+              ) +
+              group(
+                "Window",
+                row("Lock overlay", "Clicks pass through to the game and the controls hide. Alt+CapsLock switches it.", C.sw(false)) +
+                  row("Fit height to the players", "Off keeps a fixed height.", C.sw(true)) +
+                  row("Player detail opens", "Beside the overlay, or in the middle of the screen.", C.seg(["Beside", "Centred"], "Beside"))
+              );
+            const body = ctx.v.prev === "a" ? `<div class="cols"><div class="main-col">${settings}</div>${preview()}</div>` : settings;
+            return head("Overlay", "How the meter overlay looks. Changes show in the overlay at once.") + body;
+          },
+
+          behaviour(ctx) {
+            const tip = `<span class="tip-anchor">${icon("info")}<span class="tip">With Boss only on and no boss in front of you, every hit is ignored and the overlay stays empty.</span></span>`;
+            return (
+              head("Meter behaviour", "What the meter counts, and what it does between fights.") +
+              group(
+                "What is counted",
+                row(`Count${tip}`, "All targets records every mob you hit; Boss only ignores everything that is not a boss.", C.seg(["All targets", "Boss only"], "All targets")) +
+                  row("Detect possible bosses", "Treats very high-HP monsters missing from the boss table as bosses. Useful in new dungeons.", C.sw(false)) +
+                  row("Training dummy only", "Counts only damage on your own training dummy.", C.sw(false)) +
+                  row("Hide unknown players", "Leaves out players the meter could not name.", C.sw(false)) +
+                  row("Players shown", "5 to 20.", C.slider(33.3, "10")),
+                true
+              ) +
+              group(
+                "Between fights",
+                row("Hide between fights", "The overlay stays hidden until your first hit. Alt+E shows it for 15 s.", C.sw(true)) +
+                  row("End a fight after", "With no hit of yours for this long, the fight is saved to history and the meter clears.", C.sel("5 min")) +
+                  row("Follow the game window", "The overlays hide while another window is in front of the game.", C.sw(true))
+              ) +
+              group("Window", row("Keep the overlays above the game", "For borderless games that cover them. Only Aether's own windows are raised.", C.sw(false)))
+            );
+          },
+
+          shortcuts(ctx, st) {
+            const sc = (combo, { rec = false, err = false } = {}) => {
+              const inner = rec ? `<span class="ph">Press the keys…</span><span class="caret"></span>` : `<span class="keys">${C.kbd(combo)}</span>`;
+              return `<div><div class="sc"><span class="inp${rec ? " is-focus" : ""}${err ? " is-error" : ""}">${inner}</span><span class="btn is-ghost is-sm" title="Back to the default">${icon("reset")}</span></div>${
+                rec ? '<div class="field-msg hint">Esc cancels · Backspace turns it off</div>' : ""
+              }${err ? `<div class="field-msg is-bad">${icon("alert")}Ctrl+Q is taken by another program. Alt+Q still works.</div>` : ""}</div>`;
+            };
+            return (
+              head("Shortcuts", "Global shortcuts, working while the game has focus. Click one and press the new keys.") +
+              group(
+                "Meter",
+                row("Show or hide the overlay", "While it is hidden between fights, shows it for 15 s.", sc("Alt+E", { rec: st === "rec" })) +
+                  row("Reset the meter", "Saves the fight to history and clears the meter.", st === "conflict" ? sc("Ctrl+Q", { err: true }) : sc("Alt+Q")) +
+                  row("Lock or unlock the overlay", "Click-through on or off.", sc("Alt+CapsLock")),
+                true
+              )
+            );
+          },
+
+          capture(ctx, st) {
+            const tile = (ic, label, value, em, tone) => `<div class="st"><span class="st-ic${tone ? " is-" + tone : ""}">${icon(ic)}</span><div style="min-width:0"><small>${label}</small><b>${value}</b>${em ? `<em>${em}</em>` : ""}</div></div>`;
+            const recCtl =
+              st === "rec"
+                ? `<span class="rec-live">${icon("rec")}2,418 packets · 1.4 MB</span>${C.btn("Stop recording", { kind: "danger", ic: "stop" })}`
+                : C.btn("Start recording", { ic: "rec" });
+            const files = [
+              ["manual-2026-10-03-2142.aetherpc", "Today 21:42 · 2.4 MB"],
+              ["auto-2026-10-02-2031.aetherpc", "Yesterday 20:31 · 3.1 MB · unfamiliar server"],
+              ["manual-2026-09-29-2210.aetherpc", "Mon 22:10 · 1.8 MB"],
+            ];
+            const li = files
+              .map(([n, m], i) => {
+                const replaying = st === "replay" && i === 0;
+                const ctl = replaying
+                  ? `<span class="badge is-warn">${icon("loader")}Replaying</span>${C.btn("Cancel replay", { size: "sm" })}`
+                  : C.btn("Replay", { size: "sm", kind: st === "replay" ? "disabled" : "", ic: "play" });
+                return `<div class="li">${icon("file")}<div class="li-main"><b>${n}</b><small>${m}</small></div>${ctl}</div>`;
+              })
+              .join("");
+            return (
+              head("Capture", "How Aether sees the game's traffic. Everything here is detected; there is nothing to enter.") +
+              `<div class="grp-title is-first">Connection</div><div class="tiles4">
+${tile("activity", "Meter", "Running", "via Npcap", "good")}
+${tile("radio", "Game connection", "Found", "203.0.113.24", "good")}
+${tile("user", "Character", "Mirelle", "", "good")}
+${tile("server", "Server", "Global · 2011, 2014", "", "good")}
+</div>` +
+              group(
+                "Capture",
+                row("Backend priority", "Which capture method is tried first. The other one is the fallback.", C.seg(["Npcap first", "WinDivert first"], "Npcap first")) +
+                  row("Capture check", "Administrator rights, Npcap and WinDivert, as at start-up.", C.btn("Re-run", { ic: "shield" }))
+              ) +
+              group(
+                "Recording",
+                row("Record unfamiliar servers", "The first two minutes on a server no profile matches. The newest five are kept and never leave this PC.", C.sw(true)) +
+                  row("Packet recording", "Writes this session's raw packets to a file, for protocol work.", recCtl)
+              ) +
+              `<div class="grp-title">Recordings<span class="faint" style="font-weight:400">Replay runs one through the live meter, which has to be running.</span></div><div class="grp">${li}</div>` +
+              group("Log", row("Meter log", "For when something does not look right.", C.btn("Open log folder", { ic: "folder" })))
+            );
+          },
+
+          bests(ctx, st) {
+            const B = [
+              ["Veilwarden Orsikh", "Mirelle", "ranger", "51.7K", "28 Sep 2026"],
+              ["Ashmaw the Hollow", "Mirelle", "ranger", "47.2K", "27 Sep 2026"],
+              ["Thane Ulmor", "Mirelle", "ranger", "44.0K", "21 Sep 2026"],
+              ["Tidecaller Vennis", "Saebrin", "assassin", "39.8K", "02 Oct 2026"],
+              ["Veilwarden Orsikh", "Saebrin", "assassin", "36.1K", "30 Sep 2026"],
+              ["Sister Calyx", "Saebrin", "assassin", "33.4K", "19 Sep 2026"],
+            ];
+            const lead = head("Personal bests", "Your best DPS per boss and character. Boss fights of 15 s or more count. Kept when history is deleted.");
+            if (st === "empty") {
+              return lead + `<div class="grp" style="margin-top:18px"><div class="li" style="min-height:96px">${icon("trophy")}<div class="li-main"><b>None yet</b><small>Beat a boss for 15 s or more and your best appears here, per character.</small></div></div></div>`;
+            }
+            const action = st === "confirm" ? C.btn("Click again to reset", { kind: "danger", ic: "trash" }) + C.btn("Cancel", { kind: "ghost" }) : C.btn("Reset all", { ic: "trash" });
+            return (
+              lead +
+              `<div class="grp" style="margin-top:18px"><div class="tbl-head"><span class="row-desc">${B.length} bosses, 2 characters</span>${action}</div>
+<table class="tbl"><thead><tr><th>Boss</th><th>Character</th><th class="num">Best DPS</th><th class="num">Date</th></tr></thead><tbody>${B.map(
+                ([b, c, cls, d, t]) => `<tr><td>${b}</td><td><span class="cell-ic"><img src="../../../public/aion2/class/${cls}.png" alt="${cls}">${c}</span></td><td class="num"><b>${d}</b><span class="faint">/s</span></td><td class="num muted">${t}</td></tr>`
+              ).join("")}</tbody></table></div>`
+            );
+          },
+
+          general(ctx, st) {
+            const lang = st === "lang" ? `<span class="sel-wrap">${C.sel("English", { open: true, items: ["English", "Français"], hot: "Français" })}</span>` : C.sel("English");
+            return (
+              head("General", "") +
+              group(
+                "App",
+                row("Language", "Game data (skill, boss and monster names) stays in English.", lang) +
+                  row("Close the main window after Start", "The meter keeps running from the tray.", C.sw(true)),
+                true
+              )
+            );
+          },
+
+          about(ctx) {
+            const li = (title, desc, ctl = "", tag = "") => `<div class="li"><div class="li-main"><b>${title}${tag}</b><small>${desc}</small></div>${ctl}</div>`;
+            const ext = C.btn("", { kind: "ghost", ic: "external", size: "sm" });
+            return (
+              head("About", "") +
+              group(
+                "Aether",
+                row(`Aether <span class="faint disp" style="font-weight:600">2.4.0</span>`, "A real-time DPS meter for AION 2, built for the global servers.", C.btn("GitHub", { ic: "external" })) +
+                  row("Licence: GPL-3.0-only", "Free software: you may share and change it under the GNU General Public License, version 3.", C.btn("Read the licence", { ic: "scale" })),
+                true
+              ) +
+              `<div class="grp-title">Credits</div><div class="grp">${li("ZDYoung0519/NOIA2", "The capture pipeline, packet parsers, overlay and game-data catalogues come from this project.", ext, '<span class="badge is-plain credit-tag">Upstream</span>')}${li(
+                "Helveticxa/Aether-Aion2-DPS-meter-Global",
+                "Aether, the project this build is forked from.",
+                ext
+              )}${li("Kuroukihime/AIon2-Dps-Meter", "English monster, boss and skill names, and server codes. GPL-3.0.", ext)}${li(
+                "References",
+                "TK-open-public/Aion2-Dps-Meter · taengu/Aion2-Dps-Meter · p62003/aletheia_AION2_DPS_Meter"
+              )}${li("Third-party", "Npcap (installed separately, its own licence) · WinDivert (LGPL-3.0) · GPUI and GPUI Kit (Apache-2.0) · Lucide icons (ISC)")}</div>` +
+              group(
+                "Storage",
+                row("Stored on this PC", "Settings 6 KB · Fight history 14 records, 2.1 MB · Recordings 5 files, 11.8 MB", C.btn("Open folder", { ic: "folder" })) +
+                  row("Clear cache", "Settings and shortcuts go back to their defaults.", C.btn("Clear cache…", { kind: "danger" }))
+              )
+            );
+          },
+        };
+
+        const ORDER = ["overlay", "behaviour", "shortcuts", "capture", "bests", "general", "about"];
+
+        function render(state, ctx) {
+          const [section, sub] = state.split(":");
+          let content = S[section](ctx, sub);
+          // nav c: one scrolling page; what follows this section continues below.
+          if (ctx.v.nav === "c") {
+            content += ORDER.slice(ORDER.indexOf(section) + 1)
+              .map((id) => `<div style="height:34px"></div>${S[id](ctx, "")}`)
+              .join("");
+          }
+          const dialog =
+            sub === "clear"
+              ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true"><h3>Clear the cache?</h3><p>Settings, shortcuts and window positions go back to their defaults. Fight history, personal bests and recordings are kept.</p><div class="dlg-actions">${C.btn("Cancel")}${C.btn("Clear cache", { kind: "danger" })}</div></div></div>`
+              : "";
+          const thumb = { overlay: 150, behaviour: 360, capture: 200, about: 280 }[section] || 0;
+          const scroll = { "capture:rec": 300, "capture:replay": 470 }[state] || 0;
+          return ctx.shell(ctx, section, content, {
+            meter: { tone: "live", label: `${ctx.t.running} · 12:41` },
+            overlayHtml: dialog,
+            thumb: ctx.v.nav === "c" ? 90 : thumb,
+            scroll,
+          });
+        }
+
+        App.mount({
+          states: [
+            { id: "overlay", title: "Overlay", sub: "look, rows, boss fights, window" },
+            { id: "behaviour", title: "Meter behaviour", sub: "counting and between fights; tooltip on Count" },
+            { id: "shortcuts", title: "Shortcuts", sub: "three global shortcuts" },
+            { id: "shortcuts:rec", title: "Shortcuts, recording", sub: "waiting for the new keys" },
+            { id: "shortcuts:conflict", title: "Shortcuts, conflict", sub: "another program holds the keys" },
+            { id: "capture", title: "Capture", sub: "connection, backend, recording, log" },
+            { id: "capture:rec", title: "Capture, recording", sub: "packet recording running" },
+            { id: "capture:replay", title: "Capture, replaying", sub: "a recording runs through the live meter" },
+            { id: "bests", title: "Personal bests", sub: "per boss and character" },
+            { id: "bests:confirm", title: "Personal bests, resetting", sub: "asks for a second click" },
+            { id: "bests:empty", title: "Personal bests, none yet", sub: "first run" },
+            { id: "general:lang", title: "General", sub: "language menu open" },
+            { id: "about", title: "About", sub: "version, licence, credits, storage" },
+            { id: "about:clear", title: "About, clearing the cache", sub: "Kit Dialog" },
+          ],
+          variants: [
+            {
+              key: "nav",
+              label: "Navigation",
+              def: "a",
+              options: [
+                { value: "a", label: "a: sidebar" },
+                { value: "b", label: "b: top tabs" },
+                { value: "c", label: "c: title-bar tabs, one settings page" },
+              ],
+            },
+            {
+              key: "prev",
+              label: "Overlay preview",
+              def: "a",
+              options: [
+                { value: "a", label: "a: live meter beside the settings" },
+                { value: "b", label: "b: none" },
+              ],
+            },
+            {
+              key: "type",
+              label: "Type",
+              def: "a",
+              options: [
+                { value: "a", label: "a: Segoe UI body, Bahnschrift figures" },
+                { value: "b", label: "b: Bahnschrift everywhere" },
+              ],
+            },
+          ],
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

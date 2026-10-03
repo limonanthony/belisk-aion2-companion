@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Meter A: Ledger</title>
+    <link rel="stylesheet" href="shared.css" />
+    <style>
+      /* Direction A: Ledger. A dense table with fixed, labelled columns.
+         Every value below is a solid or alpha fill, a 1px border, a two-stop
+         gradient or a drop shadow: all GPUI primitives. */
+      .ov.a {
+        --a-bg: rgba(12, 14, 19, var(--bg-a));
+        --a-plate: rgba(0, 0, 0, 0.2);
+        --a-text: rgba(238, 241, 246, 0.95);
+        --a-muted: rgba(238, 241, 246, 0.64);
+        --a-faint: rgba(238, 241, 246, 0.42);
+        --a-line: rgba(255, 255, 255, 0.08);
+        --a-good: #6ee7a0;
+        --a-warn: #f5c451;
+        --a-bad: #fda4af;
+        --a-hp: #ef5350;
+        --a-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+        --a-sans: "Segoe UI Variable Small", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+
+        zoom: var(--scale);
+        width: 300px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        border-radius: 6px;
+        background: var(--a-bg);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+        color: var(--a-text);
+        font: 12px/1 var(--a-sans);
+      }
+
+      .ov.a.has-dmg {
+        width: 346px;
+      }
+
+      .a .i {
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
+        stroke-width: 1.9;
+      }
+
+      .a .num {
+        font-family: var(--a-mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ---- Header ---- */
+      .a-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 4px 0 8px;
+      }
+
+      .a-dot {
+        width: 6px;
+        height: 6px;
+        flex-shrink: 0;
+        border-radius: 50%;
+        background: var(--a-good);
+      }
+
+      .a-dot.is-idle {
+        background: var(--a-faint);
+      }
+
+      .a-title {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .a-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-right: 4px;
+        color: var(--a-muted);
+        font-size: 11px;
+      }
+
+      .a-meta .is-hp {
+        color: #ff8a80;
+      }
+
+      .a-meta .is-time {
+        color: var(--a-text);
+      }
+
+      .a-tools {
+        display: flex;
+        align-items: center;
+        gap: 1px;
+      }
+
+      .a-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        color: var(--a-muted);
+      }
+
+      .a-btn.is-hot {
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--a-text);
+      }
+
+      .a-btn.is-close {
+        margin-left: 3px;
+      }
+
+      .a-hp {
+        height: 3px;
+        margin: 0 8px 4px;
+        border-radius: 1px;
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .a-hp i {
+        display: block;
+        height: 100%;
+        border-radius: 1px;
+        background: var(--a-hp);
+      }
+
+      /* ---- Table ---- */
+      .a-cols,
+      .a-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px;
+      }
+
+      .a-cols {
+        height: 16px;
+        color: var(--a-faint);
+        font-size: 9.5px;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+
+      .c-rank {
+        width: 14px;
+        flex-shrink: 0;
+        text-align: right;
+      }
+
+      .c-icon {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+      }
+
+      .c-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .c-cp {
+        width: 42px;
+        flex-shrink: 0;
+        text-align: right;
+      }
+
+      .c-dmg {
+        width: 46px;
+        flex-shrink: 0;
+        text-align: right;
+      }
+
+      .c-dps {
+        width: 48px;
+        flex-shrink: 0;
+        text-align: right;
+      }
+
+      .c-pct {
+        width: 38px;
+        flex-shrink: 0;
+        text-align: right;
+      }
+
+      .a-row {
+        position: relative;
+        height: 19px;
+        background: rgba(0, 0, 0, 0.16);
+        white-space: nowrap;
+      }
+
+      .a-row:nth-child(even) {
+        background: rgba(0, 0, 0, 0.28);
+      }
+
+      .a-row .c-rank {
+        color: var(--a-faint);
+        font-size: 10.5px;
+      }
+
+      .a-row .c-name small {
+        margin-left: 5px;
+        color: var(--a-faint);
+        font-size: 10px;
+      }
+
+      .a-row .c-cp,
+      .a-row .c-dmg,
+      .a-row .c-pct {
+        color: var(--a-muted);
+        font-size: 10.5px;
+      }
+
+      .a-row .c-dps {
+        font-size: 11.5px;
+        font-weight: 600;
+      }
+
+      /* The bar: a 2px rule under the row, in class colour, as long as the
+         row's DPS relative to the top player. */
+      .a-bar {
+        position: absolute;
+        bottom: 1px;
+        left: 8px;
+        height: 2px;
+        border-radius: 1px;
+        background: rgba(var(--rgb), 0.92);
+      }
+
+      /* You: the same dark plate with a full 1px rim (GPUI: border_1), a
+         heavier name and a white rank. */
+      .a-row.is-you {
+        outline: 1px solid rgba(255, 255, 255, 0.42);
+        outline-offset: -1px;
+      }
+
+      .a-row.is-you .c-name {
+        font-weight: 650;
+      }
+
+      .a-row.is-you .c-rank {
+        color: var(--a-text);
+      }
+
+      /* ---- Footer ---- */
+      .a-foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 21px;
+        margin-top: 3px;
+        padding: 0 8px;
+        border-top: 1px solid var(--a-line);
+        color: var(--a-muted);
+        font-size: 10.5px;
+        white-space: nowrap;
+      }
+      .a-foot .grow {
+        flex: 1;
+      }
+
+      .a-pace {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .a-pace .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .a-pace.is-ahead {
+        color: var(--a-good);
+      }
+
+      .a-pace.is-behind {
+        color: var(--a-bad);
+      }
+
+      .a-sys {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .a-sys .i {
+        width: 11px;
+        height: 11px;
+      }
+
+      .a-sys.is-good {
+        color: var(--a-good);
+      }
+
+      .a-tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 16px;
+        padding: 0 6px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 4px;
+        color: var(--a-text);
+        font-family: var(--a-sans);
+        font-size: 10.5px;
+      }
+
+      .a-tbtn .i {
+        width: 11px;
+        height: 11px;
+      }
+
+      /* ---- Capsule ---- */
+      .ov.a.is-capsule {
+        width: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 24px;
+        padding: 0 10px 0 8px;
+      }
+
+      .a-cap-dps {
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .a-cap-dps small,
+      .a-cap-dim {
+        color: var(--a-muted);
+        font-size: 10.5px;
+        font-weight: 400;
+      }
+
+      /* ---- Idle ---- */
+      .a-idle {
+        padding: 6px 8px 8px;
+        color: var(--a-muted);
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .a-idle b {
+        color: var(--a-text);
+        font-weight: 600;
+      }
+
+      /* ---- Summary ---- */
+      .a-sum {
+        padding: 2px 8px 8px;
+      }
+
+      .a-sum-top {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 20px;
+      }
+
+      .a-out {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .a-out.is-final {
+        color: var(--a-good);
+      }
+
+      .a-out.is-quiet {
+        color: var(--a-warn);
+      }
+
+      .a-sum-where {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        color: var(--a-muted);
+        font-size: 10.5px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .a-kv {
+        display: flex;
+        gap: 14px;
+        margin-top: 4px;
+      }
+
+      .a-kv > div {
+        flex: 1;
+      }
+
+      .a-kv p {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 17px;
+        margin: 0;
+        padding: 0 5px;
+        background: var(--a-plate);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        color: var(--a-muted);
+        font-size: 10.5px;
+      }
+
+      .a-kv p .num {
+        color: var(--a-text);
+        font-size: 11.5px;
+      }
+
+      .a-kv p .num.is-big {
+        font-weight: 700;
+      }
+
+      .a-pb {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 20px;
+        margin-top: 6px;
+        padding: 0 6px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .a-pb .grow {
+        flex: 1;
+      }
+
+      .a-pb.is-new {
+        background: rgba(250, 204, 21, 0.16);
+        color: #fde68a;
+      }
+
+      .a-pb.is-behind {
+        background: rgba(244, 63, 94, 0.14);
+        color: var(--a-bad);
+      }
+
+      .a-skills {
+        margin-top: 6px;
+      }
+
+      .a-skills .a-cols {
+        padding: 0 5px;
+      }
+
+      .a-skill {
+        position: relative;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 17px;
+        padding: 0 5px;
+        background: var(--a-plate);
+        font-size: 11px;
+      }
+
+      .a-skill .num {
+        color: var(--a-muted);
+        font-size: 10.5px;
+      }
+
+      .a-skill .a-bar {
+        left: 5px;
+      }
+
+      .a-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        margin-top: 7px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Directions">
+        <a href="index.html">Overview</a>
+        <a href="a.html" aria-current="page">A: Ledger</a>
+        <a href="b.html">B: Focus</a>
+        <a href="c.html">C: Vanguard</a>
+      </nav>
+      <h1>A: Ledger <small>dense table, numbers first</small></h1>
+      <ul class="rationale">
+        <li>A spreadsheet for players who read figures: fixed, labelled columns, monospaced digits, ten rows in about 230 px.</li>
+        <li>Colour is information only: class colour lives in a 2 px rule under each row, green and rose mean pace, everything else is graphite.</li>
+        <li>Each row carries its own dark plate, so the table stays readable when the background opacity is turned down over a bright scene.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Intended motion</h2>
+      <ul>
+        <li>Figures swap in place, no counting: monospaced digits keep every column still, so there is nothing to animate.</li>
+        <li>Rank change: rows slide to their new slot over 160 ms (ease-out). Bars change width over 200 ms. Nothing else moves.</li>
+        <li>Pointer over: header meta cross-fades to the tool buttons in 100 ms; the window does not resize. Capsule expands in one step, no height tween.</li>
+        <li>Frames are drawn only when a snapshot arrives or a tween is running; no idle animation, no pulsing live dot.</li>
+      </ul>
+      <h2>GPUI notes</h2>
+      <ul>
+        <li>All fills, the 1 px border, rounded corners and the drop shadow map to <code>bg</code>, <code>border_1</code>, <code>rounded</code> and <code>shadow</code>. Rows and bars are plain divs; the bar is an absolutely positioned child with a relative width.</li>
+        <li>Fonts: <code>Cascadia Mono</code> (falls back to <code>Consolas</code>) for figures, <code>Segoe UI Variable Small</code> for names. Both are system fonts on Windows 11; nothing is bundled.</li>
+        <li>Uppercase labels are uppercased strings, not a text transform. No letter spacing is used.</li>
+        <li>Class icons are the existing PNGs in <code>public/aion2/class/</code>, drawn as images. Every other icon is a single-colour Lucide SVG.</li>
+      </ul>
+    </section>
+
+    <script src="shared.js"></script>
+    <script>
+      (function () {
+        const icon = Mock.icon;
+
+        function head(ctx, { title, meta, tools, idle, locked }) {
+          return `<div class="a-head">
+  <span class="a-dot${idle ? " is-idle" : ""}"></span>
+  <span class="a-title">${title}</span>
+  ${tools ? toolsHtml() : `<span class="a-meta">${locked ? `<span style="color:var(--a-faint);display:inline-flex">${icon("lock")}</span>` : ""}${meta}</span>`}
+</div>`;
+        }
+
+        function toolsHtml() {
+          const b = (name, label, extra = "") =>
+            `<span class="a-btn${extra}" role="button" title="${label}" aria-label="${label}">${icon(name)}</span>`;
+          return `<span class="a-tools">
+  ${b("reset", "Reset")}${b("history", "History")}${b("settings", "Settings")}${b("capsule", "Capsule mode")}${b("lockOpen", "Lock (click-through)", " is-hot")}${b("pvp", "PvP meter")}${b("close", "Close", " is-close")}
+</span>`;
+        }
+
+        function hpMeta(ctx, hp, secs) {
+          const { fmt } = ctx;
+          return `<span class="num is-hp">${(hp * 100).toFixed(1)}%</span><span class="num is-time">${fmt.time(secs)}</span>`;
+        }
+
+        function hpBar(hp) {
+          return `<div class="a-hp"><i style="width:${(hp * 100).toFixed(1)}%"></i></div>`;
+        }
+
+        function table(ctx) {
+          const { opts, fmt } = ctx;
+          const cols = `<div class="a-cols">
+  <span class="c-rank">#</span><span class="c-icon"></span><span class="c-name">Player</span>
+  ${opts.cp ? `<span class="c-cp">CP</span>` : ""}
+  ${opts.damage ? `<span class="c-dmg">Dmg</span>` : ""}
+  <span class="c-dps">DPS</span><span class="c-pct">${opts.pctMode === "share" ? "Share" : "Contr"}</span>
+</div>`;
+          const rows = ctx.players
+            .map(
+              (p) => `<div class="a-row${p.you ? " is-you" : ""}" style="--rgb:${p.rgb}">
+  <span class="c-rank num">${p.rank}</span>
+  <img class="c-icon" src="${p.icon}" alt="${p.cls}">
+  <span class="c-name">${p.label}${opts.server ? `<small>${p.server}</small>` : ""}</span>
+  ${opts.cp ? `<span class="c-cp num">${fmt.int(p.cp)}</span>` : ""}
+  ${opts.damage ? `<span class="c-dmg num">${fmt.compact(p.dmg)}</span>` : ""}
+  <span class="c-dps num">${fmt.int(p.dps)}</span>
+  <span class="c-pct num">${fmt.pct(p.pct)}</span>
+  <span class="a-bar" style="width:calc((100% - 16px) * ${p.scale.toFixed(3)})"></span>
+</div>`
+            )
+            .join("");
+          return cols + `<div>${rows}</div>`;
+        }
+
+        function pace(p) {
+          const up = p >= 0;
+          return `<span class="a-pace ${up ? "is-ahead" : "is-behind"}">${icon(up ? "up" : "down")}<span class="num">${up ? "+" : "−"}${Math.abs(p * 100).toFixed(1)}%</span> vs PB</span>`;
+        }
+
+        function sys(ctx) {
+          return `<span class="a-sys is-good">${icon("signal")}<span class="num">${ctx.sys.pingMs} ms</span></span>
+<span class="a-sys"><span class="num">CPU ${ctx.sys.cpu}%</span></span>
+<span class="a-sys"><span class="num">${ctx.sys.memGb} GB</span></span>`;
+        }
+
+        function party(ctx) {
+          return ctx.count > 1 ? `<span>Party <span class="num" style="color:var(--a-text)">${ctx.fmt.compact(ctx.partyDps)}/s</span></span>` : "";
+        }
+
+        function frame(ctx, inner, extra = "") {
+          return `<div class="ov a${ctx.opts.damage ? " has-dmg" : ""}${extra}">${inner}</div>`;
+        }
+
+        function summary(ctx, final) {
+          const { fmt, you } = ctx;
+          const secs = final ? ctx.summarySecs : ctx.quietSecs;
+          const hp = final ? 0 : ctx.quietHp;
+          const dmg = you.dps * secs;
+          const pbBlock = final
+            ? `<div class="a-pb is-new">${icon("award")}<span class="grow">New personal best</span><span class="num">+${(ctx.pb.newPace * 100).toFixed(1)}%</span></div>`
+            : `<div class="a-pb is-behind">${icon("down")}<span class="grow">PB <span class="num">${fmt.int(ctx.pb.dps)}/s</span></span><span class="num">−${Math.abs(ctx.pb.quietPace * 100).toFixed(1)}%</span></div>`;
+          return frame(
+            ctx,
+            `${head(ctx, { title: ctx.boss.label, meta: hpMeta(ctx, hp, secs) })}
+${hpBar(hp)}
+<div class="a-sum">
+  <div class="a-sum-top">
+    <span class="a-out ${final ? "is-final" : "is-quiet"}">${icon(final ? "check" : "hourglass")}${final ? "Defeated" : "Fight ended"}</span>
+    <span class="a-sum-where">${final ? ctx.boss.where : "may resume · " + ctx.boss.where}</span>
+    <span class="a-btn" role="button" title="Back to the meter" aria-label="Back to the meter">${icon("close")}</span>
+  </div>
+  <div class="a-kv">
+    <div>
+      <p>Your DPS<span class="num is-big">${fmt.int(you.dps)}</span></p>
+      <p>Damage<span class="num">${fmt.compact(dmg)}</span></p>
+      <p>Crit<span class="num">${(ctx.crit * 100).toFixed(0)}%</span></p>
+    </div>
+    <div>
+      <p>Rank<span class="num">${you.rank} / ${ctx.count}</span></p>
+      <p>Share<span class="num">${fmt.pct(you.pct)}</span></p>
+      <p>Party<span class="num">${fmt.compact(ctx.partyDps)}/s</span></p>
+    </div>
+  </div>
+  ${pbBlock}
+  <div class="a-skills">
+    <div class="a-cols"><span style="flex:1">Top skills</span><span>Dmg</span></div>
+    ${ctx.skills
+      .map(
+        (s) => `<div class="a-skill" style="--rgb:${you.rgb}"><span>${s.name}</span><span class="num">${(s.share * 100).toFixed(0)}%</span><span class="a-bar" style="width:calc((100% - 10px) * ${s.share / ctx.skills[0].share})"></span></div>`
+      )
+      .join("")}
+  </div>
+  <div class="a-actions"><span class="a-tbtn" role="button">${icon("copy")}Copy</span></div>
+</div>`
+          );
+        }
+
+        function render(state, ctx) {
+          const { fmt, you } = ctx;
+          switch (state) {
+            case "idle":
+              return frame(
+                ctx,
+                `${head(ctx, { title: "Aether", meta: "<span>Waiting for a fight</span>", idle: true })}
+<div class="a-idle"><b>Ready.</b> The table fills on your first hit.<br>Alt+E hides the meter, Alt+Q resets it.</div>
+<div class="a-foot" style="margin-top:0"><span class="grow"></span>${sys(ctx)}</div>`
+              );
+            case "hover":
+              return frame(
+                ctx,
+                `${head(ctx, { title: ctx.boss.label, tools: true })}
+${hpBar(ctx.boss.hp)}
+${table(ctx)}
+<div class="a-foot"><span class="a-tbtn" role="button">${icon("copy")}Copy report</span><span class="grow"></span>${sys(ctx)}</div>`
+              );
+            case "locked":
+              return frame(
+                ctx,
+                `${head(ctx, { title: ctx.boss.label, meta: hpMeta(ctx, ctx.boss.hp, ctx.fightSecs), locked: true })}
+${hpBar(ctx.boss.hp)}
+${table(ctx)}
+<div class="a-foot">${party(ctx)}<span class="grow"></span>${pace(ctx.pb.behindPace)}</div>`
+              );
+            case "capsule":
+              return `<div class="ov a is-capsule">
+  <span class="a-dot"></span>
+  <span class="a-cap-dps num">${fmt.int(you.dps)}<small>/s</small></span>
+  <span class="a-cap-dim num">#${you.rank}/${ctx.count}</span>
+  <span class="a-cap-dim num">${fmt.time(ctx.fightSecs)}</span>
+  ${pace(ctx.pb.aheadPace).replace(" vs PB", "")}
+</div>`;
+            case "final":
+              return summary(ctx, true);
+            case "provisional":
+              return summary(ctx, false);
+          }
+          return "";
+        }
+
+        Mock.mount({ render });
+      })();
+    </script>
+  </body>
+</html>

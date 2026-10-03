@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Round 2: PvP overlay</title>
+    <link rel="stylesheet" href="shared.css" />
+    <link rel="stylesheet" href="overlay.css" />
+    <style>
+      .ov.o.pvp {
+        width: 340px;
+      }
+
+      /* Kill stats: the numbers sit inside the plate, in fixed columns. */
+      .k-dmg {
+        width: 50px;
+      }
+
+      .k-n {
+        width: 38px;
+      }
+
+      .pvp .o-th {
+        padding: 0 9px 0 8px;
+      }
+
+      .pvp .o-th > span:not(.grow) {
+        text-align: right;
+      }
+
+      .k-kills {
+        font-weight: 650;
+      }
+
+      .k-deaths {
+        color: var(--o-muted);
+      }
+
+      .o-tag {
+        flex-shrink: 0;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: rgba(232, 115, 95, 0.18);
+        color: #f6b4a6;
+        font-size: 10.5px;
+        font-weight: 600;
+        line-height: 16px;
+      }
+
+      .w-hp {
+        color: var(--o-muted);
+        font-size: 11.5px;
+      }
+
+      .o-row .o-btn {
+        width: 20px;
+        height: 20px;
+      }
+
+      .o-row .o-btn .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .o-spacer {
+        width: 20px;
+        flex-shrink: 0;
+      }
+
+      .add {
+        position: relative;
+        margin-top: 6px;
+      }
+
+      .add .o-menu {
+        top: 30px;
+        left: 0;
+        right: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Approved screens">
+        <a href="index.html">Approved screens</a>
+        <a href="meter.html">Meter overlay</a>
+        <a href="pvp.html" aria-current="page">PvP overlay</a>
+        <a href="detail.html">Player detail</a>
+        <a href="history.html">Fight history</a>
+      </nav>
+      <h1>PvP overlay <small>approved, round 2</small></h1>
+      <ul class="rationale">
+        <li>The players you watch are pinned on top with their health, your last attacker first; kill stats and damage dealt and taken share two tabs below. In a fight, the watched players' health is what you glance at.</li>
+        <li>Kill stats sort by damage or kills (with assists and deaths); Clear empties them at once. Clicking a dealt or taken row opens the player detail; the eye button adds that player to the watch list.</li>
+        <li>Same language as the meter: class-coloured soft bars where the class is known, a quieter cream bar where it is not (kill stats), coral for health. Values are in <a href="tokens.md">tokens.md</a>.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour carried over</h2>
+      <ul>
+        <li>Kill stats sort by damage or kills from their column headers; ties fall back to kills, assists, fewer deaths, then name. Clear empties them at once, with no confirmation: it only clears the running PvP tally.</li>
+        <li>Capture is passive: players out of range are not counted, and damage settles when the target dies. The info button shows that line; the empty state shows it directly.</li>
+        <li>The watch list polls every 500 ms. Your last attacker is added on top and cannot be removed; a watched name not in range shows as "Not in range". The add field shows only while adding (the + button in the Watching row) or while the list is empty; suggestions come from players seen this session.</li>
+      </ul>
+      <h2>GPUI notes</h2>
+      <ul>
+        <li>The suggestion list is a popover inside the overlay window, like any menu here; the window must leave room for it. The text field is a GPUI input with its own caret.</li>
+        <li>Tabs are a segmented control drawn with two fills; no new primitive.</li>
+      </ul>
+    </section>
+
+    <script src="kit.js"></script>
+    <script>
+      (function () {
+        const icon = Kit.icon;
+
+        const btn = (name, label, extra = "") =>
+          `<span class="o-btn${extra}" role="button" title="${label}" aria-label="${label}">${icon(name)}</span>`;
+
+        function head() {
+          return `<div class="o-head"><span class="o-title">${icon("pvp")}PvP</span><span class="grow"></span>${btn("info", "How PvP capture works")}${btn("close", "Close")}</div>`;
+        }
+
+        function killTable(ctx, { sort = "damage", long = false, empty = false } = {}) {
+          const { fmt } = ctx;
+          if (empty) {
+            return `<div class="o-empty"><strong>No kill stats yet</strong>Kills, assists and deaths appear as fights settle.</div>`;
+          }
+          const list = (long ? ctx.pvp.statsLong : ctx.pvp.stats).slice().sort((a, b) =>
+            sort === "kills" ? b.kills - a.kills || b.damage - a.damage : b.damage - a.damage
+          );
+          const max = Math.max(...list.map((r) => r.damage));
+          const col = (key, label, cls) =>
+            key === sort
+              ? `<span class="${cls} is-sort">${icon("arrowDown")}${label}</span>`
+              : `<span class="${cls}${key ? " can-sort" : ""}">${label}</span>`;
+          const shown = long ? list.slice(0, 9) : list;
+          const rows = shown
+            .map(
+              (r) => `<div class="o-row${r.you ? " is-you" : ""}"><span class="o-track is-plain">
+  <span class="o-fill is-neutral" style="width:${((r.damage / max) * 100).toFixed(1)}%"></span>
+  <span class="o-name">${r.label}<small>${r.server}</small></span>
+  <span class="o-num k-dmg">${fmt.compact(r.damage)}</span>
+  <span class="o-num k-n k-kills">${r.kills}</span>
+  <span class="o-num k-n">${r.assists}</span>
+  <span class="o-num k-n k-deaths">${r.deaths}</span>
+</span></div>`
+            )
+            .join("");
+          return `<div class="o-th"><span class="grow">Player</span>${col("damage", "Damage", "k-dmg")}${col("kills", "Kills", "k-n")}${col("", "Assists", "k-n")}${col("", "Deaths", "k-n")}</div>
+<div class="o-scroll${long ? " has-thumb" : ""}"><div class="o-rows">${rows}</div>${long ? '<span class="o-thumb" style="--t:2px;--h:120px"></span>' : ""}</div>`;
+        }
+
+        function damageList(ctx, list, emptyText) {
+          const { fmt } = ctx;
+          if (!list.length) return `<div class="o-empty" style="padding-top:4px">${emptyText}</div>`;
+          const max = Math.max(...list.map((r) => r.dmg));
+          return `<div class="o-rows">${list
+            .map(
+              (r) => `<div class="o-row"><span class="o-track" style="--rgb:${r.rgb}">
+  <span class="o-fill" style="width:${((r.dmg / max) * 100).toFixed(1)}%"></span>
+  <img class="o-icon" src="${r.icon}" alt="${r.cls}"><span class="o-name">${r.label}${ctx.opts.server ? `<small>${r.server}</small>` : ""}</span>
+  <span class="o-num o-strong">${fmt.compact(r.dmg)}</span>
+</span><span class="o-pc">${fmt.pct(r.pct)}</span>${btn("eye", "Add to watch list")}</div>`
+            )
+            .join("")}</div>`;
+        }
+
+        function damageBlock(ctx, empty) {
+          return `<div class="o-sec">Damage dealt<span class="o-count">${empty ? "" : ctx.pvp.dealt.length + " players"}</span></div>
+${damageList(ctx, empty ? [] : ctx.pvp.dealt, "No damage dealt yet.")}
+<div class="o-sec">Damage taken<span class="o-count">${empty ? "" : ctx.pvp.taken.length + " players"}</span></div>
+${damageList(ctx, empty ? [] : ctx.pvp.taken, "No damage taken yet.")}`;
+        }
+
+        function watchRows(ctx, empty) {
+          const { fmt } = ctx;
+          if (empty) {
+            return `<div class="o-empty" style="padding-top:4px">No one watched yet. Add a name, or get hit: your last attacker appears here on its own.</div>`;
+          }
+          return `<div class="o-rows">${ctx.pvp.watch
+            .map((w) => {
+              if (w.missing) {
+                return `<div class="o-row is-dim"><span class="o-track is-plain"><span class="o-name">${w.label}<small>Not in range</small></span><span class="o-num">--</span></span>${btn("close", "Stop watching")}</div>`;
+              }
+              const s = w.hp / w.max;
+              return `<div class="o-row"><span class="o-track" style="--rgb:${w.rgb}">
+  <span class="o-fill is-hp" style="width:${(s * 100).toFixed(1)}%"></span>
+  <img class="o-icon" src="${w.icon}" alt="${w.cls}"><span class="o-name">${w.label}${ctx.opts.server ? `<small>${w.server}</small>` : ""}</span>
+  ${w.auto ? '<span class="o-tag">Last attacker</span>' : ""}
+  <span class="o-num w-hp">${fmt.int(w.hp)} / ${fmt.int(w.max)}</span>
+  <span class="o-num o-strong" style="width:34px">${Math.round(s * 100)}%</span>
+</span>${w.auto ? '<span class="o-spacer"></span>' : btn("close", "Stop watching")}</div>`;
+            })
+            .join("")}</div>`;
+        }
+
+        function addField(ctx, adding) {
+          if (!adding) {
+            return `<div class="add"><div class="o-input"><span class="ph">Add a player to watch</span>${btn("plus", "Add")}</div></div>`;
+          }
+          return `<div class="add"><div class="o-input is-focus"><span class="val">Ka</span><span class="o-caret"></span><span class="grow"></span>${btn("plus", "Add", " is-hot")}</div>
+<div class="o-menu" role="listbox">${ctx.pvp.suggest
+            .map((n, i) => `<div class="o-menu-item${i === 0 ? " is-hot" : ""}">${icon("user")}<span><b>${n.slice(0, 2)}</b>${n.slice(2)}</span><small>seen this session</small></div>`)
+            .join("")}</div></div>`;
+        }
+
+        // The tab already says "Kill stats": the row names what the table
+        // counts and keeps Clear.
+        function killsSection(ctx, o) {
+          return `<div class="o-sec" style="margin-top:0">Players<span class="o-count">this session</span><span class="grow"></span><span class="o-tbtn is-quiet" role="button">${icon("trash")}Clear</span></div>${killTable(ctx, o)}`;
+        }
+
+        function tabs(items, on) {
+          return `<div class="o-tabs" role="tablist">${items
+            .map(([id, label, n]) => `<span class="o-tab${id === on ? " is-on" : ""}" role="tab">${label}${n != null ? `<small>${n}</small>` : ""}</span>`)
+            .join("")}</div>`;
+        }
+
+        function render(state, ctx) {
+          const empty = state === "empty";
+          const adding = state === "add";
+          const long = state === "long";
+          const sort = state === "kills-k" ? "kills" : "damage";
+          const killOpts = { sort, long, empty };
+          const nKills = empty ? 0 : long ? ctx.pvp.statsLong.length : ctx.pvp.stats.length;
+          const nDmg = empty ? 0 : ctx.pvp.dealt.length + ctx.pvp.taken.length;
+          const nWatch = empty ? 0 : ctx.pvp.watch.length;
+          const note = empty
+            ? `<div class="o-note" style="margin-bottom:6px">${icon("info")}<span>Capture is passive: players out of range are not counted, and damage settles when the target dies.</span></div>`
+            : "";
+          const on = state === "damage" ? "damage" : "kills";
+          const body = `<div class="o-sec" style="margin-top:0">${icon("heart")}Watching<span class="o-count">${nWatch || ""}</span><span class="grow"></span>${adding ? "" : btn("plus", "Add a player to watch")}</div>
+${watchRows(ctx, empty)}${adding || empty ? addField(ctx, adding) : ""}
+<div style="height:8px"></div>
+${tabs([["kills", "Kill stats", nKills], ["damage", "Damage", nDmg]], on)}${note}
+${on === "damage" ? damageBlock(ctx, empty) : killsSection(ctx, killOpts)}`;
+          return `<div class="ov o pvp">${head()}${body}</div>`;
+        }
+
+        Kit.mount({
+          states: [
+            { id: "empty", title: "Just opened", sub: "nothing captured yet" },
+            { id: "kills", title: "Kill stats", sub: "sorted by damage" },
+            { id: "kills-k", title: "Kill stats", sub: "sorted by kills" },
+            { id: "damage", title: "Damage dealt and taken", sub: "click a row for the detail; eye adds to watch" },
+            { id: "add", title: "Adding to the watch list", sub: "typing, suggestions open" },
+            { id: "long", title: "Long list", sub: "14 players; the list scrolls" },
+          ],
+          controls: ["alpha", "scale", "mask", "server"],
+          tileMin: 400,
+          stageMin: 560,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

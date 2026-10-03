@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Round 3: main window</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <style>
+      .r3 {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 0 32px 48px;
+      }
+
+      .screen {
+        display: grid;
+        grid-template-columns: minmax(0, 44ch) minmax(0, 1fr);
+        gap: 24px;
+        margin-top: 26px;
+      }
+
+      .screen h2 {
+        margin: 0 0 6px;
+        font-size: 17px;
+        font-weight: 650;
+      }
+
+      .screen h2 a {
+        color: var(--page-text);
+      }
+
+      .screen li {
+        color: var(--page-muted);
+      }
+
+      .screen ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .screen li + li {
+        margin-top: 3px;
+      }
+
+      .screen b {
+        color: var(--page-text);
+        font-weight: 600;
+      }
+
+      .screen iframe {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-radius: 10px;
+        background: var(--page-surface);
+      }
+
+      @media (max-width: 1100px) {
+        .screen {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Round 3">
+        <a href="index.html" aria-current="page">Round 3</a>
+        <a href="gate.html">Startup gate</a>
+        <a href="home.html">Home</a>
+        <a href="settings.html">Settings</a>
+        <a href="../approved/index.html">Approved</a>
+      </nav>
+      <h1>Round 3 <small>the main window, in GPUI Kit with the Aether language</small></h1>
+      <ul class="rationale">
+        <li>Startup gate, Home and Settings, with only the features kept in docs/GPUI_MIGRATION.md "Scope". Dark theme only, no artwork or video, a custom title bar.</li>
+        <li>Kit components (Button, Switch, Slider, Select, Tabs, Sidebar, Table, Tooltip, Dialog, Kbd, Badge) in the approved overlay colours and type, so the main window and the overlays read as one product.</li>
+        <li>Open choices are switches in each page's control bar, the recommendation marked; pages open on it. Home also switches to French.</li>
+      </ul>
+    </header>
+
+    <div class="r3">
+      <section class="screen">
+        <div>
+          <h2><a href="gate.html">Startup gate</a></h2>
+          <ul>
+            <li>States: checking, all good, Npcap missing but WinDivert works, nothing can capture, installing Npcap, install refused (checksum), not elevated, re-run from Home.</li>
+            <li><b>Ready but Npcap missing</b>: <b>a, wait for the user</b> so the recommendation is read (recommended); b, continue after 1.2 s as today.</li>
+          </ul>
+        </div>
+        <iframe title="Gate, Npcap missing" src="gate.html?embed&amp;states=npcap-missing" height="530"></iframe>
+      </section>
+
+      <section class="screen">
+        <div>
+          <h2><a href="home.html">Home</a></h2>
+          <ul>
+            <li>States: ready, starting, waiting for the game, running, start failed. Language: English or French.</li>
+            <li><b>Navigation</b> (shared with Settings): <b>a, sidebar</b> (recommended); b, top tabs; c, title-bar tabs with one scrolling settings page.</li>
+            <li><b>Connection details</b>: <b>a, one line in the card</b> (recommended); b, four status tiles.</li>
+            <li><b>Type</b>: <b>a, Segoe UI text with Bahnschrift titles and figures</b> (recommended); b, Bahnschrift everywhere.</li>
+          </ul>
+        </div>
+        <iframe title="Home, running" src="home.html?embed&amp;states=live" height="680"></iframe>
+      </section>
+
+      <section class="screen">
+        <div>
+          <h2><a href="settings.html">Settings</a></h2>
+          <ul>
+            <li>Sections: Overlay, Meter behaviour, Shortcuts, Capture, Personal bests, General, About; with recording, conflict, replay, reset-confirm, empty and dialog states.</li>
+            <li><b>Overlay preview</b>: <b>a, a live meter beside the overlay settings</b> (recommended); b, none.</li>
+            <li>Navigation and Type as on Home.</li>
+          </ul>
+        </div>
+        <iframe title="Settings, overlay" src="settings.html?embed&amp;states=overlay" height="680"></iframe>
+      </section>
+    </div>
+  </body>
+</html>

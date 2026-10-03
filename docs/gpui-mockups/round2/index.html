@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Round 2: overlays</title>
+    <link rel="stylesheet" href="shared.css" />
+    <style>
+      .r2 {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 0 32px 48px;
+      }
+
+      .screen {
+        display: grid;
+        grid-template-columns: minmax(0, 46ch) minmax(0, 1fr);
+        gap: 24px;
+        margin-top: 26px;
+      }
+
+      .screen h2 {
+        margin: 0 0 6px;
+        font-size: 17px;
+        font-weight: 650;
+      }
+
+      .screen h2 a {
+        color: var(--page-text);
+      }
+
+      .screen p,
+      .screen li {
+        color: var(--page-muted);
+      }
+
+      .screen p {
+        margin: 0 0 8px;
+      }
+
+      .screen ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .screen li + li {
+        margin-top: 3px;
+      }
+
+      .screen b {
+        color: var(--page-text);
+        font-weight: 600;
+      }
+
+      .screen iframe {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-radius: 10px;
+        background: var(--page-surface);
+      }
+
+      @media (max-width: 900px) {
+        .screen {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Round 2">
+        <a href="index.html" aria-current="page">Round 2</a>
+        <a href="meter.html">Meter fixes</a>
+        <a href="pvp.html">PvP overlay</a>
+        <a href="detail.html">Player detail</a>
+        <a href="history.html">Fight history</a>
+        <a href="../approved/index.html">Approved</a>
+      </nav>
+      <h1>Round 2 <small>the approved language on the other overlays</small></h1>
+      <ul class="rationale">
+        <li>Each page shows its meaningful states over the busy, bright and dark scenes, with the real overlay settings and a "Scene" filter in the control bar.</li>
+        <li>Open design choices are switches in the control bar, each marked "(recommended)"; the pages open on the recommendation. Nothing here is approved until the user says so; approved screens move to <a href="../approved/index.html">approved/</a>.</li>
+        <li>All data is invented. Only GPUI-drawable effects are used in the overlays.</li>
+      </ul>
+    </header>
+
+    <div class="r2">
+      <section class="screen">
+        <div>
+          <h2><a href="meter.html">Meter fixes</a></h2>
+          <ul>
+            <li><b>Header under the pointer</b>: a, second row of buttons; b, three buttons and a menu; <b>c, buttons replace the gauge line</b> (recommended: no resize, full name, every control one click away).</li>
+            <li><b>Combat power</b>: a, approved 0.66; <b>b, 0.82</b> (recommended); c, 0.82 and slightly larger.</li>
+          </ul>
+        </div>
+        <iframe title="Meter fixes, pointer over, bright" src="meter.html?embed&amp;scenes=bright&amp;states=hover" height="380"></iframe>
+      </section>
+
+      <section class="screen">
+        <div>
+          <h2><a href="pvp.html">PvP overlay</a></h2>
+          <ul>
+            <li><b>Layout</b>: a, one column of sections (today); b, tabs for Kills, Damage and Watch; <b>c, watch list pinned on top, tabs below</b> (recommended).</li>
+            <li>States: just opened, kill stats by damage and by kills, damage dealt and taken, adding to the watch list, long list.</li>
+          </ul>
+        </div>
+        <iframe title="PvP, kill stats, busy" src="pvp.html?embed&amp;scenes=busy&amp;states=kills" height="520"></iframe>
+      </section>
+
+      <section class="screen">
+        <div>
+          <h2><a href="detail.html">Player detail</a></h2>
+          <ul>
+            <li><b>Skill table</b>: <b>a, four columns and a row that opens for the rest</b> (recommended); b, all 15 columns in a 1000 px window; c, Damage and Hit types tabs.</li>
+            <li>States: nothing selected, live, skill opened, buffs open, history mode, no skill data.</li>
+          </ul>
+        </div>
+        <iframe title="Detail, skill opened, dark" src="detail.html?embed&amp;scenes=dark&amp;states=expanded" height="620"></iframe>
+      </section>
+
+      <section class="screen">
+        <div>
+          <h2><a href="history.html">Fight history</a></h2>
+          <ul>
+            <li><b>Rows</b>: <b>a, two lines per record</b> (recommended); b, one line.</li>
+            <li><b>Confirm delete</b>: <b>a, the button asks again</b> (recommended); b, a confirmation strip. Both add a confirmation that does not exist today.</li>
+            <li>States: empty, records, filtering, record opened, deleting one, deleting all, after deleting all.</li>
+          </ul>
+        </div>
+        <iframe title="History, record opened, bright" src="history.html?embed&amp;scenes=bright&amp;states=open" height="560"></iframe>
+      </section>
+    </div>
+  </body>
+</html>

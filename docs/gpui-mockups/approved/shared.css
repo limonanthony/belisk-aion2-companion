@@ -1,0 +1,376 @@
+/* Page chrome and invented game backdrops for the meter mockups.
+ *
+ * Nothing in this file is part of a design direction. The backdrops use CSS
+ * the overlay itself may not (radial gradients, text shadows): they stand in
+ * for the game, which GPUI never draws. Each direction's own styles live in
+ * its page. */
+
+:root {
+  --page-bg: #0e1015;
+  --page-surface: #161920;
+  --page-border: rgba(255, 255, 255, 0.09);
+  --page-text: rgba(255, 255, 255, 0.92);
+  --page-muted: rgba(255, 255, 255, 0.6);
+  --page-faint: rgba(255, 255, 255, 0.4);
+  --page-focus: #8ab4ff;
+
+  /* Driven by the controls: the overlay background alpha (0-1) and the
+     content scale. Defaults match the app: RGBA [10,12,18,150], 100%. */
+  --bg-a: 0.588;
+  --scale: 1;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--page-text);
+  font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+a {
+  color: var(--page-focus);
+}
+
+:focus-visible {
+  outline: 2px solid var(--page-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Page head ---- */
+
+.page-head {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 28px 32px 8px;
+}
+
+.page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-bottom: 18px;
+  font-size: 13px;
+}
+
+.page-nav a {
+  color: var(--page-muted);
+  text-decoration: none;
+}
+
+.page-nav a:hover {
+  color: var(--page-text);
+}
+
+.page-nav a[aria-current="page"] {
+  color: var(--page-text);
+  font-weight: 600;
+}
+
+.page-head h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.page-head h1 small {
+  margin-left: 10px;
+  color: var(--page-faint);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.rationale {
+  max-width: 78ch;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--page-muted);
+}
+
+.rationale li + li {
+  margin-top: 2px;
+}
+
+/* ---- Controls ---- */
+
+.controls {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(14, 16, 21, 0.96);
+  border-bottom: 1px solid var(--page-border);
+}
+
+.controls__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 22px;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 10px 32px;
+  font-size: 13px;
+  color: var(--page-muted);
+}
+
+.controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.controls output {
+  min-width: 4.5ch;
+  color: var(--page-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.controls input[type="range"] {
+  width: 120px;
+  accent-color: #8ab4ff;
+}
+
+.controls input[type="checkbox"] {
+  accent-color: #8ab4ff;
+}
+
+.controls select {
+  padding: 2px 6px;
+  border: 1px solid var(--page-border);
+  border-radius: 6px;
+  background: var(--page-surface);
+  color: var(--page-text);
+  font: inherit;
+}
+
+.controls__sep {
+  width: 1px;
+  height: 18px;
+  background: var(--page-border);
+}
+
+/* ---- Scenes ---- */
+
+main.scenes {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 8px 32px 24px;
+}
+
+.scene-group + .scene-group {
+  margin-top: 28px;
+}
+
+.scene-group h2 {
+  margin: 18px 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.scene-group h2 span {
+  margin-left: 8px;
+  color: var(--page-faint);
+  font-weight: 400;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--tile-min, 360px), 1fr));
+  gap: 18px;
+}
+
+.tile__cap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.tile__cap b {
+  font-weight: 600;
+}
+
+.tile__cap span {
+  color: var(--page-faint);
+  font-size: 12px;
+}
+
+.tile__stage {
+  position: relative;
+  min-height: var(--stage-min, 320px);
+  padding: 22px;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.tile__stage > .ov {
+  position: relative;
+  z-index: 1;
+}
+
+/* Fake game: floating combat text and a target nameplate. */
+.fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.fx span {
+  position: absolute;
+  font-weight: 800;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.55),
+    0 0 6px rgba(0, 0, 0, 0.35);
+}
+
+.fx .hit {
+  color: #fff6c9;
+  font-size: 17px;
+}
+
+.fx .crit {
+  color: #ffb02e;
+  font-size: 22px;
+}
+
+.fx .heal {
+  color: #7dff9a;
+  font-size: 15px;
+}
+
+.fx .plate {
+  color: #ffd6d6;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fx .plate::after {
+  content: "";
+  display: block;
+  width: 120px;
+  height: 5px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #e33 0 62%, rgba(0, 0, 0, 0.5) 62%);
+}
+
+/* Midday battle: sky, sunlit ground, two spell bursts. Half light, half
+   dark, so one overlay sits over both. */
+.scene--busy {
+  background:
+    radial-gradient(circle at 34% 30%, rgba(255, 236, 150, 0.95) 0, rgba(255, 160, 50, 0.6) 9%, transparent 24%),
+    radial-gradient(circle at 18% 78%, rgba(120, 235, 255, 0.95) 0, rgba(40, 120, 255, 0.45) 11%, transparent 26%),
+    radial-gradient(circle at 88% 70%, rgba(240, 70, 210, 0.75) 0, transparent 20%),
+    radial-gradient(ellipse at 60% 115%, #2e4a1f 0, transparent 55%),
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.07) 0 2px, transparent 2px 13px),
+    linear-gradient(180deg, #6f97bd 0%, #b9cfa0 42%, #6e7f45 62%, #39421f 100%);
+}
+
+/* Snowfield at noon: the worst case for a translucent dark card. */
+.scene--bright {
+  background:
+    radial-gradient(circle at 30% 18%, #ffffff 0, rgba(255, 255, 255, 0.9) 12%, transparent 34%),
+    radial-gradient(ellipse at 75% 62%, rgba(150, 165, 180, 0.55) 0, transparent 30%),
+    radial-gradient(ellipse at 20% 88%, rgba(170, 185, 200, 0.5) 0, transparent 28%),
+    repeating-linear-gradient(170deg, rgba(255, 255, 255, 0.25) 0 3px, transparent 3px 19px),
+    linear-gradient(180deg, #a9d3fa 0%, #e5f2ff 34%, #fbfdff 52%, #eef2f6 72%, #d7dee6 100%);
+}
+
+/* Night dungeon: torches, a teal rune, purple mist. */
+.scene--dark {
+  background:
+    radial-gradient(circle at 26% 34%, rgba(255, 140, 40, 0.55) 0, transparent 14%),
+    radial-gradient(circle at 80% 25%, rgba(255, 120, 30, 0.45) 0, transparent 10%),
+    radial-gradient(ellipse at 45% 85%, rgba(60, 220, 200, 0.35) 0, transparent 30%),
+    radial-gradient(ellipse at 70% 60%, rgba(120, 60, 200, 0.35) 0, transparent 38%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 22px),
+    linear-gradient(180deg, #07080e 0%, #11131e 60%, #05060a 100%);
+}
+
+/* ---- Notes ---- */
+
+.notes {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 8px 32px 48px;
+  color: var(--page-muted);
+}
+
+.notes h2 {
+  margin: 22px 0 6px;
+  color: var(--page-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.notes ul {
+  max-width: 100ch;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.notes li + li {
+  margin-top: 3px;
+}
+
+.notes code {
+  color: var(--page-text);
+  font-size: 12.5px;
+}
+
+/* ---- Embedded (index comparison) ---- */
+
+body.is-embed {
+  background: transparent;
+}
+
+body.is-embed .page-head,
+body.is-embed .controls,
+body.is-embed .notes,
+body.is-embed .scene-group h2,
+body.is-embed .tile__cap {
+  display: none;
+}
+
+body.is-embed main.scenes {
+  padding: 0;
+}
+
+body.is-embed .scene-group + .scene-group {
+  margin-top: 0;
+}
+
+body.is-embed .tiles {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+body.is-embed .tile__stage {
+  min-height: 100vh;
+  border-radius: 0;
+}
+
+@media (max-width: 700px) {
+  .page-head,
+  .controls__inner,
+  main.scenes,
+  .notes {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .tiles {
+    grid-template-columns: 1fr;
+  }
+}

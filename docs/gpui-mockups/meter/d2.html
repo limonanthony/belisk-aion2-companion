@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Meter D2: Vanguard Soft, bar and rank variants</title>
+    <link rel="stylesheet" href="shared.css" />
+    <style>
+      /* Direction D: Vanguard Soft. C's class-coloured bar chart, rounded and
+         calmed: a warm near-black card with soft edges, pill bars, pill rank
+         markers, sentence-case labels and tinted chips instead of bands. */
+      .ov.d {
+        --d-bg: rgba(16, 14, 12, var(--bg-a));
+        --d-track: rgba(0, 0, 0, 0.34);
+        --d-soft: rgba(255, 240, 225, 0.08);
+        --d-text: rgba(255, 246, 236, 0.96);
+        --d-muted: rgba(255, 246, 236, 0.66);
+        --d-faint: rgba(255, 246, 236, 0.44);
+        --d-good: #86e3a8;
+        --d-warn: #f2c66d;
+        --d-bad: #f7a8a8;
+        --d-hp: #e8735f;
+        /* Bahnschrift ships with Windows 10 and 11. The Linux names only make
+           this preview look closer when it is opened outside Windows. */
+        --d-font: "Bahnschrift", "Arial Narrow", "DejaVu Sans Condensed", "Liberation Sans Narrow", sans-serif;
+
+        zoom: var(--scale);
+        width: 310px;
+        padding: 8px 8px 6px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 236, 214, 0.1);
+        border-radius: 14px;
+        background: var(--d-bg);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+        color: var(--d-text);
+        font: 13px/1 var(--d-font);
+        font-stretch: 87.5%;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .ov.d.has-dmg {
+        width: 340px;
+      }
+
+      .d .i {
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
+        stroke-width: 2;
+      }
+
+      .grow {
+        flex: 1;
+      }
+
+      /* ---- Header and footer: rows, not bands ---- */
+      .d-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 22px;
+        padding: 0 2px 0 4px;
+      }
+
+      .d-target {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        color: var(--d-muted);
+        font-size: 13px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+      }
+
+      .d-time {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .d-label {
+        color: var(--d-faint);
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .d-val {
+        color: var(--d-text);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .d-tools {
+        display: flex;
+        gap: 2px;
+      }
+
+      .d-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+        color: var(--d-muted);
+      }
+
+      .d-btn.is-hot {
+        background: rgba(255, 240, 225, 0.13);
+        color: var(--d-text);
+      }
+
+      .d-btn.is-close {
+        margin-left: 3px;
+      }
+
+      .d-tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        padding: 0 9px;
+        border-radius: 999px;
+        background: var(--d-soft);
+        color: var(--d-text);
+        font-size: 11.5px;
+        font-weight: 600;
+      }
+
+      .d-tbtn .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .d-foot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 20px;
+        margin-top: 2px;
+        padding: 0 4px;
+        color: var(--d-muted);
+        font-size: 11.5px;
+      }
+
+      /* ---- Gauge: ten rounded segments of boss health ---- */
+      .d-gauge {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        padding: 5px 4px 7px;
+      }
+
+      .d-seg {
+        position: relative;
+        flex: 1;
+        height: 5px;
+        overflow: hidden;
+        border-radius: 3px;
+        background: rgba(255, 240, 225, 0.12);
+      }
+
+      .d-seg i {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        border-radius: 3px;
+        background: var(--d-hp);
+      }
+
+      .d-gauge .d-hpv {
+        width: 32px;
+        margin-left: 3px;
+        color: var(--d-muted);
+        font-size: 12px;
+        font-weight: 600;
+        text-align: right;
+      }
+
+      /* ---- Rows: one pill bar each ---- */
+      .d-rows {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .d-row {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+      }
+
+      .d-rk {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        border-radius: 999px;
+        color: var(--d-faint);
+        font-size: 11.5px;
+        font-weight: 600;
+      }
+
+      .d-track {
+        position: relative;
+        display: flex;
+        flex: 1;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        height: 22px;
+        padding: 0 9px 0 4px;
+        overflow: hidden;
+        border-radius: 11px;
+        background: var(--d-track);
+      }
+
+      .d-fill {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        border-radius: 11px;
+        background: linear-gradient(90deg, rgba(var(--rgb), 0.5), rgba(var(--rgb), 0.28));
+      }
+
+      /* The leading edge: a short rounded cap in full class colour, set in
+         from the bar's top and bottom so it reads as a marker, not a wall. */
+      .d-edge {
+        position: absolute;
+        top: 5px;
+        bottom: 5px;
+        width: 3px;
+        border-radius: 2px;
+        background: rgb(var(--rgb));
+      }
+
+      .d-track > :not(.d-fill):not(.d-edge) {
+        position: relative;
+      }
+
+      .d-icon {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        border-radius: 8px;
+      }
+
+      .d-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        font-weight: 500;
+        text-overflow: ellipsis;
+      }
+
+      .d-name small {
+        margin-left: 5px;
+        color: var(--d-muted);
+        font-size: 11px;
+      }
+
+      .d-dmg {
+        color: var(--d-muted);
+        font-size: 11.5px;
+      }
+
+      .d-dps {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .d-pc {
+        width: 38px;
+        flex-shrink: 0;
+        color: var(--d-muted);
+        font-size: 12px;
+        text-align: right;
+      }
+
+      .d-row.is-you .d-rk {
+        background: rgba(255, 246, 236, 0.9);
+        color: #17120d;
+      }
+
+      .d-row.is-you .d-track {
+        outline: 1px solid rgba(255, 246, 236, 0.45);
+        outline-offset: -1px;
+      }
+
+      .d-row.is-you .d-name {
+        font-weight: 650;
+      }
+
+      .d-pace {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-weight: 600;
+      }
+
+      .d-pace.is-ahead {
+        color: var(--d-good);
+      }
+
+      .d-pace.is-behind {
+        color: var(--d-bad);
+      }
+
+      .d-sys {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+
+      .d-sys .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .d-sys.is-good {
+        color: var(--d-good);
+      }
+
+      /* ---- Capsule ---- */
+      .ov.d.is-capsule {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: auto;
+        height: 30px;
+        padding: 0 12px 0 4px;
+        border-radius: 999px;
+      }
+
+      .d-cap-rk {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        background: rgb(var(--rgb));
+        color: #17120d;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .d-cap-dps {
+        font-size: 17px;
+        font-weight: 600;
+      }
+
+      .d-vr {
+        width: 1px;
+        height: 12px;
+        background: rgba(255, 240, 225, 0.18);
+      }
+
+      /* ---- Idle ---- */
+      .d-idle {
+        padding: 2px 4px 8px;
+      }
+
+      .d-idle strong {
+        display: block;
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .d-idle span {
+        display: block;
+        margin-top: 5px;
+        color: var(--d-muted);
+        font-size: 11.5px;
+      }
+
+      /* ---- Summary ---- */
+      .d-out {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 22px;
+        padding: 0 9px 0 7px;
+        border-radius: 999px;
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .d-out.is-final {
+        background: rgba(134, 227, 168, 0.14);
+        color: var(--d-good);
+      }
+
+      .d-out.is-quiet {
+        background: rgba(242, 198, 109, 0.13);
+        color: var(--d-warn);
+      }
+
+      .d-out small {
+        color: var(--d-muted);
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .d-sum {
+        padding: 4px 4px 2px;
+      }
+
+      .d-sum-name {
+        overflow: hidden;
+        font-size: 14.5px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+      }
+
+      .d-sum-where {
+        margin-top: 3px;
+        color: var(--d-muted);
+        font-size: 11.5px;
+      }
+
+      .d-sum-hero {
+        display: flex;
+        align-items: flex-end;
+        gap: 12px;
+        margin-top: 9px;
+      }
+
+      .d-big {
+        font-size: 36px;
+        font-weight: 600;
+        line-height: 0.9;
+      }
+
+      .d-big small {
+        margin-left: 4px;
+        color: var(--d-faint);
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .d-kv {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin-left: auto;
+      }
+
+      .d-kv .d-label {
+        color: var(--d-muted);
+      }
+
+      .d-kv p {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        width: 104px;
+        margin: 0;
+      }
+
+      .d-pb {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        margin-top: 9px;
+        padding: 0 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .d-pb.is-new {
+        background: rgba(250, 204, 21, 0.17);
+        color: #fde68a;
+      }
+
+      .d-pb.is-behind {
+        background: rgba(247, 168, 168, 0.13);
+        color: var(--d-bad);
+      }
+
+      .d-sum .d-rows {
+        padding-top: 8px;
+      }
+
+      .d-sum .d-row,
+      .d-sum .d-track {
+        height: 18px;
+      }
+
+      .d-sum .d-track {
+        padding-left: 9px;
+        border-radius: 9px;
+        font-size: 12px;
+      }
+
+      .d-sum .d-fill {
+        border-radius: 9px;
+      }
+
+      .d-sum .d-edge {
+        top: 4px;
+        bottom: 4px;
+      }
+
+      /* ---- D2 variants: body.bar-a|b|c|d and body.rank-a|b|c ----
+         Set from the control bar or ?bar=&rank= in the URL. */
+
+      /* The edge line exists only in bar-c: full height, straight, at the
+         end of the fill. */
+      .d-track .d-edge {
+        display: none;
+        top: 0;
+        bottom: 0;
+        left: calc(var(--w) - 2px);
+        width: 2px;
+        border-radius: 0;
+      }
+
+      /* Bar end (a): no marker. The fill brightens toward its leading edge,
+         so the edge reads bright and follows the pill's own curve. */
+      body.bar-a .d-fill {
+        background: linear-gradient(90deg, rgba(var(--rgb), 0.16), rgba(var(--rgb), 0.66));
+      }
+
+      /* Bar end (b): no marker. A flat muted fill with its own 1px outline
+         in full class colour (GPUI: border_1 on the fill). */
+      body.bar-b .d-fill {
+        border: 1px solid rgb(var(--rgb));
+        background: rgba(var(--rgb), 0.3);
+      }
+
+      /* Bar end (c): soft rectangles with C's straight edge line. */
+      body.bar-c .d-track,
+      body.bar-c .d-fill {
+        border-radius: 5px;
+      }
+
+      body.bar-c .d-edge {
+        display: block;
+      }
+
+      /* Bar end (d): c's soft rectangles with a's brightening fill, and no
+         edge line. The end stops at 0.5, not a's 0.66: the top player's
+         figure sits on it, and white on lime or amber at 0.66 falls to about
+         2.5:1 over a bright scene at default opacity (about 3.3:1 at 0.5). */
+      body.bar-d .d-track,
+      body.bar-d .d-fill {
+        border-radius: 5px;
+      }
+
+      body.bar-d .d-fill {
+        background: linear-gradient(90deg, rgba(var(--rgb), 0.14), rgba(var(--rgb), 0.5));
+      }
+
+      /* Rank (a): plain numerals; you in bold cream, plus the rim. */
+      body.rank-a .d-rk {
+        width: 14px;
+        justify-content: flex-end;
+        margin-right: 4px;
+        background: none;
+      }
+
+      body.rank-a .d-row.is-you .d-rk {
+        background: none;
+        color: var(--d-text);
+        font-weight: 700;
+      }
+
+      /* Rank (b): small soft rounded-square badges. The 3px margin plus the
+         row's 5px gap matches the card's 8px inset on the badge's left. */
+      body.rank-b .d-rk {
+        margin-right: 3px;
+        border-radius: 4px;
+        background: rgba(255, 240, 225, 0.09);
+        color: var(--d-muted);
+      }
+
+      /* Rank (c): no rank in the rows; the rim marks you. */
+      body.rank-c .d-rk {
+        display: none;
+      }
+
+      /* Capsule rank follows the same choice: a bold numeral for a and c,
+         a class-colour rounded square for b. */
+      body.rank-a .ov.d.is-capsule,
+      body.rank-c .ov.d.is-capsule {
+        padding-left: 12px;
+      }
+
+      body.rank-a .d-cap-rk,
+      body.rank-c .d-cap-rk {
+        width: auto;
+        height: auto;
+        background: none;
+        color: var(--d-text);
+        font-size: 15px;
+      }
+
+      body.rank-b .d-cap-rk {
+        border-radius: 5px;
+      }
+
+      body.rank-b .d-cap-rk .hash {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Directions">
+        <a href="index.html">Overview</a>
+        <a href="a.html">A: Ledger</a>
+        <a href="b.html">B: Focus</a>
+        <a href="c.html">C: Vanguard</a>
+        <a href="d.html">D: Vanguard Soft</a>
+        <a href="d2.html" aria-current="page">D2: bar and rank variants</a>
+      </nav>
+      <h1>D2: Vanguard Soft <small>bar-end and rank variants, switch them in the control bar</small></h1>
+      <ul class="rationale">
+        <li>D, with the two parts that looked wrong replaced by switchable alternatives. Bar end, default d: soft rectangles whose fill brightens toward the leading edge, with no marker. Also available: a, the same fill on pill bars; b, an outlined flat fill; c, soft rectangles with C's straight edge line.</li>
+        <li>Rank, default b: small rounded-square badges. Also available: a, plain numerals; c, no rank column. Every option keeps a subtle cream rim around your bar. The capsule and the summary's skill bars follow the same choices.</li>
+        <li>Everything else is D unchanged: warm near-black card, compact figures, coral ten-segment gauge, sentence-case labels.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Intended motion</h2>
+      <ul>
+        <li>Bars grow and shrink over 240 ms (ease-out); the bright end (a), outline (b) or edge line (c) moves with the fill. Figures swap, no counting.</li>
+        <li>Rank change: rows slide over 240 ms. The boss gauge drains its last segment continuously; an emptied segment fades to the track over 200 ms.</li>
+        <li>The outcome chip and PB chip fade in over 150 ms; nothing flashes or pulses.</li>
+        <li>Capsule: pointer over grows the pill into the card over 180 ms; the rank keeps its place.</li>
+      </ul>
+      <h2>GPUI notes</h2>
+      <ul>
+        <li>Pills are <code>rounded_full</code> or a radius of half the height. Bar end a is a two-stop <code>linear_gradient</code> on the fill; b is a flat fill with <code>border_1</code>; c is a flat-ish two-stop fill plus a 2 px quad. The track clips the fill with <code>overflow_hidden</code>. The "you" rim is a 1 px border on the track.</li>
+        <li>Font: <code>Bahnschrift</code> at its SemiCondensed width, as in C, with the same caveat: selecting the variable font's named width instance through GPUI is unverified.</li>
+        <li>No uppercase transforms, no letter spacing, no text shadow, no blur. Class icons are the existing PNGs with a rounded clip; other icons are single-colour Lucide SVGs.</li>
+      </ul>
+    </section>
+
+    <script src="shared.js"></script>
+    <script>
+      (function () {
+        const icon = Mock.icon;
+
+        function frame(ctx, inner) {
+          return `<div class="ov d${ctx.opts.damage ? " has-dmg" : ""}">${inner}</div>`;
+        }
+
+        function tools() {
+          const b = (name, label, extra = "") =>
+            `<span class="d-btn${extra}" role="button" title="${label}" aria-label="${label}">${icon(name)}</span>`;
+          return `<span class="d-tools">${b("reset", "Reset")}${b("history", "History")}${b("settings", "Settings")}${b("capsule", "Capsule mode")}${b("lockOpen", "Lock (click-through)", " is-hot")}${b("pvp", "PvP meter")}${b("close", "Close", " is-close")}</span>`;
+        }
+
+        function gauge(hp, dim) {
+          let segs = "";
+          for (let i = 0; i < 10; i++) {
+            const fill = Math.max(0, Math.min(1, hp * 10 - i));
+            segs += `<span class="d-seg"><i style="width:${(fill * 100).toFixed(0)}%"></i></span>`;
+          }
+          return `<div class="d-gauge">${segs}<span class="d-hpv"${dim ? ' style="color:var(--d-faint)"' : ""}>${dim ? "--" : (hp * 100).toFixed(0) + "%"}</span></div>`;
+        }
+
+        function head(ctx, hover) {
+          return `<div class="d-head"><span class="d-target">${ctx.boss.label}</span>${hover ? tools() : `<span class="d-time">${ctx.fmt.time(ctx.fightSecs)}</span>`}</div>`;
+        }
+
+        function pace(p, suffix = " vs PB") {
+          const up = p >= 0;
+          return `<span class="d-pace ${up ? "is-ahead" : "is-behind"}">${icon(up ? "up" : "down")}${up ? "+" : "−"}${Math.abs(p * 100).toFixed(1)}%${suffix}</span>`;
+        }
+
+        function bar(scale, rgb, inner) {
+          const w = (scale * 100).toFixed(1);
+          return `<span class="d-track" style="--rgb:${rgb};--w:${w}%"><span class="d-fill" style="width:${w}%"></span><span class="d-edge"></span>${inner}</span>`;
+        }
+
+        function rows(ctx) {
+          const { opts, fmt } = ctx;
+          const meta = (p) => {
+            const bits = [];
+            if (opts.server) bits.push(p.server);
+            if (opts.cp) bits.push(fmt.int(p.cp));
+            return bits.length ? `<small>${bits.join(" · ")}</small>` : "";
+          };
+          return `<div class="d-rows">${ctx.players
+            .map(
+              (p) => `<div class="d-row${p.you ? " is-you" : ""}">
+  <span class="d-rk">${p.rank}</span>
+  ${bar(
+    p.scale,
+    p.rgb,
+    `<img class="d-icon" src="${p.icon}" alt="${p.cls}"><span class="d-name">${p.label}${meta(p)}</span>${
+      opts.damage ? `<span class="d-dmg">${fmt.compact(p.dmg)}</span>` : ""
+    }<span class="d-dps">${fmt.compact(p.dps)}</span>`
+  )}
+  <span class="d-pc">${fmt.pct(p.pct)}</span>
+</div>`
+            )
+            .join("")}</div>`;
+        }
+
+        function sys(ctx) {
+          return `<span class="d-sys is-good">${icon("signal")}${ctx.sys.pingMs} ms</span><span class="d-sys">CPU ${ctx.sys.cpu}%</span><span class="d-sys">${ctx.sys.memGb} GB</span>`;
+        }
+
+        function summary(ctx, final) {
+          const { fmt, you } = ctx;
+          const secs = final ? ctx.summarySecs : ctx.quietSecs;
+          const top = ctx.skills[0].share;
+          const pb = final
+            ? `<div class="d-pb is-new">${icon("award")}<span class="grow">New personal best</span>+${(ctx.pb.newPace * 100).toFixed(1)}%</div>`
+            : `<div class="d-pb is-behind">${icon("down")}<span class="grow">Best ${fmt.compact(ctx.pb.dps)}</span>−${Math.abs(ctx.pb.quietPace * 100).toFixed(1)}%</div>`;
+          return frame(
+            ctx,
+            `<div class="d-head" style="padding-left:0">
+  <span class="d-out ${final ? "is-final" : "is-quiet"}">${icon(final ? "check" : "hourglass")}${final ? "Defeated" : "Fight ended"}${final ? "" : " <small>may resume</small>"}</span>
+  <span class="grow"></span>
+  <span class="d-time">${fmt.time(secs)}</span>
+  <span class="d-btn is-close" role="button" title="Back to the meter" aria-label="Back to the meter">${icon("close")}</span>
+</div>
+${final ? "" : gauge(ctx.quietHp)}
+<div class="d-sum"${final ? ' style="padding-top:7px"' : ""}>
+  <div class="d-sum-name">${ctx.boss.label}</div>
+  <div class="d-sum-where">${ctx.boss.where}</div>
+  <div class="d-sum-hero">
+    <span class="d-big">${fmt.compact(you.dps)}<small>DPS</small></span>
+    <span class="d-kv">
+      <p><span class="d-label">Rank</span><span class="d-val">${you.rank}/${ctx.count}</span></p>
+      <p><span class="d-label">Share</span><span class="d-val">${fmt.pct(you.pct)}</span></p>
+      <p><span class="d-label">Crit</span><span class="d-val">${(ctx.crit * 100).toFixed(0)}%</span></p>
+    </span>
+  </div>
+  ${pb}
+  <div class="d-rows">${ctx.skills
+    .map((s) => `<div class="d-row">${bar(s.share / top, you.rgb, `<span class="d-name">${s.name}</span><span class="d-val">${(s.share * 100).toFixed(0)}%</span>`)}</div>`)
+    .join("")}</div>
+</div>
+<div class="d-foot"><span class="d-label">Party</span><span class="d-val">${fmt.compact(ctx.partyDps)}</span><span class="d-label">Damage</span><span class="d-val">${fmt.compact(you.dps * secs)}</span><span class="grow"></span><span class="d-tbtn" role="button">${icon("copy")}Copy</span></div>`
+          );
+        }
+
+        function render(state, ctx) {
+          const { fmt, you } = ctx;
+          switch (state) {
+            case "idle":
+              return frame(
+                ctx,
+                `<div class="d-head"><span class="d-target">Aether</span><span class="d-label">Standing by</span></div>
+${gauge(0, true)}
+<div class="d-idle"><strong>Waiting for the first hit</strong><span>Alt+E hides the meter · Alt+Q resets it</span></div>
+<div class="d-foot"><span class="grow"></span>${sys(ctx)}</div>`
+              );
+            case "hover":
+              return frame(
+                ctx,
+                `${head(ctx, true)}${gauge(ctx.boss.hp)}${rows(ctx)}
+<div class="d-foot" style="margin-top:5px"><span class="d-tbtn" role="button">${icon("copy")}Copy</span><span class="grow"></span>${sys(ctx)}</div>`
+              );
+            case "locked":
+              return frame(
+                ctx,
+                `${head(ctx, false)}${gauge(ctx.boss.hp)}${rows(ctx)}
+<div class="d-foot" style="margin-top:5px"><span class="d-label">Party</span><span class="d-val">${fmt.compact(ctx.partyDps)}</span><span class="grow"></span>${pace(ctx.pb.behindPace)}</div>`
+              );
+            case "capsule":
+              return `<div class="ov d is-capsule" style="--rgb:${you.rgb}">
+  <span class="d-cap-rk"><span class="hash">#</span>${you.rank}</span>
+  <span class="d-cap-dps">${fmt.compact(you.dps)}</span><span class="d-label">DPS</span>
+  <span class="d-vr"></span>
+  <span style="font-weight:600;color:var(--d-muted)">${fmt.time(ctx.fightSecs)}</span>
+  ${pace(ctx.pb.aheadPace, "")}
+</div>`;
+            case "final":
+              return summary(ctx, true);
+            case "provisional":
+              return summary(ctx, false);
+          }
+          return "";
+        }
+
+        // D2: bar-end and rank variants, from the URL or the control bar.
+        const params = new URLSearchParams(location.search);
+        const variant = {
+          bar: ["a", "b", "c", "d"].includes(params.get("bar")) ? params.get("bar") : "d",
+          rank: ["a", "b", "c"].includes(params.get("rank")) ? params.get("rank") : "b",
+        };
+        const applyVariant = () => {
+          document.body.classList.remove("bar-a", "bar-b", "bar-c", "bar-d", "rank-a", "rank-b", "rank-c");
+          document.body.classList.add("bar-" + variant.bar, "rank-" + variant.rank);
+        };
+        applyVariant();
+
+        Mock.mount({ render });
+
+        const controlBar = document.querySelector(".controls__inner");
+        if (controlBar) {
+          controlBar.insertAdjacentHTML(
+            "beforeend",
+            `<span class="controls__sep" aria-hidden="true"></span>
+<label>Bar end <select id="c-bar">
+  <option value="a">a: brightens to the edge</option>
+  <option value="b">b: outlined fill</option>
+  <option value="c">c: soft rectangle + edge line</option>
+  <option value="d">d: soft rectangle, brightens to the edge</option>
+</select></label>
+<label>Rank <select id="c-rank">
+  <option value="a">a: plain numerals</option>
+  <option value="b">b: rounded square</option>
+  <option value="c">c: no rank column</option>
+</select></label>`
+          );
+          for (const key of ["bar", "rank"]) {
+            const el = document.getElementById("c-" + key);
+            el.value = variant[key];
+            el.addEventListener("input", () => {
+              variant[key] = el.value;
+              applyVariant();
+              params.set(key, el.value);
+              history.replaceState(null, "", "?" + params.toString());
+            });
+          }
+        }
+      })();
+    </script>
+  </body>
+</html>

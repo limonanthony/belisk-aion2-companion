@@ -1,0 +1,555 @@
+/* Round 2: the approved overlay language (approved/tokens.md) as shared
+ * classes for the PvP, detail and history windows. Every effect is a GPUI
+ * primitive: alpha fills, two-stop linear gradients, 1px borders, rounded
+ * corners, drop shadows. */
+
+.ov.o {
+  --o-bg: rgba(16, 14, 12, var(--bg-a));
+  --o-track: rgba(0, 0, 0, 0.34);
+  --o-soft: rgba(255, 240, 225, 0.08);
+  --o-hot: rgba(255, 240, 225, 0.13);
+  --o-line: rgba(255, 240, 225, 0.08);
+  --o-text: rgba(255, 246, 236, 0.96);
+  --o-muted: rgba(255, 246, 236, 0.66);
+  --o-faint: rgba(255, 246, 236, 0.44);
+  --o-cream: rgba(255, 246, 236, 0.9);
+  --o-good: #86e3a8;
+  --o-warn: #f2c66d;
+  --o-bad: #f7a8a8;
+  --o-hp: #e8735f;
+  --o-font: "Bahnschrift", "Arial Narrow", "DejaVu Sans Condensed", "Liberation Sans Narrow", sans-serif;
+
+  zoom: var(--scale);
+  position: relative;
+  padding: 6px 8px 8px;
+  border: 1px solid rgba(255, 236, 214, 0.1);
+  border-radius: 14px;
+  background: var(--o-bg);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+  color: var(--o-text);
+  font: 13px/1 var(--o-font);
+  font-stretch: 87.5%;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.o .i {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  stroke-width: 2;
+}
+
+.o .grow {
+  flex: 1;
+}
+
+.o .muted {
+  color: var(--o-muted);
+}
+
+.o .faint {
+  color: var(--o-faint);
+}
+
+/* ---- Window header ---- */
+.o-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 0 0 4px;
+}
+
+.o-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.o-title .i {
+  color: var(--o-muted);
+}
+
+.o-count {
+  color: var(--o-faint);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.o-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  color: var(--o-muted);
+}
+
+.o-btn.is-hot {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+/* ---- Text buttons and chips ---- */
+.o-tbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--o-soft);
+  color: var(--o-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.o-tbtn .i {
+  width: 12px;
+  height: 12px;
+}
+
+.o-tbtn.is-quiet {
+  background: none;
+  color: var(--o-muted);
+}
+
+.o-tbtn.is-danger {
+  background: rgba(247, 168, 168, 0.14);
+  color: var(--o-bad);
+}
+
+.o-tbtn.is-disabled {
+  opacity: 0.4;
+}
+
+.o-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--o-soft);
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.o-chip.is-good {
+  background: rgba(134, 227, 168, 0.14);
+  color: var(--o-good);
+}
+
+.o-chip.is-warn {
+  background: rgba(242, 198, 109, 0.13);
+  color: var(--o-warn);
+}
+
+.o-chip.is-bad {
+  background: rgba(247, 168, 168, 0.13);
+  color: var(--o-bad);
+}
+
+.o-chip .i {
+  width: 12px;
+  height: 12px;
+}
+
+/* ---- Sections ---- */
+.o-sec {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  margin-top: 6px;
+  padding: 0 4px;
+  color: var(--o-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.o-sec:first-child {
+  margin-top: 0;
+}
+
+.o-sec .o-count {
+  font-size: 11px;
+}
+
+/* ---- Tabs (segmented control) ---- */
+.o-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 2px 0 6px;
+  padding: 2px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.o-tab {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--o-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.o-tab.is-on {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+.o-tab small {
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ---- Table header ---- */
+.o-th {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 9px 0 4px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.o-th .is-sort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+.o-th .is-sort .i {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2.5;
+}
+
+.o-th .can-sort {
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 246, 236, 0.25);
+  text-underline-offset: 3px;
+}
+
+/* ---- Rows: badge + soft bar, as in the meter ---- */
+.o-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.o-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+}
+
+.o-rk {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-right: 3px;
+  border-radius: 4px;
+  background: rgba(255, 240, 225, 0.09);
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.o-track {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 9px 0 4px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--o-track);
+}
+
+.o-track.is-plain {
+  padding-left: 8px;
+}
+
+.o-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 5px;
+  background: linear-gradient(90deg, rgba(var(--rgb), 0.14), rgba(var(--rgb), 0.5));
+}
+
+/* No class known (kill stats): the same shape in cream, quieter. */
+.o-fill.is-neutral {
+  background: linear-gradient(90deg, rgba(255, 240, 225, 0.04), rgba(255, 240, 225, 0.16));
+}
+
+/* Boss and player health: the gauge colour. */
+.o-fill.is-hp {
+  background: linear-gradient(90deg, rgba(232, 115, 95, 0.16), rgba(232, 115, 95, 0.55));
+}
+
+.o-track > :not(.o-fill) {
+  position: relative;
+}
+
+.o-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.o-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.o-name small {
+  margin-left: 5px;
+  color: var(--o-muted);
+  font-size: 11px;
+}
+
+.o-num {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.o-strong {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.o-pc {
+  width: 38px;
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.o-row.is-you .o-rk {
+  background: var(--o-cream);
+  color: #17120d;
+}
+
+.o-row.is-you .o-track {
+  outline: 1px solid rgba(255, 246, 236, 0.45);
+  outline-offset: -1px;
+}
+
+.o-row.is-you .o-name {
+  font-weight: 650;
+}
+
+.o-row.is-dim {
+  opacity: 0.55;
+}
+
+/* ---- Inputs, selects, menus ---- */
+.o-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 4px 0 9px;
+  border: 1px solid rgba(255, 240, 225, 0.12);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.34);
+  color: var(--o-text);
+  font-size: 12.5px;
+}
+
+.o-input.is-focus {
+  border-color: rgba(255, 246, 236, 0.55);
+}
+
+.o-input .ph {
+  flex: 1;
+  color: var(--o-faint);
+}
+
+.o-input .val {
+  flex: 1;
+  font-weight: 500;
+}
+
+.o-caret {
+  width: 1px;
+  height: 14px;
+  margin-left: -5px;
+  background: var(--o-text);
+}
+
+.o-select {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.o-select > span {
+  padding-left: 2px;
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.o-select .o-input {
+  padding-right: 6px;
+}
+
+.o-select .o-input .val {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.o-menu {
+  position: absolute;
+  z-index: 5;
+  min-width: 160px;
+  padding: 4px;
+  border: 1px solid rgba(255, 236, 214, 0.14);
+  border-radius: 9px;
+  background: rgba(30, 26, 22, 0.98);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+}
+
+.o-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--o-text);
+  font-size: 12.5px;
+}
+
+.o-menu-item .i {
+  color: var(--o-muted);
+}
+
+.o-menu-item.is-hot {
+  background: var(--o-hot);
+}
+
+.o-menu-item small {
+  margin-left: auto;
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.o-menu-item b {
+  font-weight: 700;
+}
+
+/* ---- Empty states and feedback ---- */
+.o-empty {
+  padding: 14px 6px 12px;
+  color: var(--o-muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.o-empty strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--o-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.o-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--o-soft);
+  color: var(--o-muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.o-note .i {
+  width: 13px;
+  height: 13px;
+  margin-top: 1px;
+}
+
+.o-note.is-good {
+  background: rgba(134, 227, 168, 0.12);
+  color: var(--o-good);
+}
+
+.o-note.is-bad {
+  background: rgba(247, 168, 168, 0.12);
+  color: var(--o-bad);
+}
+
+/* ---- Scrolling lists: GPUI draws its own thin thumb ---- */
+.o-scroll {
+  position: relative;
+  overflow: hidden;
+}
+
+.o-scroll.has-thumb {
+  padding-right: 8px;
+}
+
+.o-thumb {
+  position: absolute;
+  top: var(--t, 0px);
+  right: 1px;
+  width: 3px;
+  height: var(--h, 40px);
+  border-radius: 2px;
+  background: rgba(255, 240, 225, 0.28);
+}
+
+.o-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  margin-top: 6px;
+  padding: 0 2px 0 4px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+}

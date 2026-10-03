@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Approved: Home</title>
+    <link rel="stylesheet" href="shared.css" />
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      .home {
+        display: flex;
+        align-items: flex-start;
+        gap: 22px;
+        margin-top: 18px;
+      }
+
+      .launch {
+        width: 380px;
+        flex-shrink: 0;
+        padding: 18px;
+        border: 1px solid var(--a-line);
+        border-radius: 12px;
+        background: var(--a-surface);
+      }
+
+      .launch-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .launch-top .elapsed {
+        margin-left: auto;
+        font-family: var(--a-display);
+        font-size: 22px;
+        font-weight: 600;
+      }
+
+      .launch .detail {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 40px;
+        margin: 10px 0 14px;
+        color: var(--a-muted);
+        line-height: 1.4;
+      }
+
+      .launch .detail img {
+        width: 26px;
+        height: 26px;
+        border-radius: 13px;
+      }
+
+      .launch .detail b {
+        display: block;
+        color: var(--a-text);
+        font-family: var(--a-display);
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .launch .detail .who {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-weight: 400;
+      }
+
+      .launch .opt {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        margin-top: 14px;
+      }
+
+      .launch .opt .row-text {
+        font-size: 13px;
+      }
+
+      .launch .alert {
+        margin: 12px 0 0;
+      }
+
+      .side-col {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .side-col .grp-title {
+        margin-top: 0;
+      }
+
+      .keyrow {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 42px;
+        padding: 6px 14px;
+      }
+
+      .keyrow + .keyrow {
+        border-top: 1px solid var(--a-line);
+      }
+
+      .keyrow span:first-child {
+        flex: 1;
+      }
+
+      .links {
+        display: flex;
+        gap: 16px;
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Approved screens">
+        <a href="index.html">Approved screens</a>
+        <a href="gate.html">Startup gate</a>
+        <a href="home.html" aria-current="page">Home</a>
+        <a href="settings.html">Settings</a>
+        <a href="meter.html">Meter overlay</a>
+        <a href="pvp.html">PvP overlay</a>
+        <a href="detail.html">Player detail</a>
+        <a href="history.html">Fight history</a>
+      </nav>
+      <h1>Home <small>approved, round 3</small></h1>
+      <ul class="rationale">
+        <li>Home does one job: start the meter and say what it is doing. One card: the status, the character and server once found (one line), elapsed time, the one bright button, and "Close this window once it starts". The shortcuts you need in game sit beside it.</li>
+        <li>The sidebar holds Meter, then the settings sections, then the meter's status line. Segoe UI Variable for text; Bahnschrift for titles, figures and buttons.</li>
+        <li>The Language control switches the shell and Home to French (French runs 20–30% longer).</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour carried over</h2>
+      <ul>
+        <li>Start opens the meter overlay. With "Close this window once it starts" on (the default), the main window closes and the meter keeps running from the tray; the old system notification is dropped.</li>
+        <li>A failed start says which capture backend failed and why, inline in the card, with the capture check one click away. It stays until the next attempt.</li>
+        <li>Elapsed time counts from Start and survives the window being closed and reopened.</li>
+      </ul>
+      <h2>GPUI Kit notes</h2>
+      <ul>
+        <li>Kit pieces: <code>TitleBar</code>, <code>Sidebar</code>, <code>Button</code>, <code>Switch</code>, <code>Badge</code>/<code>Tag</code>, <code>Kbd</code>, an <code>Alert</code>-style inline message (a styled div if the Kit version has no Alert).</li>
+        <li>No background artwork or video: the canvas is the warm near-black of the overlays, opaque.</li>
+      </ul>
+    </section>
+
+    <script src="app.js"></script>
+    <script>
+      (function () {
+        const { icon, C } = App;
+
+        function card(ctx, s) {
+          const t = ctx.t;
+          const tone = s === "live" ? "good" : s === "wait" ? "warn" : "";
+          const badge = {
+            idle: C.badge(t.ready),
+            starting: C.badge(t.starting, "", "loader"),
+            wait: C.badge(t.waiting, "warn"),
+            live: C.badge(t.running, "good"),
+            fail: C.badge(t.stopped),
+          }[s];
+          let detail = `<span>${t.readyDetail}</span>`;
+          if (s === "wait") detail = `<span>${t.waitingDetail}</span>`;
+          if (s === "live") {
+            detail = `<span class="who"><img src="../../../public/aion2/class/ranger.png" alt="ranger"><span><b>Mirelle</b>Global · 2011, 2014</span></span>`;
+          }
+          const running = s === "wait" || s === "live";
+          const button = s === "starting"
+            ? `<span class="btn is-primary is-lg is-block is-disabled" role="button">${icon("loader")}${t.starting}</span>`
+            : running
+              ? `<span class="btn is-danger is-lg is-block" role="button">${icon("stop")}${t.stop}</span>`
+              : `<span class="btn is-primary is-lg is-block" role="button">${icon("play")}${t.start}</span>`;
+          const fail = s === "fail" ? `<div class="alert is-bad">${icon("alert")}<div><b>${t.failTitle}</b>${t.failBody}</div></div>` : "";
+          return `<div class="launch">
+  <div class="launch-top">${badge}${s === "live" ? '<span class="elapsed">12:41</span>' : s === "wait" ? '<span class="elapsed">0:42</span>' : ""}</div>
+  <div class="detail">${detail}</div>
+  ${button}
+  ${fail}
+  <div class="opt"><div class="row-text"><div class="row-label">${t.closeAfter}</div><div class="row-desc">${t.closeAfterDesc}</div></div>${C.sw(true)}</div>
+</div>`;
+        }
+
+        function shortcuts(ctx) {
+          const t = ctx.t;
+          const r = (label, combo) => `<div class="keyrow"><span>${label}</span><span class="keys">${C.kbd(combo)}</span></div>`;
+          return `<div class="grp-title" style="margin-top:0">${t.whilePlaying}<span class="grow"></span><span class="link">${t.change}</span></div><div class="grp">${r(t.kShow, "Alt+E")}${r(t.kReset, "Alt+Q")}${r(t.kLock, "Alt+CapsLock")}</div>
+<div class="links"><span class="link">${icon("shield")}${t.recheck}</span></div>`;
+        }
+
+        function render(s, ctx) {
+          const t = ctx.t;
+          const meter = {
+            idle: { tone: "idle", label: t.ready },
+            starting: { tone: "idle", label: t.starting },
+            wait: { tone: "wait", label: t.waiting },
+            live: { tone: "live", label: `${t.running} · 12:41` },
+            fail: { tone: "idle", label: t.stopped },
+          }[s];
+          const content = `<div class="h1">${t.meter}</div>
+<div class="home">${card(ctx, s)}<div class="side-col">${shortcuts(ctx)}</div></div>`;
+          return ctx.shell(ctx, "home", content, { meter });
+        }
+
+        App.mount({
+          lang: true,
+          states: [
+            { id: "idle", title: "Ready", sub: "meter stopped" },
+            { id: "starting", title: "Starting", sub: "opening the overlay and the capture" },
+            { id: "wait", title: "Waiting for the game", sub: "running, no game traffic yet" },
+            { id: "live", title: "Running", sub: "game found: character and server detected" },
+            { id: "fail", title: "Start failed", sub: "no capture backend would start" },
+          ],
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

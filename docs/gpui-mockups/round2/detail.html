@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Round 2: player detail</title>
+    <link rel="stylesheet" href="shared.css" />
+    <link rel="stylesheet" href="overlay.css" />
+    <style>
+      .ov.o.det {
+        width: 520px;
+      }
+
+      body.tbl-b .ov.o.det {
+        width: 1000px;
+      }
+
+      body.tbl-b .tiles {
+        --tile-min: 1060px;
+      }
+
+      body.tbl-b .sk .o-name,
+      body.tbl-b .det .o-th .grow {
+        min-width: 120px;
+      }
+
+      .det-who {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+      }
+
+      .det-who img.cls {
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+      }
+
+      .det-who b {
+        overflow: hidden;
+        font-size: 14.5px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+      }
+
+      .det-who .srv {
+        color: var(--o-muted);
+        font-size: 12px;
+      }
+
+      .det-cp {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--o-muted);
+        font-size: 12px;
+      }
+
+      .det-cp img {
+        width: 14px;
+        height: 14px;
+      }
+
+      .det-sub {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 18px;
+        padding: 0 4px;
+        color: var(--o-muted);
+        font-size: 11.5px;
+      }
+
+      .det-sub .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      /* Key figures and hit types: label over value, on one dark plate. */
+      .det-figs {
+        display: flex;
+        gap: 4px;
+        margin-top: 6px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        background: var(--o-track);
+      }
+
+      .det-figs > div {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .det-figs span {
+        color: var(--o-faint);
+        font-size: 11px;
+      }
+
+      .det-figs b {
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .det-figs.is-small {
+        margin-top: 4px;
+        padding: 6px 10px;
+      }
+
+      .det-figs.is-small b {
+        font-size: 13px;
+      }
+
+      /* Skill rows: the meter's soft bar, in the player's class colour,
+         scaled by the skill's damage. */
+      .sk-head {
+        margin-top: 8px;
+      }
+
+      .sk .o-track {
+        height: 24px;
+      }
+
+      .sk .o-row {
+        height: 24px;
+      }
+
+      .sk-icon {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        border-radius: 4px;
+      }
+
+      .c-n {
+        width: 40px;
+      }
+
+      .c-p {
+        width: 46px;
+      }
+
+      .c-w {
+        width: 58px;
+      }
+
+      .c-t {
+        width: 92px;
+      }
+
+      .c-t small {
+        margin-left: 4px;
+        color: var(--o-muted);
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .c-chev {
+        width: 14px;
+        color: var(--o-faint);
+      }
+
+      .c-chev .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .det .o-th > span:not(.grow) {
+        flex-shrink: 0;
+        text-align: right;
+      }
+
+      /* Rows sit in a scroll area with 8px for the thumb; the header keeps
+         the same right edge. */
+      .det .o-th {
+        padding-left: 30px;
+        padding-right: 17px;
+      }
+
+      .sk-more {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 0;
+        margin: 3px 0 2px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: rgba(255, 240, 225, 0.05);
+      }
+
+      .sk-more > div {
+        display: flex;
+        width: 25%;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .sk-more span {
+        color: var(--o-faint);
+        font-size: 11px;
+      }
+
+      .sk-more b {
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .spec {
+        display: inline-flex;
+        gap: 3px;
+        padding-top: 2px;
+      }
+
+      .spec i {
+        width: 7px;
+        height: 7px;
+        border-radius: 2px;
+        background: rgba(255, 240, 225, 0.16);
+      }
+
+      .spec i.on {
+        background: var(--o-cream);
+      }
+
+      /* Buff panels */
+      .bp {
+        margin-top: 6px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.2);
+      }
+
+      .bp-head {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        height: 28px;
+        padding: 0 10px 0 8px;
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .bp-head .i {
+        color: var(--o-muted);
+      }
+
+      .bp-body {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+        padding: 2px 10px 10px 8px;
+      }
+
+      .bf {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .bf > img {
+        width: 24px;
+        height: 24px;
+        border-radius: 5px;
+      }
+
+      .bf-main {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .bf-line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .bf-line .nm {
+        overflow: hidden;
+        font-weight: 500;
+        text-overflow: ellipsis;
+      }
+
+      .bf-line .by {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--o-muted);
+        font-size: 11px;
+      }
+
+      .bf-line .by img {
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+      }
+
+      .bf-bar {
+        position: relative;
+        height: 4px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: var(--o-track);
+      }
+
+      .bf-bar .o-fill {
+        border-radius: 2px;
+      }
+
+      .bf-cov {
+        width: 44px;
+        text-align: right;
+        font-weight: 600;
+      }
+
+      .bf-state {
+        font-size: 10.5px;
+        font-weight: 600;
+      }
+
+      .bf-state.is-on {
+        color: var(--o-good);
+      }
+
+      .bf-state.is-off {
+        color: var(--o-faint);
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Round 2">
+        <a href="index.html">Round 2</a>
+        <a href="meter.html">Meter fixes</a>
+        <a href="pvp.html">PvP overlay</a>
+        <a href="detail.html" aria-current="page">Player detail</a>
+        <a href="history.html">Fight history</a>
+        <a href="../approved/index.html">Approved</a>
+      </nav>
+      <h1>Player detail <small>round 2 exploration</small></h1>
+      <ul class="rationale">
+        <li>Everything the current detail window shows: identity, server and combat power; live or history mode; damage, DPS, fight time and hits; the seven hit types; per-skill hits, rates, multi-hit damage, min, max, average, total and spec; player and boss buffs with caster, coverage and whether they are still up.</li>
+        <li>The open choice is the skill table, which has 15 columns today. a: four columns and a row that opens for the rest (recommended). b: every column at once, in a 1000 px window. c: two tabs, Damage and Hit types, sharing the skill column.</li>
+        <li>Skill rows are the meter's soft bars in the player's class colour, scaled by damage; buff coverage uses the caster's class colour. No frosted glass: GPUI cannot blur behind one element, so the window is the same warm card as the meter.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour carried over</h2>
+      <ul>
+        <li>Opens from a meter row, a PvP damage row, or a player inside a history record (history mode, frozen data). Live mode follows the player's current target.</li>
+        <li>Buff panels are collapsed by default and keep their open or closed state while the window lives. Active buffs sort first, then by coverage.</li>
+        <li>Multi-hit damage shows its breakdown (2 hits, 3 hits…) on pointer over, as a tooltip today.</li>
+      </ul>
+      <h2>GPUI notes</h2>
+      <ul>
+        <li>The current window uses <code>backdrop-filter: blur(18px)</code>; GPUI can only blur the whole window background, so the design does not rely on it. A whole-window blur could be an option later, not a dependency.</li>
+        <li>Skill and buff icons are the game PNGs (multi-colour images are fine as images). The combat power mark is the existing <code>profile_power_icon_pc.png</code>.</li>
+        <li>Scrolling lists use GPUI's own scroll container; the thin thumb shown is drawn by it.</li>
+      </ul>
+    </section>
+
+    <script src="kit.js"></script>
+    <script>
+      (function () {
+        const icon = Kit.icon;
+
+        const btn = (name, label, extra = "") =>
+          `<span class="o-btn${extra}" role="button" title="${label}" aria-label="${label}">${icon(name)}</span>`;
+        const p1 = (n) => (n * 100).toFixed(1) + "%";
+
+        function head(ctx, { mode, actor, none }) {
+          const { fmt } = ctx;
+          const chip = mode === "history" ? `<span class="o-chip is-warn">${icon("history")}History</span>` : `<span class="o-chip is-good">Live</span>`;
+          if (none) {
+            return `<div class="o-head"><span class="det-who"><b class="faint">No player selected</b></span><span class="grow"></span>${btn("close", "Close")}</div>`;
+          }
+          return `<div class="o-head">
+  <span class="det-who"><img class="cls" src="${actor.icon}" alt="${actor.cls}"><b>${actor.label}</b>${ctx.opts.server ? `<span class="srv">${actor.server}</span>` : ""}</span>
+  <span class="det-cp"><img src="../../../public/aion2/profile_power_icon_pc.png" alt="Combat power">${fmt.int(actor.cp)}</span>
+  <span class="grow"></span>${chip}${btn("close", "Close")}
+</div>
+<div class="det-sub">${icon(mode === "history" ? "clock" : "target")}${ctx.boss.label}<span class="faint">·</span>${mode === "history" ? "Today 21:42, saved record" : "current target"}</div>`;
+        }
+
+        function figures(ctx, d, none) {
+          const { fmt } = ctx;
+          const f = (label, v) => `<div><span>${label}</span><b>${v}</b></div>`;
+          const r = d.rates;
+          return `<div class="det-figs">${f("Damage", none ? "--" : fmt.int(d.total))}${f("DPS", none ? "--" : fmt.int(d.total / d.secs))}${f("Fight", fmt.time(d.secs))}${f("Hits", none ? "--" : fmt.int(d.hits))}</div>
+<div class="det-figs is-small">${f("Critical", none ? "--" : p1(r.crit))}${f("Back", none ? "--" : p1(r.back))}${f("Front", none ? "--" : p1(r.front))}${f("Double", none ? "--" : p1(r.double))}${f("Perfect", none ? "--" : p1(r.perfect))}${f("Parry", none ? "--" : p1(r.parry))}${f("Multi", none ? "--" : p1(r.multi))}</div>`;
+        }
+
+        const spec = (slots) => `<span class="spec">${[1, 2, 3, 4, 5].map((n) => `<i class="${slots.includes(n) ? "on" : ""}"></i>`).join("")}</span>`;
+
+        function skillTable(ctx, d, { expanded, tab }) {
+          const { fmt } = ctx;
+          const max = d.skills[0].total;
+          const rgb = d.actor.rgb;
+          const shown = d.skills.slice(0, 8);
+          const tot = (s) => `<span class="o-num c-t o-strong">${fmt.compact(s.total)}<small>${((s.total / d.total) * 100).toFixed(1)}%</small></span>`;
+          const v = ctx.v.tbl;
+          let cols;
+          let cells;
+          if (v === "b") {
+            cols = [["Spec", "c-p"], ["Hits", "c-n"], ["Crit", "c-p"], ["Perfect", "c-p"], ["Double", "c-p"], ["Front", "c-p"], ["Back", "c-p"], ["Parry", "c-p"], ["Multi", "c-p"], ["Multi dmg", "c-w"], ["Min", "c-w"], ["Max", "c-w"], ["Avg", "c-w"], ["Total", "c-t"]];
+            cells = (s) =>
+              `<span class="o-num c-p">${spec(s.spec)}</span><span class="o-num c-n">${s.hits}</span><span class="o-num c-p">${p1(s.crit)}</span><span class="o-num c-p muted">${p1(s.perfect)}</span><span class="o-num c-p muted">${p1(s.double)}</span><span class="o-num c-p muted">${p1(s.front)}</span><span class="o-num c-p muted">${p1(s.back)}</span><span class="o-num c-p muted">${p1(s.parry)}</span><span class="o-num c-p muted">${p1(s.multi)}</span><span class="o-num c-w muted">${s.multiDmg ? fmt.compact(s.multiDmg) : "--"}</span><span class="o-num c-w muted">${fmt.int(s.min)}</span><span class="o-num c-w muted">${fmt.int(s.max)}</span><span class="o-num c-w muted">${fmt.int(s.total / s.hits)}</span>${tot(s)}`;
+          } else if (v === "c" && tab === "hits") {
+            cols = [["Crit", "c-p"], ["Perfect", "c-p"], ["Double", "c-p"], ["Front", "c-p"], ["Back", "c-p"], ["Parry", "c-p"], ["Multi", "c-p"]];
+            cells = (s) => `<span class="o-num c-p o-strong">${p1(s.crit)}</span>${["perfect", "double", "front", "back", "parry", "multi"].map((k) => `<span class="o-num c-p muted">${p1(s[k])}</span>`).join("")}`;
+          } else if (v === "c") {
+            cols = [["Hits", "c-n"], ["Min", "c-w"], ["Max", "c-w"], ["Avg", "c-w"], ["Total", "c-t"]];
+            cells = (s) => `<span class="o-num c-n">${s.hits}</span><span class="o-num c-w muted">${fmt.int(s.min)}</span><span class="o-num c-w muted">${fmt.int(s.max)}</span><span class="o-num c-w muted">${fmt.int(s.total / s.hits)}</span>${tot(s)}`;
+          } else {
+            cols = [["Hits", "c-n"], ["Crit", "c-p"], ["Total", "c-t"], ["", "c-chev"]];
+            cells = (s, i) => `<span class="o-num c-n">${s.hits}</span><span class="o-num c-p">${p1(s.crit)}</span>${tot(s)}<span class="o-num c-chev">${icon(expanded && i === 0 ? "chevronUp" : "chevronDown")}</span>`;
+          }
+          const more = (s) => {
+            const m = (label, val) => `<div><span>${label}</span><b>${val}</b></div>`;
+            return `<div class="sk-more">${m("Perfect", p1(s.perfect))}${m("Double", p1(s.double))}${m("Front", p1(s.front))}${m("Back", p1(s.back))}${m("Parry", p1(s.parry))}${m("Multi", p1(s.multi))}${m("Multi dmg", s.multiDmg ? fmt.int(s.multiDmg) : "--")}${m("Spec", spec(s.spec))}${m("Min", fmt.int(s.min))}${m("Max", fmt.int(s.max))}${m("Average", fmt.int(s.total / s.hits))}${m("Total", fmt.int(s.total))}</div>`;
+          };
+          const tabs =
+            v === "c"
+              ? `<div class="o-tabs" role="tablist" style="margin-top:8px"><span class="o-tab${tab === "hits" ? "" : " is-on"}">Damage</span><span class="o-tab${tab === "hits" ? " is-on" : ""}">Hit types</span></div>`
+              : "";
+          return `${tabs}<div class="o-th sk-head"${v === "c" ? ' style="margin-top:0"' : ""}><span class="grow">Skill<span class="faint" style="margin-left:6px">${d.skills.length}</span></span>${cols.map(([l, c]) => `<span class="${c}">${l}</span>`).join("")}</div>
+<div class="o-scroll has-thumb sk"><div class="o-rows">${shown
+            .map(
+              (s, i) => `<div class="o-row"><span class="o-track" style="--rgb:${rgb}">
+  <span class="o-fill" style="width:${((s.total / max) * 100).toFixed(1)}%"></span>
+  <img class="sk-icon" src="${s.icon}" alt=""><span class="o-name">${s.name}</span>${cells(s, i)}
+</span></div>${v === "a" && expanded && i === 0 ? more(s) : ""}`
+            )
+            .join("")}</div><span class="o-thumb" style="--t:2px;--h:${expanded && v === "a" ? 150 : 170}px"></span></div>`;
+        }
+
+        function buffPanel(ctx, title, list, open) {
+          const active = list.filter((b) => b.active).length;
+          const rows = open
+            ? `<div class="bp-body">${list
+                .slice()
+                .sort((a, b) => (a.active === b.active ? b.cover - a.cover : a.active ? -1 : 1))
+                .map(
+                  (b) => `<div class="bf"><img src="${b.icon}" alt=""><div class="bf-main">
+  <div class="bf-line"><span class="nm">${b.name}</span><span class="by"><img src="${b.icon && ctx.classIcon(b.cls)}" alt="${b.cls}">${b.casterLabel}</span><span class="grow"></span><span class="bf-state ${b.active ? "is-on" : "is-off"}">${b.active ? "Up now" : "Ended"}</span></div>
+  <div class="bf-bar" style="--rgb:${ctx.CLASS_RGB[b.cls]}"><span class="o-fill" style="width:${(b.cover * 100).toFixed(1)}%"></span></div>
+</div><span class="bf-cov">${p1(b.cover)}</span></div>`
+                )
+                .join("")}</div>`
+            : "";
+          return `<div class="bp"><div class="bp-head">${icon(open ? "chevronDown" : "chevronRight")}${title}<span class="o-count">${list.length}</span><span class="grow"></span><span class="o-count">${active} up now</span></div>${rows}</div>`;
+        }
+
+        function render(state, ctx) {
+          const d = ctx.detail;
+          if (state === "empty") {
+            return `<div class="ov o det">${head(ctx, { none: true })}<div class="o-empty"><strong>Pick a player</strong>Click a player in the meter, a row in the PvP window or a player inside a history record to see their skills and buffs here.</div></div>`;
+          }
+          const mode = state === "history" ? "history" : "live";
+          if (state === "nodata") {
+            const healer = { ...ctx.players.find((p) => p.cls === "cleric"), cp: 33880 };
+            return `<div class="ov o det">${head(ctx, { mode, actor: healer })}${figures(ctx, d, true)}<div class="o-empty" style="text-align:left"><strong>No skill data</strong>This player has not damaged the current target. Buffs they cast still show below.</div>${buffPanel(ctx, "Player buffs", d.playerBuffs, false)}${buffPanel(ctx, "Boss buffs", d.bossBuffs, false)}</div>`;
+          }
+          const expanded = state === "expanded";
+          const buffsOpen = state === "buffs";
+          return `<div class="ov o det">${head(ctx, { mode, actor: d.actor })}${figures(ctx, d)}${skillTable(ctx, d, { expanded, tab: expanded ? "hits" : "damage" })}
+${buffPanel(ctx, "Player buffs", d.playerBuffs, buffsOpen)}${buffPanel(ctx, "Boss buffs", d.bossBuffs, buffsOpen)}</div>`;
+        }
+
+        Kit.mount({
+          states: [
+            { id: "empty", title: "Nothing selected", sub: "opened before a player was picked" },
+            { id: "live", title: "Live", sub: "your skills on the current target; buffs collapsed" },
+            { id: "expanded", title: "Skill opened", sub: "a: row expanded; c: Hit types tab; b: unchanged" },
+            { id: "buffs", title: "Buffs open", sub: "player and boss buff panels expanded" },
+            { id: "history", title: "History mode", sub: "opened from a saved record" },
+            { id: "nodata", title: "No skill data", sub: "a healer who did not hit this target" },
+          ],
+          controls: ["alpha", "scale", "mask", "server"],
+          variants: [
+            {
+              key: "tbl",
+              label: "Skill table",
+              def: "a",
+              options: [
+                { value: "a", label: "a: 4 columns, row opens for the rest" },
+                { value: "b", label: "b: all 15 columns, 1000 px" },
+                { value: "c", label: "c: tabs, Damage and Hit types" },
+              ],
+            },
+          ],
+          tileMin: 580,
+          stageMin: 620,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

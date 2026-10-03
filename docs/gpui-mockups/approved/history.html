@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Round 2: fight history</title>
+    <link rel="stylesheet" href="shared.css" />
+    <link rel="stylesheet" href="overlay.css" />
+    <style>
+      .ov.o.his {
+        width: 370px;
+      }
+
+      .filters {
+        position: relative;
+        display: flex;
+        gap: 8px;
+        margin: 2px 0 8px;
+      }
+
+      .filters .o-menu {
+        top: 46px;
+        left: 0;
+        width: 240px;
+      }
+
+      /* Records: one soft plate each; no bar, there is nothing to compare. */
+      .rec {
+        border-radius: 7px;
+        background: var(--o-track);
+      }
+
+      .rec + .rec {
+        margin-top: 4px;
+      }
+
+      .rec-top {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 4px 0 10px;
+      }
+
+      .rec-top .tgt {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        font-weight: 600;
+        text-overflow: ellipsis;
+      }
+
+      .rec-top .when {
+        color: var(--o-muted);
+        font-size: 11.5px;
+      }
+
+      .rec-meta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 18px;
+        padding: 0 10px 4px;
+        color: var(--o-muted);
+        font-size: 11.5px;
+      }
+
+      .rec-meta b {
+        color: var(--o-text);
+        font-weight: 600;
+      }
+
+      .rec-meta .main {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--o-text);
+      }
+
+      .rec-meta .main .i {
+        width: 11px;
+        height: 11px;
+        color: var(--o-muted);
+      }
+
+      .rec.is-open {
+        background: rgba(0, 0, 0, 0.4);
+        outline: 1px solid rgba(255, 246, 236, 0.18);
+        outline-offset: -1px;
+      }
+
+      /* The record a delete confirmation refers to. */
+      .rec.is-marked {
+        outline: 1px solid rgba(247, 168, 168, 0.55);
+        outline-offset: -1px;
+      }
+
+      .rec-players {
+        padding: 2px 8px 8px;
+      }
+
+      .rec-players .hint {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        color: var(--o-faint);
+        font-size: 11px;
+      }
+
+      .rec-players .hint .i {
+        width: 11px;
+        height: 11px;
+      }
+
+      .rec-players .o-row .o-btn {
+        width: 20px;
+        height: 20px;
+      }
+
+      .rec .o-btn.is-del {
+        width: 20px;
+        height: 20px;
+      }
+
+      .rec .o-btn.is-del .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .rec .confirm {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .rec .confirm .o-tbtn {
+        height: 20px;
+        padding: 0 8px;
+        font-size: 11.5px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Approved screens">
+        <a href="index.html">Approved screens</a>
+        <a href="meter.html">Meter overlay</a>
+        <a href="pvp.html">PvP overlay</a>
+        <a href="detail.html">Player detail</a>
+        <a href="history.html" aria-current="page">Fight history</a>
+      </nav>
+      <h1>Fight history <small>approved, round 2</small></h1>
+      <ul class="rationale">
+        <li>Newest records first, two lines each: target and time, then main player, player count, damage and duration. Filter by target and by main player, each with its number of records.</li>
+        <li>One record opens at a time to its players; clicking a player opens the detail window in history mode.</li>
+        <li>Deleting asks first: the delete button itself turns into "Delete?" with Cancel, for one record and for all. Personal bests survive deleting history. Values are in <a href="tokens.md">tokens.md</a>.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour carried over</h2>
+      <ul>
+        <li>The count reads "14 records", or "6 / 14 records" while a filter hides some. Filters list each target and main player with its number of records, most frequent first.</li>
+        <li>One record opens at a time. The record's players are sorted by damage, with DPS and share, and open the player detail in history mode.</li>
+        <li>After Delete all, a status line confirms ("Deleted 14 records.") for four seconds; with nothing to delete the button is disabled. Personal bests are kept.</li>
+      </ul>
+      <h2>GPUI notes</h2>
+      <ul>
+        <li>The filter dropdown is a popover inside the window. The confirmation is the same button with a different label and fill, plus Cancel; it reverts after a few seconds without a second click.</li>
+        <li>The list scrolls inside a GPUI scroll container; only one record expands at a time, so heights stay predictable.</li>
+      </ul>
+    </section>
+
+    <script src="kit.js"></script>
+    <script>
+      (function () {
+        const icon = Kit.icon;
+
+        const btn = (name, label, extra = "") =>
+          `<span class="o-btn${extra}" role="button" title="${label}" aria-label="${label}">${icon(name)}</span>`;
+
+        function head(count) {
+          return `<div class="o-head"><span class="o-title">${icon("history")}Fight history</span><span class="o-count">${count}</span><span class="grow"></span>${btn("close", "Close")}</div>`;
+        }
+
+        function select(label, value, open) {
+          return `<label class="o-select"><span>${label}</span><span class="o-input${open ? " is-focus" : ""}"><span class="val">${value}</span>${icon(open ? "chevronUp" : "chevronDown")}</span></label>`;
+        }
+
+        function filters(ctx, { target = "All targets", main = "All players", open = false, disabled = false } = {}) {
+          const menu = open
+            ? `<div class="o-menu" role="listbox"><div class="o-menu-item">All targets<small>${ctx.history.records.length}</small></div>${ctx.history.targets
+                .map(([t, n], i) => `<div class="o-menu-item${i === 0 ? " is-hot" : ""}">${t}<small>${n}</small></div>`)
+                .join("")}</div>`
+            : "";
+          return `<div class="filters"${disabled ? ' style="opacity:0.45"' : ""}>${select("Target", target, open)}${select("Player", main)}${menu}</div>`;
+        }
+
+        function recRow(ctx, r, { open = false, confirm = false } = {}) {
+          const { fmt } = ctx;
+          let del = btn("trash", "Delete this record", " is-del");
+          if (confirm) {
+            del = `<span class="confirm"><span class="o-tbtn is-danger" role="button">${icon("trash")}Delete?</span><span class="o-tbtn is-quiet" role="button">Cancel</span></span>`;
+          }
+          const top = `<div class="rec-top"><span class="tgt">${r.targetLabel}</span><span class="when">${r.when}</span>${del}</div>`;
+          const meta = `<div class="rec-meta"><span class="main">${icon("user")}${r.mainLabel}</span><span>${r.players} ${r.players === 1 ? "player" : "players"}</span><span><b>${fmt.compact(r.dmg)}</b> damage</span><span>${fmt.time(r.secs)}</span></div>`;
+          let players = "";
+          if (open) {
+            const list = ctx.players.slice(0, r.players);
+            const max = list[0].dps;
+            players = `<div class="rec-players"><div class="hint">${icon("external")}Click a player to open their details from this record</div><div class="o-rows">${list
+              .map(
+                (p, i) => `<div class="o-row${p.you ? " is-you" : ""}"><span class="o-rk">${i + 1}</span><span class="o-track" style="--rgb:${p.rgb}">
+  <span class="o-fill" style="width:${((p.dps / max) * 100).toFixed(1)}%"></span>
+  <img class="o-icon" src="${p.icon}" alt="${p.cls}"><span class="o-name">${p.label}</span>
+  <span class="o-num muted" style="font-size:11.5px">${fmt.compact(p.dps * r.secs)}</span><span class="o-num o-strong">${fmt.compact(p.dps)}</span>
+</span><span class="o-pc">${fmt.pct(p.pct)}</span></div>`
+              )
+              .join("")}</div></div>`;
+          }
+          return `<div class="rec${open ? " is-open" : ""}${confirm ? " is-marked" : ""}">${top}${meta}${players}</div>`;
+        }
+
+        function list(ctx, records, { openIdx = -1, confirmIdx = -1, limit = 7, thumb = true } = {}) {
+          const shown = records.slice(0, limit);
+          return `<div class="o-scroll${thumb ? " has-thumb" : ""}">${shown
+            .map((r, i) => recRow(ctx, r, { open: i === openIdx, confirm: i === confirmIdx }))
+            .join("")}${thumb ? '<span class="o-thumb" style="--t:2px;--h:90px"></span>' : ""}</div>`;
+        }
+
+        function foot(ctx, { confirmAll = false, disabled = false, status = "" } = {}) {
+          const n = ctx.history.records.length;
+          let action = `<span class="o-tbtn is-quiet${disabled ? " is-disabled" : ""}" role="button">${icon("trash")}Delete all</span>`;
+          if (confirmAll) {
+            action = `<span class="o-tbtn is-danger" role="button">${icon("trash")}Delete all ${n} records?</span><span class="o-tbtn is-quiet" role="button">Cancel</span>`;
+          }
+          const note = status === "deleted" ? `<div class="o-note is-good" style="margin-top:8px">${icon("check")}<span>Deleted ${n} records. Personal bests are kept.</span></div>` : "";
+          return `${note}<div class="o-foot"><span class="faint">Saved when you reset the meter</span><span class="grow"></span>${action}</div>`;
+        }
+
+        function render(state, ctx) {
+          const recs = ctx.history.records;
+          const n = recs.length;
+          switch (state) {
+            case "empty":
+              return `<div class="ov o his">${head("0 records")}${filters(ctx, { disabled: true })}<div class="o-empty"><strong>No records yet</strong>Reset the meter after a fight (Alt+Q) to save it here.</div>${foot(ctx, { disabled: true })}</div>`;
+            case "list":
+              return `<div class="ov o his">${head(`${n} records`)}${filters(ctx)}${list(ctx, recs)}${foot(ctx)}</div>`;
+            case "filter": {
+              const only = recs.filter((r) => r.target === "Veilwarden Orsikh");
+              return `<div class="ov o his">${head(`${only.length} / ${n} records`)}${filters(ctx, { target: ctx.history.records[0].targetLabel, open: true })}${list(ctx, only, { limit: 6, thumb: false })}${foot(ctx)}</div>`;
+            }
+            case "open":
+              return `<div class="ov o his">${head(`${n} records`)}${filters(ctx)}${list(ctx, recs, { openIdx: 0, limit: 4 })}${foot(ctx)}</div>`;
+            case "del-one":
+              return `<div class="ov o his">${head(`${n} records`)}${filters(ctx)}${list(ctx, recs, { confirmIdx: 2 })}${foot(ctx)}</div>`;
+            case "del-all":
+              return `<div class="ov o his">${head(`${n} records`)}${filters(ctx)}${list(ctx, recs)}${foot(ctx, { confirmAll: true })}</div>`;
+            case "deleted":
+              return `<div class="ov o his">${head("0 records")}${filters(ctx, { disabled: true })}<div class="o-empty"><strong>No records yet</strong>Reset the meter after a fight (Alt+Q) to save it here.</div>${foot(ctx, { disabled: true, status: "deleted" })}</div>`;
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "empty", title: "Empty", sub: "no fights saved yet" },
+            { id: "list", title: "Records", sub: "newest first; the list scrolls" },
+            { id: "filter", title: "Filtering", sub: "target dropdown open, 6 of 14 shown" },
+            { id: "open", title: "Record opened", sub: "its players; click one for the detail" },
+            { id: "del-one", title: "Deleting one record", sub: "asks before deleting" },
+            { id: "del-all", title: "Deleting all", sub: "asks before deleting" },
+            { id: "deleted", title: "After deleting all", sub: "status line, then empty" },
+          ],
+          controls: ["alpha", "scale", "mask"],
+          tileMin: 420,
+          stageMin: 520,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

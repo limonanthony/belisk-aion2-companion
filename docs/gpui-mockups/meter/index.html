@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Meter overlay: directions</title>
+    <link rel="stylesheet" href="shared.css" />
+    <style>
+      .compare {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 0 32px 48px;
+      }
+
+      .dirs {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+        gap: 18px;
+      }
+
+      .dir h2 {
+        margin: 18px 0 2px;
+        font-size: 17px;
+        font-weight: 650;
+      }
+
+      .dir h2 a {
+        color: var(--page-text);
+      }
+
+      .dir p {
+        margin: 0 0 8px;
+        color: var(--page-muted);
+        font-size: 13px;
+      }
+
+      .row-cap {
+        margin: 26px 0 8px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .row-cap span {
+        margin-left: 8px;
+        color: var(--page-faint);
+        font-weight: 400;
+      }
+
+      .frames {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+        gap: 18px;
+      }
+
+      .frames iframe {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-radius: 10px;
+        background: var(--page-surface);
+      }
+
+      @media (max-width: 800px) {
+        .dirs,
+        .frames {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Directions">
+        <a href="index.html" aria-current="page">Overview</a>
+        <a href="a.html">A: Ledger</a>
+        <a href="b.html">B: Focus</a>
+        <a href="c.html">C: Vanguard</a>
+        <a href="d.html">D: Vanguard Soft</a>
+        <a href="d2.html">D2: bar and rank variants</a>
+      </nav>
+      <h1>Meter overlay <small>directions for the GPUI rebuild, round 1</small></h1>
+      <ul class="rationale">
+        <li>Pick one direction; round 2 extends it to the PvP, detail and history overlays.</li>
+        <li>Each direction page shows every state (waiting, live with and without the pointer, capsule, both fight summaries) over a busy, a bright and a dark invented scene, with the app's opacity, scale and column options as live controls.</li>
+        <li>All data is invented. Only effects GPUI can draw are used in the overlays themselves; the scenes behind them stand in for the game.</li>
+      </ul>
+    </header>
+
+    <div class="compare">
+      <div class="dirs">
+        <section class="dir">
+          <h2><a href="a.html">A: Ledger</a></h2>
+          <p>Dense table. Fixed, labelled columns and monospaced figures; class colour only as a thin rule under each row. For players who read numbers.</p>
+        </section>
+        <section class="dir">
+          <h2><a href="b.html">B: Focus</a></h2>
+          <p>You first. Your DPS, place and pace are the hero; the party is a quiet list below. One warm accent means you, everything else is neutral.</p>
+        </section>
+        <section class="dir">
+          <h2><a href="c.html">C: Vanguard</a></h2>
+          <p>Bar chart HUD. Solid class-coloured bars, condensed type, a ten-segment boss gauge. Reads from the corner of your eye.</p>
+        </section>
+        <section class="dir">
+          <h2><a href="d.html">D: Vanguard Soft</a></h2>
+          <p>C, rounded and calmed. Pill bars and rank markers on a warm near-black card, sentence-case labels, tinted chips instead of bands. Class colour stays the only strong hue.</p>
+        </section>
+        <section class="dir">
+          <h2><a href="d2.html">D2: Vanguard Soft, variants</a></h2>
+          <p>D with switchable bar ends and rank styles. Shown here at its defaults: soft rectangles whose fill brightens toward the leading edge, and small rounded-square rank badges.</p>
+        </section>
+      </div>
+
+      <h2 class="row-cap">Live, locked <span>bright scene, default opacity 150</span></h2>
+      <div class="frames">
+        <iframe title="A: Ledger, live, locked" src="a.html?embed&amp;scenes=bright&amp;states=locked" height="320"></iframe>
+        <iframe title="B: Focus, live, locked" src="b.html?embed&amp;scenes=bright&amp;states=locked" height="400"></iframe>
+        <iframe title="C: Vanguard, live, locked" src="c.html?embed&amp;scenes=bright&amp;states=locked" height="380"></iframe>
+        <iframe title="D: Vanguard Soft, live, locked" src="d.html?embed&amp;scenes=bright&amp;states=locked" height="380"></iframe>
+        <iframe title="D2: Vanguard Soft variants, live, locked" src="d2.html?embed&amp;scenes=bright&amp;states=locked" height="380"></iframe>
+      </div>
+
+      <h2 class="row-cap">Capsule <span>busy scene</span></h2>
+      <div class="frames">
+        <iframe title="A: Ledger, capsule" src="a.html?embed&amp;scenes=busy&amp;states=capsule" height="80"></iframe>
+        <iframe title="B: Focus, capsule" src="b.html?embed&amp;scenes=busy&amp;states=capsule" height="80"></iframe>
+        <iframe title="C: Vanguard, capsule" src="c.html?embed&amp;scenes=busy&amp;states=capsule" height="80"></iframe>
+        <iframe title="D: Vanguard Soft, capsule" src="d.html?embed&amp;scenes=busy&amp;states=capsule" height="80"></iframe>
+        <iframe title="D2: Vanguard Soft variants, capsule" src="d2.html?embed&amp;scenes=busy&amp;states=capsule" height="80"></iframe>
+      </div>
+
+      <h2 class="row-cap">Summary, defeated <span>dark scene</span></h2>
+      <div class="frames">
+        <iframe title="A: Ledger, fight summary" src="a.html?embed&amp;scenes=dark&amp;states=final" height="380"></iframe>
+        <iframe title="B: Focus, fight summary" src="b.html?embed&amp;scenes=dark&amp;states=final" height="420"></iframe>
+        <iframe title="C: Vanguard, fight summary" src="c.html?embed&amp;scenes=dark&amp;states=final" height="420"></iframe>
+        <iframe title="D: Vanguard Soft, fight summary" src="d.html?embed&amp;scenes=dark&amp;states=final" height="420"></iframe>
+        <iframe title="D2: Vanguard Soft variants, fight summary" src="d2.html?embed&amp;scenes=dark&amp;states=final" height="420"></iframe>
+      </div>
+    </div>
+  </body>
+</html>

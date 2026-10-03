@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Round 2: meter fixes</title>
+    <link rel="stylesheet" href="shared.css" />
+    <style>
+      /* The approved meter overlay (round 1: D2, bar end d, rank b).
+         Values are recorded in tokens.md; keep the two in step. Every effect
+         here is a GPUI primitive: alpha fills, two-stop linear gradients,
+         1px borders, rounded corners, one drop shadow. */
+      .ov.d {
+        --d-bg: rgba(16, 14, 12, var(--bg-a));
+        --d-track: rgba(0, 0, 0, 0.34);
+        --d-soft: rgba(255, 240, 225, 0.08);
+        --d-text: rgba(255, 246, 236, 0.96);
+        --d-muted: rgba(255, 246, 236, 0.66);
+        --d-faint: rgba(255, 246, 236, 0.44);
+        --d-good: #86e3a8;
+        --d-warn: #f2c66d;
+        --d-bad: #f7a8a8;
+        --d-hp: #e8735f;
+        /* Bahnschrift ships with Windows 10 and 11. The Linux names only make
+           this preview look closer when it is opened outside Windows. */
+        --d-font: "Bahnschrift", "Arial Narrow", "DejaVu Sans Condensed", "Liberation Sans Narrow", sans-serif;
+
+        zoom: var(--scale);
+        width: 310px;
+        padding: 8px 8px 6px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 236, 214, 0.1);
+        border-radius: 14px;
+        background: var(--d-bg);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+        color: var(--d-text);
+        font: 13px/1 var(--d-font);
+        font-stretch: 87.5%;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .ov.d.has-dmg {
+        width: 340px;
+      }
+
+      .d .i {
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
+        stroke-width: 2;
+      }
+
+      .grow {
+        flex: 1;
+      }
+
+      /* ---- Header and footer: rows, not bands ---- */
+      .d-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 22px;
+        padding: 0 2px 0 4px;
+      }
+
+      .d-target {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        color: var(--d-muted);
+        font-size: 13px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+      }
+
+      .d-time {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .d-label {
+        color: var(--d-faint);
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .d-val {
+        color: var(--d-text);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .d-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+        color: var(--d-muted);
+      }
+
+      .d-btn.is-hot {
+        background: rgba(255, 240, 225, 0.13);
+        color: var(--d-text);
+      }
+
+      .d-btn.is-close {
+        margin-left: 3px;
+      }
+
+      .d-tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        padding: 0 9px;
+        border-radius: 999px;
+        background: var(--d-soft);
+        color: var(--d-text);
+        font-size: 11.5px;
+        font-weight: 600;
+      }
+
+      .d-tbtn .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .d-foot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 20px;
+        margin-top: 2px;
+        padding: 0 4px;
+        color: var(--d-muted);
+        font-size: 11.5px;
+      }
+
+      /* ---- Gauge: ten rounded segments of boss health ----
+         A fixed 22px block: under the pointer the tool row takes this line,
+         so nothing below it moves. */
+      .d-gauge {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        height: 22px;
+        padding: 0 4px;
+      }
+
+      .d-seg {
+        position: relative;
+        flex: 1;
+        height: 5px;
+        overflow: hidden;
+        border-radius: 3px;
+        background: rgba(255, 240, 225, 0.12);
+      }
+
+      .d-seg i {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        border-radius: 3px;
+        background: var(--d-hp);
+      }
+
+      .d-gauge .d-hpv {
+        width: 32px;
+        margin-left: 3px;
+        color: var(--d-muted);
+        font-size: 12px;
+        font-weight: 600;
+        text-align: right;
+      }
+
+      /* ---- Rows: rank badge, bar, percent ---- */
+      .d-rows {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .d-row {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+      }
+
+      /* Rank badge. The 3px margin plus the row's 5px gap matches the card's
+         8px inset on the badge's left. */
+      .d-rk {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        margin-right: 3px;
+        border-radius: 4px;
+        background: rgba(255, 240, 225, 0.09);
+        color: var(--d-muted);
+        font-size: 11.5px;
+        font-weight: 600;
+      }
+
+      /* Soft rectangle bar. The fill brightens toward its leading edge; the
+         end stops at 0.5 because the top player's figure sits on it. */
+      .d-track {
+        position: relative;
+        display: flex;
+        flex: 1;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        height: 22px;
+        padding: 0 9px 0 4px;
+        overflow: hidden;
+        border-radius: 5px;
+        background: var(--d-track);
+      }
+
+      .d-fill {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        border-radius: 5px;
+        background: linear-gradient(90deg, rgba(var(--rgb), 0.14), rgba(var(--rgb), 0.5));
+      }
+
+      .d-track > :not(.d-fill) {
+        position: relative;
+      }
+
+      .d-icon {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        border-radius: 8px;
+      }
+
+      .d-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        font-weight: 500;
+        text-overflow: ellipsis;
+      }
+
+      /* Combat power and server beside the name. */
+      .d-name small {
+        margin-left: 5px;
+        color: rgba(255, 246, 236, 0.82);
+        font-size: 11px;
+      }
+
+      .d-dmg {
+        color: var(--d-muted);
+        font-size: 11.5px;
+      }
+
+      .d-dps {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .d-pc {
+        width: 38px;
+        flex-shrink: 0;
+        color: var(--d-muted);
+        font-size: 12px;
+        text-align: right;
+      }
+
+      /* You: a cream badge and a subtle cream rim on the track. */
+      .d-row.is-you .d-rk {
+        background: rgba(255, 246, 236, 0.9);
+        color: #17120d;
+      }
+
+      .d-row.is-you .d-track {
+        outline: 1px solid rgba(255, 246, 236, 0.45);
+        outline-offset: -1px;
+      }
+
+      .d-row.is-you .d-name {
+        font-weight: 650;
+      }
+
+      .d-pace {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-weight: 600;
+      }
+
+      .d-pace.is-ahead {
+        color: var(--d-good);
+      }
+
+      .d-pace.is-behind {
+        color: var(--d-bad);
+      }
+
+      .d-sys {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+
+      .d-sys .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .d-sys.is-good {
+        color: var(--d-good);
+      }
+
+      /* ---- Capsule ---- */
+      .ov.d.is-capsule {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: auto;
+        height: 30px;
+        padding: 0 12px 0 4px;
+        border-radius: 999px;
+      }
+
+      .d-cap-rk {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        background: rgb(var(--rgb));
+        color: #17120d;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .d-cap-dps {
+        font-size: 17px;
+        font-weight: 600;
+      }
+
+      .d-vr {
+        width: 1px;
+        height: 12px;
+        background: rgba(255, 240, 225, 0.18);
+      }
+
+      /* ---- Idle ---- */
+      .d-idle {
+        padding: 2px 4px 8px;
+      }
+
+      .d-idle strong {
+        display: block;
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .d-idle span {
+        display: block;
+        margin-top: 5px;
+        color: var(--d-muted);
+        font-size: 11.5px;
+      }
+
+      /* ---- Summary ---- */
+      .d-out {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 22px;
+        padding: 0 9px 0 7px;
+        border-radius: 999px;
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .d-out.is-final {
+        background: rgba(134, 227, 168, 0.14);
+        color: var(--d-good);
+      }
+
+      .d-out.is-quiet {
+        background: rgba(242, 198, 109, 0.13);
+        color: var(--d-warn);
+      }
+
+      .d-out small {
+        color: var(--d-muted);
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .d-sum {
+        padding: 4px 4px 2px;
+      }
+
+      .d-sum-name {
+        overflow: hidden;
+        font-size: 14.5px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+      }
+
+      .d-sum-where {
+        margin-top: 3px;
+        color: var(--d-muted);
+        font-size: 11.5px;
+      }
+
+      .d-sum-hero {
+        display: flex;
+        align-items: flex-end;
+        gap: 12px;
+        margin-top: 9px;
+      }
+
+      .d-big {
+        font-size: 36px;
+        font-weight: 600;
+        line-height: 0.9;
+      }
+
+      .d-big small {
+        margin-left: 4px;
+        color: var(--d-faint);
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .d-kv {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin-left: auto;
+      }
+
+      .d-kv .d-label {
+        color: var(--d-muted);
+      }
+
+      .d-kv p {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        width: 104px;
+        margin: 0;
+      }
+
+      .d-pb {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        margin-top: 9px;
+        padding: 0 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .d-pb.is-new {
+        background: rgba(250, 204, 21, 0.17);
+        color: #fde68a;
+      }
+
+      .d-pb.is-behind {
+        background: rgba(247, 168, 168, 0.13);
+        color: var(--d-bad);
+      }
+
+      .d-sum .d-rows {
+        padding-top: 8px;
+      }
+
+      .d-sum .d-row,
+      .d-sum .d-track {
+        height: 18px;
+      }
+
+      .d-sum .d-track {
+        padding-left: 9px;
+        font-size: 12px;
+      }
+
+      /* Under the pointer: the tool buttons take the gauge's line. */
+      .d-toolrow {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: 22px;
+        padding: 0 2px;
+      }
+
+      .d-toolrow .d-btn.is-close {
+        margin-left: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Approved screens">
+        <a href="index.html">Approved screens</a>
+        <a href="meter.html" aria-current="page">Meter overlay</a>
+        <a href="pvp.html">PvP overlay</a>
+        <a href="detail.html">Player detail</a>
+        <a href="history.html">Fight history</a>
+      </nav>
+      <h1>Meter overlay <small>approved, rounds 1 and 2</small></h1>
+      <ul class="rationale">
+        <li>Each player is a soft-cornered bar in class colour that brightens toward its leading edge, so who leads reads from the corner of your eye. Figures are compact (61.2K); the boss is a ten-segment gauge.</li>
+        <li>Rank is a small rounded-square badge, cream for you, and a subtle cream rim marks your bar. Under the pointer the seven controls take the gauge's line, so the boss name keeps its full width and the window never resizes. Combat power beside names at 0.82.</li>
+        <li>The controls above are the app's real overlay settings. Values are recorded in <a href="tokens.md">tokens.md</a>.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Intended motion</h2>
+      <ul>
+        <li>Bars grow and shrink over 240 ms (ease-out). Figures swap, no counting.</li>
+        <li>Rank change: rows slide over 240 ms. The boss gauge drains its last segment continuously; an emptied segment fades to the track over 200 ms.</li>
+        <li>Pointer over: the gauge line cross-fades to the tool row in 100 ms and back when the pointer leaves; the window keeps its height.</li>
+        <li>The outcome chip and PB chip fade in over 150 ms; nothing flashes or pulses. Capsule: pointer over grows the pill into the card over 180 ms.</li>
+      </ul>
+      <h2>GPUI notes</h2>
+      <ul>
+        <li>The bar fill is a two-stop <code>linear_gradient</code> clipped by the track (<code>overflow_hidden</code> on a 5 px rounded div). The "you" rim is a 1 px border on the track. Pills are <code>rounded_full</code>.</li>
+        <li>Font: <code>Bahnschrift</code> at its SemiCondensed width. Selecting the variable font's named width instance through GPUI is unverified; tabular figures need the <code>tnum</code> feature.</li>
+        <li>No uppercase transforms, no letter spacing, no text shadow, no blur. Class icons are the existing PNGs with a rounded clip; other icons are single-colour Lucide SVGs.</li>
+      </ul>
+    </section>
+
+    <script src="kit.js"></script>
+    <script>
+      (function () {
+        const icon = Kit.icon;
+
+        function frame(ctx, inner) {
+          return `<div class="ov d${ctx.opts.damage ? " has-dmg" : ""}">${inner}</div>`;
+        }
+
+        const btn = (name, label, extra = "") =>
+          `<span class="d-btn${extra}" role="button" title="${label}" aria-label="${label}">${icon(name)}</span>`;
+
+        function gauge(hp, dim) {
+          let segs = "";
+          for (let i = 0; i < 10; i++) {
+            const fill = Math.max(0, Math.min(1, hp * 10 - i));
+            segs += `<span class="d-seg"><i style="width:${(fill * 100).toFixed(0)}%"></i></span>`;
+          }
+          return `<div class="d-gauge">${segs}<span class="d-hpv"${dim ? ' style="color:var(--d-faint)"' : ""}>${dim ? "--" : (hp * 100).toFixed(0) + "%"}</span></div>`;
+        }
+
+        function head(ctx) {
+          return `<div class="d-head"><span class="d-target">${ctx.boss.label}</span><span class="d-time">${ctx.fmt.time(ctx.fightSecs)}</span></div>`;
+        }
+
+        // Under the pointer: the header stays, the tool row takes the gauge's line.
+        function hoverTop(ctx) {
+          return `${head(ctx)}
+<div class="d-toolrow">${btn("reset", "Reset")}${btn("history", "History")}${btn("settings", "Settings")}${btn("capsule", "Capsule mode")}${btn("lockOpen", "Lock (click-through)", " is-hot")}${btn("pvp", "PvP meter")}${btn("close", "Close", " is-close")}</div>`;
+        }
+
+        function pace(p, suffix = " vs PB") {
+          const up = p >= 0;
+          return `<span class="d-pace ${up ? "is-ahead" : "is-behind"}">${icon(up ? "up" : "down")}${up ? "+" : "−"}${Math.abs(p * 100).toFixed(1)}%${suffix}</span>`;
+        }
+
+        function bar(scale, rgb, inner) {
+          return `<span class="d-track" style="--rgb:${rgb}"><span class="d-fill" style="width:${(scale * 100).toFixed(1)}%"></span>${inner}</span>`;
+        }
+
+        function rows(ctx) {
+          const { opts, fmt } = ctx;
+          const meta = (p) => {
+            const bits = [];
+            if (opts.server) bits.push(p.server);
+            if (opts.cp) bits.push(fmt.int(p.cp));
+            return bits.length ? `<small>${bits.join(" · ")}</small>` : "";
+          };
+          return `<div class="d-rows">${ctx.players
+            .map(
+              (p) => `<div class="d-row${p.you ? " is-you" : ""}">
+  <span class="d-rk">${p.rank}</span>
+  ${bar(
+    p.scale,
+    p.rgb,
+    `<img class="d-icon" src="${p.icon}" alt="${p.cls}"><span class="d-name">${p.label}${meta(p)}</span>${
+      opts.damage ? `<span class="d-dmg">${fmt.compact(p.dmg)}</span>` : ""
+    }<span class="d-dps">${fmt.compact(p.dps)}</span>`
+  )}
+  <span class="d-pc">${fmt.pct(p.pct)}</span>
+</div>`
+            )
+            .join("")}</div>`;
+        }
+
+        function sys(ctx) {
+          return `<span class="d-sys is-good">${icon("signal")}${ctx.sys.pingMs} ms</span><span class="d-sys">CPU ${ctx.sys.cpu}%</span><span class="d-sys">${ctx.sys.memGb} GB</span>`;
+        }
+
+        function summary(ctx, final) {
+          const { fmt, you } = ctx;
+          const secs = final ? ctx.summarySecs : ctx.quietSecs;
+          const top = ctx.skills[0].share;
+          const pb = final
+            ? `<div class="d-pb is-new">${icon("award")}<span class="grow">New personal best</span>+${(ctx.pb.newPace * 100).toFixed(1)}%</div>`
+            : `<div class="d-pb is-behind">${icon("down")}<span class="grow">Best ${fmt.compact(ctx.pb.dps)}</span>−${Math.abs(ctx.pb.quietPace * 100).toFixed(1)}%</div>`;
+          return frame(
+            ctx,
+            `<div class="d-head" style="padding-left:0">
+  <span class="d-out ${final ? "is-final" : "is-quiet"}">${icon(final ? "check" : "hourglass")}${final ? "Defeated" : "Fight ended"}${final ? "" : " <small>may resume</small>"}</span>
+  <span class="grow"></span>
+  <span class="d-time">${fmt.time(secs)}</span>
+  <span class="d-btn is-close" role="button" title="Back to the meter" aria-label="Back to the meter">${icon("close")}</span>
+</div>
+${final ? "" : gauge(ctx.quietHp)}
+<div class="d-sum"${final ? ' style="padding-top:7px"' : ""}>
+  <div class="d-sum-name">${ctx.boss.label}</div>
+  <div class="d-sum-where">${ctx.boss.where}</div>
+  <div class="d-sum-hero">
+    <span class="d-big">${fmt.compact(you.dps)}<small>DPS</small></span>
+    <span class="d-kv">
+      <p><span class="d-label">Rank</span><span class="d-val">${you.rank}/${ctx.count}</span></p>
+      <p><span class="d-label">Share</span><span class="d-val">${fmt.pct(you.pct)}</span></p>
+      <p><span class="d-label">Crit</span><span class="d-val">${(ctx.crit * 100).toFixed(0)}%</span></p>
+    </span>
+  </div>
+  ${pb}
+  <div class="d-rows">${ctx.skills
+    .map((s) => `<div class="d-row">${bar(s.share / top, you.rgb, `<span class="d-name">${s.name}</span><span class="d-val">${(s.share * 100).toFixed(0)}%</span>`)}</div>`)
+    .join("")}</div>
+</div>
+<div class="d-foot"><span class="d-label">Party</span><span class="d-val">${fmt.compact(ctx.partyDps)}</span><span class="d-label">Damage</span><span class="d-val">${fmt.compact(you.dps * secs)}</span><span class="grow"></span><span class="d-tbtn" role="button">${icon("copy")}Copy</span></div>`
+          );
+        }
+
+        function render(state, ctx) {
+          const { fmt, you } = ctx;
+          switch (state) {
+            case "idle":
+              return frame(
+                ctx,
+                `<div class="d-head"><span class="d-target">Aether</span><span class="d-label">Standing by</span></div>
+${gauge(0, true)}
+<div class="d-idle"><strong>Waiting for the first hit</strong><span>Alt+E hides the meter · Alt+Q resets it</span></div>
+<div class="d-foot"><span class="grow"></span>${sys(ctx)}</div>`
+              );
+            case "hover":
+              return frame(
+                ctx,
+                `${hoverTop(ctx)}${rows(ctx)}
+<div class="d-foot" style="margin-top:5px"><span class="d-tbtn" role="button">${icon("copy")}Copy</span><span class="grow"></span>${sys(ctx)}</div>`
+              );
+            case "locked":
+              return frame(
+                ctx,
+                `${head(ctx)}${gauge(ctx.boss.hp)}${rows(ctx)}
+<div class="d-foot" style="margin-top:5px"><span class="d-label">Party</span><span class="d-val">${fmt.compact(ctx.partyDps)}</span><span class="grow"></span>${pace(ctx.pb.behindPace)}</div>`
+              );
+            case "capsule":
+              return `<div class="ov d is-capsule" style="--rgb:${you.rgb}">
+  <span class="d-cap-rk">${you.rank}</span>
+  <span class="d-cap-dps">${fmt.compact(you.dps)}</span><span class="d-label">DPS</span>
+  <span class="d-vr"></span>
+  <span style="font-weight:600;color:var(--d-muted)">${fmt.time(ctx.fightSecs)}</span>
+  ${pace(ctx.pb.aheadPace, "")}
+</div>`;
+            case "final":
+              return summary(ctx, true);
+            case "provisional":
+              return summary(ctx, false);
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "idle", title: "Waiting", sub: "meter running, nothing hit yet" },
+            { id: "hover", title: "Live, pointer over", sub: "unlocked: the controls take the gauge line" },
+            { id: "locked", title: "Live, locked", sub: "click-through, no controls: the clean look" },
+            { id: "capsule", title: "Capsule", sub: "one line; pointer over opens the full view" },
+            { id: "final", title: "Summary, defeated", sub: "final: the boss died" },
+            { id: "provisional", title: "Summary, fight ended", sub: "provisional: the boss went quiet" },
+          ],
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

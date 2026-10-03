@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Round 3: startup gate</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      .gate {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-height: 0;
+        padding: 20px 24px 18px;
+      }
+
+      .gate-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .gate-head .h1 {
+        font-size: 19px;
+      }
+
+      .gate-head p {
+        margin: 2px 0 0;
+        color: var(--a-muted);
+      }
+
+      .gate-mark {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        flex-shrink: 0;
+        border-radius: 11px;
+        background: var(--a-cream);
+        color: var(--a-ink);
+      }
+
+      .gate-mark .i {
+        width: 24px;
+        height: 24px;
+        stroke-width: 2.2;
+      }
+
+      .checks {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 16px;
+      }
+
+      .ck {
+        display: flex;
+        align-items: flex-start;
+        gap: 11px;
+        padding: 10px 12px;
+        border: 1px solid var(--a-line);
+        border-radius: 10px;
+        background: var(--a-surface);
+      }
+
+      .ck.is-block {
+        border-color: rgba(247, 168, 168, 0.35);
+        background: rgba(247, 168, 168, 0.07);
+      }
+
+      .ck-ic {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        flex-shrink: 0;
+        border-radius: 8px;
+        background: var(--a-soft);
+        color: var(--a-faint);
+      }
+
+      .ck-ic.is-ok {
+        background: rgba(134, 227, 168, 0.12);
+        color: var(--a-good);
+      }
+
+      .ck-ic.is-bad {
+        background: rgba(247, 168, 168, 0.14);
+        color: var(--a-bad);
+      }
+
+      .ck-ic .i {
+        width: 15px;
+        height: 15px;
+      }
+
+      .ck-main {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .ck-title {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+
+      .ck-detail {
+        margin-top: 1px;
+        color: var(--a-muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .ck .btn {
+        margin-top: 8px;
+      }
+
+      .steps {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: 9px;
+        background: rgba(0, 0, 0, 0.3);
+        font-size: 12px;
+      }
+
+      .steps p {
+        margin: 0 0 6px;
+        color: var(--a-text);
+      }
+
+      .step {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 20px;
+        color: var(--a-muted);
+      }
+
+      .step .i {
+        width: 13px;
+        height: 13px;
+      }
+
+      .step.is-done .i {
+        color: var(--a-good);
+      }
+
+      .step.is-now {
+        color: var(--a-text);
+      }
+
+      .gate-foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: auto;
+        padding-top: 12px;
+      }
+
+      .gate-foot .sum {
+        flex: 1;
+        min-width: 0;
+        color: var(--a-muted);
+        font-size: 12.5px;
+      }
+
+      .gate .alert {
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Round 3">
+        <a href="index.html">Round 3</a>
+        <a href="gate.html" aria-current="page">Startup gate</a>
+        <a href="home.html">Home</a>
+        <a href="settings.html">Settings</a>
+        <a href="../approved/index.html">Approved</a>
+      </nav>
+      <h1>Startup gate <small>round 3 exploration</small></h1>
+      <ul class="rationale">
+        <li>A small window before the main one: Administrator rights, Npcap and WinDivert, each with one sentence of what is true now. Npcap is required only while WinDivert cannot stand in; WinDivert is always optional and stays quiet when Npcap works. An optional check that fails never looks like an alarm.</li>
+        <li>Blocking problems get a red-tinted row and the one fix the app can offer: Install Npcap (download, SHA-256 check against the pinned build, then Npcap's own installer window) or downloading Aether again when the bundled driver file has gone.</li>
+        <li>The open choice is what happens when everything required passes but Npcap is missing. a: wait for the user, so the Npcap recommendation is read (recommended). b: continue after 1.2 s, as today.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour carried over</h2>
+      <ul>
+        <li>The gate is authoritative in Rust: "Open Aether" asks the backend, which re-checks before showing the main window. A failure there re-runs the checks and shows the reason.</li>
+        <li>When it opens on its own at start-up and everything passes, it continues after 1.2 s. Opened again from Home ("Re-run capture check"), it never continues by itself and offers Close instead of Quit.</li>
+        <li>With Npcap working, WinDivert is judged by its file alone and never loaded: some anti-cheats treat a loaded WinDivert as a warning sign.</li>
+      </ul>
+      <h2>GPUI Kit notes</h2>
+      <ul>
+        <li>Rows are plain styled divs (no Kit component needed); buttons are Kit <code>Button</code>. The spinner is Kit's <code>Indicator</code> or a rotating Lucide <code>loader-circle</code> (a transform animation; GPUI animates rotation through <code>with_animation</code>).</li>
+        <li>The window is a borderless GPUI window with Kit's <code>TitleBar</code> (close only); it is not resizable.</li>
+      </ul>
+    </section>
+
+    <script src="app.js"></script>
+    <script>
+      (function () {
+        const { icon, C } = App;
+
+        const ADMIN_OK = ["ok", "Administrator rights", "Running elevated, which packet capture requires."];
+        const NPCAP_OK = ["ok", "Npcap", "Installed and answering. 3 network adapters visible."];
+        const WD_FALLBACK = ["idle", "WinDivert", "Bundled as a fallback. Its driver is loaded only if Npcap cannot capture, and unloaded again when Aether is done with it."];
+
+        function check([state, title, detail], { optional = false, block = false, action = "" } = {}) {
+          const ic =
+            state === "ok"
+              ? `<span class="ck-ic is-ok">${icon("tick")}</span>`
+              : state === "bad"
+                ? `<span class="ck-ic is-bad">${icon("alert")}</span>`
+                : state === "busy"
+                  ? `<span class="ck-ic">${icon("loader", "spin")}</span>`
+                  : `<span class="ck-ic">${icon("dash")}</span>`;
+          return `<div class="ck${block ? " is-block" : ""}">${ic}<div class="ck-main"><div class="ck-title">${title}${optional ? '<span class="badge is-plain">Optional</span>' : ""}</div><div class="ck-detail">${detail}</div>${action}</div></div>`;
+        }
+
+        function win(ctx, { head, sub, busy = false, checks, extra = "", sum, actions, manual = false }) {
+          const mark = busy ? icon("loader") : icon("shield");
+          return `<div class="win is-gate">${ctx.titleBar(ctx, "", { gate: true })}
+<div class="gate">
+  <div class="gate-head"><span class="gate-mark">${mark}</span><div><div class="h1">${head}</div>${sub ? `<p>${sub}</p>` : ""}</div></div>
+  <div class="checks">${checks}</div>
+  ${extra}
+  <div class="gate-foot"><span class="sum">${sum}</span>${actions}</div>
+</div></div>`;
+        }
+
+        const recheck = (busy) => C.btn("Re-check", { kind: busy ? "ghost" : "", ic: "refresh" });
+
+        function render(state, ctx) {
+          switch (state) {
+            case "checking":
+              return win(ctx, {
+                head: "Checking what Aether needs",
+                busy: true,
+                checks: ["Administrator rights", "Npcap", "WinDivert"].map((l) => check(["busy", l, "Checking…"])).join(""),
+                sum: "Checking…",
+                actions: C.btn("Quit", { kind: "ghost" }),
+              });
+            case "ready":
+              return win(ctx, {
+                head: "Everything is ready",
+                sub: "Opening Aether…",
+                checks: check(ADMIN_OK) + check(NPCAP_OK) + check(WD_FALLBACK),
+                sum: "Everything Aether needs is in place.",
+                actions: recheck() + C.btn("Continue now", { kind: "primary", ic: "chevronRight" }),
+              });
+            case "npcap-missing": {
+              const auto = ctx.v.auto === "b";
+              return win(ctx, {
+                head: "Ready, with one recommendation",
+                sub: auto ? "Opening Aether…" : "Aether can capture with WinDivert.",
+                checks:
+                  check(ADMIN_OK) +
+                  check(["idle", "Npcap", "Not installed. Recommended: it captures without loading a kernel driver that some anti-cheats dislike."], {
+                    optional: true,
+                    action: C.btn("Install Npcap", { ic: "download", size: "sm" }),
+                  }) +
+                  check(["ok", "WinDivert", "Bundled driver answering, and used for capture."]),
+                sum: "Everything Aether needs is in place.",
+                actions: recheck() + C.btn(auto ? "Continue now" : "Open Aether", { kind: "primary", ic: "chevronRight" }),
+              });
+            }
+            case "blocked":
+              return win(ctx, {
+                head: "Aether is not ready yet",
+                checks:
+                  check(ADMIN_OK) +
+                  check(["bad", "Npcap", "Not installed, and WinDivert cannot stand in. Npcap is free and takes a minute."], {
+                    block: true,
+                    action: C.btn("Install Npcap", { kind: "primary", ic: "download", size: "sm" }),
+                  }) +
+                  check(["idle", "WinDivert", "The bundled driver file is missing from the Aether folder, which usually means antivirus quarantined it."], {
+                    optional: true,
+                    action: C.btn("Download Aether again", { ic: "external", size: "sm" }),
+                  }),
+                sum: "Npcap has to be sorted out before the meter can run.",
+                actions: recheck() + C.btn("Quit", { kind: "ghost" }),
+              });
+            case "installing":
+              return win(ctx, {
+                head: "Installing Npcap",
+                busy: true,
+                checks:
+                  check(ADMIN_OK) +
+                  check(["busy", "Npcap", "Installing…"]),
+                extra: `<div class="steps"><p>The Npcap installer opens in its own window. Tick <b>WinPcap API-compatible Mode</b>, finish it, and Aether re-checks by itself.</p>
+<div class="step is-done">${icon("check")}Fetched the official Npcap installer (1.2 MB)</div>
+<div class="step is-done">${icon("check")}SHA-256 matches the pinned build</div>
+<div class="step is-now">${icon("loader")}Waiting for the Npcap installer to finish</div></div>`,
+                sum: "Npcap has to be sorted out before the meter can run.",
+                actions: C.btn("Re-check", { kind: "ghost", ic: "refresh" }) + C.btn("Quit", { kind: "ghost" }),
+              });
+            case "install-failed":
+              return win(ctx, {
+                head: "Aether is not ready yet",
+                checks:
+                  check(ADMIN_OK) +
+                  check(["bad", "Npcap", "Not installed, and WinDivert cannot stand in."], {
+                    block: true,
+                    action: C.btn("Try again", { kind: "primary", ic: "download", size: "sm" }),
+                  }),
+                extra: `<div class="alert is-bad">${icon("alert")}<div><b>The installer was not run</b>The download does not match the build Aether expects (SHA-256). Nothing was run. You can install Npcap yourself from npcap.com.</div></div>`,
+                sum: "Npcap has to be sorted out before the meter can run.",
+                actions: recheck() + C.btn("Quit", { kind: "ghost" }),
+              });
+            case "not-elevated":
+              return win(ctx, {
+                head: "Aether is not ready yet",
+                checks:
+                  check(["bad", "Administrator rights", "Aether is not running as Administrator. Capture drivers cannot be opened without it. Close Aether and start it again."], { block: true }) +
+                  check(NPCAP_OK) +
+                  check(["idle", "WinDivert", "Cannot be checked without Administrator rights."], { optional: true }),
+                sum: "Administrator rights have to be sorted out before the meter can run.",
+                actions: C.btn("Quit", { kind: "primary" }),
+              });
+            case "manual":
+              return win(ctx, {
+                head: "Capture check",
+                sub: "Opened from Home. Nothing changes until you close it.",
+                checks: check(ADMIN_OK) + check(NPCAP_OK) + check(WD_FALLBACK),
+                sum: "Everything Aether needs is in place.",
+                actions: recheck() + C.btn("Close", { kind: "primary" }),
+              });
+          }
+          return "";
+        }
+
+        App.mount({
+          gate: true,
+          states: [
+            { id: "checking", title: "Checking", sub: "first pass, probes running" },
+            { id: "ready", title: "All good", sub: "continues by itself after 1.2 s" },
+            { id: "npcap-missing", title: "Npcap missing, WinDivert works", sub: "passes; Npcap recommended" },
+            { id: "blocked", title: "Nothing can capture", sub: "blocked; Install Npcap" },
+            { id: "installing", title: "Installing Npcap", sub: "download verified, Npcap's own window is open" },
+            { id: "install-failed", title: "Install refused", sub: "checksum did not match; nothing was run" },
+            { id: "not-elevated", title: "Not elevated", sub: "blocked; start again as Administrator" },
+            { id: "manual", title: "Re-run from Home", sub: "manual check; never continues by itself" },
+          ],
+          variants: [
+            {
+              key: "auto",
+              label: "Ready but Npcap missing",
+              def: "a",
+              options: [
+                { value: "a", label: "a: wait for the user" },
+                { value: "b", label: "b: continue after 1.2 s" },
+              ],
+            },
+          ],
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

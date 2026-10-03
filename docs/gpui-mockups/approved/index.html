@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Approved screens</title>
+    <link rel="stylesheet" href="shared.css" />
+    <style>
+      .approved {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 0 32px 48px;
+      }
+
+      .screen {
+        display: grid;
+        grid-template-columns: minmax(0, 46ch) minmax(0, 1fr);
+        gap: 24px;
+        margin-top: 22px;
+      }
+
+      .screen h2 {
+        margin: 0 0 6px;
+        font-size: 17px;
+        font-weight: 650;
+      }
+
+      .screen h2 a {
+        color: var(--page-text);
+      }
+
+      .screen p {
+        margin: 0 0 8px;
+        color: var(--page-muted);
+      }
+
+      .frames {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+        gap: 14px;
+      }
+
+      /* Main-window screens: the 960 px window needs the full width. */
+      .screen.is-wide {
+        grid-template-columns: 1fr;
+      }
+
+      .screen.is-wide .frames {
+        grid-template-columns: repeat(auto-fill, minmax(1020px, 1fr));
+      }
+
+      .screen.is-wide .frames.is-gate {
+        grid-template-columns: repeat(auto-fill, minmax(660px, 1fr));
+      }
+
+      .frames iframe {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-radius: 10px;
+        background: var(--page-surface);
+      }
+
+      .tokens {
+        max-width: 100ch;
+        margin-top: 30px;
+        color: var(--page-muted);
+      }
+
+      .tokens h2 {
+        margin: 0 0 6px;
+        color: var(--page-text);
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .tokens ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      .tokens li + li {
+        margin-top: 3px;
+      }
+
+      .confirm-list {
+        max-width: 100ch;
+        margin-top: 30px;
+        color: var(--page-muted);
+      }
+
+      .confirm-list h2 {
+        margin: 0 0 6px;
+        color: var(--page-text);
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .confirm-list ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      @media (max-width: 900px) {
+        .screen {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Approved screens">
+        <a href="index.html" aria-current="page">Approved screens</a>
+        <a href="gate.html">Startup gate</a>
+        <a href="home.html">Home</a>
+        <a href="settings.html">Settings</a>
+        <a href="meter.html">Meter overlay</a>
+        <a href="pvp.html">PvP overlay</a>
+        <a href="detail.html">Player detail</a>
+        <a href="history.html">Fight history</a>
+      </nav>
+      <h1>Approved screens <small>reference for the GPUI implementation</small></h1>
+      <ul class="rationale">
+        <li>Only designs the user has validated live here. Explorations stay in <a href="../meter/index.html">meter/</a> (round 1), <a href="../round2/index.html">round2/</a> and <a href="../round3/index.html">round3/</a>.</li>
+        <li>Values are in <a href="tokens.md">tokens.md</a>; a screen and its tokens change together.</li>
+      </ul>
+    </header>
+
+    <div class="approved">
+      <section class="screen is-wide">
+        <div>
+          <h2><a href="gate.html">Startup gate</a></h2>
+          <p>Validated in round 3. Administrator rights, Npcap and WinDivert with the weighting from <code>preflight.rs</code>; Install Npcap with the SHA-256 check; waits for "Open Aether" when Npcap is missing so the recommendation is read. States: checking, all good, Npcap missing, nothing can capture, installing, install refused, not elevated, re-run from Home.</p>
+        </div>
+        <div class="frames is-gate">
+          <iframe title="Gate, Npcap missing" src="gate.html?embed&amp;states=npcap-missing" height="530"></iframe>
+          <iframe title="Gate, nothing can capture" src="gate.html?embed&amp;states=blocked" height="530"></iframe>
+        </div>
+      </section>
+
+      <section class="screen is-wide">
+        <div>
+          <h2><a href="home.html">Home</a></h2>
+          <p>Validated in round 3. Sidebar navigation; one card with the status, character and server on one line, elapsed time, Start or Stop and "Close this window once it starts"; the in-game shortcuts beside it. States: ready, starting, waiting for the game, running, start failed. English and French.</p>
+        </div>
+        <div class="frames">
+          <iframe title="Home, running" src="home.html?embed&amp;states=live" height="680"></iframe>
+        </div>
+      </section>
+
+      <section class="screen is-wide">
+        <div>
+          <h2><a href="settings.html">Settings</a></h2>
+          <p>Validated in round 3. Overlay (with the live preview), Meter behaviour, Shortcuts (recorder, conflict), Capture (status, backend, recording, replay, log folder), Personal bests (reset confirm, empty), General (language), About (licence, credits, storage, clear-cache dialog).</p>
+        </div>
+        <div class="frames">
+          <iframe title="Settings, overlay" src="settings.html?embed&amp;states=overlay" height="680"></iframe>
+        </div>
+      </section>
+
+      <section class="screen">
+        <div>
+          <h2><a href="meter.html">Meter overlay</a></h2>
+          <p>Validated in round 1 (direction D2, bar end d, rank b) with the round 2 fixes: the controls take the gauge line under the pointer, and combat power reads at 0.82. All states: waiting, live with and without the pointer, capsule, both fight summaries, over a busy, a bright and a dark scene.</p>
+          <p>Live controls: background opacity, content scale, rows, mask names, server, total damage, combat power, contribution or share.</p>
+        </div>
+        <div class="frames">
+          <iframe title="Meter, live, pointer over" src="meter.html?embed&amp;scenes=bright&amp;states=hover" height="380"></iframe>
+          <iframe title="Meter, fight summary" src="meter.html?embed&amp;scenes=dark&amp;states=final" height="420"></iframe>
+        </div>
+      </section>
+
+      <section class="screen">
+        <div>
+          <h2><a href="pvp.html">PvP overlay</a></h2>
+          <p>Validated in round 2. The watch list is pinned on top (your last attacker first); Kill stats and Damage share two tabs below. States: just opened, kill stats by damage and by kills, damage dealt and taken, adding to the watch list, long list.</p>
+        </div>
+        <div class="frames">
+          <iframe title="PvP, kill stats" src="pvp.html?embed&amp;scenes=busy&amp;states=kills" height="520"></iframe>
+          <iframe title="PvP, adding to the watch list" src="pvp.html?embed&amp;scenes=dark&amp;states=add" height="520"></iframe>
+        </div>
+      </section>
+
+      <section class="screen">
+        <div>
+          <h2><a href="detail.html">Player detail</a></h2>
+          <p>Validated in round 2. Skill table with Hits, Crit and Total; a row opens to the other twelve figures. States: nothing selected, live, skill opened, buffs open, history mode, no skill data.</p>
+        </div>
+        <div class="frames">
+          <iframe title="Detail, skill opened" src="detail.html?embed&amp;scenes=dark&amp;states=expanded" height="620"></iframe>
+        </div>
+      </section>
+
+      <section class="screen">
+        <div>
+          <h2><a href="history.html">Fight history</a></h2>
+          <p>Validated in round 2. Two lines per record; deleting one or all asks first on the button itself, with Cancel. States: empty, records, filtering, record opened, deleting one, deleting all, after deleting all.</p>
+        </div>
+        <div class="frames">
+          <iframe title="History, record opened" src="history.html?embed&amp;scenes=bright&amp;states=open" height="560"></iframe>
+          <iframe title="History, deleting one record" src="history.html?embed&amp;scenes=dark&amp;states=del-one" height="560"></iframe>
+        </div>
+      </section>
+
+      <section class="tokens" aria-labelledby="tokens-title">
+        <h2 id="tokens-title">Design tokens in short</h2>
+        <ul>
+          <li>Card: warm near-black <code>rgba(16, 14, 12, a)</code>, where a is the user's opacity (default 150/255); 14 px radius; 1 px border <code>rgba(255, 236, 214, 0.10)</code>; shadow 0 10 28 at 0.42.</li>
+          <li>Bars: 22 px rows with a 3 px gap, 5 px radius on track and fill, track <code>rgba(0, 0, 0, 0.34)</code>, fill a two-stop gradient of the class colour from 0.14 to 0.50, brightest at the leading edge. No edge marker.</li>
+          <li>Rank: 18 px badge with 4 px radius, <code>rgba(255, 240, 225, 0.09)</code>; yours is cream <code>rgba(255, 246, 236, 0.90)</code> with dark text, and your bar gets a 1 px cream rim at 0.45. 8 px on each side of the badge.</li>
+          <li>Type: overlays in Bahnschrift SemiCondensed; the main window in Segoe UI Variable for text with Bahnschrift for titles, figures and buttons. Tabular figures, sentence case.</li>
+          <li>Text: <code>rgba(255, 246, 236, …)</code> at 0.96, 0.82 (combat power), 0.66 and 0.44. Accents: good <code>#86e3a8</code>, warn <code>#f2c66d</code>, bad <code>#f7a8a8</code>, boss HP <code>#e8735f</code>, new PB <code>#fde68a</code> on amber 0.17. Class colours appear only on bars, coverage bars and the capsule badge.</li>
+          <li>Overlay window parts: segmented tabs, 26 px inputs and selects, popovers on <code>rgba(30, 26, 22, 0.98)</code>, a "Delete?" danger fill with Cancel for confirmations, rows that open to a four-column figure block.</li>
+          <li>Main window: opaque canvas <code>#141210</code>, sidebar and title bar <code>#0e0c0b</code>, groups <code>#1b1815</code> with 10 px radius; one cream primary button (<code>#f3ebe1</code> on <code>#17120d</code>) per view; cream switches and sliders.</li>
+        </ul>
+      </section>
+
+      <section class="confirm-list" aria-labelledby="confirm-title">
+        <h2 id="confirm-title">To confirm during implementation</h2>
+        <ul>
+          <li>Clear cache (Settings, About): what exactly is reset and what is kept depends on the Rust storage; the dialog's copy follows that.</li>
+          <li>WinDivert is bundled but no licence text for it is in the repository; the About credits name it without a licence until one is added.</li>
+        </ul>
+      </section>
+    </div>
+  </body>
+</html>
