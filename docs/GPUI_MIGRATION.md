@@ -79,6 +79,12 @@ so there is no second list of runtime files to drift from the first. Npcap
 cannot be bundled (its free licence forbids redistribution), so each user
 installs it themselves, or runs on the WinDivert fallback.
 
+The executable is `aion-2-dps-meter.exe`, not `Aether.exe` (user request,
+2026-10-03). The Tauri app already builds under that name through
+`mainBinaryName` in `tauri.conf.json`; the GPUI app's binary uses it too. The
+app identifier stays `com.helveticxa.aether`, so settings, history and
+recordings stay where they are.
+
 ## Design
 
 The UI gets a new design, not a copy of Aether's. It was agreed with the user
