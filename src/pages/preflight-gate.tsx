@@ -14,7 +14,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-/** Mirrors `dps_meter::preflight` on the Rust side. */
+/** Mirrors `aether_core::preflight` on the Rust side. */
 type CheckId = "elevation" | "npcap" | "windivert";
 type Weight = "required" | "optional";
 type Fix = "install-npcap" | "reinstall-aether";

@@ -95,7 +95,7 @@ function RangeControl({
   );
 }
 
-/** Mirrors `PersonalBest` in src-tauri/src/dps_meter/personal_best.rs. */
+/** Mirrors `PersonalBest` in crates/aether-core/src/personal_best.rs. */
 interface PersonalBest {
   character: string;
   mobCode: number;

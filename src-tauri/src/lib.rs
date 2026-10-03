@@ -1,5 +1,6 @@
-mod dps_meter;
+mod commands;
 mod plugins;
+mod tauri_event_sink;
 
 use tauri::{Manager, RunEvent};
 use tauri_plugin_notification::NotificationExt;
@@ -84,45 +85,45 @@ pub fn run() {
             plugins::logger::get_app_logger_debug_enabled,
             plugins::logger::set_app_logger_debug_enabled,
             plugins::logger::read_app_log_tail,
-            dps_meter::api::commands::apply_dps_meter_config,
-            dps_meter::api::commands::get_dps_meter_config,
-            dps_meter::api::commands::start_dps_meter,
-            dps_meter::api::commands::get_dps_snapshot,
-            dps_meter::api::commands::get_pvp_watch_info,
-            dps_meter::api::commands::get_pvp_combat_stats,
-            dps_meter::api::commands::clear_pvp_combat_stats,
-            dps_meter::api::commands::get_dps_meter_status,
-            dps_meter::api::commands::get_region_status,
-            dps_meter::api::commands::reset_region_observations,
-            dps_meter::api::commands::get_connection_status,
-            dps_meter::api::commands::get_personal_best,
-            dps_meter::api::commands::list_personal_bests,
-            dps_meter::api::commands::reset_personal_bests,
-            dps_meter::api::commands::start_packet_recording,
-            dps_meter::api::commands::stop_packet_recording,
-            dps_meter::api::commands::get_packet_recording_status,
-            dps_meter::api::commands::list_packet_recordings,
-            dps_meter::api::commands::replay_packet_recording,
-            dps_meter::api::commands::cancel_packet_replay,
-            dps_meter::api::commands::is_packet_replaying,
-            dps_meter::api::commands::get_diagnostics_report,
-            dps_meter::api::commands::save_diagnostics_report,
-            dps_meter::api::commands::get_opcode_census,
-            dps_meter::api::commands::set_opcode_census_enabled,
-            dps_meter::api::commands::reset_opcode_census,
-            dps_meter::api::commands::reset_dps_meter,
-            dps_meter::api::commands::stop_dps_meter,
-            dps_meter::api::commands::check_dps_meter_state,
-            dps_meter::api::commands::get_tcp_reassembly_status,
-            dps_meter::api::commands::get_last_snapshot,
-            dps_meter::api::commands::get_history,
-            dps_meter::api::commands::delete_all_history,
-            dps_meter::api::commands::delete_history_record,
-            dps_meter::api::commands::delete_history_records,
-            dps_meter::api::commands::check_npcap_available,
-            dps_meter::api::commands::run_preflight,
-            dps_meter::api::commands::enter_app,
-            dps_meter::api::commands::install_npcap,
+            commands::apply_dps_meter_config,
+            commands::get_dps_meter_config,
+            commands::start_dps_meter,
+            commands::get_dps_snapshot,
+            commands::get_pvp_watch_info,
+            commands::get_pvp_combat_stats,
+            commands::clear_pvp_combat_stats,
+            commands::get_dps_meter_status,
+            commands::get_region_status,
+            commands::reset_region_observations,
+            commands::get_connection_status,
+            commands::get_personal_best,
+            commands::list_personal_bests,
+            commands::reset_personal_bests,
+            commands::start_packet_recording,
+            commands::stop_packet_recording,
+            commands::get_packet_recording_status,
+            commands::list_packet_recordings,
+            commands::replay_packet_recording,
+            commands::cancel_packet_replay,
+            commands::is_packet_replaying,
+            commands::get_diagnostics_report,
+            commands::save_diagnostics_report,
+            commands::get_opcode_census,
+            commands::set_opcode_census_enabled,
+            commands::reset_opcode_census,
+            commands::reset_dps_meter,
+            commands::stop_dps_meter,
+            commands::check_dps_meter_state,
+            commands::get_tcp_reassembly_status,
+            commands::get_last_snapshot,
+            commands::get_history,
+            commands::delete_all_history,
+            commands::delete_history_record,
+            commands::delete_history_records,
+            commands::check_npcap_available,
+            commands::run_preflight,
+            commands::enter_app,
+            commands::install_npcap,
             plugins::aion2_overlay::create_dps_overlay,
             plugins::aion2_overlay::destroy_dps_overlay,
             plugins::aion2_overlay::create_pvp_overlay,
@@ -171,11 +172,18 @@ pub fn run() {
         ])
         .setup(|app| {
             let logger = app
-                .state::<std::sync::Arc<plugins::logger::AppLogger>>()
+                .state::<std::sync::Arc<aether_core::logger::AppLogger>>()
                 .inner()
                 .clone();
             remove_retired_app_data(app.handle());
-            let meter = dps_meter::engine::meter::DpsMeter::new(app.handle().clone(), logger);
+            let events = std::sync::Arc::new(tauri_event_sink::TauriEventSink::new(
+                app.handle().clone(),
+            ));
+            let meter = aether_core::engine::meter::DpsMeter::new(
+                events,
+                logger,
+                app.path().app_data_dir().ok(),
+            );
             app.manage(meter);
             Ok(())
         });
@@ -195,7 +203,7 @@ pub fn run() {
             plugins::on_top::restore_all();
             // The meter stops on ExitRequested; this covers any other way out.
             #[cfg(windows)]
-            dps_meter::capture::windivert_capturer::unload_driver();
+            aether_core::capture::windivert_capturer::unload_driver();
             return;
         }
         if let RunEvent::ExitRequested { api, .. } = event {
@@ -203,7 +211,7 @@ pub fn run() {
                 if !plugins::system_tray::should_allow_exit(state) {
                     api.prevent_exit();
                 } else if let Some(meter) =
-                    app_handle.try_state::<dps_meter::engine::meter::DpsMeter>()
+                    app_handle.try_state::<aether_core::engine::meter::DpsMeter>()
                 {
                     meter.stop_dps_meter();
                 }

@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { SettingsRow } from "@/components/settings-layout";
 import { useAppTranslation } from "@/hooks/use-app-translation";
 
-/** Mirrors `OpcodeStat` in src-tauri/src/dps_meter/capture/census.rs. */
+/** Mirrors `OpcodeStat` in crates/aether-core/src/capture/census.rs. */
 interface OpcodeStat {
   opcode: string;
   count: number;

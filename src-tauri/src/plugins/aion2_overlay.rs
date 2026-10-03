@@ -6,7 +6,7 @@ use tauri::{
     AppHandle, Emitter, Manager, Runtime, State, WebviewUrl, WebviewWindowBuilder,
 };
 
-use crate::dps_meter::engine::meter::DpsMeter;
+use aether_core::engine::meter::DpsMeter;
 
 pub(crate) const DPS_OVERLAY_LABEL: &str = "dps-overlay";
 const PVP_OVERLAY_LABEL: &str = "dps-overlay-pvp";

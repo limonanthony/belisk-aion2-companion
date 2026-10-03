@@ -12,15 +12,12 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 name = "aether"
 version = "2.4.0"
 dependencies = [
+ "aether-core",
  "base64 0.22.1",
- "crc32fast",
- "libloading 0.8.9",
- "lz4_flex",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2",
- "sysinfo",
  "tauri",
  "tauri-build",
  "tauri-plugin-global-shortcut",
@@ -32,6 +29,19 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "webpki-roots",
+ "windows 0.61.3",
+]
+
+[[package]]
+name = "aether-core"
+version = "2.4.0"
+dependencies = [
+ "crc32fast",
+ "libloading 0.8.9",
+ "lz4_flex",
+ "serde",
+ "serde_json",
+ "sysinfo",
  "windivert-sys",
  "windows 0.48.0",
  "windows 0.61.3",

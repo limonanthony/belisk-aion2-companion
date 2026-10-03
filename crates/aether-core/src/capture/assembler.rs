@@ -1,0 +1,65 @@
+use std::sync::Arc;
+
+use crate::capture::accumulator::PacketAccumulator;
+use crate::capture::processor::StreamProcessor;
+use crate::config::SharedDpsMeterConfig;
+use crate::storage::data_storage::DataStorage;
+use crate::logger::AppLogger;
+
+pub struct StreamAssembler {
+    accumulator: PacketAccumulator,
+    processor: StreamProcessor,
+}
+
+impl StreamAssembler {
+    pub fn new(
+        data_storage: Arc<DataStorage>,
+        logger: Arc<AppLogger>,
+        port: String,
+        config: SharedDpsMeterConfig,
+    ) -> Self {
+        Self {
+            accumulator: PacketAccumulator::new(),
+            processor: StreamProcessor::new(data_storage, logger, port, config),
+        }
+    }
+
+    pub fn new_nickname_only(
+        data_storage: Arc<DataStorage>,
+        logger: Arc<AppLogger>,
+        port: String,
+        config: SharedDpsMeterConfig,
+    ) -> Self {
+        Self {
+            accumulator: PacketAccumulator::new(),
+            processor: StreamProcessor::new_nickname_only(data_storage, logger, port, config),
+        }
+    }
+
+    pub fn process_chunk(&mut self, data: &[u8], combat_damage_enabled: bool) -> bool {
+        self.processor
+            .set_combat_damage_enabled(combat_damage_enabled);
+        self.accumulator.append(data);
+        let mut parsed_any = false;
+
+        while self.accumulator.size() > 0 {
+            let snapshot = self.accumulator.snapshot();
+            let consumed = self.processor.consume_stream(&snapshot);
+            if consumed == 0 {
+                break;
+            }
+            self.accumulator.discard_bytes(consumed);
+            parsed_any = true;
+        }
+
+        parsed_any
+    }
+
+    pub fn clear(&self) {
+        self.accumulator.clear();
+    }
+
+    pub fn buffer_size(&self) -> usize {
+        self.accumulator.size()
+    }
+}

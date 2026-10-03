@@ -25,10 +25,7 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sysinfo = "0.33"
-libloading = "0.8"
-lz4_flex = "0.11"
-crc32fast = "1"
+aether-core = { path = "../crates/aether-core" }
 sha2 = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 base64 = "0.22"
@@ -44,8 +41,6 @@ tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
 
 [target.'cfg(windows)'.dependencies]
-windivert-sys = { version = "0.10", features = ["vendored"] }
-windows-048 = { package = "windows", version = "0.48", features = ["Win32_Foundation"] }
 windows = { version = "0.61.3", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",

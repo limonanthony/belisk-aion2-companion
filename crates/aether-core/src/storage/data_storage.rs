@@ -1,0 +1,1142 @@
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::hash::Hash;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, RwLock};
+
+use serde::Serialize;
+use std::sync::Arc;
+
+use crate::config::{SharedDpsMeterConfig, TRAINING_DUMMY_MOB_CODE};
+use crate::events::{EventSink, MeterEvent};
+use crate::models::combat::{
+    BuffInterval, BuffSummary, PlayerHpInfo, PvpCombatStats, PvpCombatStatsRow, PvpKnownPlayer,
+    PvpWatchInfo, PvpWatchInfoResponse, SkillStats,
+};
+use crate::models::packet::ParsedDamagePacket;
+use crate::storage::loaders::{load_boss_ids, load_healing_skill_codes, load_npc_names};
+
+const ACTOR_METADATA_CAPACITY: usize = 2_000;
+const MOB_METADATA_CAPACITY: usize = 5_000;
+/// Targets kept in the combat totals. Far more than any encounter needs, and
+/// still small enough that cloning the map stays cheap.
+const COMBAT_TARGET_CAPACITY: usize = 512;
+const SUMMON_METADATA_CAPACITY: usize = 5_000;
+
+const BUFF_TARGET_CAPACITY: usize = 1_024;
+const BUFF_INTERVALS_PER_SKILL_CAPACITY: usize = 1_024;
+const BUFF_INTERVAL_MERGE_TOLERANCE_MS: u64 = 100;
+
+const ACTOR_CLASS_SKILL_IGNORE_LIST: [&str; 2] = ["1134", "1740"];
+/// Fighter rage variants mapped to the skill they belong to, as
+/// `(rage_id, base_id)`. Both are counted as one skill in the meter.
+///
+/// Listed by id: the English skill catalogue has no names for these yet, so a
+/// name here would have to be Chinese and would go stale the moment it does.
+const FIGHTER_SKILLID_MAP: &[(u32, u32)] = &[
+    (19_080_000, 19_070_000),
+    (19_100_000, 19_090_000),
+    (19_120_000, 19_110_000),
+    (19_150_000, 19_160_000),
+    (19_180_000, 19_170_000),
+    (19_190_000, 19_200_000),
+    (19_260_000, 19_250_000),
+    (19_430_000, 19_420_000),
+    (19_470_000, 19_460_000),
+    (19_510_000, 19_010_000),
+    (19_520_000, 19_020_000),
+    (19_530_000, 19_030_000),
+    (19_540_000, 19_040_000),
+    (19_550_000, 19_050_000),
+    (19_560_000, 19_060_000),
+];
+
+#[derive(Debug, Clone)]
+struct BoundedMap<K, V> {
+    map: HashMap<K, V>,
+    order: VecDeque<K>,
+    capacity: usize,
+}
+
+impl<K, V> BoundedMap<K, V>
+where
+    K: Eq + Hash + Clone,
+{
+    fn new(capacity: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            order: VecDeque::new(),
+            capacity,
+        }
+    }
+
+    fn insert(&mut self, key: K, value: V) -> Option<V> {
+        self.order.retain(|existing| existing != &key);
+        self.order.push_back(key.clone());
+        let previous = self.map.insert(key, value);
+        self.evict_oldest();
+        previous
+    }
+
+    fn get(&self, key: &K) -> Option<&V> {
+        self.map.get(key)
+    }
+
+    fn get_mut_or_insert_with<F>(&mut self, key: K, default: F) -> &mut V
+    where
+        F: FnOnce() -> V,
+    {
+        if self.map.contains_key(&key) {
+            self.order.retain(|existing| existing != &key);
+            self.order.push_back(key.clone());
+        } else {
+            self.order.push_back(key.clone());
+            self.map.insert(key.clone(), default());
+            self.evict_oldest();
+        }
+
+        self.map
+            .get_mut(&key)
+            .expect("bounded map entry must exist after insert")
+    }
+
+    fn contains_key(&self, key: &K) -> bool {
+        self.map.contains_key(key)
+    }
+
+    fn as_hash_map(&self) -> HashMap<K, V>
+    where
+        V: Clone,
+    {
+        self.map.clone()
+    }
+
+    fn evict_oldest(&mut self) {
+        while self.map.len() > self.capacity {
+            let Some(oldest_key) = self.order.pop_front() else {
+                break;
+            };
+            self.map.remove(&oldest_key);
+        }
+    }
+}
+
+#[derive(Debug)]
+struct DataStorageInner {
+    /// Combat totals, keyed by target.
+    ///
+    /// Bounded, unlike the plain map this used to be. Every other metadata map
+    /// here was already bounded; this one was not, and it is deep-cloned five
+    /// times a second to build the overlay snapshot. While the meter only
+    /// counted bosses that was a handful of entries. Counting ordinary mobs as
+    /// well -- which is now the default -- means a grinding session would add a
+    /// target per kill and make every snapshot fractionally more expensive than
+    /// the last, forever.
+    dps_stats: BoundedMap<u32, HashMap<u32, HashMap<u32, SkillStats>>>,
+    actor_id_name_map: BoundedMap<u32, String>,
+    actor_id_server_map: BoundedMap<u32, String>,
+    actor_id_class_map: BoundedMap<u32, String>,
+    actor_id_combat_power_map: BoundedMap<u32, u64>,
+    actor_id_skill_spec_map: BoundedMap<u32, HashMap<u32, Vec<u32>>>,
+    mob_id_code_map: BoundedMap<u32, u32>,
+    mob_id_hp_map: BoundedMap<u32, (u32, u32)>,
+    player_hp_map: BoundedMap<u32, PlayerHpInfo>,
+    use_buffs_by_target: BoundedMap<u32, HashMap<u32, HashMap<u32, VecDeque<BuffInterval>>>>,
+    possible_boss_codes: HashSet<u32>,
+    summon_owner_map: BoundedMap<u32, u32>,
+    start_time: Option<f64>,
+    /// Last time the player running Aether was in the fight: hit something,
+    /// was hit, or their target took damage from the party. `None` until the
+    /// first such hit after a reset. Drives the overlay's auto-hide and the
+    /// idle reset, so fights nearby that you are not part of move neither.
+    activity_at: Option<f64>,
+    start_time_by_target: HashMap<u32, HashMap<u32, f64>>,
+    last_time_by_target: HashMap<u32, HashMap<u32, f64>>,
+    dot_skill_list: Vec<u32>,
+    main_actor_id: Option<u32>,
+    main_actor_name: Option<String>,
+    main_actor_combat_power: Option<u64>,
+    last_target: Option<u32>,
+    last_target_by_main_actor: Option<u32>,
+    last_player_target_by_main_actor: Option<u32>,
+    pvp_attackers_by_target: HashMap<u32, HashMap<PvpPlayerKey, u64>>,
+    pvp_last_attacker_by_target: HashMap<u32, PvpPlayerKey>,
+    pvp_combat_stats: HashMap<PvpPlayerKey, PvpCombatStats>,
+    pvp_dead_players: HashSet<PvpPlayerKey>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct PvpPlayerKey {
+    name: String,
+    server_id: String,
+}
+
+impl Default for DataStorageInner {
+    fn default() -> Self {
+        Self {
+            dps_stats: BoundedMap::new(COMBAT_TARGET_CAPACITY),
+            actor_id_name_map: BoundedMap::new(ACTOR_METADATA_CAPACITY),
+            actor_id_server_map: BoundedMap::new(ACTOR_METADATA_CAPACITY),
+            actor_id_class_map: BoundedMap::new(ACTOR_METADATA_CAPACITY),
+            actor_id_combat_power_map: BoundedMap::new(ACTOR_METADATA_CAPACITY),
+            actor_id_skill_spec_map: BoundedMap::new(ACTOR_METADATA_CAPACITY),
+            mob_id_code_map: BoundedMap::new(MOB_METADATA_CAPACITY),
+            mob_id_hp_map: BoundedMap::new(MOB_METADATA_CAPACITY),
+            player_hp_map: BoundedMap::new(ACTOR_METADATA_CAPACITY),
+            use_buffs_by_target: BoundedMap::new(BUFF_TARGET_CAPACITY),
+            possible_boss_codes: HashSet::new(),
+            summon_owner_map: BoundedMap::new(SUMMON_METADATA_CAPACITY),
+            start_time: None,
+            activity_at: None,
+            start_time_by_target: HashMap::new(),
+            last_time_by_target: HashMap::new(),
+            dot_skill_list: Vec::new(),
+            main_actor_id: None,
+            main_actor_name: None,
+            main_actor_combat_power: None,
+            last_target: None,
+            last_target_by_main_actor: None,
+            last_player_target_by_main_actor: None,
+            pvp_attackers_by_target: HashMap::new(),
+            pvp_last_attacker_by_target: HashMap::new(),
+            pvp_combat_stats: HashMap::new(),
+            pvp_dead_players: HashSet::new(),
+        }
+    }
+}
+
+pub type MainActorCallback = dyn Fn(u32, &str, Option<String>) + Send + Sync;
+
+pub struct DataStorage {
+    events: Arc<dyn EventSink>,
+    inner: RwLock<DataStorageInner>,
+    config: SharedDpsMeterConfig,
+    healing_skill_codes: HashSet<u32>,
+    boss_code_list: HashSet<u32>,
+    mob_code_name_map: HashMap<u32, String>,
+    pub main_actor_callback: Mutex<Option<Box<MainActorCallback>>>,
+    /// Counts what the Boss only filter threw away, so the UI can say so.
+    boss_only_filtered: AtomicU64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MainActorDetectedPayload {
+    pub actor_id: u32,
+    pub actor_name: String,
+    pub sid: Option<String>,
+}
+
+impl DataStorage {
+    pub fn new(events: Arc<dyn EventSink>, config: SharedDpsMeterConfig) -> Self {
+        Self {
+            events,
+            inner: RwLock::new(DataStorageInner::default()),
+            config,
+            healing_skill_codes: load_healing_skill_codes(),
+            boss_code_list: load_boss_ids(),
+            mob_code_name_map: load_npc_names(),
+            main_actor_callback: Mutex::new(None),
+            boss_only_filtered: AtomicU64::new(0),
+        }
+    }
+
+    pub fn clear(&self) {
+        self.boss_only_filtered.store(0, Ordering::Relaxed);
+        let mut inner = self.inner.write().unwrap();
+        let main_actor_id = inner.main_actor_id;
+        let main_actor_name = inner.main_actor_name.clone();
+        let main_actor_combat_power = inner.main_actor_combat_power;
+        let actor_id_name_map = inner.actor_id_name_map.clone();
+        let actor_id_server_map = inner.actor_id_server_map.clone();
+        let actor_id_class_map = inner.actor_id_class_map.clone();
+        let actor_id_combat_power_map = inner.actor_id_combat_power_map.clone();
+        let actor_id_skill_spec_map = inner.actor_id_skill_spec_map.clone();
+
+        let mob_id_code_map = inner.mob_id_code_map.clone();
+        let mob_id_hp_map = inner.mob_id_hp_map.clone();
+        let player_hp_map = inner.player_hp_map.clone();
+        let pvp_attackers_by_target = inner.pvp_attackers_by_target.clone();
+        let pvp_last_attacker_by_target = inner.pvp_last_attacker_by_target.clone();
+        let pvp_combat_stats = inner.pvp_combat_stats.clone();
+        let pvp_dead_players = inner.pvp_dead_players.clone();
+        // let summon_owner_map = inner.summon_owner_map.clone();
+        let dot_skill_list = inner.dot_skill_list.clone();
+
+        *inner = DataStorageInner::default();
+        inner.main_actor_id = main_actor_id;
+        inner.main_actor_name = main_actor_name;
+        inner.main_actor_combat_power = main_actor_combat_power;
+        inner.actor_id_name_map = actor_id_name_map;
+        inner.actor_id_server_map = actor_id_server_map;
+        inner.actor_id_class_map = actor_id_class_map;
+        inner.actor_id_combat_power_map = actor_id_combat_power_map;
+        inner.actor_id_skill_spec_map = actor_id_skill_spec_map;
+
+        inner.mob_id_code_map = mob_id_code_map;
+        inner.mob_id_hp_map = mob_id_hp_map;
+        inner.player_hp_map = player_hp_map;
+        inner.pvp_attackers_by_target = pvp_attackers_by_target;
+        inner.pvp_last_attacker_by_target = pvp_last_attacker_by_target;
+        inner.pvp_combat_stats = pvp_combat_stats;
+        inner.pvp_dead_players = pvp_dead_players;
+        // inner.summon_owner_map = summon_owner_map;
+        inner.dot_skill_list = dot_skill_list;
+    }
+
+    /// Hits thrown away by the Boss only filter since the last reset.
+    pub fn boss_only_filtered(&self) -> u64 {
+        self.boss_only_filtered.load(Ordering::Relaxed)
+    }
+
+    pub fn append_damage(&self, packet: ParsedDamagePacket) {
+        self.append_damage_at(packet, current_timestamp_seconds());
+    }
+
+    pub fn save_buff(
+        &self,
+        target_id: u32,
+        actor_id: u32,
+        skill_code: u32,
+        _server_start_ms: u64,
+        duration_ms: u64,
+    ) -> BuffSummary {
+        let local_start_ms = current_timestamp_millis();
+        let local_end_ms = local_start_ms.saturating_add(duration_ms);
+
+        // Buff intervals feed the detail window's coverage timeline. The live
+        // buff overlay that also listened here was removed in 2.2.0.
+        {
+            let mut inner = self.inner.write().unwrap();
+            let skill_intervals = inner
+                .use_buffs_by_target
+                .get_mut_or_insert_with(target_id, HashMap::new)
+                .entry(actor_id)
+                .or_default()
+                .entry(skill_code)
+                .or_default();
+            if let Some(last_interval) = skill_intervals.back_mut() {
+                if local_start_ms
+                    <= last_interval
+                        .end_ms
+                        .saturating_add(BUFF_INTERVAL_MERGE_TOLERANCE_MS)
+                {
+                    last_interval.end_ms = last_interval.end_ms.max(local_end_ms);
+                } else {
+                    skill_intervals.push_back(BuffInterval {
+                        start_ms: local_start_ms,
+                        end_ms: local_end_ms,
+                    });
+                }
+            } else {
+                skill_intervals.push_back(BuffInterval {
+                    start_ms: local_start_ms,
+                    end_ms: local_end_ms,
+                });
+            }
+            while skill_intervals.len() > BUFF_INTERVALS_PER_SKILL_CAPACITY {
+                skill_intervals.pop_front();
+            }
+        }
+
+        BuffSummary {
+            target_id,
+            actor_id,
+            skill_code,
+            coverage: 0.0,
+            active: local_end_ms > current_timestamp_millis(),
+            last_start_ms: local_start_ms,
+            last_end_ms: local_end_ms,
+        }
+    }
+
+    pub fn append_damage_at(&self, packet: ParsedDamagePacket, timestamp: f64) {
+        let config = self.config.read().unwrap().clone();
+        let mut inner = self.inner.write().unwrap();
+
+        if self.healing_skill_codes.contains(&packet.skill_code) {
+            return;
+        }
+
+        if packet.actor_id == 0 {
+            return;
+        }
+
+        // let actor_id = packet.actor_id;
+        // A summon's damage is attributed to whoever summoned it.
+        let mut actor_id = packet.actor_id;
+        if let Some(owner_id) = inner.summon_owner_map.get(&actor_id) {
+            actor_id = *owner_id;
+        }
+
+        let target_mob_code = inner.mob_id_code_map.get(&packet.target_id).copied();
+        let is_target_boss = target_mob_code
+            .map(|mob_code| {
+                self.boss_code_list.contains(&mob_code)
+                    || (config.show_possible_boss && inner.possible_boss_codes.contains(&mob_code))
+            })
+            .unwrap_or(false);
+        let is_target_player = inner.actor_id_name_map.contains_key(&packet.target_id)
+            && !inner.mob_id_code_map.contains_key(&packet.target_id);
+
+        if config.boss_only && !is_target_boss && !(config.pvp_mode_on && is_target_player) {
+            self.boss_only_filtered.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+
+        if config.my_muzhuang_only
+            && target_mob_code.is_some_and(|mob_code| TRAINING_DUMMY_MOB_CODE.contains(&mob_code))
+            && inner.main_actor_id != Some(actor_id)
+        {
+            return;
+        }
+
+        if config.pvp_mode_on && is_target_player {
+            let actor = pvp_player_key(&inner, actor_id);
+            let target = pvp_player_key(&inner, packet.target_id);
+            if let (Some(actor), Some(target)) = (actor, target) {
+                if actor != target {
+                    *inner
+                        .pvp_attackers_by_target
+                        .entry(packet.target_id)
+                        .or_default()
+                        .entry(actor.clone())
+                        .or_default() += packet.damage;
+                    inner
+                        .pvp_last_attacker_by_target
+                        .insert(packet.target_id, actor);
+                }
+            }
+        }
+
+        if packet.is_dot && !inner.dot_skill_list.contains(&packet.skill_code) {
+            inner.dot_skill_list.push(packet.skill_code);
+        }
+
+        if !inner.actor_id_class_map.contains_key(&actor_id) {
+            if let Some(actor_class) = infer_actor_class(packet.skill_code) {
+                inner.actor_id_class_map.insert(actor_id, actor_class);
+            }
+        }
+
+        if inner.start_time.is_none() {
+            inner.start_time = Some(timestamp);
+        }
+
+        inner
+            .actor_id_skill_spec_map
+            .get_mut_or_insert_with(actor_id, HashMap::new)
+            .entry(packet.skill_code)
+            .or_insert_with(|| infer_specialty_slots(packet.ori_skill_code));
+
+        inner
+            .start_time_by_target
+            .entry(packet.target_id)
+            .or_default()
+            .entry(actor_id)
+            .or_insert(timestamp);
+        inner
+            .last_time_by_target
+            .entry(packet.target_id)
+            .or_default()
+            .insert(actor_id, timestamp);
+
+        let mut special_counts = HashMap::new();
+        for special in &packet.specials {
+            *special_counts.entry(special.clone()).or_insert(0) += 1;
+        }
+        if packet.multi_hit_count > 0 {
+            special_counts.insert("MULTIHIT".to_string(), 1);
+            special_counts.insert(format!("MULTIHIT{}", packet.multi_hit_count), 1);
+        } else {
+            special_counts.insert("MULTIHIT".to_string(), 0);
+        }
+        special_counts.insert("MULTIHITDMG".to_string(), packet.multi_hit_damage as u32);
+
+        let total_damage = packet.damage;
+
+        // An 8-digit skill id is a regular skill, so use the normalised code.
+        // Longer ids -- usually 10 digits -- are DoT skills, and keep their
+        // original code so the two stay distinguishable.
+        let mut stats_skill_code = if (10_000_000..=99_999_999).contains(&packet.ori_skill_code) {
+            packet.skill_code
+        } else {
+            packet.ori_skill_code
+        };
+        // Fighter's rage variants are folded back onto the base skill.
+        if let Some((_, mapped_skill_code)) = FIGHTER_SKILLID_MAP
+            .iter()
+            .find(|(from_skill_code, _)| *from_skill_code == stats_skill_code)
+        {
+            stats_skill_code = *mapped_skill_code;
+        }
+        // Elementalist summon basic attacks collapse onto one code.
+        if (100_010..=100_059).contains(&stats_skill_code)
+            && (10001..=10005).contains(&(stats_skill_code / 10))
+        {
+            stats_skill_code = (stats_skill_code / 10) * 10;
+        }
+
+        let skill_stats = inner
+            .dps_stats
+            .get_mut_or_insert_with(packet.target_id, Default::default)
+            .entry(actor_id)
+            .or_default()
+            .entry(stats_skill_code)
+            .or_insert_with(SkillStats::new);
+
+        skill_stats.counts += 1;
+        skill_stats.total_damage += total_damage;
+        skill_stats.max_damage = skill_stats.max_damage.max(total_damage);
+        skill_stats.min_damage = skill_stats.min_damage.min(total_damage);
+        for (special_name, count) in &special_counts {
+            *skill_stats
+                .special_counts
+                .entry(special_name.clone())
+                .or_insert(0) += count;
+        }
+
+        if actor_id != packet.target_id {
+            inner.last_target = Some(packet.target_id);
+            if inner.main_actor_id == Some(actor_id) {
+                inner.last_target_by_main_actor = Some(packet.target_id);
+                if is_target_player {
+                    inner.last_player_target_by_main_actor = Some(packet.target_id);
+                }
+            }
+        }
+
+        if is_own_fight(&inner, actor_id, packet.target_id) {
+            inner.activity_at = Some(timestamp);
+        }
+    }
+
+    /// Last time you were in the fight; see `DataStorageInner::activity_at`.
+    pub fn activity_at(&self) -> Option<f64> {
+        self.inner.read().unwrap().activity_at
+    }
+
+    pub fn append_actor(&self, actor_id: u32, actor_name: &str, sid: Option<&str>) {
+        let mut inner = self.inner.write().unwrap();
+        inner
+            .actor_id_name_map
+            .insert(actor_id, actor_name.to_string());
+        if let Some(sid) = sid {
+            inner.actor_id_server_map.insert(actor_id, sid.to_string());
+        }
+        inner.summon_owner_map.map.remove(&actor_id);
+    }
+
+    pub fn set_actor_class(&self, actor_id: u32, actor_class: &str) {
+        self.inner
+            .write()
+            .unwrap()
+            .actor_id_class_map
+            .insert(actor_id, actor_class.to_string());
+    }
+
+    pub fn set_actor_combat_power(&self, actor_id: u32, combat_power: u64) {
+        if combat_power == 0 || combat_power > 10_000_000 {
+            return;
+        }
+
+        self.inner
+            .write()
+            .unwrap()
+            .actor_id_combat_power_map
+            .insert(actor_id, combat_power);
+    }
+
+    pub fn save_main_actor_combat_power(&self, combat_power: u64) -> bool {
+        if combat_power == 0 || combat_power > 10_000_000 {
+            return false;
+        }
+
+        self.inner.write().unwrap().main_actor_combat_power = Some(combat_power);
+        true
+    }
+
+    pub fn append_mob(&self, target_id: u32, mob_code: u32) {
+        // let config = self.config.read().unwrap().clone();
+        // let is_target_boss = self.boss_code_list.contains(&mob_code);
+        // if config.boss_only && !is_target_boss {
+        //     return;
+        // }
+        let mut inner = self.inner.write().unwrap();
+        inner.mob_id_code_map.insert(target_id, mob_code);
+    }
+
+    pub fn append_mob_hp(&self, target_id: u32, current_hp: u32) {
+        let mut inner = self.inner.write().unwrap();
+        let entry = inner
+            .mob_id_hp_map
+            .get_mut_or_insert_with(target_id, || (current_hp, current_hp));
+        entry.0 = current_hp;
+        if current_hp > entry.1 {
+            entry.1 = current_hp;
+        }
+    }
+
+    pub fn append_player_hp(&self, actor_id: u32, current_hp: u32) {
+        let mut inner = self.inner.write().unwrap();
+        let entry = inner
+            .player_hp_map
+            .get_mut_or_insert_with(actor_id, || PlayerHpInfo {
+                actor_id,
+                current_hp,
+                max_observed_hp: current_hp,
+            });
+        entry.current_hp = current_hp;
+        entry.max_observed_hp = entry.max_observed_hp.max(current_hp);
+    }
+
+    pub fn append_summon(&self, owner_id: u32, summon_id: u32) {
+        let mut inner = self.inner.write().unwrap();
+        if inner.actor_id_name_map.contains_key(&summon_id) {
+            return;
+        }
+        inner.summon_owner_map.insert(summon_id, owner_id);
+    }
+
+    pub fn has_summon_owner(&self, summon_id: u32) -> bool {
+        self.inner
+            .read()
+            .unwrap()
+            .summon_owner_map
+            .contains_key(&summon_id)
+    }
+
+    pub fn has_mob(&self, actor_id: u32) -> bool {
+        self.inner
+            .read()
+            .unwrap()
+            .mob_id_code_map
+            .contains_key(&actor_id)
+    }
+
+    pub fn get_mob_code(&self, target_id: u32) -> Option<u32> {
+        self.inner
+            .read()
+            .unwrap()
+            .mob_id_code_map
+            .get(&target_id)
+            .copied()
+    }
+
+    pub fn add_possible_boss(&self, mob_code: u32) {
+        if !self.config.read().unwrap().show_possible_boss {
+            return;
+        }
+        self.inner
+            .write()
+            .unwrap()
+            .possible_boss_codes
+            .insert(mob_code);
+    }
+
+    pub fn is_possible_boss(&self, mob_code: u32) -> bool {
+        if !self.config.read().unwrap().show_possible_boss {
+            return false;
+        }
+        self.inner
+            .read()
+            .unwrap()
+            .possible_boss_codes
+            .contains(&mob_code)
+    }
+
+    pub fn is_known_boss_code(&self, mob_code: u32) -> bool {
+        self.boss_code_list.contains(&mob_code)
+    }
+
+    pub fn set_main_actor(&self, actor_id: u32, actor_name: &str) {
+        let (sid, is_new_player) = {
+            let mut inner = self.inner.write().unwrap();
+            let is_new_player = main_actor_changed(inner.main_actor_name.as_deref(), actor_name);
+            if is_new_player {
+                inner.main_actor_combat_power = None;
+            }
+            inner.main_actor_id = Some(actor_id);
+            inner.main_actor_name = Some(actor_name.to_string());
+            (
+                inner.actor_id_server_map.get(&actor_id).cloned(),
+                is_new_player,
+            )
+        }; // RwLock released — callback below can safely call clear()
+
+        // Only when the player actually changes. The callback clears the meter,
+        // and the game re-sends this packet throughout a session -- ten times in
+        // one recorded session -- so firing it every time wiped accumulated
+        // damage mid-fight and left the overlay showing nothing.
+        if is_new_player {
+            if let Some(cb) = self.main_actor_callback.lock().unwrap().as_ref() {
+                cb(actor_id, actor_name, sid.clone());
+            }
+        }
+
+        self.events.emit(MeterEvent::MainActorDetected(MainActorDetectedPayload {
+            actor_id,
+            actor_name: actor_name.to_string(),
+            sid,
+        }));
+    }
+
+    pub fn get_dps_stats_snapshot(&self) -> HashMap<u32, HashMap<u32, HashMap<u32, SkillStats>>> {
+        self.inner.read().unwrap().dps_stats.map.clone()
+    }
+
+    pub fn actor_id_name_snapshot(&self) -> HashMap<u32, String> {
+        self.inner.read().unwrap().actor_id_name_map.as_hash_map()
+    }
+
+    pub fn actor_id_server_snapshot(&self) -> HashMap<u32, String> {
+        self.inner.read().unwrap().actor_id_server_map.as_hash_map()
+    }
+
+    pub fn actor_id_class_snapshot(&self) -> HashMap<u32, String> {
+        self.inner.read().unwrap().actor_id_class_map.as_hash_map()
+    }
+
+    pub fn player_hp_snapshot(&self) -> HashMap<u32, PlayerHpInfo> {
+        self.inner.read().unwrap().player_hp_map.as_hash_map()
+    }
+
+    pub fn actor_id_combat_power_snapshot(&self) -> HashMap<u32, u64> {
+        self.inner
+            .read()
+            .unwrap()
+            .actor_id_combat_power_map
+            .as_hash_map()
+    }
+
+    pub fn main_actor_combat_power(&self) -> Option<u64> {
+        self.inner.read().unwrap().main_actor_combat_power
+    }
+
+    pub fn actor_skill_spec_snapshot(&self) -> HashMap<u32, HashMap<u32, Vec<u32>>> {
+        self.inner
+            .read()
+            .unwrap()
+            .actor_id_skill_spec_map
+            .as_hash_map()
+    }
+
+    pub fn buff_intervals_snapshot(
+        &self,
+    ) -> HashMap<u32, HashMap<u32, HashMap<u32, VecDeque<BuffInterval>>>> {
+        self.inner.read().unwrap().use_buffs_by_target.as_hash_map()
+    }
+
+    pub fn get_pvp_watch_info(&self, names: &[String]) -> PvpWatchInfoResponse {
+        let inner = self.inner.read().unwrap();
+        let mut watch_info = Vec::new();
+        let mut known_players = Vec::new();
+
+        for (actor_id, actor_name) in &inner.actor_id_name_map.map {
+            if actor_name.trim().is_empty() || inner.mob_id_code_map.contains_key(actor_id) {
+                continue;
+            }
+
+            known_players.push(PvpKnownPlayer {
+                actor_id: *actor_id,
+                actor_name: actor_name.clone(),
+                server_id: inner.actor_id_server_map.get(actor_id).cloned(),
+                actor_class: inner.actor_id_class_map.get(actor_id).cloned(),
+            });
+        }
+        known_players.sort_by(|a, b| {
+            a.actor_name
+                .cmp(&b.actor_name)
+                .then_with(|| a.server_id.cmp(&b.server_id))
+                .then_with(|| a.actor_id.cmp(&b.actor_id))
+        });
+
+        for raw_name in names {
+            let query_name = raw_name.trim();
+            if query_name.is_empty() {
+                continue;
+            }
+
+            let mut matched = false;
+            for (actor_id, actor_name) in &inner.actor_id_name_map.map {
+                if actor_name != query_name {
+                    continue;
+                }
+
+                watch_info.push(build_pvp_watch_info_for_actor(
+                    &inner, *actor_id, query_name,
+                ));
+                matched = true;
+            }
+
+            if !matched {
+                watch_info.push(PvpWatchInfo {
+                    query_name: query_name.to_string(),
+                    actor_id: None,
+                    actor_name: None,
+                    server_id: None,
+                    actor_class: None,
+                    current_hp: None,
+                    max_hp: None,
+                });
+            }
+        }
+
+        PvpWatchInfoResponse {
+            watch_info,
+            known_players,
+            last_dealt_player: inner
+                .last_player_target_by_main_actor
+                .map(|actor_id| build_pvp_watch_info_for_actor(&inner, actor_id, "last_dealt")),
+        }
+    }
+
+    pub fn mark_player_dead(&self, entity_id: u32) -> (bool, Option<String>) {
+        if !self.config.read().unwrap().pvp_mode_on {
+            return (false, None);
+        }
+
+        let mut inner = self.inner.write().unwrap();
+        let Some(victim) = pvp_player_key(&inner, entity_id) else {
+            return (false, None);
+        };
+        if inner.mob_id_code_map.contains_key(&entity_id)
+            || !inner.pvp_dead_players.insert(victim.clone())
+        {
+            return (false, None);
+        }
+
+        let attackers = inner
+            .pvp_attackers_by_target
+            .remove(&entity_id)
+            .unwrap_or_default();
+        let killer = inner.pvp_last_attacker_by_target.remove(&entity_id);
+
+        inner
+            .pvp_combat_stats
+            .entry(victim.clone())
+            .or_default()
+            .deaths += 1;
+
+        let killer = killer.filter(|player| player != &victim);
+        if let Some(killer_player) = &killer {
+            inner
+                .pvp_combat_stats
+                .entry(killer_player.clone())
+                .or_default()
+                .kills += 1;
+        }
+
+        for (attacker, damage) in attackers {
+            if attacker == victim {
+                continue;
+            }
+            let stats = inner.pvp_combat_stats.entry(attacker.clone()).or_default();
+            stats.damage += damage;
+            if killer.as_ref() != Some(&attacker) {
+                stats.assists += 1;
+            }
+        }
+
+        (true, killer.map(|player| player.name))
+    }
+
+    pub fn mark_player_alive(&self, entity_id: u32) {
+        let mut inner = self.inner.write().unwrap();
+        if let Some(player) = pvp_player_key(&inner, entity_id) {
+            inner.pvp_dead_players.remove(&player);
+        }
+    }
+
+    pub fn get_pvp_combat_stats(&self) -> Vec<PvpCombatStatsRow> {
+        self.inner
+            .read()
+            .unwrap()
+            .pvp_combat_stats
+            .iter()
+            .map(|(player, stats)| PvpCombatStatsRow {
+                actor_name: player.name.clone(),
+                server_id: player.server_id.clone(),
+                damage: stats.damage,
+                kills: stats.kills,
+                assists: stats.assists,
+                deaths: stats.deaths,
+            })
+            .collect()
+    }
+
+    pub fn clear_pvp_combat_stats(&self) {
+        let mut inner = self.inner.write().unwrap();
+        inner.pvp_attackers_by_target.clear();
+        inner.pvp_last_attacker_by_target.clear();
+        inner.pvp_combat_stats.clear();
+        inner.pvp_dead_players.clear();
+    }
+
+    pub fn summon_owner_snapshot(&self) -> HashMap<u32, u32> {
+        self.inner.read().unwrap().summon_owner_map.as_hash_map()
+    }
+
+    pub fn mob_id_code_snapshot(&self) -> HashMap<u32, u32> {
+        self.inner.read().unwrap().mob_id_code_map.as_hash_map()
+    }
+
+    pub fn mob_id_hp_snapshot(&self) -> HashMap<u32, (u32, u32)> {
+        self.inner.read().unwrap().mob_id_hp_map.as_hash_map()
+    }
+
+    /// A mob's English name. A lookup rather than a copy of the catalogue:
+    /// the snapshot loop asks five times a second, and the catalogue holds
+    /// eight thousand names.
+    pub fn mob_name(&self, mob_code: u32) -> Option<String> {
+        self.mob_code_name_map.get(&mob_code).cloned()
+    }
+
+    pub fn start_time_by_target_snapshot(&self) -> HashMap<u32, HashMap<u32, f64>> {
+        self.inner.read().unwrap().start_time_by_target.clone()
+    }
+
+    pub fn last_time_by_target_snapshot(&self) -> HashMap<u32, HashMap<u32, f64>> {
+        self.inner.read().unwrap().last_time_by_target.clone()
+    }
+
+    pub fn start_time(&self) -> Option<f64> {
+        self.inner.read().unwrap().start_time
+    }
+
+    pub fn main_actor_id(&self) -> Option<u32> {
+        self.inner.read().unwrap().main_actor_id
+    }
+
+    pub fn main_actor_name(&self) -> Option<String> {
+        self.inner.read().unwrap().main_actor_name.clone()
+    }
+
+    pub fn last_target(&self) -> Option<u32> {
+        self.inner.read().unwrap().last_target
+    }
+
+    pub fn last_target_by_main_actor(&self) -> Option<u32> {
+        self.inner.read().unwrap().last_target_by_main_actor
+    }
+}
+
+fn infer_specialty_slots(skill_id: u32) -> Vec<u32> {
+    let last_4_digits = skill_id % 10000;
+    let slot_1 = (last_4_digits / 1000) % 10;
+    let slot_2 = (last_4_digits / 100) % 10;
+    let slot_3 = (last_4_digits / 10) % 10;
+
+    let mut slots = Vec::new();
+    if slot_1 > 0 {
+        slots.push(slot_1);
+    }
+    if slot_2 > 0 {
+        slots.push(slot_2);
+    }
+    if slot_3 > 0 {
+        slots.push(slot_3);
+    }
+    slots.sort_unstable();
+    slots
+}
+
+fn infer_actor_class(skill_code: u32) -> Option<String> {
+    let skill_code = skill_code.to_string();
+    if skill_code.len() < 2 {
+        return None;
+    }
+    if ACTOR_CLASS_SKILL_IGNORE_LIST
+        .iter()
+        .any(|ignored_prefix| skill_code.starts_with(ignored_prefix))
+    {
+        return None;
+    }
+
+    match &skill_code[0..2] {
+        "11" => Some("GLADIATOR".to_string()),
+        "12" => Some("TEMPLAR".to_string()),
+        "13" => Some("ASSASSIN".to_string()),
+        "14" => Some("RANGER".to_string()),
+        "15" => Some("SORCERER".to_string()),
+        "16" => Some("ELEMENTALIST".to_string()),
+        "17" => Some("CLERIC".to_string()),
+        "18" => Some("CHANTER".to_string()),
+        "19" => Some("FIGHTER".to_string()),
+        _ => None,
+    }
+}
+
+fn current_timestamp_seconds() -> f64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs_f64())
+        .unwrap_or_default()
+}
+
+/// Whether a counted hit belongs to your fight: you dealt it, you took it, or
+/// it landed on your current target (a healer's party keeps the boss busy).
+/// Before the game has told us who you are, every hit counts.
+fn is_own_fight(inner: &DataStorageInner, actor_id: u32, target_id: u32) -> bool {
+    match inner.main_actor_id {
+        None => true,
+        Some(me) => {
+            actor_id == me
+                || target_id == me
+                || inner.last_target_by_main_actor == Some(target_id)
+        }
+    }
+}
+
+fn current_timestamp_millis() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+fn build_pvp_watch_info_for_actor(
+    inner: &DataStorageInner,
+    actor_id: u32,
+    query_name: &str,
+) -> PvpWatchInfo {
+    let hp = inner.player_hp_map.get(&actor_id);
+
+    PvpWatchInfo {
+        query_name: query_name.to_string(),
+        actor_id: Some(actor_id),
+        actor_name: inner.actor_id_name_map.get(&actor_id).cloned(),
+        server_id: inner.actor_id_server_map.get(&actor_id).cloned(),
+        actor_class: inner.actor_id_class_map.get(&actor_id).cloned(),
+        current_hp: hp.map(|value| value.current_hp),
+        max_hp: hp.map(|value| value.max_observed_hp),
+    }
+}
+
+fn pvp_player_key(inner: &DataStorageInner, actor_id: u32) -> Option<PvpPlayerKey> {
+    Some(PvpPlayerKey {
+        name: inner.actor_id_name_map.get(&actor_id)?.clone(),
+        server_id: inner
+            .actor_id_server_map
+            .get(&actor_id)
+            .cloned()
+            .unwrap_or_default(),
+    })
+}
+
+/// Whether identifying `next` as the main actor means the player has changed.
+///
+/// Keyed on the name rather than the actor id on purpose: ids are per-session
+/// entity handles that change across zones -- one recording shows the same
+/// character as both `15056` and `5492` -- so keying on them would clear the
+/// meter every time you zoned.
+fn main_actor_changed(current: Option<&str>, next: &str) -> bool {
+    current != Some(next)
+}
+
+#[cfg(test)]
+mod main_actor_tests {
+    use super::main_actor_changed;
+
+    #[test]
+    fn first_identification_counts_as_a_change() {
+        assert!(main_actor_changed(None, "Aldwin"));
+    }
+
+    #[test]
+    fn re_identifying_the_same_player_does_not() {
+        // The game re-sends the own-player packet throughout a session. Treating
+        // each one as a change cleared the meter mid-fight.
+        assert!(!main_actor_changed(Some("Aldwin"), "Aldwin"));
+    }
+
+    #[test]
+    fn switching_character_counts_as_a_change() {
+        assert!(main_actor_changed(Some("Aldwin"), "Caldris"));
+    }
+}
+
+#[cfg(test)]
+mod bounded_map_tests {
+    use super::{BoundedMap, COMBAT_TARGET_CAPACITY};
+
+    #[test]
+    fn evicts_the_oldest_key_past_capacity() {
+        let mut map: BoundedMap<u32, u32> = BoundedMap::new(3);
+        for key in 1..=4 {
+            map.insert(key, key * 10);
+        }
+
+        assert_eq!(map.get(&1), None, "the oldest entry is dropped");
+        assert_eq!(map.get(&4), Some(&40));
+        assert_eq!(map.map.len(), 3);
+    }
+
+    #[test]
+    fn touching_a_key_keeps_it_alive() {
+        let mut map: BoundedMap<u32, u32> = BoundedMap::new(2);
+        map.insert(1, 10);
+        map.insert(2, 20);
+        map.insert(1, 11); // re-inserting moves it back to the newest end
+        map.insert(3, 30);
+
+        assert_eq!(map.get(&1), Some(&11));
+        assert_eq!(map.get(&2), None, "the key untouched for longest goes first");
+    }
+
+    #[test]
+    fn combat_targets_are_bounded() {
+        // The overlay snapshot deep-clones this map several times a second, so
+        // an unbounded one makes a long session progressively more expensive.
+        let mut map: BoundedMap<u32, u32> = BoundedMap::new(COMBAT_TARGET_CAPACITY);
+        for key in 0..(COMBAT_TARGET_CAPACITY as u32 * 3) {
+            map.insert(key, key);
+        }
+        assert_eq!(map.map.len(), COMBAT_TARGET_CAPACITY);
+    }
+}
+
+#[cfg(test)]
+mod own_fight_tests {
+    use super::{is_own_fight, DataStorageInner};
+
+    const ME: u32 = 7;
+    const PARTY: u32 = 8;
+    const STRANGER: u32 = 9;
+    const BOSS: u32 = 100;
+    const OTHER_MOB: u32 = 200;
+
+    fn inner(main_actor: Option<u32>, my_target: Option<u32>) -> DataStorageInner {
+        DataStorageInner {
+            main_actor_id: main_actor,
+            last_target_by_main_actor: my_target,
+            ..DataStorageInner::default()
+        }
+    }
+
+    #[test]
+    fn before_you_are_identified_every_hit_counts() {
+        assert!(is_own_fight(&inner(None, None), STRANGER, OTHER_MOB));
+    }
+
+    #[test]
+    fn your_hits_and_hits_on_you_count() {
+        let state = inner(Some(ME), None);
+        assert!(is_own_fight(&state, ME, BOSS));
+        assert!(is_own_fight(&state, BOSS, ME));
+    }
+
+    #[test]
+    fn your_party_on_your_target_keeps_the_fight_alive() {
+        // A healer can go minutes without a hit of their own on a boss.
+        assert!(is_own_fight(&inner(Some(ME), Some(BOSS)), PARTY, BOSS));
+    }
+
+    #[test]
+    fn someone_else_fighting_nearby_does_not() {
+        assert!(!is_own_fight(&inner(Some(ME), Some(BOSS)), STRANGER, OTHER_MOB));
+    }
+}

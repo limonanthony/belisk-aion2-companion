@@ -246,9 +246,16 @@ cleanly. UI fixes from upstream have to be redone by hand.
 
 ## Plan
 
-1. Move `dps_meter/` into a crate with no Tauri dependency. Updates go out
-   through an event channel. Keep `cargo test --lib` (108 tests) passing. This is
-   worth doing even if the migration stops.
+1. **Done** (branch `phase-1-core-crate`). The backend lives in
+   `crates/aether-core` (package `aether-core`, no Tauri dependency, no Cargo
+   workspace yet). `src-tauri` depends on it by path and keeps only the command
+   bridge (`src/commands.rs`) and `tauri_event_sink.rs`. The core reports
+   through `events::MeterEvent` and `trait EventSink`; the logger is
+   `aether_core::logger`; `DpsMeter::new` takes the sink, the logger and the app
+   data dir. `cargo test` runs 50 tests in the core and `cargo test --lib` 58 in
+   `src-tauri` (108 combined). `cargo run --example replay -- <file.aetherpc>`
+   replays a recording with no driver and no elevation. Worth doing even if the
+   migration stops.
 2. GPUI app skeleton plus the meter overlay: click-through, not taking focus,
    dragging, lock, animated numbers. Drive it from a recorded fight
    (`.aetherpc`, replayed by `capture/recorder.rs::replay_recording`, which needs

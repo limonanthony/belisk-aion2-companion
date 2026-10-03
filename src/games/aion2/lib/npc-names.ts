@@ -1,6 +1,6 @@
 // The same English catalogue the backend names targets from, so History and
 // the live overlay always agree on what a mob is called.
-import npcNamesData from "../../../../src-tauri/data/npc_names_en.json";
+import npcNamesData from "../../../../crates/aether-core/data/npc_names_en.json";
 import dungeonsData from "@/games/aion2/data/dungeons.json";
 
 type LocalizedText = Record<string, string | undefined>;

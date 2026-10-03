@@ -4,7 +4,7 @@ import { Activity, CircleDashed, Radio, Server, UserRound } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-/** Mirrors `RegionStatus` in src-tauri/src/dps_meter/region.rs. */
+/** Mirrors `RegionStatus` in crates/aether-core/src/region.rs. */
 interface RegionStatus {
   detected: "auto" | "tw" | "kr" | "global" | null;
   serverNamesAvailable: boolean;
@@ -12,7 +12,7 @@ interface RegionStatus {
   observedServerIps: string[];
 }
 
-/** Mirrors `ConnectionStatus` in src-tauri/src/dps_meter/api/commands.rs. */
+/** Mirrors `ConnectionStatus` in src-tauri/src/commands.rs. */
 export interface ConnectionStatus {
   running: boolean;
   captureBackend: "WinDivert" | "Npcap" | null;

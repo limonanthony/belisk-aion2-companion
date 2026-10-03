@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { SettingsRow } from "@/components/settings-layout";
 import { useAppTranslation } from "@/hooks/use-app-translation";
 
-/** Mirrors `RecordingStatus` in src-tauri/src/dps_meter/capture/recorder.rs. */
+/** Mirrors `RecordingStatus` in crates/aether-core/src/capture/recorder.rs. */
 interface RecordingStatus {
   recording: boolean;
   path: string | null;

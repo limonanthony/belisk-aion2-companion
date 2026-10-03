@@ -11,7 +11,7 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
 use super::{aion2_focus, aion2_overlay, on_top};
-use crate::dps_meter::engine::meter::DpsMeter;
+use aether_core::engine::meter::DpsMeter;
 
 // =============================================================================
 // Config from frontend

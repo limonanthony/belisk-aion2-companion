@@ -20,7 +20,7 @@ Four AION2 meters were evaluated before forking:
 The deciding factor for a global-server target: NOIA2 **does not hardcode a server
 address**. It scans every network interface for the heartbeat magic
 `[0x0E, 0x00, 0x36]` and infers the device and port from whichever interface
-answers (`src-tauri/src/dps_meter/capture/capturer.rs`, `inspect_device_for_magic`).
+answers (`crates/aether-core/src/capture/capturer.rs`, `inspect_device_for_magic`).
 The Kotlin project, by contrast, pins the Korean server (`206.127.156.0/24:13328`)
 in a properties file. Auto-discovery should carry to the global servers unchanged.
 
@@ -52,7 +52,7 @@ For the record, the vendored binaries are **byte-identical** to the official
 signature is upstream WinDivert's own signer, not something this fork's ancestor
 introduced.
 
-`src-tauri/src/dps_meter/preflight.rs` replaces `check_capture_runtime_status`
+`crates/aether-core/src/preflight.rs` replaces `check_capture_runtime_status`
 with a weighed report:
 
 - **Required vs optional is computed, not fixed.** Capture needs one backend, so
@@ -133,7 +133,7 @@ server field sits inside a player-info packet. On any service whose ids fall
 outside Taiwan's range, `find_server_id` returns `None` and **no player is ever
 named**: a silent, total failure with no error to go on.
 
-`src-tauri/src/dps_meter/region.rs` replaces it with per-region profiles:
+`crates/aether-core/src/region.rs` replaces it with per-region profiles:
 
 | Profile | Server-id rule |
 |---|---|
@@ -295,7 +295,7 @@ in game for every parser attempt is the slow part.
 
 ### Packet recording and replay
 
-`src-tauri/src/dps_meter/capture/recorder.rs` writes raw packets to
+`crates/aether-core/src/capture/recorder.rs` writes raw packets to
 `%APPDATA%/<app>/recordings/*.aetherpc`, tapped in the dispatcher **before**
 reassembly, so a recording holds exactly what capture produced.
 
@@ -314,7 +314,7 @@ full, and a silently lossy replay would be worse than a slow one.
 
 ### Opcode census
 
-`src-tauri/src/dps_meter/capture/census.rs` counts every dispatched packet by
+`crates/aether-core/src/capture/census.rs` counts every dispatched packet by
 opcode, recording payload size ranges and whether a parser claims it.
 
 This answers the question that decides everything else on day one: are the
@@ -400,7 +400,7 @@ you are in the game, and a new window takes the keyboard by default.
 
 ## Boss fights (2.3.0)
 
-**English names.** `src-tauri/data/npc_names_en.json` (mob code -> name, about
+**English names.** `crates/aether-core/data/npc_names_en.json` (mob code -> name, about
 8,000) replaces upstream's Traditional Chinese catalogue, in the backend and in
 History alike. It is built by `scripts/build-npc-names.mjs` from
 Kuroukihime/AIon2-Dps-Meter's `mobs.json` (GPL-3.0), with NOIA2's partial
@@ -411,7 +411,7 @@ the same project. The snapshot builder used to clone the whole name map five
 times a second; it now looks names up one at a time
 (`DataStorage::mob_name`).
 
-**Personal bests** (`dps_meter/personal_best.rs`, tested) keep your best DPS
+**Personal bests** (`crates/aether-core/src/personal_best.rs`, tested) keep your best DPS
 per character and boss in `history/personal_bests.json`, apart from the
 history so deleting it keeps them. They learn from every record the history
 saves, and are seeded from the history on disk on first run. A fight counts
@@ -687,7 +687,7 @@ The fork inherited a fair amount of scaffolding and dead weight. Removed:
 
 - **~1.7 MB of unreferenced JSON at the repository root** (`mobs.json`,
   `npc_names.json`, `npc_data.json`, `abnormal_ids_full.json`). The copies the
-  build actually uses live under `src/games/aion2/data/` and `src-tauri/data/`.
+  build actually uses live under `src/games/aion2/data/` and `crates/aether-core/data/`.
 - **`.agents/skills/`** and `skills-lock.json` — vendored third-party agent
   documentation for shadcn and Tauri, unrelated to this project.
 - **Path of Exile 2 scaffolding.** `POE2_GAME` was never in `ALL_GAMES`, its

@@ -14,7 +14,9 @@ PowerShell 5.1 on the development machine has no `&&` — chain with `;`.
 ```
 pnpm install
 pnpm build                        # tsc + vite, ~6s
-cd src-tauri; cargo test --lib    # 108 tests
+cd src-tauri; cargo test --lib    # 58 tests
+cd crates/aether-core; cargo test # 50 tests, no elevation needed
+cd crates/aether-core; cargo run --example replay -- <file.aetherpc>
 pnpm tauri:dev                    # must be an ELEVATED terminal
 pnpm tauri:build                  # NSIS installer + updater bundle
 ```
@@ -33,6 +35,7 @@ The gates that mean something:
 ```
 pnpm build
 cd src-tauri; cargo test --lib
+cd crates/aether-core; cargo test
 ```
 
 `cargo test` without `--lib` fails on the binary target only, because the test
@@ -53,12 +56,15 @@ runner cannot launch an executable that demands elevation.
 
 | Path | What lives there |
 |---|---|
-| `src-tauri/src/dps_meter/capture/` | Capture, TCP reassembly, dispatch, opcode parsing |
-| `src-tauri/src/dps_meter/capture/recorder.rs` | Packet recording and replay |
-| `src-tauri/src/dps_meter/capture/census.rs` | Opcode census |
-| `src-tauri/src/dps_meter/region.rs` | Region profiles and traffic observations |
-| `src-tauri/src/dps_meter/preflight.rs` | Startup gate: what must be true before the app opens |
-| `src-tauri/src/dps_meter/engine/` | DPS calculation, meter lifecycle |
+| `crates/aether-core/` | The backend, with no Tauri dependency: `data/` (bundled JSON), `examples/replay.rs` (replays a recording and prints a summary) |
+| `crates/aether-core/src/capture/` | Capture, TCP reassembly, dispatch, opcode parsing |
+| `crates/aether-core/src/capture/recorder.rs` | Packet recording and replay |
+| `crates/aether-core/src/capture/census.rs` | Opcode census |
+| `crates/aether-core/src/region.rs` | Region profiles and traffic observations |
+| `crates/aether-core/src/preflight.rs` | Startup gate: what must be true before the app opens |
+| `crates/aether-core/src/engine/` | DPS calculation, meter lifecycle |
+| `crates/aether-core/src/events.rs`, `logger.rs` | `MeterEvent` + `EventSink` (how the core talks to its host), file logger |
+| `src-tauri/src/commands.rs`, `tauri_event_sink.rs` | Tauri command bridge; maps each `MeterEvent` to the Tauri event the frontend listens to |
 | `src-tauri/src/plugins/` | Overlay windows, tray, logger, shortcuts |
 | `src/games/aion2/` | Game UI, overlay windows (meter, detail, history, PvP, log, chat), bundled game data |
 | `src/components/` | Shared UI, including Settings → Aion 2 and the Connection panel |
