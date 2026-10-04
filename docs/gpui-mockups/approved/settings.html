@@ -276,7 +276,7 @@
                   row("End a fight after", "With no hit of yours for this long, the fight is saved to history and the meter clears.", C.sel("5 min")) +
                   row("Follow the game window", "The overlays hide while another window is in front of the game.", C.sw(true))
               ) +
-              group("Window", row("Keep the overlays above the game", "For borderless games that cover them. Only Aether's own windows are raised.", C.sw(false)))
+              group("Window", row("Keep the overlays above the game", "For borderless games that cover them. Only the meter's own windows are raised.", C.sw(false)))
             );
           },
 
@@ -320,7 +320,7 @@
               })
               .join("");
             return (
-              head("Capture", "How Aether sees the game's traffic. Everything here is detected; there is nothing to enter.") +
+              head("Capture", "How the meter sees the game's traffic. Everything here is detected; there is nothing to enter.") +
               `<div class="grp-title is-first">Connection</div><div class="tiles4">
 ${tile("activity", "Meter", "Running", "via Npcap", "good")}
 ${tile("radio", "Game connection", "Found", "203.0.113.24", "good")}
@@ -383,24 +383,24 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
             return (
               head("About", "") +
               group(
-                "Aether",
-                row(`Aether <span class="faint disp" style="font-weight:600">2.4.0</span>`, "A real-time DPS meter for AION 2, built for the global servers.", C.btn("Source code", { ic: "external" })) +
+                "AION 2 DPS Meter",
+                row(`AION 2 DPS Meter <span class="faint disp" style="font-weight:600">2.4.0</span>`, "A real-time DPS meter for AION 2, built for the global servers.", C.btn("Source code", { ic: "external" })) +
                   row("Licence: GPL-3.0-only", "Free software: you may share and change it under the GNU General Public License, version 3. Any shared build ships with its source.", C.btn("Read the licence", { ic: "scale" })),
                 true
               ) +
               `<div class="grp-title">Credits</div><div class="grp">${li(
                 "Helveticxa/Aether-Aion2-DPS-meter-Global",
-                "Aether, the project this build is forked from. GPL-3.0-only.",
+                "This meter is a fork of Aether, by Helveticxa. GPL-3.0-only.",
                 ext,
                 '<span class="badge is-plain credit-tag">Forked from</span>'
-              )}${li("ZDYoung0519/NOIA2", "By zdyoung. Aether is a fork of NOIA2: the capture pipeline, packet parsers, overlay and game-data catalogues come from it. GPL-3.0-only.", ext, '<span class="badge is-plain credit-tag">Upstream</span>')}${li(
+              )}${li("ZDYoung0519/NOIA2", "By zdyoung. Aether, which this meter is forked from, is itself a fork of NOIA2: the capture pipeline, packet parsers, overlay and game-data catalogues come from it. GPL-3.0-only.", ext, '<span class="badge is-plain credit-tag">Upstream</span>')}${li(
                 "Kuroukihime/AIon2-Dps-Meter",
                 "English monster and boss names, the Fighter's skill names, and the server codes. GPL-3.0.",
                 ext
               )}${li("References", "TK-open-public/Aion2-Dps-Meter · taengu/Aion2-Dps-Meter · p62003/aletheia_AION2_DPS_Meter")}${li(
                 "Built with",
                 "GPUI · GPUI Kit (Apache-2.0) · Lucide icons (ISC) · WinDivert, the bundled fallback capture driver"
-              )}${li("Npcap", "Not part of Aether: you install it from npcap.com, under its own licence.")}</div>` +
+              )}${li("Npcap", "Not bundled with the meter: you install it from npcap.com, under its own licence.")}</div>` +
               group(
                 "Storage",
                 row("Stored on this PC", "Settings 6 KB · Fight history 14 records, 2.1 MB · Recordings 5 files, 11.8 MB", C.btn("Open folder", { ic: "folder" })) +

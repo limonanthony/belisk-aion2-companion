@@ -1,0 +1,92 @@
+//! Live capture: the same meter, data folders and settings the Tauri app uses,
+//! so history, personal bests and recordings are shared between the two.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use aether_core::config::DpsMeterConfig;
+use aether_core::engine::meter::DpsMeter;
+use aether_core::events::EventSink;
+use aether_core::logger::AppLogger;
+
+/// Tauri's bundle identifier for this app (`tauri.conf.json`).
+const IDENTIFIER: &str = "com.helveticxa.aether";
+
+/// `app_data_dir()` in Tauri 2 on Windows: `%APPDATA%/<identifier>`.
+fn data_dir() -> Option<PathBuf> {
+    std::env::var_os("APPDATA").map(|dir| PathBuf::from(dir).join(IDENTIFIER))
+}
+
+/// `app_log_dir()` in Tauri 2 on Windows: `%LOCALAPPDATA%/<identifier>/logs`.
+fn log_file() -> PathBuf {
+    match std::env::var_os("LOCALAPPDATA") {
+        Some(dir) => PathBuf::from(dir).join(IDENTIFIER).join("logs").join("aether.log"),
+        None => std::env::temp_dir().join("aether").join("aether.log"),
+    }
+}
+
+/// The backend settings `src/hooks/use-settings.ts` applies on a fresh install
+/// (`DEFAULTS.aion2.backend`). Only two differ from the core's own defaults.
+pub fn tauri_backend_config() -> DpsMeterConfig {
+    DpsMeterConfig {
+        dps_snapshot_interval_ms: 200,
+        unknown_packet_stall_resync_delay_ms: 50,
+        ..DpsMeterConfig::default()
+    }
+}
+
+/// The Tauri defaults plus what the GPUI meter decided on: the "possible
+/// boss" HP rule is always on, and mob collection follows the launch flag.
+pub fn gpui_backend_config(collect_mobs: bool) -> DpsMeterConfig {
+    DpsMeterConfig {
+        show_possible_boss: true,
+        collect_mobs,
+        ..tauri_backend_config()
+    }
+}
+
+/// Creates the meter and starts capture, Npcap first with WinDivert as the
+/// fallback. The meter is returned even when capture fails so the caller can
+/// report why.
+pub fn start(
+    events: Arc<dyn EventSink>,
+    collect_mobs: bool,
+) -> (Arc<DpsMeter>, Result<(), String>) {
+    let logger = Arc::new(AppLogger::new(log_file(), Box::new(|_| {})));
+    let meter = Arc::new(DpsMeter::new(events, logger, data_dir()));
+    meter.apply_config(gpui_backend_config(collect_mobs));
+    let started = meter.start_dps_meter();
+    (meter, started)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aether_core::config::CaptureBackendPriority;
+
+    #[test]
+    fn backend_config_matches_the_tauri_frontend_defaults() {
+        let config = tauri_backend_config();
+        assert_eq!(config.dps_snapshot_interval_ms, 200);
+        assert_eq!(config.memory_snapshot_interval_ms, 2000);
+        assert_eq!(config.max_packet_size_threshold, 8192);
+        assert_eq!(config.stall_resync_delay_ms, 1000);
+        assert_eq!(config.full_processor_stall_resync_delay_ms, 200);
+        assert_eq!(config.unknown_packet_stall_resync_delay_ms, 50);
+        assert!(!config.boss_only && !config.pvp_mode_on && !config.show_possible_boss);
+        assert!(!config.my_muzhuang_only && !config.hide_unknown_players);
+        assert_eq!(config.max_player_count, 10);
+        assert_eq!(config.capture_backend_priority, CaptureBackendPriority::NpcapFirst);
+        assert!(config.hide_when_idle && config.auto_record_unknown_server);
+        assert_eq!(config.idle_reset_secs, 300);
+    }
+
+    #[test]
+    fn the_gpui_meter_shows_possible_bosses_and_collects_mobs_only_on_request() {
+        assert!(gpui_backend_config(false).show_possible_boss);
+        assert!(!gpui_backend_config(false).collect_mobs);
+        assert!(gpui_backend_config(true).collect_mobs);
+        assert!(!gpui_backend_config(false).output_debug_log, "the core's per-packet debug stays off");
+        assert!(!tauri_backend_config().show_possible_boss && !tauri_backend_config().collect_mobs);
+    }
+}

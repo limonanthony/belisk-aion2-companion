@@ -15,8 +15,13 @@ PowerShell 5.1 on the development machine has no `&&` — chain with `;`.
 pnpm install
 pnpm build                        # tsc + vite, ~6s
 cd src-tauri; cargo test --lib    # 58 tests
-cd crates/aether-core; cargo test # 50 tests, no elevation needed
+cargo test --workspace               # repo root: aether-core (85) + the GPUI app (93), no elevation needed
+cargo run -p aion-2-dps-meter -- --replay <file.aetherpc> [--speed 1.0] [--exit-after-replay]   # replay starts no driver, but the default exe still asks for Administrator; --features probes builds run unelevated
+cargo run -p aion-2-dps-meter     # live capture; the exe asks for Administrator, so run it from an ELEVATED terminal. --collect-mobs also records the mobs fought into mobs.json (off by default); --debug-log writes the meter's decisions (board, boss focus, who "you" are) to aether.log as [meter] lines (off by default)
+pnpm app:windivert:debug             # once: the app's exe imports WinDivert.dll, which must sit beside it
 cd crates/aether-core; cargo run --example replay -- <file.aetherpc>
+# --features probes adds --overlay-probe, --font-probe and --capture <dir> (--fixtures | --replay <file>):
+# --capture draws the overlay off every monitor and saves PrintWindow images, safe while someone plays
 pnpm tauri:dev                    # must be an ELEVATED terminal
 pnpm tauri:build                  # NSIS installer + updater bundle
 ```
@@ -35,11 +40,13 @@ The gates that mean something:
 ```
 pnpm build
 cd src-tauri; cargo test --lib
-cd crates/aether-core; cargo test
+cargo test --workspace            # at the repo root: aether-core + the GPUI app
 ```
 
-`cargo test` without `--lib` fails on the binary target only, because the test
-runner cannot launch an executable that demands elevation.
+In `src-tauri`, `cargo test` without `--lib` fails on the binary target only,
+because the test runner cannot launch an executable that demands elevation. The
+GPUI app has no such problem: its tests live in the library and its binary has
+`test = false`.
 
 ## Conventions
 
@@ -57,6 +64,7 @@ runner cannot launch an executable that demands elevation.
 | Path | What lives there |
 |---|---|
 | `crates/aether-core/` | The backend, with no Tauri dependency: `data/` (bundled JSON), `examples/replay.rs` (replays a recording and prints a summary) |
+| `crates/app/` | The GPUI app (package `aion-2-dps-meter`): `src/overlay.rs` (the meter's window, its Win32 styles, fit-to-card), `src/bridge.rs` (meter events to the UI thread), `src/meter/` (the approved meter view, its model and the fight-summary state machine), `src/hotkey.rs` (Alt+CapsLock), `src/fonts.rs` + `assets/` (embedded Barlow Semi Condensed, Lucide icons), `src/replay.rs`, `src/live_session.rs` (live capture with the Tauri app's data dir, log and defaults), `src/lib.rs` (the program, so tests run unelevated) with a three-line `src/main.rs`, `build.rs` + `windows/*.manifest.xml` (Administrator manifest, `asInvoker` under `probes`), and behind `probes`: `probe.rs`, `font_probe.rs`, `capture.rs`, `fixtures.rs` (see `docs/GPUI_MIGRATION.md`). Cargo workspace members: this and `aether-core`; `src-tauri` is excluded and keeps its own `target/` |
 | `crates/aether-core/src/capture/` | Capture, TCP reassembly, dispatch, opcode parsing |
 | `crates/aether-core/src/capture/recorder.rs` | Packet recording and replay |
 | `crates/aether-core/src/capture/census.rs` | Opcode census |

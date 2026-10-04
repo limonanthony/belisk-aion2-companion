@@ -1,7 +1,8 @@
 /* Round 2: the approved overlay language (approved/tokens.md) as shared
  * classes for the PvP, detail and history windows. Every effect is a GPUI
  * primitive: alpha fills, two-stop linear gradients, 1px borders, rounded
- * corners, drop shadows. */
+ * corners. Overlay cards have no drop shadow (tokens.md); popovers keep
+ * theirs, which stays inside the window. */
 
 .ov.o {
   --o-bg: rgba(16, 14, 12, var(--bg-a));
@@ -25,7 +26,6 @@
   border: 1px solid rgba(255, 236, 214, 0.1);
   border-radius: 14px;
   background: var(--o-bg);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
   color: var(--o-text);
   font: 13px/1 var(--o-font);
   font-stretch: 87.5%;

@@ -33,3 +33,6 @@ scripts_sql/
 scripts/output
 
 .env
+
+# Cargo workspace build output (Tailwind scans every non-ignored file)
+/target

@@ -85,6 +85,11 @@ The executable is `aion-2-dps-meter.exe`, not `Aether.exe` (user request,
 app identifier stays `com.helveticxa.aether`, so settings, history and
 recordings stay where they are.
 
+The name shown to users is "AION 2 DPS Meter", or "DPS Meter" where an overlay
+has little room; no window says "Aether" (user request, 2026-10-04). About
+still credits the projects this is forked from. Internal names (the
+`aether-core` crate, the identifier, `aether.log`) stay as they are.
+
 ## Design
 
 The UI gets a new design, not a copy of Aether's. It was agreed with the user
@@ -117,6 +122,39 @@ Only validated choices go into `approved/`. The other folders under
 Not yet checked on Windows: the mockups were reviewed in a Linux browser with
 substitute fonts, so selecting Bahnschrift SemiCondensed and tabular figures in
 GPUI has to be verified in phase 2.
+
+## Open-world meter and the mob list
+
+Agreed with the user on 2026-10-04, after the first live test in the open
+world. Aether (and so the first GPUI meter) shows only the attackers of the last
+mob you hit, so rows came and went with every target switch. The backend already
+keeps per-target totals; the change is in what the meter shows.
+
+- **Automatic view.** A Session board (everyone's damage across all targets
+  since the last reset or idle reset) in the open world, and the single-target
+  board while a boss is engaged (see *Sticky boss focus*). A label in the
+  header names the active view; clicking it pins the other one until the next
+  reset or the next boss.
+- **Boss detection, for everyone.** The bundled boss list, the existing
+  "possible boss" HP rule (over 10 million HP), and the user's corrections. A
+  mob pinned as a boss or as not a boss is saved and wins over the other two.
+  Order: exclusions, then the user's additions, then the bundled list, then the
+  HP rule.
+- **Mob collection, off by default.** A "Collect mob data" switch (Settings →
+  Capture; a `--collect-mobs` launch flag until Settings exists) records mobs
+  into `mobs.json` in the app data folder: code, highest HP seen, first
+  and last seen, times fought, boss flag, and the name with where it came from
+  (bundled list, the user, or a review). The network sends codes, never names,
+  so missing names are proposed by an agent from public community data and
+  confirmed by the user. Confirmed names can later go into the bundled list.
+  The file holds no player names and is safe to share; it never goes into the
+  repository. User corrections are saved even with collection off.
+- **Toolbar.** The controls move off the gauge line; the new layout makes room
+  for the view label. Chosen from designer options.
+- **Your row before the game names you.** The game sends your character's id
+  and name together, in one packet, at login and zone changes. A meter started
+  later cannot tell which row is yours until then, and shows `ID:<n>`. The
+  meter says so and suggests changing zone once.
 
 ## What the code looks like
 
@@ -253,8 +291,8 @@ cleanly. UI fixes from upstream have to be redone by hand.
 ## Plan
 
 1. **Done** (branch `phase-1-core-crate`). The backend lives in
-   `crates/aether-core` (package `aether-core`, no Tauri dependency, no Cargo
-   workspace yet). `src-tauri` depends on it by path and keeps only the command
+   `crates/aether-core` (package `aether-core`, no Tauri dependency; a Cargo
+   workspace with `crates/app` since 2a). `src-tauri` depends on it by path and keeps only the command
    bridge (`src/commands.rs`) and `tauri_event_sink.rs`. The core reports
    through `events::MeterEvent` and `trait EventSink`; the logger is
    `aether_core::logger`; `DpsMeter::new` takes the sink, the logger and the app
@@ -262,7 +300,9 @@ cleanly. UI fixes from upstream have to be redone by hand.
    `src-tauri` (108 combined). `cargo run --example replay -- <file.aetherpc>`
    replays a recording with no driver and no elevation. Worth doing even if the
    migration stops.
-2. GPUI app skeleton plus the meter overlay: click-through, not taking focus,
+2. **2a and 2b done** (branch `phase-2-meter-overlay`, results in
+   [Phase 2a results](#phase-2a-results) and [Phase 2b results](#phase-2b-results)).
+   GPUI app skeleton plus the meter overlay: click-through, not taking focus,
    dragging, lock, animated numbers. Drive it from a recorded fight
    (`.aetherpc`, replayed by `capture/recorder.rs::replay_recording`, which needs
    no capture driver). This phase shows whether GPUI handles the overlay
@@ -296,6 +336,586 @@ the needed code copied in.
   tagged `tauri-final`.
 - Line endings: the repository sets `core.autocrlf=true` in `.git/config`, so
   Windows git and WSL git agree. Commits must not turn LF files into CRLF.
+
+## Phase 2a results
+
+Branch `phase-2-meter-overlay`, built on phase 1. This phase delivers the
+window, the data bridge, the replay driver and a placeholder view; the approved
+meter design (2b) only has to draw.
+
+### Versions
+
+- **GPUI:** `gpui-pre` and `gpui-pre-platform`, both `=0.3.7` (a snapshot of
+  Zed at `1a28cff`, repackaged on crates.io as the `gpui-pre-*` family). These are
+  the exact pins that GPUI Kit 0.7.0 carries: `gpui-component 0.7.0` requires
+  `gpui-pre = "=0.3.7"`. The `gpui` crate on crates.io (0.2.2, October 2025) is an
+  older line the Kit no longer uses.
+- **GPUI Kit:** 0.7.0 (`gpui-kit`, `gpui-component`, `gpui-base`, all 0.7.0). Not
+  added yet. In phase 4, replace the two direct GPUI dependencies in
+  `crates/app/Cargo.toml` with `gpui-kit` and the tree stays on one GPUI.
+- Both are pre-1.0 and exact-pinned, so upgrade them together.
+
+### What is in the repository
+
+- A Cargo workspace at the root: `crates/aether-core` and `crates/app`.
+  `src-tauri` is excluded: it keeps its own `Cargo.lock` and `src-tauri/target`.
+  The root `/target` is ignored, which Tailwind needs (it scans every
+  non-ignored file).
+- `aether-core` gains `ReplayPacer` and `DpsMeter::replay_packet_recording_paced`.
+  Records carry `captured_at`; a paced replay sleeps until each packet's capture
+  time (relative to the first, divided by the speed), so the meter sees a fight
+  at the pace it happened. The existing unpaced replay and its Tauri command are
+  unchanged. Out-of-order timestamps neither wait nor delay later packets.
+- `crates/app`, package `aion-2-dps-meter`:
+  `aion-2-dps-meter --replay <file.aetherpc> [--speed <f>] [--exit-after-replay]`.
+  `bridge.rs` is the `EventSink`: it only pushes into an unbounded channel, so the
+  meter's threads never block and never touch a window. One foreground task
+  sleeps on the channel, applies whatever has piled up as one batch to the
+  `MeterModel` entity, and calls `cx.notify()` only when something a view draws
+  changed (memory figures, history and personal-best events do not redraw). App
+  code has no redraw poll and no animation loop. It has two one-shot timers: 1.5 s
+  of quiet before `--exit-after-replay` quits, and the placeholder's 5 s lock
+  (`LOCK_DURATION`). GPUI's own `VSyncProvider` thread is platform code, see
+  Cost. Quitting cancels a running replay before stopping the meter.
+  `meter/view.rs` is the placeholder; `overlay.rs` is the window.
+- The exe imports `WinDivert.dll` (through `aether-core`), even for a replay.
+  Run `pnpm app:windivert:debug` once so the DLL sits beside the exe.
+- `--overlay-probe` and `--font-probe` run the checks below. They exist only in a
+  build with the off-by-default Cargo feature `probes`
+  (`cargo run -p aion-2-dps-meter --features probes -- --overlay-probe`); the
+  default binary contains none of that code. The probe sends no mouse input to
+  anything.
+
+### Overlay window requirements
+
+Measured on Windows 11, two 2560x1440 monitors at 100%, with the game running
+and in the foreground. Foreground, hit-testing and styles were read back with
+`GetForegroundWindow`, `WindowFromPoint`, `WM_NCHITTEST` and
+`GetWindowLongPtrW`; the only window other than ours that was looked at is the
+foreground one, by handle.
+
+| | Requirement | Result | How, and what was observed |
+|---|---|---|---|
+| 5a | Transparent, borderless, always on top, out of taskbar and Alt+Tab | Works | `WindowKind::PopUp` creates `WS_EX_TOOLWINDOW \| WS_EX_TOPMOST` and no `WS_EX_APPWINDOW`; `WindowBackgroundAppearance::Transparent` is real per-pixel alpha (the game shows through the card and its rounded corners). Read back: ex-style `0x08200188`, no owner, visible. Screenshots: `unlocked.png`, `locked.png` |
+| 5b | Never takes focus | Works for creation and style changes; a real click is not tested | `focus: false` shows it with `SW_SHOWNOACTIVATE`; `overlay.rs` then adds `WS_EX_NOACTIVATE`, so clicking it does not activate it. `GetForegroundWindow` was the same before and after opening, after every lock toggle, and GPUI reports the window inactive. GPUI's `WM_MOUSEACTIVATE` handler answers `MA_ACTIVATE`; per the Win32 documentation `WS_EX_NOACTIVATE` is what stops it, and that was not exercised with a real mouse press (it would need synthetic input over the game). **Manual check:** click and drag the overlay in game and confirm the game keeps focus |
+| 5c | Lock is click-through, toggled at runtime | Works | `WS_EX_LAYERED \| WS_EX_TRANSPARENT` (plus `SetLayeredWindowAttributes(255)`) set and cleared with `SetWindowLongPtrW` on the UI thread. Read back `0x082801a8` locked, `0x08280188` unlocked. `WindowFromPoint` over the card skips the window when locked and returns it when unlocked. The window keeps drawing after becoming layered. The header button reaches the same path and unlocks itself after 5 s |
+| 5d | Drag by the header; hover while unfocused | Works; drag itself not exercised with a real mouse | A div marked `window_control_area(WindowControlArea::Drag)` answers `WM_NCHITTEST` with `HTCAPTION` (read back: 2 over the title area, 1 over the button and rows), so Windows runs the native move loop. A mouse move posted to the unfocused window set the button's hover state and cleared it again. The drag area must be its own element: a button inside it would start a drag instead of a click. **Manual check:** drag the header in game. |
+| 5e | HWND from GPUI | Works | `Window` implements `raw_window_handle::HasWindowHandle`; `RawWindowHandle::Win32` gives the `HWND` (`overlay::hwnd`). No private API needed |
+| 5f | Per-monitor DPI | Works at 100%; cross-DPI not testable here | GPUI's embedded manifest declares PerMonitorV2 and the window reports it. At 96 dpi the scale is 1.0 and the client is 310 px for 310 logical. Both monitors run at 96 dpi, so a move to a different DPI could not be exercised; the probe does it automatically when it finds one |
+| 5g | Fonts | See below | Bahnschrift SemiCondensed cannot be selected; the rest works |
+| 5h | Idle and replay cost | See below | |
+
+Other things seen:
+
+- The window rect is 8 px wider on each side and 4 px taller on each side than
+  the client area (326x260 for a 310x252 card), and `WM_NCHITTEST` there answers
+  client. Unlocked, the overlay swallows clicks in that thin transparent ring.
+  Phase 2b removes that frame, see [Phase 2b results](#phase-2b-results).
+- GPUI's Windows backend embeds a manifest with `requestedExecutionLevel
+  asInvoker` (feature `windows-manifest`, on by default in `gpui-pre-platform`).
+  It collided with the Administrator manifest; resolved in
+  [Live capture and the manifest](#live-capture-and-the-manifest).
+- `Application::run` needs no admin rights and no activation. The overlay never
+  calls `cx.activate`.
+- The 5 s lock of 2a was a stand-in; 2b replaced it with `Alt+CapsLock`.
+
+### Fonts (5g)
+
+`aion-2-dps-meter --font-probe` shapes the same string in each candidate and
+draws a specimen sheet (`specimen.png`). GPUI's `Font` is family, weight, style,
+features and fallbacks; there is no width. `gpui-pre-windows` passes
+`DWRITE_FONT_STRETCH_NORMAL` for every lookup and matches the name against
+DirectWrite font-set family names only.
+
+| Family requested | Result |
+|---|---|
+| `Bahnschrift`, weight 400 or 600 | Works. The weight axis is honoured (600 draws bold) at normal width |
+| `Bahnschrift SemiCondensed`, `Bahnschrift SemiBold SemiCondensed`, `Bahnschrift Condensed` | **Does not work.** The name is not found and GPUI silently falls back to Segoe UI. Loading `C:/Windows/Fonts/bahnschrift.ttf` through `add_fonts` changes nothing |
+| `Segoe UI Variable` | Does not resolve (falls back to Segoe UI). The installed families are `Segoe UI Variable Text`, `Display` and `Small` |
+| `Segoe UI Variable Text` (400), `Segoe UI Variable Display` (600) | Work |
+| `tnum` | Works. Segoe UI Variable Text: "1111111111" is 75.8 px and "0000000000" 107.8 px without it, both 107.8 px with it. Bahnschrift: 66.5 vs 110.4 px without, both 106.5 px with it |
+
+So the approved type holds except for the width: Bahnschrift SemiCondensed is
+not reachable with stock GPUI 0.3.7. The ways forward, for a decision: use
+Bahnschrift at normal width and accept wider figures; bundle a
+semi-condensed font with a licence that allows it; or patch
+`gpui-pre-windows` so a family name can carry the width (a vendored patch of
+the Kit's pinned GPUI, to maintain on every bump). `Segoe UI Variable Text` must
+be named in full in the design.
+
+### Cost (5h)
+
+Release build, `Get-Process -Id <our pid>` once a second, 8 logical cores,
+overlay visible. Nothing else was sampled.
+
+| Case | CPU (share of one core) | Private bytes | Working set |
+|---|---|---|---|
+| Idle: window open, meter not started, no events (46 s) | 1.2 % average, 4.6 % peak | 64.5 MB | 50.7 MB |
+| 1.0x replay of the 2-minute recording, 6,731 packets (120 s) | 2.5 % average, 10.8 % peak | 76.3 MB max | 65.2 MB max |
+| After the replay, meter running, no events (62 s) | 2.1 % average | 77.1 MB max | 65.2 MB max |
+
+The idle figure is not zero. `gpui-pre-windows` starts a `VSyncProvider` thread
+that wakes on every display refresh and calls `RedrawWindow(RDW_INVALIDATE)` on
+every window, forever. Nothing in this app requests a frame; that thread is the
+floor. [INFERENCE: GPUI draws only when its frame is dirty, so these wake-ups
+cost a message round trip but not a render. The CPU sampling resolution is one
+15.6 ms tick, so the percentages carry that granularity.] The meter's own
+threads add about 1 % of a core. The replay itself is paced: it took 120.5 s.
+For scale, the Tauri app was not measured in this phase.
+
+## Phase 2b results
+
+Branch `phase-2-meter-overlay`, on top of 2a. The placeholder view is gone; the
+overlay draws the approved meter (`docs/gpui-mockups/approved/meter.html`,
+`tokens.md`) in plain GPUI from real `aether-core` data.
+
+### What was built
+
+- `crates/app/src/meter/`: `view.rs` (the card, capsule and summary),
+  `model.rs` (events folded into prepared rows; personal bests asked of the
+  core once per character and boss), `live.rs` and `summary.rs` (what each
+  card shows, worked out once per snapshot), `fight.rs` (when the fight summary
+  goes up and comes down, a unit-tested state machine), `format.rs`,
+  `motion.rs` (the 240 ms ease-out tween), `settings.rs` (`OverlaySettings`,
+  the `aion2.overlay` defaults of `use-settings.ts`; not persisted, no UI) and
+  `game_data.rs`.
+- Rules ported from `overlay/meter/main.js`: snapshots of a target without a
+  mob code are skipped; at most 10 rows and your row is never the one dropped;
+  bars are damage over top damage with a 6 % floor; contribution or share;
+  combat power grouped, DPS compact; masking covers players and the target;
+  personal-best pace after 10 s of a boss fight; the summary is final when the
+  boss dies, provisional after 15 s without a snapshot, never for fights under
+  15 s, taken down when the fight resumes, the next boss starts, or after a
+  minute; Copy writes the battle report (live) or the summary text.
+- Controls under the pointer take the gauge line: reset (only with a meter),
+  capsule, lock (only when `Alt+CapsLock` is registered) and close (quits:
+  the overlay is the only window). Copy sits in the footer as in the mockup,
+  and says "Copied" for 1.5 s. History, PvP and Settings come with their
+  windows.
+- Lock: `hotkey.rs` registers `Alt+CapsLock` with `global-hotkey` 0.7 (the
+  version Tauri already uses). Its hidden window gets `WM_HOTKEY` through
+  GPUI's message loop; the handler only queues and the toggle runs on the UI
+  thread. If registration fails (another Aether holds it) the lock button is
+  hidden, since nothing could unlock the overlay.
+- The window fits the card: after layout the view measures the card and
+  `overlay::fit_client_size` resizes the client area with
+  `SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE`. GPUI's `Window::resize` omits
+  the last two, so it could activate the overlay over the game. The window is
+  exactly the card in every state (card, capsule, summary, unavailable): no
+  transparent margin is left to take clicks while unlocked.
+- No drop shadow, removed after the in-game test (2026-10-04). The card first
+  carried the approved `0 10 28` shadow in 20/12/30 px of transparent room;
+  over a bright scene the window edge clipped it into a faint hard-edged dark
+  rectangle, and that room took clicks while unlocked (`WM_NCHITTEST`
+  returning `HTTRANSPARENT` only passes clicks to windows of the same thread,
+  never to the game). The user chose to drop the shadow; `tokens.md`,
+  `meter.html` and `overlay.css` now say none for overlay cards.
+- No window frame. GPUI creates its pop-up with an overlapped style, so
+  Windows gave it a frame (the 2a ring above), and on Windows 11 DWM drew a
+  1 px light border with rounded corners around the whole window. The in-game
+  test showed that border; `PrintWindow` captures do not.
+  `overlay::open` now opens the window hidden, sets `GWL_STYLE` to a plain
+  `WS_POPUP`, sets `DWMWA_NCRENDERING_POLICY = DWMNCRP_DISABLED`,
+  `DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_DONOTROUND` and
+  `DWMWA_BORDER_COLOR = DWMWA_COLOR_NONE` (failures ignored, for Windows 10),
+  then places and shows it without activation. GPUI calls no
+  `DwmExtendFrameIntoClientArea`. Read back off screen: style `0x94000000`
+  (`WS_POPUP | WS_VISIBLE | WS_CLIPSIBLINGS`), window 350x165 = client
+  350x165, non-client rendering off (0), corner preference 1 (do not round);
+  the border colour cannot be read back (`DwmGetWindowAttribute` answers
+  "parameter is incorrect" for it).
+- Motion: bars, row order and the boss gauge tween over 240 ms; tool-row swap,
+  gauge, chips and the capsule opening fade (100, 150, 180 ms) through GPUI's
+  one-shot `Animation::new`. Both request frames only until they finish; a
+  settled overlay draws nothing. Windows' "Animation effects" setting turns
+  all of it off (`cx.set_reduce_motion`; GPUI does not read the setting
+  itself).
+- Game data compiled into the exe (`include_str!` / `include_bytes!`) from
+  where the Tauri app keeps it, until the cutover moves it:
+  `src/games/aion2/data/servers.json` and `dungeons.json`,
+  `src/i18n/locales/aion2skills/en.json`, `public/aion2/class/*.png`. The exe
+  needs none of these paths at run time. Icons are Lucide SVGs in
+  `crates/app/assets/icons/` with its licence, compiled in the same way.
+
+### Font
+
+Barlow Semi Condensed, the four static weights 400/500/600/700 from
+`google/fonts` (`ofl/barlowsemicondensed`), embedded with `include_bytes!` and
+registered through `add_fonts`. Licence: `crates/app/assets/fonts/OFL.txt`.
+DirectWrite files these faces under the family **`Barlow`** with a
+semi-condensed width, so GPUI must ask for `Barlow`; `Barlow Semi Condensed`
+does not resolve. A system-wide Barlow install is untested. Measured with
+`--font-probe` at 20 px: "1111111111" vs "0000000000" is 61.80 vs 101.40 px at
+500 and 62.60 vs 101.80 px at 600 without `tnum`, and equal with it (99.00 and
+101.40 px). The four weights resolve to distinct faces (254.6, 259.8, 264.0,
+269.1 px for the sample line). There is no 650, so your name is 600.
+
+### Checking it without showing anything
+
+`--capture <dir>` (feature `probes` only) asks GPUI for a hidden window (GPUI
+moves bounds outside every monitor back onto the primary one), moves it past
+the left edge of the virtual screen, then shows it without activation. Every
+capture first checks with `MonitorFromRect` that no monitor holds any of it,
+and hides it and stops otherwise. `PrintWindow(PW_RENDERFULLCONTENT)` returns
+the composed card over black.
+`--fixtures` draws every state from synthetic snapshots (invented names) and
+then reports frames built and CPU used while idle; `--replay <file>` captures
+the paced replay every 15 s as it is, under the pointer, locked and as a
+capsule, with names masked. Captures go outside the repository. No global
+shortcut is registered in this mode. The 2a overlay probe still shows its
+window on a monitor and was not run.
+
+Results (2026-10-04): every state matches `meter.html` in layout and size,
+within 1–4 px of card height at the same width. Deviations:
+
+- The typeface (Barlow, not Bahnschrift) and your name at 600, not 650.
+- Only working controls in the tool row (see above).
+- Waiting hint: "Alt+CapsLock locks and unlocks the meter" instead of
+  "Alt+E hides the meter · Alt+Q resets it": those shortcuts are phase 5.
+- The capsule opens by resizing the window at once and fading the card in
+  over 180 ms, rather than growing.
+- The percent column is 400 weight, as `meter.html` draws it (tokens.md now
+  says the same).
+- A long name ellipses while combat power stays visible, rather than the whole
+  line ellipsing.
+- The summary's best line has two tones (new or first, behind), not the Tauri
+  overlay's third "within 5 %" tone.
+- No tooltips on the icon buttons: they would need room outside the window,
+  which ends at the card.
+- No drop shadow (see above).
+- System figures (ping, CPU, memory) redraw on their own only while waiting;
+  under the pointer on a live card they update with the next redraw.
+
+The recording replays as one player on many short-lived targets with no boss,
+so live replay captures show waiting, live, locked and capsule; the summary
+states and the pace come from fixtures. A replay has no data directory, so no
+personal best exists to pace against.
+
+Idle cost: in the fixture run, 10 s of the waiting card and 10 s of a settled
+live card built **0 frames** each (a render counter in the view); the process,
+with no meter running, used 1.9 % and 1.4 % of one core in a debug build. The
+release figure was not re-measured. The only frame requests in app code are
+the running tweens and GPUI's own one-shot fades, which stop when they finish.
+
+Manual checks left for the game: dragging, `Alt+CapsLock`, the pointer
+showing and hiding the controls and opening the capsule, Copy into chat, the
+card edge on a bright scene, and a monitor at another DPI.
+
+## Live capture and the manifest
+
+Added after the first in-game test of the 2b build, which showed "Waiting for the
+first hit" forever: launched without `--replay`, the app created no meter.
+
+- **Live mode** is launching without `--replay` (`live_session.rs`). The meter
+  gets the Tauri app's folders: data in `%APPDATA%/com.helveticxa.aether`
+  (Tauri 2 `app_data_dir()` = `dirs::data_dir()/<identifier>`), log in
+  `%LOCALAPPDATA%/com.helveticxa.aether/logs/aether.log` (`app_log_dir()`), both
+  read from `tauri-2.10.3/src/path/desktop.rs`. History, personal bests and
+  recordings are therefore shared with the Tauri app. The config is
+  `DEFAULTS.aion2.backend` of `use-settings.ts`, which differs from the core's
+  defaults in two values: a 200 ms snapshot interval and a 50 ms unknown-packet
+  resync delay (a unit test pins the full set). A user's own backend settings live
+  in the Tauri webview's local storage, which the GPUI app cannot read, so they
+  are not carried over until the GPUI Settings exist. The meter starts with
+  `start_dps_meter` (Npcap first, WinDivert fallback) and is stopped on quit.
+  The development checks (`--capture`, `--overlay-probe`, `--font-probe`) never
+  start live capture.
+- **When the meter cannot start** (not elevated, no backend), the overlay shows
+  the card "The meter is not running" with the core's error as the reason, status
+  "Stopped", and never "Waiting for the first hit". The capsule layout stays a
+  full card in that state. `--capture --fixtures` includes it as
+  `fixture-unavailable`. The reason is the core's own text, for example "No
+  capture backend available; Npcap: ...; WinDivert: ...".
+- **The local character** (`MainActorDetected`) now updates the model and redraws:
+  the waiting card's header shows the name (masked when masking is on), and a
+  held snapshot's "you" marker follows it.
+- **Manifest.** `crates/app/build.rs` embeds `windows/admin.manifest.xml`:
+  `requireAdministrator`, PerMonitorV2 (`dpiAware true/pm`), Windows 10/11
+  compatibility, SegmentHeap, and the Common-Controls 6 dependency, i.e. what
+  `gpui.manifest.xml` carried, with the execution level changed. A build with the
+  `probes` feature embeds the same file with `asInvoker`, so the development
+  checks run from an ordinary terminal. Read back from the executables with
+  `FindResource`/`LoadResource` (data-file load, nothing run): release has
+  `requireAdministrator`, the probes build `asInvoker`, each with exactly one
+  manifest (id 1).
+  - GPUI's `gpui-pre-platform` forces its `windows-manifest` feature on, so a
+    second `RT_MANIFEST` made the link fail (LNK1123). Features cannot turn it
+    off. The root `Cargo.toml` patches `embed-resource` with `vendor/embed-resource`,
+    a copy of 3.0.11 whose `compile()` returns early when the calling package is
+    `gpui-pre`. Drop the patch when GPUI stops embedding, or when the Kit's pinned
+    snapshot changes how it does it.
+  - The manifest is linked into every binary of the package, including a bin's
+    unit-test harness, which then cannot start unelevated (os error 740). The
+    program therefore lives in `src/lib.rs` (`run()`), `src/main.rs` is three
+    lines with `test = false`, and the tests run in the library. `cargo test
+    --workspace` runs unelevated.
+- **Not verified:** the release exe was not run (it asks for elevation and the
+  user plays on this machine), so live capture on a real game session is a
+  manual check.
+
+## Open-world meter: data and model
+
+The data side of the decisions under *Open-world meter and the mob list*. The
+view that draws it is *Layout D* below.
+
+### Session aggregate
+
+`CombatSnapshot.session` (`models/session.rs`, built by `engine/session.rs`
+from the per-target overview the snapshot already computes, so it adds no map
+clones). Per player: damage, combat time, DPS, share, and combat power; for the
+session: total damage, mobs fought and the session clock. Rows are sorted by
+damage, honour `hide_unknown_players` and `max_player_count` (5–20; the local
+player, found by id or by name, takes the last row when ranked below the cut),
+and the shares count everyone, hidden players included. `boss_only` is applied
+at ingest, so a Boss-only session holds bosses only. A reset or idle reset
+clears it with the rest.
+
+- **Which damage counts.** Damage to mobs. Targets that are named players
+  (PvP, a mob hitting a player) are left out; the PvP boards keep them.
+- **Targets** are counted per spawn: a pack of thirty is thirty.
+- **Combat time.** On each target a player's window runs from their first hit
+  to the last hit anyone landed on it, at least 1 s: the span the per-target DPS
+  already divides by, so a one-target session reads like that target's board.
+  A player's combat time is the length of the *union* of their windows, so two
+  mobs fought at once count once and the walk between packs counts not at all.
+  Session DPS is `damage / combat time`. The session clock (header time) is the
+  union of every target's window.
+- Replays compress time (timestamps are taken at replay time), so replayed
+  session DPS figures are large; the figures are right for live play.
+
+### Boss rules and the mob catalogue
+
+`mobs/catalog.rs`. `MobCatalog::is_boss(code)` is the only boss decision: the
+snapshot's `TargetInfo.is_boss`, the Boss-only filter and the summon parser all
+ask it. Order: the user's exclusion, the user's addition, the bundled list, then
+the HP rule (HP over 10 million, when `show_possible_boss` is on; the GPUI app
+turns it on in live and replay mode). The HP rule's set now survives a reset: it
+is a fact about the mob. `set_boss_correction(code, Some(Boss | NotBoss) |
+None)` is the API for a correction; the header's "…" menu calls it (see
+*Layout D*). Names: the bundled name
+first, then a name from `mobs.json` for codes the bundle lacks.
+
+### `mobs.json`
+
+In the app data folder (`%APPDATA%/com.helveticxa.aether/mobs.json`, shared with
+the Tauri app, which reads corrections and names but never collects).
+
+```json
+{ "version": 1,
+  "mobs": { "2100793": { "name": "…", "nameSource": "bundled|user|reviewed",
+                          "maxHpSeen": 1234567, "firstSeen": 1790000000,
+                          "lastSeen": 1790000900, "timesFought": 3,
+                          "bossCorrection": "boss|notBoss" } } }
+```
+
+Every field but `timesFought` is optional. Times are epoch seconds. There is
+**no zone field**: the core never learns which zone or dungeon a mob was met in,
+so there is nothing to record. No player data is stored.
+
+- **What is saved.** User corrections always. Everything else (unknown mobs,
+  HP, counts, names) only when `DpsMeterConfig.collect_mobs` is on: the GPUI
+  app's `--collect-mobs` flag, live mode only. The default is off.
+- **When it is written.** A change sets a flag; a writer thread (`mob-store-writer`)
+  writes when the file is dirty and the last write is at least 30 s old, so the
+  first change goes out at once and a burst costs one write. A fight ending
+  (reset, idle reset, identification reset, stop) is such a change, and
+  quitting calls `save_now()`, which writes on the quitting thread. Writes are
+  a temp file, `sync_all`, then rename. The packet and snapshot threads only
+  take in-memory locks and set the flag; a failed write is logged and retried.
+- **Bad files.** A file that does not parse, or has a newer `version`, is
+  renamed `mobs.json.bad-<epoch seconds>` and logged, and the meter starts with
+  no mob data. It never crashes.
+
+### View mode and the app model
+
+`crates/app/src/meter/board.rs` is the pure state machine (`BoardChoice`):
+Auto (Session in the open world, Target while a boss is engaged) or a pin.
+Clicking the inactive side pins it; clicking the active side while pinned
+returns to Auto. A pin ends on reset, on an emptied meter, and when a boss is
+engaged. A pinned Target board with no boss engaged follows the current
+target. `MeterModel` exposes `active_board()`, `is_board_pinned()`,
+`select_board(side)` (the caller notifies), `session()` and `live()` (rows),
+`header_name()`, `elapsed()`, `footer()` (`Session { damage, targets }`,
+`TargetPace`, or `TargetPartyDamage`) and `identified()`.
+
+### Sticky boss focus
+
+The game's "current target" is whatever was hit last (by you, or by anyone
+when you are not identified), so in a boss fight with adds it jumped between
+the boss and trash and the automatic board flapped between Session and Target.
+`meter/focus.rs` (`BossFocus`) fixes that. The first snapshot whose current
+target is a live boss **engages** it, and the Target board, its gauge, time,
+pace and the header name then follow *that boss*, from the snapshot's
+per-target overview (`by_target_player_stats`, `target_infos`), whatever is
+hit meanwhile. It is let go when:
+
+- the boss **dies** (the final summary follows, then the automatic board is
+  Session again; a dead boss is never engaged again);
+- **another boss** is engaged;
+- it goes `QUIET_RELEASE` (2 minutes, one constant in `focus.rs`) without a
+  single hit on it, which also puts up the provisional "Fight ended" summary
+  (it used to appear after 15 s of quiet, while the boss was still around);
+  a boss let go this way is engaged again when someone hits it;
+- it is gone from the snapshot, or the user ruled it "not a boss";
+- the meter is **reset** (button, hotkey, idle reset or character change);
+- the local player's **actor id changes**: ids are per-zone handles, so that
+  would show a zone change. The code path exists, but the identification
+  packet is not re-sent on a zone change in the recorded sessions, so in
+  practice a boss that is left behind is let go by the 2-minute quiet rule.
+  The core parses no despawn or entity-removed packet, so nothing more
+  precise is known. (A re-sent identification with the same id is not a zone
+  change.)
+
+A user pin overrides the board but does not release the boss: unpinning goes
+back to it. Hits are noticed by the boss's fight length growing; the quiet
+limit is armed on the model's timer, since snapshots stop when nothing is hit.
+
+### Whose summary, whose row
+
+- The summary is built for the target the fight tracker named (the boss), not
+  the current target, and from the full per-target overview.
+- "You" on any board is found by **name** first. An actor id is trusted only on
+  a row nobody has named, because ids change between zones and a stale one can
+  belong to someone else by now. If the game has not named the local player,
+  or they did no damage to the boss, the summary is about the party ("Party
+  DPS", player count, no rank, share, crit, skills or personal best) and the
+  copied text starts "Party ...". Nobody else is shown as you. (The capsule's
+  lead is `Lead::You` or `Lead::Party`; the top row is no longer passed off as
+  you.)
+- The Target board no longer reads the core's `last_target_all_players_...`
+  list, which the core cuts to its player limit before the app can keep your
+  row in it; it ranks the full per-target overview and keeps your row in the
+  last place if you rank below the cap.
+- Known gap: the identification packet (`0x33 0x36`) was seen in one of the
+  five recorded sessions, the one where the meter was started before login.
+  In the other four it never reaches the parser, in the replays and in the
+  live log (no "main actor" line in sessions of up to 24 minutes with several
+  connection changes), so a meter started with the game running stays
+  unidentified, and "change zone once" does not fix it. Everything above
+  degrades to party figures in that case.
+
+### Diagnostic log
+
+`--debug-log` (app launch flag; a Settings switch comes later) turns on the
+app's own decision log. It does not touch the core logger's debug level, which
+also writes a line per hit and buff on the packet thread and stays off. It
+writes, to `aether.log` (live) or
+`%TEMP%/aether/gpui-app.log` (replay), lines starting `[meter]`, only when the
+decision changes: the board and why (automatic or pinned), boss focus engaged
+and released with the reason, whether and how your row is on the Target and
+Session boards (not identified, matched by name or by id, below the row cap,
+absent), identification and zone changes, summaries and who they are about,
+and boss corrections. Lines may hold player names, as the log already does;
+the log stays on the machine. With the flag off the cost is one flag check.
+
+### Layout D in the view
+
+`crates/app/src/meter/view.rs` draws approved layout D
+(`docs/gpui-mockups/approved/meter.html`, `tokens.md`), replacing the 2b card:
+
+- **Header.** The current target's name on the left (`muted` on the Session
+  board, `text` on the Target board, cut with an ellipsis only when it runs out
+  of room), the board's clock on the right. Under the pointer the clock
+  cross-fades (100 ms) to the tools: reset · capsule · lock · copy · … · close,
+  evenly spaced 2 px apart (the extra 3 px before close is gone, after the
+  in-game test).
+  Copy turns into a check for 1.5 s. Waiting there is nothing to reset or copy.
+  The window never resizes on hover.
+- **Boards.** Session: rows of name + combat power, quiet DPS with a faint
+  "/s", damage in bold, share %. Target: as in 2b, with the gauge line. A board
+  change cross-fades in 150 ms and clears the row tweens; the card's height
+  follows the board (the gauge adds a line).
+- **Footer, always shown.** Session: damage and the target glyph with the
+  count. Target: the PB pace once a boss fight is 10 s old and a best exists,
+  else the party's damage. Then ping and the fixed-width (100 px) [Session |
+  Target] switch; its highlight slides in 120 ms, the pin dot marks an
+  override. Locked, the switch shows and has no handlers (the window is
+  click-through anyway).
+- **Switch tooltip.** Drawn inside the card above the footer after 500 ms of
+  rest, fading in over 150 ms; on a one-row board it sits beside the switch.
+  No tooltip for the active side while the choice is automatic.
+- **Not identified yet.** A quiet line above the footer, "Start before login,
+  or relog via character select", until the game names you. The game sends
+  the name at login (a zone change does not resend it); returning to
+  character select is the lead from another meter, unverified here.
+- **Capsule.** Session: your rank, your damage, "Session" and the clock.
+  Target: your DPS, the clock and the pace. Until the meter knows which row
+  is you (or when you are not on the board) it shows the party's figure
+  without a rank badge ("party damage" / "party DPS"), as the summary does.
+  Waiting: "DPS Meter · Standing by".
+- **Boss correction ("…").** A click opens a menu under the button: "Treat
+  <mob> as a boss", "Not a boss", "Automatic", the current one ticked
+  (`MeterModel::correction_target`, `set_boss_choice`). Choosing saves through
+  `MobCatalog::set_boss_correction`, patches `is_boss` on the snapshot the
+  model holds and re-runs the board choice, so marking a mob a boss turns an
+  automatic Session board into the Target board at once; the view pin stays
+  independent. Without a target with a mob code (or without a meter) the items
+  are faint and inert under a note. The menu is drawn in the overlay window;
+  when it hangs below the card the window grows to hold it (the same
+  `SWP_NOACTIVATE | SWP_NOZORDER` resize) and shrinks back when it closes.
+  While it is open an occluding scrim covers the window under the menu: a
+  press anywhere else closes the menu and reaches nothing below it (so a
+  press on the switch or a row only dismisses), and a second press on "…"
+  closes it the same way. An open menu also closes 400 ms after the pointer
+  leaves the window; the check runs on every frame, so a pointer that came
+  and went between two frames still closes it. The leave is the
+  `WM_MOUSELEAVE` Windows sends after GPUI's own
+  `TrackMouseEvent(TME_LEAVE)` on our HWND; no hooks.
+
+Verification, off screen only (`--capture <dir> --fixtures`, the
+`MonitorFromRect` guard, `PrintWindow`): one fixture per state of the approved
+page (`d-01-session` … `d-21-provisional`), the menu on a full card, on a
+one-row card (window 118 px for a 95 px card), with no target, and after
+"Treat as a boss" (the board switched to Target), plus the scaled and
+unavailable cards. Each was compared with the page's own render of the same
+state at 1.25 zoom; heights agree within 1–4 px. The paced replay of the
+recording was captured with names masked. The idle check built 0 frames on the
+waiting, Session and Target cards. The menu's dismissal was checked off
+screen by posting mouse messages to our own window only (`menu-check` lines
+of the fixture run): a press on a row and on the switch closes the menu and
+leaves the board as it was, while the same press on the switch with the menu
+closed pins Target; a second press on "…" closes it; with no press it stays
+open for 300 ms; one posted `WM_MOUSEMOVE` is handled (GPUI's pointer moves
+to it) and GPUI's hover flag is false 100 ms later although no
+`WM_MOUSELEAVE` was posted (only that message clears it), and the menu
+closes about 420 ms after the move.
+
+Remaining deviations from the page:
+
+- The waiting hint is "Alt+CapsLock locks and unlocks the meter": Alt+E and
+  Alt+Q do not exist yet (phase 5).
+- Reset only appears with a running meter, so fixtures (no meter) show the
+  tools without it.
+- The tooltip for the inactive Session side ("Show the session board / Stays
+  until reset or the next boss.") is not on the page, which shows only the
+  Target side and the pinned side.
+- The menu has no drop shadow: it can reach the window's bottom edge, where a
+  shadow would be clipped (the reason the card has none).
+- The emptied gauge segment does not fade to the track over 200 ms; the drain
+  itself is tweened.
+
+### Class shades
+
+`meter/shades.rs`: when several players share a class, each gets a shade of
+the class colour (rule and step values in `tokens.md`, class shades). The
+model keeps one `ShadeBook` for both boards, keyed by player name (by id while
+unnamed), so a friend has the same shade on Session and Target and keeps it
+when ranks swap; an emptied meter or a reset clears it. Shades are assigned
+when the boards are rebuilt from a snapshot, in board order for players first
+seen in the same snapshot, and the row carries the final colour, so drawing
+does no colour work. The capsule badge uses your shade; summary skill bars
+keep the plain class colour. A sixth player of a class with four shades (or a
+fifth ranger or cleric) takes the class colour again, by the cycling rule.
+
+Checked by unit tests (distinct within a class, stable across a rank swap and
+a zone's new id, unnamed players by id, reset, cycling, 4.5:1 for white
+figures on every added shade over a dark scene) and off screen
+(`shades-session`, `shades-target`, `shades-capsule` in the fixture run).
+
+### Not done
+
+No Settings switch for collection and no name-review UI. The Copy report still
+describes the target board.
 
 ## Effort
 

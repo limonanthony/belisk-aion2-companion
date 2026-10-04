@@ -190,8 +190,8 @@
       <h1>Startup gate <small>approved, round 3</small></h1>
       <ul class="rationale">
         <li>A small window before the main one: Administrator rights, Npcap and WinDivert, each with one sentence of what is true now. Npcap is required only while WinDivert cannot stand in; WinDivert is always optional and stays quiet when Npcap works. An optional check that fails never looks like an alarm.</li>
-        <li>Blocking problems get a red-tinted row and the one fix the app can offer: Install Npcap (download, SHA-256 check against the pinned build, then Npcap's own installer window) or downloading Aether again when the bundled driver file has gone.</li>
-        <li>When everything required passes but Npcap is missing, the gate waits for "Open Aether" so the recommendation is read: WinDivert works, but it is a driver some anti-cheats dislike, because lag switches are built on it.</li>
+        <li>Blocking problems get a red-tinted row and the one fix the app can offer: Install Npcap (download, SHA-256 check against the pinned build, then Npcap's own installer window) or downloading the meter again when the bundled driver file has gone.</li>
+        <li>When everything required passes but Npcap is missing, the gate waits for "Open the meter" so the recommendation is read: WinDivert works, but it is a driver some anti-cheats dislike, because lag switches are built on it.</li>
       </ul>
     </header>
 
@@ -200,8 +200,8 @@
     <section class="notes">
       <h2>Behaviour carried over</h2>
       <ul>
-        <li>The gate is authoritative in Rust: "Open Aether" asks the backend, which re-checks before showing the main window. A failure there re-runs the checks and shows the reason.</li>
-        <li>When it opens on its own at start-up and everything passes, it continues after 1.2 s, except when Npcap is missing: then it waits for "Open Aether". Opened again from Home ("Re-run capture check"), it never continues by itself and offers Close instead of Quit.</li>
+        <li>The gate is authoritative in Rust: "Open the meter" asks the backend, which re-checks before showing the main window. A failure there re-runs the checks and shows the reason.</li>
+        <li>When it opens on its own at start-up and everything passes, it continues after 1.2 s, except when Npcap is missing: then it waits for "Open the meter". Opened again from Home ("Re-run capture check"), it never continues by itself and offers Close instead of Quit.</li>
         <li>With Npcap working, WinDivert is judged by its file alone and never loaded: some anti-cheats treat a loaded WinDivert as a warning sign, because lag switches are built on it.</li>
       </ul>
       <h2>GPUI Kit notes</h2>
@@ -218,7 +218,7 @@
 
         const ADMIN_OK = ["ok", "Administrator rights", "Running elevated, which packet capture requires."];
         const NPCAP_OK = ["ok", "Npcap", "Installed and answering. 3 network adapters visible."];
-        const WD_FALLBACK = ["idle", "WinDivert", "Bundled as a fallback. Its driver is loaded only if Npcap cannot capture, and unloaded again when Aether is done with it."];
+        const WD_FALLBACK = ["idle", "WinDivert", "Bundled as a fallback. Its driver is loaded only if Npcap cannot capture, and unloaded again when the meter is done with it."];
 
         function check([state, title, detail], { optional = false, block = false, action = "" } = {}) {
           const ic =
@@ -249,7 +249,7 @@
           switch (state) {
             case "checking":
               return win(ctx, {
-                head: "Checking what Aether needs",
+                head: "Checking what the meter needs",
                 busy: true,
                 checks: ["Administrator rights", "Npcap", "WinDivert"].map((l) => check(["busy", l, "Checking…"])).join(""),
                 sum: "Checking…",
@@ -258,16 +258,16 @@
             case "ready":
               return win(ctx, {
                 head: "Everything is ready",
-                sub: "Opening Aether…",
+                sub: "Opening AION 2 DPS Meter…",
                 checks: check(ADMIN_OK) + check(NPCAP_OK) + check(WD_FALLBACK),
-                sum: "Everything Aether needs is in place.",
+                sum: "Everything the meter needs is in place.",
                 actions: recheck() + C.btn("Continue now", { kind: "primary", ic: "chevronRight" }),
               });
             case "npcap-missing": {
               // Waits for the user, so the recommendation is read.
               return win(ctx, {
                 head: "Ready, with one recommendation",
-                sub: "Aether can capture with WinDivert.",
+                sub: "The meter can capture with WinDivert.",
                 checks:
                   check(ADMIN_OK) +
                   check(["idle", "Npcap", "Not installed. Recommended: WinDivert works, but some anti-cheats dislike a loaded WinDivert driver, because lag switches use it."], {
@@ -275,22 +275,22 @@
                     action: C.btn("Install Npcap", { ic: "download", size: "sm" }),
                   }) +
                   check(["ok", "WinDivert", "Bundled driver answering, and used for capture."]),
-                sum: "Everything Aether needs is in place.",
-                actions: recheck() + C.btn("Open Aether", { kind: "primary", ic: "chevronRight" }),
+                sum: "Everything the meter needs is in place.",
+                actions: recheck() + C.btn("Open the meter", { kind: "primary", ic: "chevronRight" }),
               });
             }
             case "blocked":
               return win(ctx, {
-                head: "Aether is not ready yet",
+                head: "The meter is not ready yet",
                 checks:
                   check(ADMIN_OK) +
                   check(["bad", "Npcap", "Not installed, and WinDivert cannot stand in. Npcap is free and takes a minute."], {
                     block: true,
                     action: C.btn("Install Npcap", { kind: "primary", ic: "download", size: "sm" }),
                   }) +
-                  check(["idle", "WinDivert", "The bundled driver file is missing from the Aether folder, which usually means antivirus quarantined it."], {
+                  check(["idle", "WinDivert", "The bundled driver file is missing from the meter's folder, which usually means antivirus quarantined it."], {
                     optional: true,
-                    action: C.btn("Download Aether again", { ic: "external", size: "sm" }),
+                    action: C.btn("Download the meter again", { ic: "external", size: "sm" }),
                   }),
                 sum: "Npcap has to be sorted out before the meter can run.",
                 actions: recheck() + C.btn("Quit", { kind: "ghost" }),
@@ -302,7 +302,7 @@
                 checks:
                   check(ADMIN_OK) +
                   check(["busy", "Npcap", "Installing…"]),
-                extra: `<div class="steps"><p>The Npcap installer opens in its own window. Tick <b>WinPcap API-compatible Mode</b>, finish it, and Aether re-checks by itself.</p>
+                extra: `<div class="steps"><p>The Npcap installer opens in its own window. Tick <b>WinPcap API-compatible Mode</b>, finish it, and the meter re-checks by itself.</p>
 <div class="step is-done">${icon("check")}Fetched the official Npcap installer (1.2 MB)</div>
 <div class="step is-done">${icon("check")}SHA-256 matches the pinned build</div>
 <div class="step is-now">${icon("loader")}Waiting for the Npcap installer to finish</div></div>`,
@@ -311,22 +311,22 @@
               });
             case "install-failed":
               return win(ctx, {
-                head: "Aether is not ready yet",
+                head: "The meter is not ready yet",
                 checks:
                   check(ADMIN_OK) +
                   check(["bad", "Npcap", "Not installed, and WinDivert cannot stand in."], {
                     block: true,
                     action: C.btn("Try again", { kind: "primary", ic: "download", size: "sm" }),
                   }),
-                extra: `<div class="alert is-bad">${icon("alert")}<div><b>The installer was not run</b>The download does not match the build Aether expects (SHA-256). Nothing was run. You can install Npcap yourself from npcap.com.</div></div>`,
+                extra: `<div class="alert is-bad">${icon("alert")}<div><b>The installer was not run</b>The download does not match the build the meter expects (SHA-256). Nothing was run. You can install Npcap yourself from npcap.com.</div></div>`,
                 sum: "Npcap has to be sorted out before the meter can run.",
                 actions: recheck() + C.btn("Quit", { kind: "ghost" }),
               });
             case "not-elevated":
               return win(ctx, {
-                head: "Aether is not ready yet",
+                head: "The meter is not ready yet",
                 checks:
-                  check(["bad", "Administrator rights", "Aether is not running as Administrator. Capture drivers cannot be opened without it. Close Aether and start it again."], { block: true }) +
+                  check(["bad", "Administrator rights", "AION 2 DPS Meter is not running as Administrator. Capture drivers cannot be opened without it. Close it and start it again."], { block: true }) +
                   check(NPCAP_OK) +
                   check(["idle", "WinDivert", "Cannot be checked without Administrator rights."], { optional: true }),
                 sum: "Administrator rights have to be sorted out before the meter can run.",
@@ -337,7 +337,7 @@
                 head: "Capture check",
                 sub: "Opened from Home. Nothing changes until you close it.",
                 checks: check(ADMIN_OK) + check(NPCAP_OK) + check(WD_FALLBACK),
-                sum: "Everything Aether needs is in place.",
+                sum: "Everything the meter needs is in place.",
                 actions: recheck() + C.btn("Close", { kind: "primary" }),
               });
           }
@@ -349,7 +349,7 @@
           states: [
             { id: "checking", title: "Checking", sub: "first pass, probes running" },
             { id: "ready", title: "All good", sub: "continues by itself after 1.2 s" },
-            { id: "npcap-missing", title: "Npcap missing, WinDivert works", sub: "passes; waits for Open Aether so the recommendation is read" },
+            { id: "npcap-missing", title: "Npcap missing, WinDivert works", sub: "passes; waits for Open the meter so the recommendation is read" },
             { id: "blocked", title: "Nothing can capture", sub: "blocked; Install Npcap" },
             { id: "installing", title: "Installing Npcap", sub: "download verified, Npcap's own window is open" },
             { id: "install-failed", title: "Install refused", sub: "checksum did not match; nothing was run" },

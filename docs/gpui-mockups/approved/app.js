@@ -152,7 +152,7 @@
     const ctl = gate
       ? `<span class="tb-ctl" title="Close">${icon("close")}</span>`
       : `<span class="tb-ctl" title="Minimise">${icon("minus")}</span><span class="tb-ctl" title="Maximise">${icon("square")}</span><span class="tb-ctl" title="Close">${icon("close")}</span>`;
-    return `<div class="tb"><span class="tb-mark"><span class="logo">${icon("gauge")}</span>Aether</span><span class="grow"></span>${ctl}</div>`;
+    return `<div class="tb"><span class="tb-mark"><span class="logo">${icon("gauge")}</span>AION 2 DPS Meter</span><span class="grow"></span>${ctl}</div>`;
   }
 
   /* The main window: title bar, sidebar (Meter, then the settings sections,

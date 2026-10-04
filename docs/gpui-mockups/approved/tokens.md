@@ -1,8 +1,9 @@
-# Aether design tokens
+# AION 2 DPS Meter design tokens
 
-The approved visual language for Aether's GPUI overlays and main window.
-Sources of truth: [meter.html](meter.html) (round 1, D2 with bar end d and
-rank b, plus the round 2 header and combat-power fixes), [pvp.html](pvp.html),
+The approved visual language for the AION 2 DPS Meter's GPUI overlays and main
+window. Sources of truth: [meter.html](meter.html) (round 1, D2 with bar end d
+and rank b; the round 2 combat-power fix; round 4, layout D with the Session
+and Target boards), [pvp.html](pvp.html),
 [detail.html](detail.html) and [history.html](history.html) (round 2), and
 [gate.html](gate.html), [home.html](home.html) and
 [settings.html](settings.html) (round 3). The shared overlay classes live in
@@ -16,21 +17,27 @@ default 150, so `a = 150/255 ≈ 0.59`).
 
 | Role | Family | Size / weight |
 |---|---|---|
-| All overlay text | Bahnschrift, SemiCondensed width | — |
+| All overlay text | Barlow Semi Condensed, embedded in the exe (requested in GPUI as `Barlow`) | — |
 | Hero figure (summary DPS) | | 36 px / 600 |
 | Capsule DPS | | 17 px / 600 |
 | Detail key figures | | 16 px / 600 |
 | Boss name in summary, player in detail header | | 14.5 px / 600 |
 | Row DPS, fight time | | 14 px / 600 (13.5 in PvP, detail and history rows) |
 | Window title (PvP, history) | | 13.5 px / 600 |
-| Body, player names | | 13 px / 500 (you: 650) |
+| Body, player names, meter header name | | 13 px / 500 (you: 600; header name 600) |
 | Values in footer and key-value lists, menu items, inputs | | 12.5 px / 500–600 |
-| Percent column, gauge %, section labels, tabs, buttons | | 12 px / 600 |
+| Percent column | | 12 px / 400 |
+| Gauge %, section labels, tabs, buttons | | 12 px / 600 (Session \| Target switch: 11 px / 600) |
 | Secondary (CP, server, labels, system figures) | | 11–11.5 px / 500 |
 
 - Figures are tabular (`tnum`).
 - Labels are sentence case. No uppercase transforms, no letter spacing.
 - Long names cut off with an ellipsis; numbers never wrap.
+- The mockups were drawn with Bahnschrift SemiCondensed. Stock GPUI cannot
+  select that width (docs/GPUI_MIGRATION.md, phase 2a), so the overlays ship
+  Barlow Semi Condensed (SIL OFL 1.1, `crates/app/assets/fonts/`): a
+  semi-condensed DIN-like face with static 400, 500, 600 and 700 weights.
+  It has no 650, so "you" is 600.
 
 ## Colour
 
@@ -38,14 +45,14 @@ default 150, so `a = 150/255 ≈ 0.59`).
 |---|---|---|
 | `card` | `rgba(16, 14, 12, a)` | Overlay card and windows |
 | `card-border` | `rgba(255, 236, 214, 0.10)`, 1 px | Card outline |
-| `card-shadow` | `0 10 28 rgba(0, 0, 0, 0.42)` | Card drop shadow |
+| `card-shadow` | none | Overlay cards have no drop shadow. An overlay window must end at the card (outside it, a transparent window still takes clicks while unlocked), so a shadow is clipped at the window edge; over a bright scene in game that showed as a faint hard-edged dark rectangle (2026-10-04). Main-window dialogs, menus and popovers keep their shadows |
 | `track` | `rgba(0, 0, 0, 0.34)` | Bar track, record plate, dark plate under text |
 | `soft` | `rgba(255, 240, 225, 0.08)` | Tonal button fill, notes |
 | `hot` | `rgba(255, 240, 225, 0.13)` | Active tool button, selected tab, highlighted menu item |
 | `text` | `rgba(255, 246, 236, 0.96)` | Primary text |
 | `secondary` | `rgba(255, 246, 236, 0.82)` | Combat power and server beside meter names |
-| `muted` | `rgba(255, 246, 236, 0.66)` | Secondary text, % column, section labels |
-| `faint` | `rgba(255, 246, 236, 0.44)` | Labels, counts, placeholders, table headers |
+| `muted` | `rgba(255, 246, 236, 0.66)` | Secondary text, % column, section labels, the mob's name in the meter header on the Session board |
+| `faint` | `rgba(255, 246, 236, 0.44)` | Labels, counts, placeholders, table headers, the "/s" unit on Session DPS |
 | `you-badge` | `rgba(255, 246, 236, 0.90)` bg, `#17120d` text | Your rank badge |
 | `you-rim` | `rgba(255, 246, 236, 0.45)`, 1 px inside the track | Your bar |
 | `good` | `#86e3a8` | Ahead of PB, defeated, good ping, live, success notes |
@@ -57,9 +64,9 @@ default 150, so `a = 150/255 ≈ 0.59`).
 | `chip-good` / `chip-warn` / `chip-bad` | `good`, `warn`, `bad` at 0.13–0.14 bg | Status chips and notes |
 | `danger-fill` | `rgba(247, 168, 168, 0.14)` bg, `bad` text | Confirming button ("Delete?") |
 | `pending-rim` | `rgba(247, 168, 168, 0.55)`, 1 px | The record a delete confirmation refers to |
-| `neutral-fill` | cream `rgba(255, 240, 225, 0.04 → 0.16)` | Bars where no class is known (PvP kill stats) |
+| `neutral-fill` | cream `rgba(255, 240, 225, 0.04 → 0.16)` | Bars where no class is known (PvP kill stats, meter rows before the class is seen) |
 | `tag-attacker` | `rgba(232, 115, 95, 0.18)` bg, `#f6b4a6` text | "Last attacker" tag |
-| `popover` | `rgba(30, 26, 22, 0.98)`, border `rgba(255, 236, 214, 0.14)`, shadow `0 10 24 rgba(0, 0, 0, 0.5)` | Menus, dropdowns, suggestions |
+| `popover` | `rgba(30, 26, 22, 0.98)`, border `rgba(255, 236, 214, 0.14)`, shadow `0 10 24 rgba(0, 0, 0, 0.5)` | Menus, dropdowns, suggestions, the meter's tooltip over the Session \| Target switch (drawn inside the card, so its shadow is not clipped) |
 | `input` | `rgba(0, 0, 0, 0.34)` bg, border `rgba(255, 240, 225, 0.12)`; focus border `rgba(255, 246, 236, 0.55)` | Text fields and selects |
 | `scroll-thumb` | `rgba(255, 240, 225, 0.28)`, 3 px wide | Scrolling lists |
 
@@ -79,6 +86,25 @@ class):
 | Sorcerer | 232, 121, 249 |
 | Templar | 56, 189, 248 |
 
+**Class shades.** When several players share a class, each gets a shade of
+it so friends can be told apart without reading names; no new hues. The
+first player of a class seen since the last reset keeps the colour above; the
+next ones step the HSL lightness by 0.10 per step, in this order, then the
+order starts over:
+
+| Class | Steps after the class colour |
+|---|---|
+| Assassin | +1, −1, +2, −2 |
+| Cleric, Ranger | −1, −2, −3 |
+| All others | +1, −1, −2, −3 |
+
+A lighter step is used only where the white figures on the bar's bright end
+keep 4.5:1 over a dark scene, so the already bright cleric and ranger only
+darken. A player keeps their shade, by name (by id until named), on both
+boards until the meter is reset: it follows the player, not the rank. The
+shade colours the bar gradient and your capsule badge; summary skill bars
+keep your plain class colour. Your row keeps its cream rim.
+
 ## Shape
 
 | Element | Value |
@@ -95,6 +121,9 @@ class):
 | Text button | 20–22 px tall pill, `soft` fill, icon 12 px; quiet variant has no fill |
 | Status chip | 20–22 px tall pill |
 | Tabs (segmented) | track `rgba(0, 0, 0, 0.30)`, 8 px radius, 2 px inset; tab 22 px tall, 6 px radius, selected `hot` |
+| Session \| Target switch (meter footer) | 100 × 18 px, fixed width; track `rgba(0, 0, 0, 0.30)`, 6 px radius, 2 px inset; two equal options, 4 px radius, active `hot` with `text`, inactive `muted` (pointer over: `soft` fill, `text`) |
+| Pin dot | 4 × 4 px, fully rounded, `currentColor`, 3 px before the active option's label: the board is pinned by hand |
+| Meter tooltip | ≤ 230 px wide, 8 px radius, 6 × 9 px padding, `popover` colours; title 12 px / 600, line 11.5 px / 500 `muted`; 8 px from the card's right edge, 30 px from its bottom |
 | Input / select | 26 px tall, 7 px radius; label above at 11 px `faint` |
 | Popover | 9 px radius, 4 px padding; items 26 px tall, 6 px radius |
 | Plates (key figures, record) | 7–8 px radius, `track` fill; opened record `rgba(0, 0, 0, 0.40)` with a 1 px `rgba(255, 246, 236, 0.18)` rim |
@@ -119,12 +148,52 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
 | Window header | 28 px; meter header 22 px |
 | Section label row | 24 px, 6 px above |
 | Footer row | 20 px (meter), 26 px (windows) |
+| Meter footer | always shown, 5 px above; 4 px gaps; left: figures; right: ping (auto margin), then the switch 6 px after; no right inset, so the switch ends on the bars' right edge |
+| Meter hint line ("not identified yet") | 20 px, 4 px above the footer, 4 px inset, Lucide `map` 12 px in `faint`, 11.5 px `muted` text |
 
 ## Interaction patterns
 
-- **Meter under the pointer**: the seven controls take the gauge's 22 px
-  line; the header keeps the boss name and fight time. The window never
-  resizes on hover.
+- **Meter header**: the target's name on the left at full width, cut off
+  with an ellipsis only when it runs out of room; `text` on the Target board,
+  `muted` on the Session board (the mob being hit right now). At rest the
+  time sits on the right (the session's combat time on Session).
+- **Meter under the pointer**: the tools (reset, capsule, lock, copy
+  report, "…", close; 22 px tool buttons, evenly spaced 2 px apart) take the
+  time's place at top right; the name gives way. Copy turns into a check for
+  1.5 s. "…" opens the boss correction for the header's target; History,
+  PvP and Settings will join that menu. A click elsewhere in the meter, a
+  second click on "…" or the pointer leaving the card closes the menu.
+  Locked (click-through) shows no tools. The window never resizes on hover.
+- **Meter footer**: always shown. Session board: Damage (session total) and
+  the number of targets fought (Lucide `target` 12 px in `faint`, then the
+  number in `muted`). Target board: the pace against your personal best for
+  this boss once the fight is 10 s old (`good` ahead, `bad` behind, trend
+  icon, "−6.8% vs PB"); without a personal best, or before 10 s, the party's
+  Damage on this target. Then ping and the Session | Target switch.
+- **Board choice**: Target while a boss is engaged, Session otherwise. The
+  first hit on a boss engages it and the Target board stays on that boss,
+  whatever else is hit, until it dies, another boss is engaged, it goes two
+  minutes without a hit, or the meter is reset. (A zone change would release
+  it too, but the game does not re-send the player's identity on a zone, so
+  in practice the two-minute rule lets go after you leave.) Clicking the
+  inactive side pins it (pin dot); clicking the active side
+  again returns to automatic; a reset or the next boss also clears the pin. A
+  pinned Target board follows your current target. Locked, the switch shows
+  but does not react. Tooltips: "Show the target board / Follows your target
+  until reset or the next boss." and "Pinned to Session / Click again to
+  switch by itself. Reset and the next boss also unpin."
+- **Session board columns**: rank, class icon, name (+ combat power), DPS
+  quiet in `muted` with a `faint` "/s", damage bold at 14 px / 600, then the
+  share of session damage in the 38 px percent column. Sorted by damage. DPS
+  counts each player's combat time. No gauge line.
+- **Not identified yet**: the game names your character at login, so until
+  it has, rows show `ID:<n>`, nobody is marked as you, the capsule shows the
+  party's figure without a rank badge, and the hint line says "Start before
+  login, or relog via character select" (the long form: start the meter
+  before logging in, or relog via character select). It goes away once you
+  are named.
+- **Product name**: "AION 2 DPS Meter" in the main window; "DPS Meter" where
+  an overlay has no target to name (waiting card, idle capsule).
 - **Sorting**: the active column is `text` with a down arrow; other sortable
   columns are underlined at 0.25.
 - **Delete confirmation**: the button turns into a `danger-fill` "Delete?"
@@ -140,7 +209,10 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
 
 - Bars grow and shrink over 240 ms (ease-out); rows trade places over 240 ms.
 - Figures swap in place, no counting.
-- Hover swaps (meter tool row) cross-fade in 100 ms.
+- Hover swaps (meter header: time and tools) cross-fade in 100 ms.
+- Board change (automatic, pin, unpin): the board cross-fades in 150 ms and
+  the switch's highlight moves across in 120 ms. The card's height follows the
+  board (the Target board adds the 22 px gauge line), never the pointer.
 - Chips and notes fade in over 150 ms. Nothing flashes or pulses.
 - The capsule grows into the card over 180 ms on pointer over and returns
   after a 350 ms grace period.
@@ -159,7 +231,7 @@ opaque, no artwork or video.
 | Body text, descriptions, labels | Segoe UI Variable Text | 13 px / 400–500 (row label 13.5 / 500, description 12) |
 | Page title | Bahnschrift | 21 px / 600 (gate 19) |
 | Large button, figures (elapsed time, slider values, best DPS), Kbd | Bahnschrift | 13–22 px / 600 |
-| Group title | Segoe UI Variable | 12.5 px / 600, `muted` |
+| Group title | Segoe UI Variable Text | 12.5 px / 600, `muted` |
 
 French strings run 20–30% longer; Home was checked in French at these sizes.
 
@@ -172,7 +244,7 @@ French strings run 20–30% longer; Home was checked in French at these sizes.
 | `win-surface` | `#1b1815` | Settings groups, cards, status tiles |
 | `win-raised` | `#241f1b` | Menus, tooltips, dialogs |
 | `win-line` | `rgba(255, 240, 225, 0.08)`; strong `0.14` | Group borders and row dividers; button and input borders |
-| `primary` | `#f3ebe1` bg, `#17120d` text | The one bright button per view (Start meter, Open Aether, Continue now) |
+| `primary` | `#f3ebe1` bg, `#17120d` text | The one bright button per view (Start meter, Open the meter, Continue now) |
 | `selected` | `rgba(255, 240, 225, 0.11)` | Sidebar item, segmented option |
 | `soft` | `rgba(255, 240, 225, 0.07)` | Secondary button fill, sidebar status line |
 | `danger` | `rgba(247, 168, 168, 0.15)` bg, `bad` text | Stop meter, Stop recording, Clear cache, reset confirmation |
@@ -186,7 +258,7 @@ Text, `good`, `warn` and `bad` are the overlay values.
 | Component | Kit piece | Values |
 |---|---|---|
 | Window | borderless window | 960 × 620 (gate 600 × 470, not resizable), 9 px radius, 1 px `rgba(255, 236, 214, 0.12)` border |
-| Title bar | `TitleBar` | 36 px; 20 px cream logo square (6 px radius) + "Aether"; minimise, maximise, close 46 × 36 (gate: close only) |
+| Title bar | `TitleBar` | 36 px; 20 px cream logo square (6 px radius) + "AION 2 DPS Meter"; minimise, maximise, close 46 × 36 (gate: close only) |
 | Sidebar | `Sidebar` | 208 px; Meter, then a "Settings" label and seven sections; items 32 px, 7 px radius; the meter's status line (dot + "Running · 12:41") at the bottom |
 | Settings group | styled div | title above; 10 px radius, `win-surface`, 1 px `win-line`; rows ≥ 54 px, 11 × 16 px padding, 1 px dividers |
 | Settings row | styled div | label and one-sentence description on the left (≤ 58ch), control on a stable right edge |
@@ -235,8 +307,10 @@ pinned version before planning.
   enough to hold them while open.
 - Text inputs need a GPUI text input (built for the overlays or taken from
   GPUI Kit).
-- Bahnschrift SemiCondensed is a named instance of a variable font; whether
-  GPUI can select it by family name is unverified.
+- Bahnschrift SemiCondensed is a named instance of a variable font, and GPUI
+  cannot select it by family name (checked in phase 2a); the overlays use the
+  embedded Barlow Semi Condensed instead. `Segoe UI Variable` must be named
+  with its optical size (`Segoe UI Variable Text`, `Display`, `Small`).
 - Icons are single-colour Lucide SVGs; class icons are the PNGs in
   `public/aion2/class/`, skill and buff icons the PNGs in
   `public/aion2/skill/`.

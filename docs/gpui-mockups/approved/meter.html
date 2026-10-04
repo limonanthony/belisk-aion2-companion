@@ -3,17 +3,49 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Round 2: meter fixes</title>
+    <title>Approved: meter overlay</title>
     <link rel="stylesheet" href="shared.css" />
     <style>
-      /* The approved meter overlay (round 1: D2, bar end d, rank b).
-         Values are recorded in tokens.md; keep the two in step. Every effect
-         here is a GPUI primitive: alpha fills, two-stop linear gradients,
-         1px borders, rounded corners, one drop shadow. */
+      /* The approved meter overlay: round 1 (D2, bar end d, rank b), the
+         round 2 fixes, and round 4 (layout D: the name on top, the tools
+         top right under the pointer, an always-on footer with the
+         Session | Target switch). Values are recorded in tokens.md; keep
+         the two in step. Every effect here is a GPUI primitive: alpha
+         fills, two-stop linear gradients, 1px borders, rounded corners.
+         No drop shadow on the card: in game the window clips it into a
+         hard-edged dark rectangle (tokens.md). */
+
+      /* The font the overlays ship (crates/app/assets/fonts, SIL OFL 1.1),
+         so widths here match the GPUI build. */
+      @font-face {
+        font-family: "Meter Barlow";
+        src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Regular.ttf") format("truetype");
+        font-weight: 400;
+      }
+
+      @font-face {
+        font-family: "Meter Barlow";
+        src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Medium.ttf") format("truetype");
+        font-weight: 500;
+      }
+
+      @font-face {
+        font-family: "Meter Barlow";
+        src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-SemiBold.ttf") format("truetype");
+        font-weight: 600;
+      }
+
+      @font-face {
+        font-family: "Meter Barlow";
+        src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Bold.ttf") format("truetype");
+        font-weight: 700;
+      }
+
       .ov.d {
         --d-bg: rgba(16, 14, 12, var(--bg-a));
         --d-track: rgba(0, 0, 0, 0.34);
         --d-soft: rgba(255, 240, 225, 0.08);
+        --d-hot: rgba(255, 240, 225, 0.13);
         --d-text: rgba(255, 246, 236, 0.96);
         --d-muted: rgba(255, 246, 236, 0.66);
         --d-faint: rgba(255, 246, 236, 0.44);
@@ -21,10 +53,9 @@
         --d-warn: #f2c66d;
         --d-bad: #f7a8a8;
         --d-hp: #e8735f;
-        /* Bahnschrift ships with Windows 10 and 11. The Linux names only make
-           this preview look closer when it is opened outside Windows. */
-        --d-font: "Bahnschrift", "Arial Narrow", "DejaVu Sans Condensed", "Liberation Sans Narrow", sans-serif;
+        --d-font: "Meter Barlow", "Barlow Semi Condensed", "Bahnschrift", sans-serif;
 
+        position: relative;
         zoom: var(--scale);
         width: 310px;
         padding: 8px 8px 6px;
@@ -32,10 +63,8 @@
         border: 1px solid rgba(255, 236, 214, 0.1);
         border-radius: 14px;
         background: var(--d-bg);
-        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
         color: var(--d-text);
         font: 13px/1 var(--d-font);
-        font-stretch: 87.5%;
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
       }
@@ -55,63 +84,82 @@
         flex: 1;
       }
 
-      /* ---- Header and footer: rows, not bands ---- */
+      /* ---- Header: the name on the left, the time or the tools right ---- */
       .d-head {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
         height: 22px;
         padding: 0 2px 0 4px;
       }
 
-      .d-target {
+      /* Target board: the target's name, bright. Session board: the mob
+         being hit right now, in `muted`, so the rows stay first. Long
+         names cut off with an ellipsis only when they run out of room. */
+      .d-tgt {
         flex: 1;
         min-width: 0;
         overflow: hidden;
-        color: var(--d-muted);
+        color: var(--d-text);
         font-size: 13px;
         font-weight: 600;
         text-overflow: ellipsis;
       }
 
+      .d-tgt.is-session {
+        color: var(--d-muted);
+      }
+
       .d-time {
+        flex-shrink: 0;
         font-size: 14px;
         font-weight: 600;
       }
 
       .d-label {
+        flex-shrink: 0;
         color: var(--d-faint);
         font-size: 11px;
         font-weight: 500;
       }
 
       .d-val {
+        flex-shrink: 0;
         color: var(--d-text);
         font-size: 12.5px;
         font-weight: 600;
       }
 
+      /* Under the pointer the tools take the time's place. */
+      .d-tools {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 2px;
+        margin-right: -2px;
+      }
+
       .d-btn {
         display: inline-flex;
+        flex-shrink: 0;
         align-items: center;
         justify-content: center;
         width: 22px;
         height: 22px;
         border-radius: 7px;
         color: var(--d-muted);
+        cursor: pointer;
       }
 
+      .d-btn:hover,
       .d-btn.is-hot {
-        background: rgba(255, 240, 225, 0.13);
+        background: var(--d-hot);
         color: var(--d-text);
-      }
-
-      .d-btn.is-close {
-        margin-left: 3px;
       }
 
       .d-tbtn {
         display: inline-flex;
+        flex-shrink: 0;
         align-items: center;
         gap: 5px;
         height: 20px;
@@ -121,6 +169,11 @@
         color: var(--d-text);
         font-size: 11.5px;
         font-weight: 600;
+        cursor: pointer;
+      }
+
+      .d-tbtn:hover {
+        background: var(--d-hot);
       }
 
       .d-tbtn .i {
@@ -128,20 +181,180 @@
         height: 12px;
       }
 
+      /* ---- Footer, always shown: figures left, ping and the switch right ---- */
       .d-foot {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 4px;
         height: 20px;
-        margin-top: 2px;
-        padding: 0 4px;
+        margin-top: 5px;
+        padding: 0 0 0 4px;
         color: var(--d-muted);
         font-size: 11.5px;
       }
 
-      /* ---- Gauge: ten rounded segments of boss health ----
-         A fixed 22px block: under the pointer the tool row takes this line,
-         so nothing below it moves. */
+      .d-count {
+        margin-left: 4px;
+        color: var(--d-muted);
+      }
+
+      .d-count .i {
+        color: var(--d-faint);
+      }
+
+      .d-ping {
+        margin-left: auto;
+      }
+
+      .d-sys {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 3px;
+      }
+
+      .d-sys .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .d-sys.is-good {
+        color: var(--d-good);
+      }
+
+      .d-foot.is-sys {
+        gap: 8px;
+        margin-top: 2px;
+        padding-right: 4px;
+      }
+
+      /* Session | Target: a two-state segmented switch, fixed width. The
+         segmented-control tokens scaled to the 20px footer. */
+      .seg {
+        display: inline-flex;
+        flex-shrink: 0;
+        width: 100px;
+        height: 18px;
+        margin-left: 6px;
+        padding: 2px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.3);
+      }
+
+      .seg-opt {
+        display: inline-flex;
+        flex: 1 1 0;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        min-width: 0;
+        border-radius: 4px;
+        color: var(--d-muted);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .seg-opt.is-on {
+        background: var(--d-hot);
+        color: var(--d-text);
+      }
+
+      .seg-opt:not(.is-on):hover,
+      .seg-opt.is-hover:not(.is-on) {
+        background: var(--d-soft);
+        color: var(--d-text);
+      }
+
+      /* Locked: the same look, nothing reacts. */
+      .seg.is-locked .seg-opt {
+        cursor: default;
+      }
+
+      .seg.is-locked .seg-opt:not(.is-on):hover {
+        background: none;
+        color: var(--d-muted);
+      }
+
+      /* Pinned: the automatic choice is overridden. */
+      .seg-dot {
+        width: 4px;
+        height: 4px;
+        flex-shrink: 0;
+        border-radius: 2px;
+        background: currentColor;
+      }
+
+      /* Tooltip over the switch, drawn inside the card (the window ends at
+         the card). Popover colours from tokens.md. */
+      .d-tip {
+        position: absolute;
+        z-index: 3;
+        right: 8px;
+        bottom: 30px;
+        max-width: 230px;
+        padding: 6px 9px 7px;
+        border: 1px solid rgba(255, 236, 214, 0.14);
+        border-radius: 8px;
+        background: rgba(30, 26, 22, 0.98);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+        color: var(--d-text);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.25;
+        white-space: normal;
+      }
+
+      .d-tip span {
+        display: block;
+        margin-top: 2px;
+        color: var(--d-muted);
+        font-size: 11.5px;
+        font-weight: 500;
+      }
+
+      /* "Not identified yet": its own quiet line above the footer, gone
+         once the game names you. */
+      .d-note {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        margin-top: 4px;
+        padding: 0 4px;
+        overflow: hidden;
+        color: var(--d-muted);
+        font-size: 11.5px;
+      }
+
+      .d-note .i {
+        width: 12px;
+        height: 12px;
+        color: var(--d-faint);
+      }
+
+      .d-pace {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 4px;
+        font-weight: 600;
+      }
+
+      .d-pace .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .d-pace.is-ahead {
+        color: var(--d-good);
+      }
+
+      .d-pace.is-behind {
+        color: var(--d-bad);
+      }
+
+      /* ---- Gauge: ten rounded segments of the target's health ---- */
       .d-gauge {
         display: flex;
         align-items: center;
@@ -191,8 +404,8 @@
         height: 22px;
       }
 
-      /* Rank badge. The 3px margin plus the row's 5px gap matches the card's
-         8px inset on the badge's left. */
+      /* The 3px margin plus the row's 5px gap matches the card's 8px inset
+         on the badge's left. */
       .d-rk {
         display: flex;
         align-items: center;
@@ -208,8 +421,7 @@
         font-weight: 600;
       }
 
-      /* Soft rectangle bar. The fill brightens toward its leading edge; the
-         end stops at 0.5 because the top player's figure sits on it. */
+      /* Soft rectangle bar, brightening toward its leading edge. */
       .d-track {
         position: relative;
         display: flex;
@@ -224,6 +436,10 @@
         background: var(--d-track);
       }
 
+      .d-track.no-icon {
+        padding-left: 9px;
+      }
+
       .d-fill {
         position: absolute;
         top: 0;
@@ -231,6 +447,11 @@
         left: 0;
         border-radius: 5px;
         background: linear-gradient(90deg, rgba(var(--rgb), 0.14), rgba(var(--rgb), 0.5));
+      }
+
+      /* No class known yet: the neutral cream fill. */
+      .d-fill.is-neutral {
+        background: linear-gradient(90deg, rgba(255, 240, 225, 0.04), rgba(255, 240, 225, 0.16));
       }
 
       .d-track > :not(.d-fill) {
@@ -264,6 +485,10 @@
         font-size: 11.5px;
       }
 
+      .d-unit {
+        color: var(--d-faint);
+      }
+
       .d-dps {
         font-size: 14px;
         font-weight: 600;
@@ -289,37 +514,7 @@
       }
 
       .d-row.is-you .d-name {
-        font-weight: 650;
-      }
-
-      .d-pace {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
         font-weight: 600;
-      }
-
-      .d-pace.is-ahead {
-        color: var(--d-good);
-      }
-
-      .d-pace.is-behind {
-        color: var(--d-bad);
-      }
-
-      .d-sys {
-        display: inline-flex;
-        align-items: center;
-        gap: 3px;
-      }
-
-      .d-sys .i {
-        width: 12px;
-        height: 12px;
-      }
-
-      .d-sys.is-good {
-        color: var(--d-good);
       }
 
       /* ---- Capsule ---- */
@@ -331,6 +526,10 @@
         height: 30px;
         padding: 0 12px 0 4px;
         border-radius: 999px;
+      }
+
+      .ov.d.is-capsule.is-idle {
+        padding-left: 12px;
       }
 
       .d-cap-rk {
@@ -357,9 +556,9 @@
         background: rgba(255, 240, 225, 0.18);
       }
 
-      /* ---- Idle ---- */
+      /* ---- Waiting ---- */
       .d-idle {
-        padding: 2px 4px 8px;
+        padding: 6px 4px 8px;
       }
 
       .d-idle strong {
@@ -375,7 +574,7 @@
         font-size: 11.5px;
       }
 
-      /* ---- Summary ---- */
+      /* ---- Fight summary ---- */
       .d-out {
         display: inline-flex;
         align-items: center;
@@ -495,17 +694,10 @@
         font-size: 12px;
       }
 
-      /* Under the pointer: the tool buttons take the gauge's line. */
-      .d-toolrow {
-        display: flex;
-        align-items: center;
-        gap: 2px;
-        height: 22px;
-        padding: 0 2px;
-      }
-
-      .d-toolrow .d-btn.is-close {
-        margin-left: auto;
+      .d-sum + .d-foot {
+        gap: 8px;
+        margin-top: 2px;
+        padding-right: 4px;
       }
     </style>
   </head>
@@ -518,43 +710,86 @@
         <a href="detail.html">Player detail</a>
         <a href="history.html">Fight history</a>
       </nav>
-      <h1>Meter overlay <small>approved, rounds 1 and 2</small></h1>
+      <h1>Meter overlay <small>approved, rounds 1, 2 and 4</small></h1>
       <ul class="rationale">
-        <li>Each player is a soft-cornered bar in class colour that brightens toward its leading edge, so who leads reads from the corner of your eye. Figures are compact (61.2K); the boss is a ten-segment gauge.</li>
-        <li>Rank is a small rounded-square badge, cream for you, and a subtle cream rim marks your bar. Under the pointer the seven controls take the gauge's line, so the boss name keeps its full width and the window never resizes. Combat power beside names at 0.82.</li>
-        <li>The controls above are the app's real overlay settings. Values are recorded in <a href="tokens.md">tokens.md</a>.</li>
+        <li>Each player is a soft-cornered bar in class colour that brightens toward its leading edge; rank is a small rounded-square badge, cream for you, with a cream rim on your bar. Figures are compact (61.2K); the target's health is a ten-segment gauge.</li>
+        <li>Two boards, chosen by themselves: <b>Session</b> in the open world (everyone's damage since the last reset, rows stable across mobs) and <b>Target</b> on a boss. The footer's Session | Target switch shows which; clicking the other side pins it, and a dot marks the pin.</li>
+        <li>The header names what is being hit, at full width. Under the pointer the tools (reset, capsule, lock, copy, …, close, evenly spaced) take the time's place at top right; the window never resizes. Locked: no tools, and the switch does not react. Values are in <a href="tokens.md">tokens.md</a>; all names and figures are invented.</li>
       </ul>
     </header>
 
     <main class="scenes"></main>
 
     <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Automatic board.</b> Target while a boss is engaged (bundled list, the HP rule or your corrections); Session otherwise. The first hit on a boss engages it, and the Target board then stays on that boss whatever else is hit, until it dies, another boss is engaged, it goes two minutes without a hit, or you reset. (A zone change would release it as well, but the game does not re-send your identity on a zone, so in practice the two-minute rule lets go after you leave.) Clicking the inactive side of the switch pins it; clicking the active side again returns to automatic. A reset or the next boss also clears the pin. A pinned Target board follows your current target.</li>
+        <li><b>Session board.</b> Everyone's damage across all targets since the last reset or idle reset. Bold figure: damage, sorted by damage; quiet figure: DPS with a faint "/s", over combat time (each player's fights summed). Percent: share of session damage (there is no single target HP for contribution). The header time is the session's combat time. Footer: session damage and the number of targets fought.</li>
+        <li><b>Target board footer.</b> With a personal best for this boss, the left side shows the pace against it once the fight is 10 s old ("−6.8% vs PB", green ahead, rose behind). Without one, or before 10 s, it shows the party's damage on this target.</li>
+        <li><b>Not identified yet.</b> The game sends your character's name at login, so the meter has to be running before you log in (returning to character select and back may also work). Until then rows show <code>ID:&lt;n&gt;</code>, nobody is marked as you, the capsule shows the party's figure without a rank badge, and a quiet line above the footer says "Start before login, or relog via character select".</li>
+        <li><b>"…" menu.</b> The boss correction for the target in the header (Treat as a boss / Not a boss / Automatic); History, PvP and Settings will join it later. A click elsewhere in the meter, a second click on "…", or the pointer leaving the card closes it.</li>
+      </ul>
       <h2>Intended motion</h2>
       <ul>
-        <li>Bars grow and shrink over 240 ms (ease-out). Figures swap, no counting.</li>
-        <li>Rank change: rows slide over 240 ms. The boss gauge drains its last segment continuously; an emptied segment fades to the track over 200 ms.</li>
-        <li>Pointer over: the gauge line cross-fades to the tool row in 100 ms and back when the pointer leaves; the window keeps its height.</li>
-        <li>The outcome chip and PB chip fade in over 150 ms; nothing flashes or pulses. Capsule: pointer over grows the pill into the card over 180 ms.</li>
+        <li>Bars grow and shrink over 240 ms (ease-out). Figures swap, no counting. Rank change: rows slide over 240 ms. The gauge drains its last segment continuously; an emptied segment fades to the track over 200 ms.</li>
+        <li>Pointer over: the time cross-fades to the tools in 100 ms and back when the pointer leaves; the window keeps its size.</li>
+        <li>Board change (automatic, pin, unpin): the board cross-fades in 150 ms and the switch's highlight moves across in 120 ms. The card's height follows the board (the Target board adds the gauge line), like any row-count change; it never changes on hover.</li>
+        <li>The tooltip over the switch appears after GPUI's usual tooltip delay and fades in over 150 ms. The outcome chip and PB chip fade in over 150 ms; nothing flashes or pulses. Capsule: pointer over grows the pill into the card over 180 ms.</li>
       </ul>
       <h2>GPUI notes</h2>
       <ul>
         <li>The bar fill is a two-stop <code>linear_gradient</code> clipped by the track (<code>overflow_hidden</code> on a 5 px rounded div). The "you" rim is a 1 px border on the track. Pills are <code>rounded_full</code>.</li>
-        <li>Font: <code>Bahnschrift</code> at its SemiCondensed width. Selecting the variable font's named width instance through GPUI is unverified; tabular figures need the <code>tnum</code> feature.</li>
-        <li>No uppercase transforms, no letter spacing, no text shadow, no blur. Class icons are the existing PNGs with a rounded clip; other icons are single-colour Lucide SVGs.</li>
+        <li>The switch is two <code>div</code>s in a rounded track, each with a <code>hover</code> fill and an <code>on_click</code>; the pin dot is a 4 px <code>rounded_full</code> div. Locked, the window is click-through, so nothing hovers.</li>
+        <li>The tooltip is drawn inside the overlay window above the footer and needs about two rows of room; with one row it sits beside the switch.</li>
+        <li>Font: Barlow Semi Condensed, embedded (this page loads the same files). No uppercase transforms, no letter spacing, no text shadow, no blur, no card shadow. Class icons are the PNGs with a rounded clip; other icons are single-colour Lucide SVGs.</li>
       </ul>
     </section>
 
     <script src="kit.js"></script>
     <script>
       (function () {
-        const icon = Kit.icon;
+        // Lucide "map" (ISC License, see kit.js), for the not-identified hint.
+        const MAP =
+          '<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>';
+        const icon = (name) =>
+          name === "map"
+            ? `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${MAP}</svg>`
+            : Kit.icon(name);
 
-        function frame(ctx, inner) {
-          return `<div class="ov d${ctx.opts.damage ? " has-dmg" : ""}">${inner}</div>`;
-        }
+        // ---- Invented data -------------------------------------------------------
+
+        // The session since the last reset: 18:42 of combat over 37 mobs.
+        // Brannoc and Ferelith are passers-by who hit a few of the same mobs.
+        const SESSION_SECS = 1122;
+        const SESSION_TARGETS = 37;
+        const SESSION = [
+          { id: 48213, name: "Vaelith", cls: "sorcerer", server: "Lyss", cp: 41820, dmg: 17.84e6, dps: 41240 },
+          { id: 51907, name: "Mirelle", cls: "ranger", server: "Ossia", cp: 38904, dmg: 14.62e6, dps: 38420, you: true },
+          { id: 47730, name: "Korrinth", cls: "gladiator", server: "Lyss", cp: 40112, dmg: 11.05e6, dps: 29610 },
+          { id: 52816, name: "Ilyrae", cls: "chanter", server: "Vandor", cp: 34210, dmg: 4.31e6, dps: 12870, noClassYet: true },
+          { id: 49964, name: "Brannoc", cls: "templar", server: "Lyss", cp: 37450, dmg: 2.18e6, dps: 24730 },
+          { id: 50381, name: "Ferelith", cls: "elementalist", server: "Vandor", cp: 35980, dmg: 0.96e6, dps: 31020 },
+          { id: 46102, name: "Hask", cls: "fighter", server: "Ossia", cp: 32610, dmg: 0.41e6, dps: 15360 },
+          { id: 53340, name: "Nalla", cls: "cleric", server: "Ossia", cp: 30420, dmg: 0.18e6, dps: 6120 },
+        ];
+        const SESSION_TOTAL = SESSION.reduce((s, p) => s + p.dmg, 0);
+
+        // The open-world mob being hit right now.
+        const MOB = { name: "Thornback Boar", maxHp: 1.0e6, hp: 0.41, secs: 11 };
+        const MOB_ROWS = [
+          { name: "Mirelle", cls: "ranger", server: "Ossia", cp: 38904, dps: 38120, dmg: 419000, you: true },
+          { name: "Ferelith", cls: "elementalist", server: "Vandor", cp: 35980, dps: 15600, dmg: 171600 },
+        ];
+
+        const LONG_BOSS = "Ashen Tide Colossus, Warden of the Sunken Vault";
+
+        // ---- Pieces --------------------------------------------------------------
 
         const btn = (name, label, extra = "") =>
-          `<span class="d-btn${extra}" role="button" title="${label}" aria-label="${label}">${icon(name)}</span>`;
+          `<span class="d-btn${extra}" role="button" tabindex="0" title="${label}" aria-label="${label}">${icon(name)}</span>`;
+
+        const nameOf = (ctx, n) => ctx.fmt.esc(ctx.opts.mask ? ctx.fmt.mask(n) : n);
+        const rowCap = (ctx) => Math.max(1, Math.min(10, ctx.opts.rows));
 
         function gauge(hp, dim) {
           let segs = "";
@@ -565,53 +800,229 @@
           return `<div class="d-gauge">${segs}<span class="d-hpv"${dim ? ' style="color:var(--d-faint)"' : ""}>${dim ? "--" : (hp * 100).toFixed(0) + "%"}</span></div>`;
         }
 
-        function head(ctx) {
-          return `<div class="d-head"><span class="d-target">${ctx.boss.label}</span><span class="d-time">${ctx.fmt.time(ctx.fightSecs)}</span></div>`;
-        }
-
-        // Under the pointer: the header stays, the tool row takes the gauge's line.
-        function hoverTop(ctx) {
-          return `${head(ctx)}
-<div class="d-toolrow">${btn("reset", "Reset")}${btn("history", "History")}${btn("settings", "Settings")}${btn("capsule", "Capsule mode")}${btn("lockOpen", "Lock (click-through)", " is-hot")}${btn("pvp", "PvP meter")}${btn("close", "Close", " is-close")}</div>`;
-        }
-
         function pace(p, suffix = " vs PB") {
           const up = p >= 0;
           return `<span class="d-pace ${up ? "is-ahead" : "is-behind"}">${icon(up ? "up" : "down")}${up ? "+" : "−"}${Math.abs(p * 100).toFixed(1)}%${suffix}</span>`;
         }
 
-        function bar(scale, rgb, inner) {
-          return `<span class="d-track" style="--rgb:${rgb}"><span class="d-fill" style="width:${(scale * 100).toFixed(1)}%"></span>${inner}</span>`;
+        function bar(scale, rgb, inner, noIcon) {
+          const fill = rgb
+            ? `<span class="d-fill" style="width:${(scale * 100).toFixed(1)}%"></span>`
+            : `<span class="d-fill is-neutral" style="width:${(scale * 100).toFixed(1)}%"></span>`;
+          return `<span class="d-track${noIcon ? " no-icon" : ""}"${rgb ? ` style="--rgb:${rgb}"` : ""}>${fill}${inner}</span>`;
         }
 
-        function rows(ctx) {
-          const { opts, fmt } = ctx;
-          const meta = (p) => {
-            const bits = [];
-            if (opts.server) bits.push(p.server);
-            if (opts.cp) bits.push(fmt.int(p.cp));
-            return bits.length ? `<small>${bits.join(" · ")}</small>` : "";
-          };
-          return `<div class="d-rows">${ctx.players
-            .map(
-              (p) => `<div class="d-row${p.you ? " is-you" : ""}">
+        function meta(ctx, p) {
+          const bits = [];
+          if (ctx.opts.server && p.server) bits.push(p.server);
+          if (ctx.opts.cp && p.cp) bits.push(ctx.fmt.int(p.cp));
+          return bits.length ? `<small>${bits.join(" · ")}</small>` : "";
+        }
+
+        function row(ctx, p, figs) {
+          const pic = p.icon ? `<img class="d-icon" src="${p.icon}" alt="${p.cls}">` : "";
+          return `<div class="d-row${p.you ? " is-you" : ""}">
   <span class="d-rk">${p.rank}</span>
-  ${bar(
-    p.scale,
-    p.rgb,
-    `<img class="d-icon" src="${p.icon}" alt="${p.cls}"><span class="d-name">${p.label}${meta(p)}</span>${
-      opts.damage ? `<span class="d-dmg">${fmt.compact(p.dmg)}</span>` : ""
-    }<span class="d-dps">${fmt.compact(p.dps)}</span>`
-  )}
-  <span class="d-pc">${fmt.pct(p.pct)}</span>
-</div>`
-            )
+  ${bar(p.scale, p.rgb, `${pic}<span class="d-name">${p.label}${meta(ctx, p)}</span>${figs}`, !p.icon)}
+  <span class="d-pc">${ctx.fmt.pct(p.pct)}</span>
+</div>`;
+        }
+
+        // Target board: DPS in bold; contribution or share.
+        function targetRows(ctx) {
+          const { opts, fmt } = ctx;
+          return `<div class="d-rows">${ctx.players
+            .map((p) => row(ctx, p, `${opts.damage ? `<span class="d-dmg">${fmt.compact(p.dmg)}</span>` : ""}<span class="d-dps">${fmt.compact(p.dps)}</span>`))
             .join("")}</div>`;
         }
 
-        function sys(ctx) {
-          return `<span class="d-sys is-good">${icon("signal")}${ctx.sys.pingMs} ms</span><span class="d-sys">CPU ${ctx.sys.cpu}%</span><span class="d-sys">${ctx.sys.memGb} GB</span>`;
+        // Class shades (tokens.md): the n-th player of a class seen since the
+        // reset takes a lightness step; the first keeps the class colour.
+        const SHADE_STEPS = { assassin: [1, -1, 2, -2], cleric: [-1, -2, -3], ranger: [-1, -2, -3] };
+        function shadeRgb(ctx, cls, order) {
+          const steps = SHADE_STEPS[cls] || [1, -1, -2, -3];
+          const n = order % (steps.length + 1);
+          const base = ctx.CLASS_RGB[cls];
+          if (n === 0) return base;
+          const [r, g, b] = base.split(",").map((v) => Number(v) / 255);
+          const max = Math.max(r, g, b), min = Math.min(r, g, b), c = max - min;
+          let l = (max + min) / 2;
+          const s = c === 0 ? 0 : c / (1 - Math.abs(2 * l - 1));
+          let h = c === 0 ? 0 : max === r ? ((g - b) / c + 6) % 6 : max === g ? (b - r) / c + 2 : (r - g) / c + 4;
+          l = Math.min(1, Math.max(0, l + steps[n - 1] * 0.1));
+          const c2 = (1 - Math.abs(2 * l - 1)) * s, x = c2 * (1 - Math.abs((h % 2) - 1)), m = l - c2 / 2;
+          const rgb = [[c2, x, 0], [x, c2, 0], [0, c2, x], [0, x, c2], [x, 0, c2], [c2, 0, x]][Math.min(5, Math.floor(h))];
+          return rgb.map((v) => Math.round((v + m) * 255)).join(", ");
         }
+
+        // A party heavy on rangers and clerics, to show the shades.
+        const SAME_CLASS = { Vaelith: "ranger", Mirelle: "ranger", Ilyrae: "ranger", Ferelith: "ranger", Korrinth: "cleric", Brannoc: "cleric", Hask: "cleric", Nalla: "assassin" };
+
+        // Session board: damage in bold, sorted by damage; DPS quiet with
+        // "/s"; percent = share of session damage.
+        function sessionPlayers(ctx, unidentified, sameClass) {
+          const seen = {};
+          const list = SESSION.map((p) => {
+            const known = sameClass ? SAME_CLASS[p.name] : p.cls;
+            const cls = unidentified && p.noClassYet ? null : known;
+            const order = cls ? (seen[cls] = (seen[cls] ?? -1) + 1) : 0;
+            return {
+              ...p,
+              you: unidentified ? false : !!p.you,
+              label: unidentified ? `ID:${p.id}` : nameOf(ctx, p.name),
+              cp: unidentified ? 0 : p.cp,
+              server: unidentified ? "" : p.server,
+              cls,
+              rgb: cls ? shadeRgb(ctx, cls, order) : null,
+              icon: cls ? ctx.classIcon(cls) : null,
+              pct: p.dmg / SESSION_TOTAL,
+            };
+          }).sort((a, b) => b.dmg - a.dmg);
+          list.forEach((p, i) => {
+            p.rank = i + 1;
+            p.scale = Math.max(0.06, p.dmg / list[0].dmg);
+          });
+          const shown = list.slice(0, rowCap(ctx));
+          if (!unidentified && !shown.some((p) => p.you)) shown[shown.length - 1] = list.find((p) => p.you);
+          return { list, shown };
+        }
+
+        function sessionRows(ctx, unidentified, sameClass) {
+          const { fmt } = ctx;
+          return `<div class="d-rows">${sessionPlayers(ctx, unidentified, sameClass)
+            .shown.map((p) => row(ctx, p, `<span class="d-dmg">${fmt.compact(p.dps)}<span class="d-unit">/s</span></span><span class="d-dps">${fmt.compact(p.dmg)}</span>`))
+            .join("")}</div>`;
+        }
+
+        function mobRows(ctx) {
+          const { fmt } = ctx;
+          const top = Math.max(...MOB_ROWS.map((p) => p.dmg));
+          return `<div class="d-rows">${MOB_ROWS.map((p, i) =>
+            row(
+              ctx,
+              {
+                ...p,
+                rank: i + 1,
+                label: nameOf(ctx, p.name),
+                rgb: ctx.CLASS_RGB[p.cls],
+                icon: ctx.classIcon(p.cls),
+                scale: Math.max(0.06, p.dmg / top),
+                pct: p.dmg / MOB.maxHp,
+              },
+              `<span class="d-dps">${fmt.compact(p.dps)}</span>`
+            )
+          ).join("")}</div>`;
+        }
+
+        // ---- Header and footer ---------------------------------------------------
+
+        // h: { name, session, right, ptr, tools: { reset, copy, copied } }
+        function head(h) {
+          let right = h.right;
+          if (h.ptr) {
+            const t = h.tools;
+            const copy = t.copy ? btn(t.copied ? "check" : "copy", t.copied ? "Copied" : "Copy report", t.copied ? " is-hot" : "") : "";
+            right = `<span class="d-tools">${t.reset ? btn("reset", "Reset") : ""}${btn("capsule", "Capsule")}${btn("lockOpen", "Lock (click-through)")}${copy}${btn("more", "Boss correction and more")}${btn("close", "Close the meter", " is-close")}</span>`;
+          }
+          return `<div class="d-head"><span class="d-tgt${h.session ? " is-session" : ""}">${h.name}</span>${right}</div>`;
+        }
+
+        // f: { pinned, locked, hover: "session" | "target" }
+        function seg(view, f) {
+          const opt = (id, label) => {
+            const on = view === id;
+            const dot = on && f.pinned ? `<span class="seg-dot" aria-hidden="true"></span>` : "";
+            return `<span class="seg-opt${on ? " is-on" : ""}${f.hover === id ? " is-hover" : ""}" role="radio" aria-checked="${on}"${f.locked ? ' aria-disabled="true"' : ` tabindex="${on ? 0 : -1}"`}>${dot}${label}</span>`;
+          };
+          return `<span class="seg${f.locked ? " is-locked" : ""}" role="radiogroup" aria-label="${f.pinned ? "Board, pinned" : "Board, automatic"}">${opt("session", "Session")}${opt("target", "Target")}</span>`;
+        }
+
+        function foot(ctx, left, view, f) {
+          return `<div class="d-foot">${left}<span class="d-sys d-ping is-good">${icon("signal")}${ctx.sys.pingMs} ms</span>${seg(view, f)}</div>`;
+        }
+
+        const damage = (ctx, dmg) => `<span class="d-label">Damage</span><span class="d-val">${ctx.fmt.compact(dmg)}</span>`;
+        const targets = (n) => `<span class="d-sys d-count" title="Targets fought" aria-label="${n} targets fought">${icon("target")}${n}</span>`;
+        const tip = (t) => (t ? `<div class="d-tip" role="tooltip">${t[0]}<span>${t[1]}</span></div>` : "");
+
+        function card(ctx, inner) {
+          return `<div class="ov d${ctx.opts.damage ? " has-dmg" : ""}">${inner}</div>`;
+        }
+
+        // ---- Boards ----------------------------------------------------------------
+
+        // s: { ptr, hover, pinned (Session pinned on a boss), unidentified, copied, sameClass }
+        function sessionCard(ctx, s) {
+          const h = head({
+            name: s.pinned ? ctx.boss.label : nameOf(ctx, MOB.name),
+            session: true,
+            right: `<span class="d-time">${ctx.fmt.time(SESSION_SECS)}</span>`,
+            ptr: s.ptr,
+            tools: { reset: true, copy: true, copied: s.copied },
+          });
+          const note = s.unidentified ? `<div class="d-note">${icon("map")}<span>Start before login, or relog via character select</span></div>` : "";
+          let t = null;
+          if (s.hover === "target") t = ["Show the target board", "Follows your target until reset or the next boss."];
+          if (s.hover === "session") t = ["Pinned to Session", "Click again to switch by itself. Reset and the next boss also unpin."];
+          return card(ctx, `${h}${sessionRows(ctx, s.unidentified, s.sameClass)}${note}${foot(ctx, damage(ctx, SESSION_TOTAL) + targets(SESSION_TARGETS), "session", { pinned: !!s.pinned, hover: s.hover })}${tip(t)}`);
+        }
+
+        // s: { ptr, locked, long, pb: number | null (pace vs the personal best) }
+        function targetCard(ctx, s) {
+          const { fmt } = ctx;
+          const h = head({
+            name: s.long ? nameOf(ctx, LONG_BOSS) : ctx.boss.label,
+            right: `<span class="d-time">${fmt.time(ctx.fightSecs)}</span>`,
+            ptr: s.ptr,
+            tools: { reset: true, copy: true },
+          });
+          const left = s.pb == null ? damage(ctx, ctx.players.reduce((sum, p) => sum + p.dmg, 0)) : pace(s.pb);
+          return card(ctx, `${h}${gauge(ctx.boss.hp)}${targetRows(ctx)}${foot(ctx, left, "target", { locked: !!s.locked })}`);
+        }
+
+        function pinnedTargetCard(ctx) {
+          const h = head({ name: nameOf(ctx, MOB.name), right: `<span class="d-time">${ctx.fmt.time(MOB.secs)}</span>` });
+          const party = MOB_ROWS.reduce((sum, p) => sum + p.dmg, 0);
+          return card(ctx, `${h}${gauge(MOB.hp)}${mobRows(ctx)}${foot(ctx, damage(ctx, party), "target", { pinned: true })}`);
+        }
+
+        function waitingCard(ctx, ptr) {
+          const h = head({ name: "DPS Meter", session: true, right: `<span class="d-label">Standing by</span>`, ptr, tools: {} });
+          return card(
+            ctx,
+            `${h}<div class="d-idle"><strong>Waiting for the first hit</strong><span>Alt+E hides the meter · Alt+Q resets it</span></div>
+<div class="d-foot is-sys"><span class="grow"></span><span class="d-sys is-good">${icon("signal")}${ctx.sys.pingMs} ms</span><span class="d-sys">CPU ${ctx.sys.cpu}%</span><span class="d-sys">${ctx.sys.memGb} GB</span></div>`
+          );
+        }
+
+        // ---- Capsule ---------------------------------------------------------------
+
+        function capsuleSession(ctx) {
+          const { fmt } = ctx;
+          const you = sessionPlayers(ctx, false).list.find((p) => p.you);
+          return `<div class="ov d is-capsule" style="--rgb:${you.rgb}">
+  <span class="d-cap-rk">${you.rank}</span>
+  <span class="d-cap-dps">${fmt.compact(you.dmg)}</span><span class="d-label">damage</span>
+  <span class="d-vr"></span>
+  <span class="d-label">Session</span><span style="font-weight:600;color:var(--d-muted)">${fmt.time(SESSION_SECS)}</span>
+</div>`;
+        }
+
+        function capsuleTarget(ctx) {
+          const { fmt, you } = ctx;
+          return `<div class="ov d is-capsule" style="--rgb:${you.rgb}">
+  <span class="d-cap-rk">${you.rank}</span>
+  <span class="d-cap-dps">${fmt.compact(you.dps)}</span><span class="d-label">DPS</span>
+  <span class="d-vr"></span>
+  <span style="font-weight:600;color:var(--d-muted)">${fmt.time(ctx.fightSecs)}</span>
+  ${pace(ctx.pb.aheadPace, "")}
+</div>`;
+        }
+
+        const capsuleIdle = () =>
+          `<div class="ov d is-capsule is-idle"><span style="font-weight:600">DPS Meter</span><span class="d-label">Standing by</span></div>`;
+
+        // ---- Fight summary ---------------------------------------------------------
 
         function summary(ctx, final) {
           const { fmt, you } = ctx;
@@ -620,13 +1031,13 @@
           const pb = final
             ? `<div class="d-pb is-new">${icon("award")}<span class="grow">New personal best</span>+${(ctx.pb.newPace * 100).toFixed(1)}%</div>`
             : `<div class="d-pb is-behind">${icon("down")}<span class="grow">Best ${fmt.compact(ctx.pb.dps)}</span>−${Math.abs(ctx.pb.quietPace * 100).toFixed(1)}%</div>`;
-          return frame(
+          return card(
             ctx,
             `<div class="d-head" style="padding-left:0">
   <span class="d-out ${final ? "is-final" : "is-quiet"}">${icon(final ? "check" : "hourglass")}${final ? "Defeated" : "Fight ended"}${final ? "" : " <small>may resume</small>"}</span>
   <span class="grow"></span>
   <span class="d-time">${fmt.time(secs)}</span>
-  <span class="d-btn is-close" role="button" title="Back to the meter" aria-label="Back to the meter">${icon("close")}</span>
+  ${btn("close", "Back to the meter", " is-close")}
 </div>
 ${final ? "" : gauge(ctx.quietHp)}
 <div class="d-sum"${final ? ' style="padding-top:7px"' : ""}>
@@ -645,41 +1056,52 @@ ${final ? "" : gauge(ctx.quietHp)}
     .map((s) => `<div class="d-row">${bar(s.share / top, you.rgb, `<span class="d-name">${s.name}</span><span class="d-val">${(s.share * 100).toFixed(0)}%</span>`)}</div>`)
     .join("")}</div>
 </div>
-<div class="d-foot"><span class="d-label">Party</span><span class="d-val">${fmt.compact(ctx.partyDps)}</span><span class="d-label">Damage</span><span class="d-val">${fmt.compact(you.dps * secs)}</span><span class="grow"></span><span class="d-tbtn" role="button">${icon("copy")}Copy</span></div>`
+<div class="d-foot"><span class="d-label">Party</span><span class="d-val">${fmt.compact(ctx.partyDps)}</span><span class="d-label">Damage</span><span class="d-val">${fmt.compact(you.dps * secs)}</span><span class="grow"></span><span class="d-tbtn" role="button" tabindex="0">${icon("copy")}Copy</span></div>`
           );
         }
 
         function render(state, ctx) {
-          const { fmt, you } = ctx;
           switch (state) {
-            case "idle":
-              return frame(
-                ctx,
-                `<div class="d-head"><span class="d-target">Aether</span><span class="d-label">Standing by</span></div>
-${gauge(0, true)}
-<div class="d-idle"><strong>Waiting for the first hit</strong><span>Alt+E hides the meter · Alt+Q resets it</span></div>
-<div class="d-foot"><span class="grow"></span>${sys(ctx)}</div>`
-              );
-            case "hover":
-              return frame(
-                ctx,
-                `${hoverTop(ctx)}${rows(ctx)}
-<div class="d-foot" style="margin-top:5px"><span class="d-tbtn" role="button">${icon("copy")}Copy</span><span class="grow"></span>${sys(ctx)}</div>`
-              );
+            case "session":
+              return sessionCard(ctx, {});
+            case "shades":
+              return sessionCard(ctx, { sameClass: true });
+            case "session-pointer":
+              return sessionCard(ctx, { ptr: true });
+            case "switch-hover":
+              return sessionCard(ctx, { ptr: true, hover: "target" });
+            case "copied":
+              return sessionCard(ctx, { ptr: true, copied: true });
+            case "target-pb":
+              return targetCard(ctx, { pb: ctx.pb.aheadPace });
+            case "target-pointer":
+              return targetCard(ctx, { ptr: true, pb: ctx.pb.aheadPace });
+            case "target-no-pb":
+              return targetCard(ctx, { pb: null });
             case "locked":
-              return frame(
-                ctx,
-                `${head(ctx)}${gauge(ctx.boss.hp)}${rows(ctx)}
-<div class="d-foot" style="margin-top:5px"><span class="d-label">Party</span><span class="d-val">${fmt.compact(ctx.partyDps)}</span><span class="grow"></span>${pace(ctx.pb.behindPace)}</div>`
-              );
-            case "capsule":
-              return `<div class="ov d is-capsule" style="--rgb:${you.rgb}">
-  <span class="d-cap-rk">${you.rank}</span>
-  <span class="d-cap-dps">${fmt.compact(you.dps)}</span><span class="d-label">DPS</span>
-  <span class="d-vr"></span>
-  <span style="font-weight:600;color:var(--d-muted)">${fmt.time(ctx.fightSecs)}</span>
-  ${pace(ctx.pb.aheadPace, "")}
-</div>`;
+              return targetCard(ctx, { locked: true, pb: ctx.pb.behindPace });
+            case "pinned":
+              return sessionCard(ctx, { pinned: true });
+            case "pinned-hover":
+              return sessionCard(ctx, { ptr: true, pinned: true, hover: "session" });
+            case "pinned-target":
+              return pinnedTargetCard(ctx);
+            case "unidentified":
+              return sessionCard(ctx, { unidentified: true });
+            case "long":
+              return targetCard(ctx, { long: true, pb: null });
+            case "long-pointer":
+              return targetCard(ctx, { long: true, ptr: true, pb: null });
+            case "waiting":
+              return waitingCard(ctx, false);
+            case "waiting-pointer":
+              return waitingCard(ctx, true);
+            case "capsule-session":
+              return capsuleSession(ctx);
+            case "capsule-target":
+              return capsuleTarget(ctx);
+            case "capsule-idle":
+              return capsuleIdle();
             case "final":
               return summary(ctx, true);
             case "provisional":
@@ -690,13 +1112,30 @@ ${gauge(0, true)}
 
         Kit.mount({
           states: [
-            { id: "idle", title: "Waiting", sub: "meter running, nothing hit yet" },
-            { id: "hover", title: "Live, pointer over", sub: "unlocked: the controls take the gauge line" },
-            { id: "locked", title: "Live, locked", sub: "click-through, no controls: the clean look" },
-            { id: "capsule", title: "Capsule", sub: "one line; pointer over opens the full view" },
+            { id: "session", title: "Open world: Session", sub: "chosen by itself; rows stable across mobs" },
+            { id: "shades", title: "Several players per class", sub: "each keeps a shade of the class colour from first appearance; the first keeps the class colour" },
+            { id: "session-pointer", title: "Session, pointer over", sub: "the tools take the time's place" },
+            { id: "switch-hover", title: "Target side under the pointer", sub: "a click pins the Target board" },
+            { id: "copied", title: "Copy just clicked", sub: "a check for 1.5 s, as the app does now" },
+            { id: "target-pb", title: "Boss: Target", sub: "chosen by itself; a personal best exists, so the pace shows" },
+            { id: "target-pointer", title: "Target, pointer over", sub: "the tools take the time's place" },
+            { id: "target-no-pb", title: "Target, no personal best yet", sub: "the party's damage on this target instead" },
+            { id: "locked", title: "Target, locked", sub: "click-through: no tools, the switch does not react" },
+            { id: "pinned", title: "Pinned: Session on a boss", sub: "the dot marks the override" },
+            { id: "pinned-hover", title: "Pinned, active side under the pointer", sub: "a click returns to automatic" },
+            { id: "pinned-target", title: "Pinned: Target in the open world", sub: "follows your current target" },
+            { id: "unidentified", title: "Not identified yet", sub: "the game has not named you: ID rows, nobody marked" },
+            { id: "long", title: "Long boss name", sub: "full width at rest" },
+            { id: "long-pointer", title: "Long boss name, pointer over", sub: "the tools take their room from the name" },
+            { id: "waiting", title: "Waiting", sub: "meter running, nothing hit yet" },
+            { id: "waiting-pointer", title: "Waiting, pointer over", sub: "nothing to reset or copy yet" },
+            { id: "capsule-session", title: "Capsule, open world", sub: "your Session rank and damage" },
+            { id: "capsule-target", title: "Capsule, boss", sub: "your DPS, time and pace" },
+            { id: "capsule-idle", title: "Capsule, waiting", sub: "nothing hit yet" },
             { id: "final", title: "Summary, defeated", sub: "final: the boss died" },
             { id: "provisional", title: "Summary, fight ended", sub: "provisional: the boss went quiet" },
           ],
+          stageMin: 300,
           render,
         });
       })();

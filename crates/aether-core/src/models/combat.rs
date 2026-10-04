@@ -1,3 +1,4 @@
+use crate::models::session::SessionSummary;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -197,4 +198,6 @@ pub struct CombatSnapshot {
     pub main_actor_received_player_overview_stats: Vec<PlayerOverviewStat>,
     #[serde(default)]
     pub main_actor_dealt_player_overview_stats: Vec<PvpDamageOverviewStat>,
+    #[serde(default)]
+    pub session: SessionSummary,
 }

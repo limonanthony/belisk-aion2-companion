@@ -13,7 +13,8 @@ use crate::models::combat::{
     PvpWatchInfo, PvpWatchInfoResponse, SkillStats,
 };
 use crate::models::packet::ParsedDamagePacket;
-use crate::storage::loaders::{load_boss_ids, load_healing_skill_codes, load_npc_names};
+use crate::mobs::catalog::MobCatalog;
+use crate::storage::loaders::load_healing_skill_codes;
 
 const ACTOR_METADATA_CAPACITY: usize = 2_000;
 const MOB_METADATA_CAPACITY: usize = 5_000;
@@ -141,7 +142,6 @@ struct DataStorageInner {
     mob_id_hp_map: BoundedMap<u32, (u32, u32)>,
     player_hp_map: BoundedMap<u32, PlayerHpInfo>,
     use_buffs_by_target: BoundedMap<u32, HashMap<u32, HashMap<u32, VecDeque<BuffInterval>>>>,
-    possible_boss_codes: HashSet<u32>,
     summon_owner_map: BoundedMap<u32, u32>,
     start_time: Option<f64>,
     /// Last time the player running Aether was in the fight: hit something,
@@ -183,7 +183,6 @@ impl Default for DataStorageInner {
             mob_id_hp_map: BoundedMap::new(MOB_METADATA_CAPACITY),
             player_hp_map: BoundedMap::new(ACTOR_METADATA_CAPACITY),
             use_buffs_by_target: BoundedMap::new(BUFF_TARGET_CAPACITY),
-            possible_boss_codes: HashSet::new(),
             summon_owner_map: BoundedMap::new(SUMMON_METADATA_CAPACITY),
             start_time: None,
             activity_at: None,
@@ -211,8 +210,7 @@ pub struct DataStorage {
     inner: RwLock<DataStorageInner>,
     config: SharedDpsMeterConfig,
     healing_skill_codes: HashSet<u32>,
-    boss_code_list: HashSet<u32>,
-    mob_code_name_map: HashMap<u32, String>,
+    mobs: Arc<MobCatalog>,
     pub main_actor_callback: Mutex<Option<Box<MainActorCallback>>>,
     /// Counts what the Boss only filter threw away, so the UI can say so.
     boss_only_filtered: AtomicU64,
@@ -227,14 +225,17 @@ pub struct MainActorDetectedPayload {
 }
 
 impl DataStorage {
-    pub fn new(events: Arc<dyn EventSink>, config: SharedDpsMeterConfig) -> Self {
+    pub fn new(
+        events: Arc<dyn EventSink>,
+        config: SharedDpsMeterConfig,
+        mobs: Arc<MobCatalog>,
+    ) -> Self {
         Self {
             events,
             inner: RwLock::new(DataStorageInner::default()),
             config,
             healing_skill_codes: load_healing_skill_codes(),
-            boss_code_list: load_boss_ids(),
-            mob_code_name_map: load_npc_names(),
+            mobs,
             main_actor_callback: Mutex::new(None),
             boss_only_filtered: AtomicU64::new(0),
         }
@@ -369,12 +370,7 @@ impl DataStorage {
         }
 
         let target_mob_code = inner.mob_id_code_map.get(&packet.target_id).copied();
-        let is_target_boss = target_mob_code
-            .map(|mob_code| {
-                self.boss_code_list.contains(&mob_code)
-                    || (config.show_possible_boss && inner.possible_boss_codes.contains(&mob_code))
-            })
-            .unwrap_or(false);
+        let is_target_boss = target_mob_code.is_some_and(|mob_code| self.mobs.is_boss(mob_code));
         let is_target_player = inner.actor_id_name_map.contains_key(&packet.target_id)
             && !inner.mob_id_code_map.contains_key(&packet.target_id);
 
@@ -623,29 +619,22 @@ impl DataStorage {
     }
 
     pub fn add_possible_boss(&self, mob_code: u32) {
-        if !self.config.read().unwrap().show_possible_boss {
-            return;
-        }
-        self.inner
-            .write()
-            .unwrap()
-            .possible_boss_codes
-            .insert(mob_code);
+        self.mobs.add_possible_boss(mob_code);
     }
 
-    pub fn is_possible_boss(&self, mob_code: u32) -> bool {
-        if !self.config.read().unwrap().show_possible_boss {
-            return false;
-        }
-        self.inner
-            .read()
-            .unwrap()
-            .possible_boss_codes
-            .contains(&mob_code)
+    pub fn is_boss(&self, mob_code: u32) -> bool {
+        self.mobs.is_boss(mob_code)
     }
 
-    pub fn is_known_boss_code(&self, mob_code: u32) -> bool {
-        self.boss_code_list.contains(&mob_code)
+    pub fn mobs(&self) -> &Arc<MobCatalog> {
+        &self.mobs
+    }
+
+    /// A named actor that is not a mob.
+    pub fn is_player(&self, actor_id: u32) -> bool {
+        let inner = self.inner.read().unwrap();
+        inner.actor_id_name_map.contains_key(&actor_id)
+            && !inner.mob_id_code_map.contains_key(&actor_id)
     }
 
     pub fn set_main_actor(&self, actor_id: u32, actor_name: &str) {
@@ -888,7 +877,7 @@ impl DataStorage {
     /// the snapshot loop asks five times a second, and the catalogue holds
     /// eight thousand names.
     pub fn mob_name(&self, mob_code: u32) -> Option<String> {
-        self.mob_code_name_map.get(&mob_code).cloned()
+        self.mobs.mob_name(mob_code)
     }
 
     pub fn start_time_by_target_snapshot(&self) -> HashMap<u32, HashMap<u32, f64>> {

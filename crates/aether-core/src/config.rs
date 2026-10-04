@@ -93,6 +93,11 @@ pub struct DpsMeterConfig {
     /// having been started by hand.
     #[serde(default = "default_true")]
     pub auto_record_unknown_server: bool,
+    /// Record every mob fought (code, HP, counts) into `mobs.json`, to help
+    /// name the ones the bundled list misses. Boss corrections are saved
+    /// either way.
+    #[serde(default)]
+    pub collect_mobs: bool,
 }
 
 impl Default for DpsMeterConfig {
@@ -117,6 +122,7 @@ impl Default for DpsMeterConfig {
             hide_when_idle: true,
             idle_reset_secs: DEFAULT_IDLE_RESET_SECS,
             auto_record_unknown_server: true,
+            collect_mobs: false,
         }
     }
 }

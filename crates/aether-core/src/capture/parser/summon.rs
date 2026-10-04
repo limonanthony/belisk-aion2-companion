@@ -83,7 +83,7 @@ impl StreamProcessor {
                     | ((packet[marker_idx - 1] as u32) << 16);
 
                 self.data_storage.append_mob(summon_id, mob_code);
-                if self.data_storage.is_known_boss_code(mob_code) {
+                if self.data_storage.is_boss(mob_code) {
                     let boss_name = self
                         .data_storage
                         .mob_name(mob_code)
@@ -321,11 +321,8 @@ impl StreamProcessor {
             let config = self.config.read().unwrap();
             if config.boss_only {
                 let mob_code = self.data_storage.get_mob_code(target_id);
-                let is_known =
-                    mob_code.is_some_and(|code| self.data_storage.is_known_boss_code(code));
-                let is_possible =
-                    mob_code.is_some_and(|code| self.data_storage.is_possible_boss(code));
-                if !is_known && !is_possible {
+                let is_boss = mob_code.is_some_and(|code| self.data_storage.is_boss(code));
+                if !is_boss {
                     return true;
                 }
             }
@@ -426,7 +423,7 @@ impl StreamProcessor {
             .copied();
 
         mob_code
-            .map(|code| self.data_storage.is_known_boss_code(code))
+            .map(|code| self.data_storage.is_boss(code))
             .unwrap_or(false)
     }
 

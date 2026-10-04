@@ -28,7 +28,7 @@ use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
@@ -281,6 +281,51 @@ where
     Ok(delivered)
 }
 
+/// Spaces replayed packets out the way they were captured.
+///
+/// Recorded `captured_at` times drive the schedule: a packet is due
+/// `(captured_at - first captured_at) / speed` after the first one was
+/// delivered. The schedule is absolute, so the time spent processing a packet
+/// does not accumulate as drift. A timestamp older than one already seen is
+/// treated as that earlier one -- it never delays a packet and never pushes
+/// later packets back.
+pub struct ReplayPacer {
+    speed: f64,
+    origin: Option<(f64, Instant)>,
+    latest_captured_at: f64,
+}
+
+impl ReplayPacer {
+    pub fn new(speed: f64) -> Result<Self, String> {
+        if !speed.is_finite() || speed <= 0.0 {
+            return Err(format!(
+                "Replay speed must be a positive number, got {speed}."
+            ));
+        }
+        Ok(Self {
+            speed,
+            origin: None,
+            latest_captured_at: f64::NEG_INFINITY,
+        })
+    }
+
+    /// How long to wait, as of `now`, before delivering a packet captured at
+    /// `captured_at`.
+    pub fn delay_before(&mut self, captured_at: f64, now: Instant) -> Duration {
+        if !captured_at.is_finite() {
+            return Duration::ZERO;
+        }
+        let (first_captured_at, started) = *self.origin.get_or_insert((captured_at, now));
+        self.latest_captured_at = self.latest_captured_at.max(captured_at);
+
+        let offset_secs = (self.latest_captured_at - first_captured_at) / self.speed;
+        let Ok(offset) = Duration::try_from_secs_f64(offset_secs) else {
+            return Duration::ZERO;
+        };
+        (started + offset).saturating_duration_since(now)
+    }
+}
+
 /// Recordings on disk, newest first.
 /// Delete all but the newest `keep` recordings whose names start with
 /// `prefix`. Returns how many were removed.
@@ -511,5 +556,70 @@ mod prune_tests {
         );
 
         let _ = fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod pacer_tests {
+    use super::*;
+
+    fn secs(value: f64) -> Duration {
+        Duration::from_secs_f64(value)
+    }
+
+    #[test]
+    fn packets_are_spaced_by_their_capture_times() {
+        let start = Instant::now();
+        let mut pacer = ReplayPacer::new(1.0).unwrap();
+
+        assert_eq!(pacer.delay_before(100.0, start), Duration::ZERO);
+        assert_eq!(pacer.delay_before(100.5, start), secs(0.5));
+        assert_eq!(pacer.delay_before(103.0, start + secs(1.0)), secs(2.0));
+    }
+
+    #[test]
+    fn speed_divides_the_gaps() {
+        let start = Instant::now();
+        let mut pacer = ReplayPacer::new(4.0).unwrap();
+
+        pacer.delay_before(10.0, start);
+        assert_eq!(pacer.delay_before(12.0, start), secs(0.5));
+    }
+
+    #[test]
+    fn time_already_spent_is_not_waited_twice() {
+        let start = Instant::now();
+        let mut pacer = ReplayPacer::new(1.0).unwrap();
+
+        pacer.delay_before(10.0, start);
+        assert_eq!(pacer.delay_before(11.0, start + secs(5.0)), Duration::ZERO);
+    }
+
+    #[test]
+    fn an_older_timestamp_neither_waits_nor_delays_later_packets() {
+        let start = Instant::now();
+        let mut pacer = ReplayPacer::new(1.0).unwrap();
+
+        pacer.delay_before(10.0, start);
+        assert_eq!(pacer.delay_before(12.0, start), secs(2.0));
+        assert_eq!(pacer.delay_before(9.0, start + secs(2.0)), Duration::ZERO);
+        assert_eq!(pacer.delay_before(13.0, start + secs(2.0)), secs(1.0));
+    }
+
+    #[test]
+    fn a_timestamp_that_is_not_a_number_does_not_wait() {
+        let start = Instant::now();
+        let mut pacer = ReplayPacer::new(1.0).unwrap();
+
+        pacer.delay_before(10.0, start);
+        assert_eq!(pacer.delay_before(f64::NAN, start), Duration::ZERO);
+        assert_eq!(pacer.delay_before(f64::INFINITY, start), Duration::ZERO);
+    }
+
+    #[test]
+    fn refuses_a_speed_that_cannot_pace_anything() {
+        for speed in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(ReplayPacer::new(speed).is_err(), "speed {speed}");
+        }
     }
 }

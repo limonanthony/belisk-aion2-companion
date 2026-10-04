@@ -18,7 +18,7 @@ use crate::capture::dispatcher::{CaptureDispatcher, TcpReassemblyStatus};
 use crate::capture::ping_tracker::PingTracker;
 use crate::capture::recorder::{
     list_recordings, prune_recordings, replay_recording, PacketRecorder, RecordingFile,
-    RecordingStatus,
+    RecordingStatus, ReplayPacer,
 };
 use crate::capture::windivert_capturer::{check_windivert_status, WinDivertCapturer};
 use crate::config::{CaptureBackendPriority, DpsMeterConfig, SharedDpsMeterConfig};
@@ -27,6 +27,8 @@ use crate::history::HistoryStore;
 use crate::personal_best::{PersonalBest, PersonalBestStore};
 use crate::models::combat::{CombatSnapshot, PvpCombatStatsRow, PvpWatchInfoResponse};
 use crate::models::diagnostics::{DpsMeterState, MemorySnapshot};
+use crate::models::session::SessionSummary;
+use crate::mobs::catalog::{MobCatalog, MobStorage};
 use crate::storage::data_storage::DataStorage;
 use crate::events::{EventSink, MeterEvent};
 use crate::logger::AppLogger;
@@ -36,6 +38,8 @@ const STALE_ASSEMBLER_IDLE_SECS: u64 = 30;
 /// whenever the queue runs this deep. `try_send` drops the packet it is handed
 /// when the channel is full, and a silently lossy replay is worse than a slow one.
 const REPLAY_BACKPRESSURE_LIMIT: usize = 50_000;
+/// A paced replay sleeps in slices this long so a cancel is noticed promptly.
+const REPLAY_PACING_SLICE: Duration = Duration::from_millis(50);
 
 /// Seconds since the epoch, for filenames that sort chronologically.
 fn chrono_stamp() -> u64 {
@@ -163,6 +167,9 @@ impl FightCloser {
         let Some(snapshot) = self.snapshot(0) else {
             return;
         };
+        self.data_storage
+            .mobs()
+            .record_fight(&snapshot.combat_infos.target_infos);
         eprintln!(
             "[dps_meter] save: total_damage={} targets={}",
             snapshot.total_damage,
@@ -206,6 +213,7 @@ impl FightCloser {
             last_target_all_players_overview_stats: Vec::new(),
             main_actor_received_player_overview_stats: Vec::new(),
             main_actor_dealt_player_overview_stats: Vec::new(),
+            session: SessionSummary::default(),
         };
         self.events.emit(MeterEvent::DpsSnapshot(empty));
     }
@@ -218,7 +226,17 @@ impl DpsMeter {
         app_data_dir: Option<PathBuf>,
     ) -> Self {
         let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
-        let data_storage = Arc::new(DataStorage::new(Arc::clone(&events), Arc::clone(&config)));
+        let mobs = Arc::new(MobCatalog::open(
+            Arc::clone(&config),
+            app_data_dir
+                .clone()
+                .map(|dir| MobStorage::new(dir, Arc::clone(&logger))),
+        ));
+        let data_storage = Arc::new(DataStorage::new(
+            Arc::clone(&events),
+            Arc::clone(&config),
+            mobs,
+        ));
         let calculator = Arc::new(DpsCalculator::new(Arc::clone(&data_storage)));
         let ping_tracker = Arc::new(PingTracker::new());
         let packet_channel = Channel::new(PACKET_CHANNEL_CAPACITY);
@@ -458,6 +476,7 @@ impl DpsMeter {
         // A fight still on the meter is kept, not thrown away: stopping the
         // meter or quitting right after a boss used to lose it.
         self.fight.save_fight_to_history();
+        self.data_storage.mobs().save_now();
         self.clear_runtime_state();
         self.events.emit(MeterEvent::DpsIdleHidden(false));
         self.emit_running_status();
@@ -503,6 +522,14 @@ impl DpsMeter {
 
     pub fn delete_history_record(&self, id: &str) -> bool {
         self.history.delete_record(id)
+    }
+
+    pub fn mobs(&self) -> &Arc<MobCatalog> {
+        self.data_storage.mobs()
+    }
+
+    pub fn logger(&self) -> &Arc<AppLogger> {
+        &self.logger
     }
 
     pub fn delete_history_records(&self, ids: &[String]) -> usize {
@@ -829,6 +856,18 @@ impl DpsMeter {
     /// Packets go into the same channel the capturer writes to, so reassembly,
     /// dispatch, parsing and aggregation all run exactly as they would live.
     pub fn replay_packet_recording(&self, path: String) -> Result<(), String> {
+        self.start_replay(path, None)
+    }
+
+    /// Like [`Self::replay_packet_recording`], but spaced out by the packets'
+    /// capture times divided by `speed`, so the meter sees a fight at the pace
+    /// it happened (`1.0`) or faster.
+    pub fn replay_packet_recording_paced(&self, path: String, speed: f64) -> Result<(), String> {
+        let pacer = ReplayPacer::new(speed)?;
+        self.start_replay(path, Some(pacer))
+    }
+
+    fn start_replay(&self, path: String, mut pacer: Option<ReplayPacer>) -> Result<(), String> {
         if !self.is_running() {
             return Err(
                 "Start the meter first -- replay feeds the same pipeline live capture uses."
@@ -847,6 +886,17 @@ impl DpsMeter {
         thread::spawn(move || {
             let source = PathBuf::from(&path);
             let outcome = replay_recording(&source, |packet| {
+                if let Some(pacer) = pacer.as_mut() {
+                    let mut remaining = pacer.delay_before(packet.captured_at, Instant::now());
+                    while !remaining.is_zero() {
+                        if !replaying.load(Ordering::SeqCst) {
+                            return false;
+                        }
+                        let slice = remaining.min(REPLAY_PACING_SLICE);
+                        thread::sleep(slice);
+                        remaining -= slice;
+                    }
+                }
                 while channel.size() > REPLAY_BACKPRESSURE_LIMIT {
                     if !replaying.load(Ordering::SeqCst) {
                         return false;

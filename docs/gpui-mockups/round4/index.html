@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Round 4: meter after the first in-game test</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <style>
+      .r4 {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 0 32px 48px;
+      }
+
+      .r4 h2 {
+        margin: 30px 0 4px;
+        font-size: 18px;
+        font-weight: 650;
+      }
+
+      .r4 h2 a {
+        color: var(--page-text);
+      }
+
+      .r4 .lede {
+        max-width: 90ch;
+        margin: 0 0 14px;
+        color: var(--page-muted);
+      }
+
+      .r4 b {
+        color: var(--page-text);
+        font-weight: 600;
+      }
+
+      .r4 ul {
+        max-width: 100ch;
+        margin: 0;
+        padding-left: 18px;
+        color: var(--page-muted);
+      }
+
+      .r4 li + li {
+        margin-top: 4px;
+      }
+
+      /* Toolbar comparison: one row per option. */
+      .option {
+        display: grid;
+        grid-template-columns: minmax(0, 30ch) repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid var(--page-border);
+      }
+
+      .option h3 {
+        margin: 0 0 6px;
+        font-size: 15px;
+        font-weight: 650;
+      }
+
+      .option .tag {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: rgba(134, 227, 168, 0.14);
+        color: #86e3a8;
+        font-size: 12px;
+        font-weight: 600;
+        vertical-align: 2px;
+      }
+
+      .option ul {
+        font-size: 13px;
+      }
+
+      .shot {
+        margin: 0;
+      }
+
+      .shot figcaption {
+        margin-bottom: 6px;
+        color: var(--page-faint);
+        font-size: 12px;
+      }
+
+      .shot iframe {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-radius: 10px;
+        background: var(--page-surface);
+      }
+
+      /* Open-world view states: a plain grid. */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+        gap: 16px;
+      }
+
+      @media (max-width: 1200px) {
+        .option {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .option > div:first-child {
+          grid-column: 1 / -1;
+        }
+      }
+
+      @media (max-width: 700px) {
+        .r4 {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+
+        .option {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Round 4">
+        <a href="index.html" aria-current="page">Round 4</a>
+        <a href="meter.html">Meter overlay</a>
+        <a href="../approved/meter.html">Approved meter</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>Round 4 <small>the meter after the first in-game test</small></h1>
+      <ul class="rationale">
+        <li><b>Outcome (2026-10-04):</b> D approved with two changes (the Target footer shows the pace against your personal best when one exists; the mob's name in the Session header uses <code>muted</code> instead of <code>faint</code>) and promoted to <a href="../approved/meter.html">approved/meter.html</a>. This folder is history.</li>
+        <li>Two complaints drive it: the toolbar in the middle of the card, and rows that came and went with every target switch in the open world.</li>
+        <li>Agreed already (docs/GPUI_MIGRATION.md, "Open-world meter and the mob list"): a Session board in the open world, the single-target board on a boss, a control that names the view, and pinning the other view by hand.</li>
+        <li><a href="meter.html">meter.html</a> has every state over three game scenes, with switches for the toolbar and the open choices for A–C. It opens on <b>D, your layout</b>, now the recommendation. All data is invented. No card drop shadow, as approved after the in-game test.</li>
+      </ul>
+    </header>
+
+    <div class="r4">
+      <h2><a href="meter.html">Toolbar</a></h2>
+      <p class="lede">Working controls only: reset, capsule, lock, copy report and close, plus a way to choose the view. Every option keeps the gauge line, shows controls only under the pointer and none when locked, and never resizes the window on hover.</p>
+
+      <section class="option" aria-labelledby="opt-d">
+        <div>
+          <h3 id="opt-d">D, name on top, tools top right, footer switch <span class="tag">recommended</span></h3>
+          <ul>
+            <li>The header names what is being hit, using the full width: bright on the Target board, faint on Session (the mob being hit). Time at top right.</li>
+            <li>Under the pointer, reset, capsule, lock, Copy and close replace the time, so the window actions sit on top.</li>
+            <li>The footer is always there: Damage (plus the number of targets in Session) on the left; ping and a 100 px <b>Session | Target</b> switch on the right. A dot on the active side means pinned; clicking the active side again returns to automatic. When locked, the switch is visible but does not react.</li>
+            <li>History, PvP, Settings later: one faint "…" before close.</li>
+          </ul>
+        </div>
+        <figure class="shot"><figcaption>Session, pointer over</figcaption><iframe title="D, Session, pointer over" src="meter.html?embed&amp;tb=d&amp;scenes=busy&amp;states=session-pointer" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Boss, pointer over</figcaption><iframe title="D, boss, pointer over" src="meter.html?embed&amp;tb=d&amp;scenes=busy&amp;states=boss-pointer" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Pinned, switch under the pointer</figcaption><iframe title="D, pinned, switch under the pointer" src="meter.html?embed&amp;tb=d&amp;scenes=busy&amp;states=pinned-label" height="330"></iframe></figure>
+      </section>
+
+      <section class="option" aria-labelledby="opt-a">
+        <div>
+          <h3 id="opt-a">A, footer strip</h3>
+          <ul>
+            <li>Under the pointer the footer's 20 px line holds the controls; at rest it shows the totals. The approved meter already swapped the footer on hover (Copy and system figures), so the mechanic is unchanged.</li>
+            <li>The header, the gauge and the rows never change under the pointer, and the label keeps its full width.</li>
+            <li>Cost: close moves to the bottom right; Party and pace hide while the pointer is over the card (as before).</li>
+            <li>History, PvP, Settings later: after lock; ping gives way if all three arrive.</li>
+          </ul>
+        </div>
+        <figure class="shot"><figcaption>Session, pointer over</figcaption><iframe title="A, Session, pointer over" src="meter.html?embed&amp;tb=a&amp;scenes=busy&amp;states=session-pointer" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Boss, pointer over</figcaption><iframe title="A, boss, pointer over" src="meter.html?embed&amp;tb=a&amp;scenes=busy&amp;states=boss-pointer" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Copy just clicked</figcaption><iframe title="A, controls in use" src="meter.html?embed&amp;tb=a&amp;scenes=busy&amp;states=in-use" height="330"></iframe></figure>
+      </section>
+
+      <section class="option" aria-labelledby="opt-b">
+        <div>
+          <h3 id="opt-b">B, header right</h3>
+          <ul>
+            <li>Under the pointer the fight time gives way to five buttons, like a title bar; the footer never changes.</li>
+            <li>Cost: the label loses about 130 px exactly when you might click it, the time hides, and two kinds of click sit side by side.</li>
+            <li>History, PvP, Settings later: no room; the label would drop to about 90 px.</li>
+          </ul>
+        </div>
+        <figure class="shot"><figcaption>Session, pointer over</figcaption><iframe title="B, Session, pointer over" src="meter.html?embed&amp;tb=b&amp;scenes=busy&amp;states=session-pointer" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Boss, pointer over</figcaption><iframe title="B, boss, pointer over" src="meter.html?embed&amp;tb=b&amp;scenes=busy&amp;states=boss-pointer" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Copy just clicked</figcaption><iframe title="B, controls in use" src="meter.html?embed&amp;tb=b&amp;scenes=busy&amp;states=in-use" height="330"></iframe></figure>
+      </section>
+
+      <section class="option" aria-labelledby="opt-c">
+        <div>
+          <h3 id="opt-c">C, lock + menu</h3>
+          <ul>
+            <li>Under the pointer only lock and a menu button join the time. The card changes the least.</li>
+            <li>Cost: reset, capsule, copy and close take two clicks. The menu is drawn inside the window, so with one row, or on the waiting card, it does not fit unless the window grows.</li>
+            <li>History, PvP, Settings later: menu items.</li>
+          </ul>
+        </div>
+        <figure class="shot"><figcaption>Session, pointer over</figcaption><iframe title="C, Session, pointer over" src="meter.html?embed&amp;tb=c&amp;scenes=busy&amp;states=session-pointer" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Boss, pointer over</figcaption><iframe title="C, boss, pointer over" src="meter.html?embed&amp;tb=c&amp;scenes=busy&amp;states=boss-pointer" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Menu open</figcaption><iframe title="C, menu open" src="meter.html?embed&amp;tb=c&amp;scenes=busy&amp;states=in-use" height="330"></iframe></figure>
+      </section>
+
+      <h2><a href="meter.html?states=session-rest,label-hover,pinned,pinned-label,pinned-target,unidentified,capsule-session,capsule-boss,long-rest,long-pointer">D: the view switch and the Session board</a></h2>
+      <p class="lede">Shown with toolbar D. The switch follows the automatic choice: Session in the open world, Target on a boss. Clicking the other side pins it, shown by a dot; clicking the active side, a reset or the next boss clears the pin. A pinned Target board follows your current target. Session shows damage in bold, sorted by damage, and quiet DPS over combat time. For A–C's label, use the Toolbar switch in meter.html.</p>
+      <div class="grid">
+        <figure class="shot"><figcaption>Open world, at rest: Session board</figcaption><iframe title="Session at rest" src="meter.html?embed&amp;scenes=dark&amp;states=session-rest" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Target side under the pointer</figcaption><iframe title="Switch under the pointer" src="meter.html?embed&amp;scenes=dark&amp;states=label-hover" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Pinned: Session on a boss</figcaption><iframe title="Pinned Session" src="meter.html?embed&amp;scenes=dark&amp;states=pinned" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Pinned, active side under the pointer: how to unpin</figcaption><iframe title="Pinned, switch under the pointer" src="meter.html?embed&amp;scenes=dark&amp;states=pinned-label" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Pinned: target board in the open world</figcaption><iframe title="Pinned target board" src="meter.html?embed&amp;scenes=dark&amp;states=pinned-target" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Not identified yet: the hint above the footer</figcaption><iframe title="Not identified yet" src="meter.html?embed&amp;scenes=dark&amp;states=unidentified" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Boss, locked: switch shown, inert</figcaption><iframe title="Locked" src="meter.html?embed&amp;scenes=dark&amp;states=locked" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Long boss name, pointer over</figcaption><iframe title="Long boss name, pointer over" src="meter.html?embed&amp;scenes=dark&amp;states=long-pointer" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Capsule, open world</figcaption><iframe title="Capsule, Session" src="meter.html?embed&amp;scenes=bright&amp;states=capsule-session" height="110"></iframe></figure>
+        <figure class="shot"><figcaption>Capsule, boss</figcaption><iframe title="Capsule, boss" src="meter.html?embed&amp;scenes=bright&amp;states=capsule-boss" height="110"></iframe></figure>
+      </div>
+
+      <h2>Open choices</h2>
+      <p class="lede">Switches in meter.html's control bar; the recommendation is the default.</p>
+      <ul>
+        <li><b>Toolbar</b>: <b>D, your layout (recommended)</b>; A, footer strip; B, header right; C, lock + menu.</li>
+        <li>For A–C only (D has these decided): <b>Current target in Session</b>: a, nothing; <b>b, the target's name after the label (recommended)</b>; c, a line under the header with a short gauge. <b>Session figure</b>: <b>damage (recommended)</b> or DPS.</li>
+        <li><b>Later controls</b>: <b>left out (recommended)</b>, or shown faint where they would go (D: one "…" before close).</li>
+      </ul>
+
+      <h2>Decided for D</h2>
+      <ul>
+        <li>Session: damage in bold, sorted by damage; DPS is the quiet figure, with a faint "/s". Session DPS and the header time count combat time.</li>
+        <li>A pin lasts until reset or the next boss; the pinned Target board follows your current target. The tooltips say so.</li>
+        <li>"Not identified yet": the hint ("Change zone once so the meter can find you") gets its own 20 px line between the rows and the footer, because the always-on footer has no room for it. The line goes away once the game names you, and it does not move on hover.</li>
+        <li>Waiting: no switch, since there is no board yet. The footer shows ping, CPU and memory, as approved.</li>
+      </ul>
+
+      <h2>Decisions still needed</h2>
+      <ul>
+        <li><b>The Session footer's target count is a target glyph and a number</b> (no "Targets" word). With the word, damage, count, ping and the 100 px switch overflowed the 310 px card by about 19 px. With the glyph, about 23 px are spare, enough for a three-digit ping, a three-digit count and damage of 100M or more.</li>
+        <li><b>The Target board's footer lost the pace against your personal best</b> ("−6.8% vs PB"): Damage, pace, ping and the switch do not fit together. The pace stays in the capsule and the summary. The Target footer shows party damage on this target, as asked; the approved meter showed party DPS there.</li>
+        <li><b>The faint mob name on a bright scene</b> sits at about 2:1 contrast over snow at the default opacity (as faint labels always did). If it reads too weak in game, use <code>muted</code> (0.66) instead.</li>
+        <li><b>Class before identification.</b> The ID rows show class icons where the class is already known and a neutral bar where it is not; whether the class arrives before the name has to be checked in the backend.</li>
+      </ul>
+
+      <h2>GPUI notes</h2>
+      <ul>
+        <li>Everything is <code>bg</code>, <code>border_1</code>, <code>rounded</code>, two-stop <code>linear_gradient</code> and <code>overflow_hidden</code>. No card shadow, no blur, no text shadow. Icons are single-colour Lucide SVGs (adds <code>pin</code>, <code>pin-off</code>, <code>arrow-left-right</code>, <code>map</code>); class icons are the PNGs.</li>
+        <li>D's tooltips (over the switch) and C's menu are drawn inside the overlay window, so they need about two rows of room. Tooltips and the menu keep the popover shadow because they sit inside the card.</li>
+        <li>Changing the view changes the card's height (the Target board adds the gauge line), like any row-count change. Hovering never does. Content scale zooms the whole card, so whatever fits at 100% fits at 70% and 150%; only legibility changes (the switch text is 7.7 px at 70%).</li>
+        <li>The page uses the shipped Barlow Semi Condensed from <code>crates/app/assets/fonts</code>, so the widths match the GPUI build.</li>
+      </ul>
+    </div>
+  </body>
+</html>

@@ -1,12 +1,15 @@
 param(
     [ValidateSet("debug", "release")]
-    [string]$Profile = "debug"
+    [string]$Profile = "debug",
+    # Where Cargo puts the build, relative to the project root. The Tauri app
+    # builds in src-tauri\target; the workspace (crates/app) in target.
+    [string]$TargetRoot = "src-tauri\target"
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $sourceDir = Join-Path $projectRoot "src-tauri\resources\windivert"
-$targetDir = Join-Path $projectRoot "src-tauri\target\$Profile"
+$targetDir = Join-Path $projectRoot "$TargetRoot\$Profile"
 
 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
 

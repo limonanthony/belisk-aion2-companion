@@ -122,7 +122,8 @@
       </nav>
       <h1>Approved screens <small>reference for the GPUI implementation</small></h1>
       <ul class="rationale">
-        <li>Only designs the user has validated live here. Explorations stay in <a href="../meter/index.html">meter/</a> (round 1), <a href="../round2/index.html">round2/</a> and <a href="../round3/index.html">round3/</a>.</li>
+        <li>Only designs the user has validated live here. Explorations stay in <a href="../meter/index.html">meter/</a> (round 1), <a href="../round2/index.html">round2/</a>, <a href="../round3/index.html">round3/</a> and <a href="../round4/index.html">round4/</a>.</li>
+        <li>The product is called "AION 2 DPS Meter" (title bar, About); overlays say "DPS Meter" where space is tight. Aether and NOIA2 appear only as the projects it is forked from, in About.</li>
         <li>Values are in <a href="tokens.md">tokens.md</a>; a screen and its tokens change together.</li>
       </ul>
     </header>
@@ -131,7 +132,7 @@
       <section class="screen is-wide">
         <div>
           <h2><a href="gate.html">Startup gate</a></h2>
-          <p>Validated in round 3. Administrator rights, Npcap and WinDivert with the weighting from <code>preflight.rs</code>; Install Npcap with the SHA-256 check; waits for "Open Aether" when Npcap is missing so the recommendation is read. States: checking, all good, Npcap missing, nothing can capture, installing, install refused, not elevated, re-run from Home.</p>
+          <p>Validated in round 3. Administrator rights, Npcap and WinDivert with the weighting from <code>preflight.rs</code>; Install Npcap with the SHA-256 check; waits for "Open the meter" when Npcap is missing so the recommendation is read. States: checking, all good, Npcap missing, nothing can capture, installing, install refused, not elevated, re-run from Home.</p>
         </div>
         <div class="frames is-gate">
           <iframe title="Gate, Npcap missing" src="gate.html?embed&amp;states=npcap-missing" height="530"></iframe>
@@ -162,12 +163,12 @@
       <section class="screen">
         <div>
           <h2><a href="meter.html">Meter overlay</a></h2>
-          <p>Validated in round 1 (direction D2, bar end d, rank b) with the round 2 fixes: the controls take the gauge line under the pointer, and combat power reads at 0.82. All states: waiting, live with and without the pointer, capsule, both fight summaries, over a busy, a bright and a dark scene.</p>
-          <p>Live controls: background opacity, content scale, rows, mask names, server, total damage, combat power, contribution or share.</p>
+          <p>Validated in rounds 1 and 2 (direction D2, bar end d, rank b, combat power at 0.82) and round 4 (layout D). Two boards chosen by themselves: Session in the open world, Target on a boss, with a Session | Target switch in the always-on footer to pin either. The target's name on top; under the pointer the tools take the time's place at top right.</p>
+          <p>States: Session at rest, pointer over, switch hover, Copy; Target with and without a personal best, pointer over, locked; pinned both ways; not identified yet; long boss name; waiting; capsule on Session, on a boss and waiting; both fight summaries. Live controls: background opacity, content scale, rows, mask names, server, total damage, combat power, contribution or share.</p>
         </div>
         <div class="frames">
-          <iframe title="Meter, live, pointer over" src="meter.html?embed&amp;scenes=bright&amp;states=hover" height="380"></iframe>
-          <iframe title="Meter, fight summary" src="meter.html?embed&amp;scenes=dark&amp;states=final" height="420"></iframe>
+          <iframe title="Meter, Session, pointer over" src="meter.html?embed&amp;scenes=bright&amp;states=session-pointer" height="360"></iframe>
+          <iframe title="Meter, Target, locked" src="meter.html?embed&amp;scenes=dark&amp;states=locked" height="360"></iframe>
         </div>
       </section>
 
@@ -206,10 +207,11 @@
       <section class="tokens" aria-labelledby="tokens-title">
         <h2 id="tokens-title">Design tokens in short</h2>
         <ul>
-          <li>Card: warm near-black <code>rgba(16, 14, 12, a)</code>, where a is the user's opacity (default 150/255); 14 px radius; 1 px border <code>rgba(255, 236, 214, 0.10)</code>; shadow 0 10 28 at 0.42.</li>
+          <li>Card: warm near-black <code>rgba(16, 14, 12, a)</code>, where a is the user's opacity (default 150/255); 14 px radius; 1 px border <code>rgba(255, 236, 214, 0.10)</code>; no drop shadow (the window ends at the card).</li>
           <li>Bars: 22 px rows with a 3 px gap, 5 px radius on track and fill, track <code>rgba(0, 0, 0, 0.34)</code>, fill a two-stop gradient of the class colour from 0.14 to 0.50, brightest at the leading edge. No edge marker.</li>
           <li>Rank: 18 px badge with 4 px radius, <code>rgba(255, 240, 225, 0.09)</code>; yours is cream <code>rgba(255, 246, 236, 0.90)</code> with dark text, and your bar gets a 1 px cream rim at 0.45. 8 px on each side of the badge.</li>
-          <li>Type: overlays in Bahnschrift SemiCondensed; the main window in Segoe UI Variable for text with Bahnschrift for titles, figures and buttons. Tabular figures, sentence case.</li>
+          <li>Type: overlays in Barlow Semi Condensed (embedded; the meter page loads it, the other overlay pages still draw with Bahnschrift); the main window in Segoe UI Variable for text with Bahnschrift for titles, figures and buttons. Tabular figures, sentence case.</li>
+          <li>Meter footer: always shown; figures on the left (Session: damage and targets fought; Target: pace against your best, or party damage), ping and a 100 px Session | Target switch on the right, with a 4 px dot when pinned by hand.</li>
           <li>Text: <code>rgba(255, 246, 236, …)</code> at 0.96, 0.82 (combat power), 0.66 and 0.44. Accents: good <code>#86e3a8</code>, warn <code>#f2c66d</code>, bad <code>#f7a8a8</code>, boss HP <code>#e8735f</code>, new PB <code>#fde68a</code> on amber 0.17. Class colours appear only on bars, coverage bars and the capsule badge.</li>
           <li>Overlay window parts: segmented tabs, 26 px inputs and selects, popovers on <code>rgba(30, 26, 22, 0.98)</code>, a "Delete?" danger fill with Cancel for confirmations, rows that open to a four-column figure block.</li>
           <li>Main window: opaque canvas <code>#141210</code>, sidebar and title bar <code>#0e0c0b</code>, groups <code>#1b1815</code> with 10 px radius; one cream primary button (<code>#f3ebe1</code> on <code>#17120d</code>) per view; cream switches and sliders.</li>

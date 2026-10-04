@@ -157,6 +157,24 @@ fn run(path: String, show_names: bool) -> Result<(), String> {
     );
     println!("total damage: {}", snapshot.total_damage);
 
+    let session = &snapshot.session;
+    println!(
+        "session: {} players, {} targets, total damage {}, combat time {:.1}s",
+        session.players.len(),
+        session.target_count,
+        session.total_damage,
+        session.combat_time_secs
+    );
+    if let Some(top) = session.players.first() {
+        println!(
+            "session top row: {} damage, {:.1}s combat time, {:.0} dps, {:.1}% share",
+            top.total_damage,
+            top.combat_time_secs,
+            top.dps,
+            top.damage_share * 100.0
+        );
+    }
+
     match snapshot.combat_infos.main_actor_id {
         Some(main_id) => match players.iter().find(|p| p.actor_id == main_id) {
             Some(player) => println!(

@@ -5,6 +5,7 @@ use crate::models::combat::{
     ActorInfo, BuffInterval, BuffSummary, CombatInfos, CombatSnapshot, PlayerHpInfo,
     PlayerOverviewStat, PvpDamageOverviewStat, SkillStats, TargetInfo,
 };
+use crate::engine::session::{build_session_summary, SessionInputs};
 use crate::storage::data_storage::DataStorage;
 
 pub struct DpsCalculator {
@@ -177,6 +178,18 @@ fn build_combat_snapshot(
         hide_unknown_players,
         max_player_count,
     );
+    let main_actor_name = data_storage.main_actor_name();
+    let session = build_session_summary(
+        &SessionInputs {
+            per_target_overview: &per_target_overview,
+            target_infos: &target_infos,
+            main_actor_id: data_storage.main_actor_id(),
+            main_actor_name: main_actor_name.as_deref(),
+            hide_unknown_players,
+            max_player_count,
+        },
+        |target_id| !data_storage.is_player(target_id),
+    );
 
     Some(CombatSnapshot {
         total_damage,
@@ -196,6 +209,7 @@ fn build_combat_snapshot(
         last_target_all_players_overview_stats: last_target_overview,
         main_actor_received_player_overview_stats: main_actor_received_overview,
         main_actor_dealt_player_overview_stats: main_actor_dealt_overview,
+        session,
     })
 }
 
@@ -319,9 +333,7 @@ fn build_target_infos(
         .iter()
         .map(|tid| {
             let mob_code = mob_id_code.get(tid).copied();
-            let is_boss = mob_code
-                .map(|c| data_storage.is_known_boss_code(c) || data_storage.is_possible_boss(c))
-                .unwrap_or(false);
+            let is_boss = mob_code.map(|c| data_storage.is_boss(c)).unwrap_or(false);
             // A mob the catalogue does not name is labelled by its code rather
             // than left blank, so two unnamed targets stay distinguishable.
             let name = mob_code.map(|c| {

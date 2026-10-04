@@ -1,0 +1,51 @@
+[package]
+name = "aion-2-dps-meter"
+version = "2.4.0"
+license = "GPL-3.0-only"
+description = "Real-time DPS meter for AION 2, native GPUI build"
+authors = ["Helveticxa"]
+edition = "2021"
+
+[lib]
+name = "aion_2_dps_meter"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aion-2-dps-meter"
+path = "src/main.rs"
+test = false
+
+[dependencies]
+aether-core = { path = "../aether-core" }
+futures = "0.3"
+global-hotkey = "0.7"
+raw-window-handle = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+windows = { version = "0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_UI_WindowsAndMessaging",
+] }
+image = { version = "0.25", default-features = false, features = ["png"], optional = true }
+
+# GPUI is pinned to the exact snapshot GPUI Kit 0.7.0 pins (gpui-component
+# requires `gpui-pre = "=0.3.7"`), so phase 4 can add `gpui-kit` without two
+# GPUI copies in the tree. Bump these together with the Kit.
+gpui = { package = "gpui-pre", version = "=0.3.7" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7" }
+
+[features]
+# `--overlay-probe`, `--font-probe` and `--capture`: checks of the overlay
+# window and of font selection, and off-screen captures of the meter
+# (docs/GPUI_MIGRATION.md, phases 2a and 2b). Not part of the shipped binary.
+probes = [
+    "dep:image",
+    "windows/Win32_Graphics_Gdi",
+    "windows/Win32_Storage_Xps",
+    "windows/Win32_UI_HiDpi",
+    "windows/Win32_System_Threading",
+]
+
+[build-dependencies]
+embed-resource = "3"

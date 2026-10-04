@@ -4,6 +4,7 @@ pub mod engine;
 pub mod events;
 pub mod history;
 pub mod logger;
+pub mod mobs;
 pub mod models;
 pub mod personal_best;
 pub mod preflight;
