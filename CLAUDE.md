@@ -16,7 +16,7 @@ PowerShell 5.1 on the development machine has no `&&` — chain with `;`. Cargo
 runs from the Windows toolchain (`cmd.exe /c "cargo ..."` from WSL).
 
 ```
-cargo test --workspace            # the quality gate: aether-core (93 + 1 ignored) + the app (163), no elevation needed
+cargo test --workspace            # the quality gate: aether-core (93 + 1 ignored) + the app (172) + xtask (5), no elevation needed
 cargo build -p aion-2-dps-meter   # add --release for the shipped build
 cargo run -p aion-2-dps-meter -- --replay <file.aetherpc> [--speed 1.0] [--exit-after-replay]   # replay starts no driver, but the default exe still asks for Administrator; --features probes builds run unelevated
 cargo run -p aion-2-dps-meter     # live capture; the exe asks for Administrator, so run it from an ELEVATED terminal. --collect-mobs also records the mobs fought into mobs.json (off by default); --debug-log writes the meter's decisions (board, boss focus, who "you" are) to aether.log as [meter] lines (off by default)
@@ -24,6 +24,7 @@ cd crates/aether-core; cargo run --example replay -- <file.aetherpc>
 # --features probes adds --overlay-probe, --font-probe and --capture <dir> (--fixtures | --replay <file>):
 # --capture draws the overlay off every monitor and saves PrintWindow images, safe while someone plays
 node scripts/build-npc-names.mjs <kuroukihime mobs.json> [noia2 npc_names.json]   # regenerates npc_names_en.json; plain node, no packages
+cargo xtask dist [--allow-dirty]   # builds the portable zip: target/dist/aion-2-dps-meter-<version>-windows-x64.zip (see docs/GPUI_MIGRATION.md, Distribution). Does not run the exe; refuses on a dirty tree (the source zip is `git archive HEAD`) or a locked exe
 ```
 
 `build.rs` copies `crates/app/windivert/*` beside the exe in `target/<profile>/`
@@ -48,6 +49,7 @@ node scripts/build-npc-names.mjs <kuroukihime mobs.json> [noia2 npc_names.json] 
 |`crates/app/windows/`|Administrator and unelevated manifests, `icon.ico`, the `.rc` files|
 |`vendor/embed-resource/`|Patched copy so GPUI's own manifest does not collide with ours (see docs/GPUI_MIGRATION.md, "Live capture and the manifest")|
 |`scripts/`|`build-npc-names.mjs`, `resize-aion2-skill-icons.py`|
+|`crates/xtask/`|`cargo xtask dist` (alias in `.cargo/config.toml`): static-CRT release build into `target/x86_64-pc-windows-msvc/release/`, exe checks, licence notices, the zip; `dist/` holds the player README and the notices header|
 |`docs/`|Migration plan, design mockups, upstream's protocol notes (`AION2_PACKET_PROTOCOL_ANALYSIS.zh-CN.md`, Chinese)|
 
 ## Things that will bite you

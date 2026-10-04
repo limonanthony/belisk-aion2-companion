@@ -83,6 +83,26 @@ so there is no second list of runtime files to drift from the first. Npcap
 cannot be bundled (its free licence forbids redistribution), so each user
 installs it themselves, or runs on the WinDivert fallback.
 
+**Done (2026-10-04): `cargo xtask dist`.** It builds the release exe with the
+static CRT (`+crt-static` through `CARGO_ENCODED_RUSTFLAGS` for that one
+invocation, with `--target x86_64-pc-windows-msvc`, so normal and dev builds
+and `target/release` are untouched), then checks the PE: no VC++ runtime or
+Universal CRT imports, GUI subsystem, `requireAdministrator` in `RT_MANIFEST`.
+It refuses a locked exe, a failed build, a WinDivert file that differs from the
+official 2.2.2 hash, and a dirty working tree unless `--allow-dirty`. The zip
+in `target/dist/` holds `aion-2-dps-meter/` with the exe, both WinDivert files,
+`README.txt`, `LICENSE.txt`, `THIRD-PARTY-NOTICES.txt` (bundled components in
+full, plus every linked crate and its licence from `cargo metadata`, with
+non-GPL-3.0-compatible ones flagged) and `source/…-source.zip`, a `git archive`
+of HEAD, which is the GPL source offer since there is no public repository.
+
+`WinDivert.dll` is a load-time import of the exe, so it is needed even when
+Npcap does the capturing; only `WinDivert64.sys` is the fallback driver.
+
+**Left for phase 6:** a release workflow (CI build and upload). Code signing is
+not planned, so SmartScreen warns; the player README says so. Running the zip
+on a clean machine is still a manual check.
+
 The executable is `aion-2-dps-meter.exe`, not `Aether.exe` (user request,
 2026-10-03). The Tauri app already builds under that name through
 `mainBinaryName` in `tauri.conf.json`; the GPUI app's binary uses it too. The

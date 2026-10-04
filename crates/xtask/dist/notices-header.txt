@@ -1,0 +1,43 @@
+THIRD-PARTY NOTICES
+===================
+
+AION 2 DPS Meter is licensed under the GNU General Public License, version 3
+(see LICENSE.txt). It includes or links the components below, under their own
+licences.
+
+
+PROJECT LINEAGE AND DATA
+------------------------
+- Aether - Aion 2 DPS meter (global)
+  https://github.com/Helveticxa/Aether-Aion2-DPS-meter-Global
+  GPL-3.0. This project is a fork of it.
+- NOIA2 by ZDYoung0519
+  https://github.com/ZDYoung0519/NOIA2
+  GPL-3.0. Aether is a fork of it; the capture pipeline, packet parsers and
+  game-data catalogues come from there.
+- Kuroukihime/AIon2-Dps-Meter
+  https://github.com/Kuroukihime/AIon2-Dps-Meter
+  GPL-3.0. English monster and boss names, skill names and server codes in
+  the bundled data are derived from it.
+
+
+BUNDLED COMPONENTS
+------------------
+- WinDivert 2.2.2 by basil00 (WinDivert.dll, WinDivert64.sys), unmodified.
+  https://github.com/basil00/WinDivert
+  Dual-licensed under the LGPL-3.0 or the GPL-2.0; the licence text is
+  reproduced in full below. The source is available at the address above.
+- Barlow Semi Condensed font, embedded in the exe.
+  https://github.com/jpt/barlow
+  SIL Open Font License 1.1; reproduced below.
+- Lucide icons, embedded in the exe.
+  https://lucide.dev
+  ISC licence (parts MIT, Feather); reproduced below.
+- GPUI (crates gpui-pre and gpui-pre-*), the UI framework, from the Zed project.
+  https://github.com/zed-industries/zed
+  Apache-2.0; reproduced below.
+- embed-resource by nabijaczleweli, vendored in vendor/embed-resource (build
+  tool, patched; not part of the running program).
+  MIT; reproduced below.
+- Npcap is NOT bundled. If you install it, it is under its own licence from
+  https://npcap.com.

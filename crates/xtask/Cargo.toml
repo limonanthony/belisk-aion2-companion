@@ -1,0 +1,13 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+license = "GPL-3.0-only"
+description = "Repository tasks, run as `cargo xtask <task>`"
+edition = "2021"
+publish = false
+
+[dependencies]
+object = { version = "0.37", default-features = false, features = ["read_core", "pe"] }
+serde_json = "1"
+sha2 = "0.10"
+zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
