@@ -6,6 +6,13 @@ tracked as the git remote `upstream`.
 Licensed **GPL-3.0-only**, same as upstream. Any distributed build must ship its
 source under the same terms.
 
+> **History notice.** The Tauri + React app described in most sections below was
+> removed on 2026-10-04; see [Cutover](#cutover-tauri-removed) at the end.
+> Sections about Tauri, the frontend, overlays in HTML, the updater, the
+> installer, Always on top, chat pop-ups, the light theme and pnpm are history.
+> The capture, parsing, engine and anti-cheat sections still describe the core.
+
+
 ## Why this base
 
 Four AION2 meters were evaluated before forking:
@@ -96,17 +103,13 @@ default.
 Note: upstream's premium flag only drives cosmetics -- an avatar glow and a badge.
 No meter functionality is gated behind it.
 
-## Running
+## Running (Tauri era, history)
 
-Packet capture needs Npcap **and Administrator rights** -- upstream bakes
-`requireAdministrator` into the Windows manifest in `src-tauri/build.rs`, so the
-app cannot start from a normal shell (it fails with OS error 740).
-
-Launch from an **elevated** terminal:
-
-```
-pnpm tauri:dev
-```
+Packet capture needs Npcap (or the WinDivert fallback) **and Administrator
+rights**. The Tauri app baked `requireAdministrator` into the Windows manifest
+in `src-tauri/build.rs` and was started with `pnpm tauri:dev` from an elevated
+terminal. Current commands are in [CLAUDE.md](./CLAUDE.md); the GPUI exe embeds
+the same manifest from `crates/app/windows/`.
 
 ## Staying current with upstream
 
@@ -162,24 +165,12 @@ The profiles stay in `region.rs` because detection still names Korea.
 Server names now fall back to `Server <id>` instead of a hardcoded
 `"未知服务器"`, so non-Taiwan players stay distinguishable.
 
-## Upstream quality gates
+## Upstream quality gates (Tauri era, history)
 
-`pnpm check` (format + lint + build) fails on a clean upstream checkout: 119
-files have Prettier issues and ESLint reports 65 errors. Those are pre-existing.
-Use the gates that are actually meaningful here:
-
-```
-pnpm build                  # tsc + vite -- must pass
-cd src-tauri && cargo test --lib   # must pass
-```
-
-`cargo test` (without `--lib`) fails on the binary target only, because the
-Windows manifest demands elevation and the test runner cannot launch it.
-
-Do not run `pnpm format`: it rewrites 119 upstream files and would make every
-future merge expensive.
-
-`CLAUDE.md` carries the short version of these notes for day-to-day work.
+Before the cutover the gates were `pnpm build` and `cd src-tauri && cargo test
+--lib`; `pnpm check` failed on a clean upstream checkout and `pnpm format` was
+never to be run. None of that exists any more. The gate today is
+`cargo test --workspace`, described in [CLAUDE.md](./CLAUDE.md).
 
 ## Gotcha: moving the repository folder
 
@@ -736,3 +727,31 @@ is not in `public/`.
 
 The application icons under `src-tauri/icons/` remain upstream's NOIA2 artwork.
 That is a deliberate choice, not an oversight.
+
+## Cutover (Tauri removed)
+
+On 2026-10-04 the Tauri + React app was removed, earlier than the migration
+plan said (the owner never used it). The last commit that still had it is
+tagged `tauri-final`. The repository is now the GPUI app (`crates/app`) and the
+backend (`crates/aether-core`), built with Cargo alone.
+
+Removed: `src-tauri/`, `src/`, `public/`, `index.html`, the Vite, TypeScript,
+ESLint, Prettier and shadcn configs, `package.json` with the pnpm lockfile and
+workspace file, `app-icon.png`, `.vscode/extensions.json`, the Tauri release
+workflow, `scripts/copy-windivert-runtime.ps1` and `scripts/release-version.mjs`.
+The updater, installer, tray, Always on top, chat pop-ups, light theme, Korean
+UI and history screens went with it; the GPUI plan in `docs/GPUI_MIGRATION.md`
+says which return and when.
+
+Moved (with history): the game data the UI compiles in
+(`servers.json`, `dungeons.json`, the English skill names) to
+`crates/app/assets/game/data/`; class icons, the skill icon set and the combat
+power icon to `crates/app/assets/game/`; `WinDivert.dll` and `WinDivert64.sys`
+(byte-identical) to `crates/app/windivert/`, which `crates/app/build.rs` copies
+beside the exe; `icon.ico` to `crates/app/windows/`, embedded as the exe icon
+by the `.rc` files.
+
+Merging `upstream/main` from here: changes to the deleted paths are resolved by
+keeping them deleted. Core changes land in `crates/aether-core` following the
+phase 1 renames (`src-tauri/src/dps_meter/**` to `crates/aether-core/src/**`,
+`src-tauri/data/*.json` to `crates/aether-core/data/`).

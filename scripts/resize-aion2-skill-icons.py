@@ -13,7 +13,7 @@ except ImportError as exc:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SKILL_DIR = ROOT / "public" / "aion2" / "skill"
+DEFAULT_SKILL_DIR = ROOT / "crates" / "app" / "assets" / "game" / "skills"
 FOUR_DIGIT_PNG = re.compile(r"^\d{4}\.png$", re.IGNORECASE)
 
 

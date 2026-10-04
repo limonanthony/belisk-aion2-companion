@@ -315,5 +315,5 @@ pinned version before planning.
   embedded Barlow Semi Condensed instead. `Segoe UI Variable` must be named
   with its optical size (`Segoe UI Variable Text`, `Display`, `Small`).
 - Icons are single-colour Lucide SVGs; class icons are the PNGs in
-  `public/aion2/class/`, skill and buff icons the PNGs in
-  `public/aion2/skill/`.
+  `crates/app/assets/game/class/`, skill and buff icons the PNGs in
+  `crates/app/assets/game/skills/`.

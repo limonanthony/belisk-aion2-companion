@@ -5,7 +5,7 @@
  *
  * Everything here is fake. Player, boss, dungeon, skill and buff names are
  * invented; nothing comes from a recording. Skill icons are the game's PNGs
- * in public/aion2/skill/, used only as pictures.
+ * in crates/app/assets/game/skills/, used only as pictures.
  *
  * Icons: Lucide (https://lucide.dev), ISC License,
  * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part
@@ -111,8 +111,8 @@
     templar: "56, 189, 248",
   };
 
-  const classIcon = (cls) => `../../../public/aion2/class/${cls}.png`;
-  const skillIcon = (code) => `../../../public/aion2/skill/${code}.png`;
+  const classIcon = (cls) => `../../../crates/app/assets/game/class/${cls}.png`;
+  const skillIcon = (code) => `../../../crates/app/assets/game/skills/${code}.png`;
 
   const ROSTER = [
     { name: "Vaelith", cls: "sorcerer", server: "Lyss", cp: 41820, dps: 61240 },

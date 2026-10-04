@@ -1,16 +1,15 @@
 //! Classes, server names, dungeons and skill names for the meter.
 //!
-//! The JSON files are the ones the Tauri overlays bundle, read from where they
-//! live until the cutover moves them (docs/GPUI_MIGRATION.md, phase 2b).
+//! The JSON files live in `assets/game/data` and are compiled into the binary.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use serde::Deserialize;
 
-const SERVERS_JSON: &str = include_str!("../../../../src/games/aion2/data/servers.json");
-const DUNGEONS_JSON: &str = include_str!("../../../../src/games/aion2/data/dungeons.json");
-const SKILLS_JSON: &str = include_str!("../../../../src/i18n/locales/aion2skills/en.json");
+const SERVERS_JSON: &str = include_str!("../../assets/game/data/servers.json");
+const DUNGEONS_JSON: &str = include_str!("../../assets/game/data/dungeons.json");
+const SKILLS_JSON: &str = include_str!("../../assets/game/data/skill_names_en.json");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlayerClass {

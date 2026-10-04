@@ -105,7 +105,7 @@ fn summarise(checks: &[Check]) -> String {
         .collect();
 
     match blocking.as_slice() {
-        [] => "Everything Aether needs is in place.".to_string(),
+        [] => "Everything the meter needs is in place.".to_string(),
         [one] => format!("{one} has to be sorted out before the meter can run."),
         many => format!(
             "{} have to be sorted out before the meter can run.",
@@ -116,7 +116,7 @@ fn summarise(checks: &[Check]) -> String {
 
 /// Whether `WinDivert64.sys` is absent from the install directory.
 ///
-/// Tauri drops it next to the executable, so its absence means something
+/// The build copies it next to the executable, so its absence means something
 /// removed it after installation rather than a packaging mistake.
 fn windivert_file_missing() -> bool {
     std::env::current_exe()

@@ -1,7 +1,7 @@
 //! Images and icons compiled into the executable and served to GPUI.
 //!
-//! Icons are Lucide (ISC, `assets/icons/LICENSE`). Class icons are the PNGs
-//! the Tauri overlays use, read from `public/` until the cutover moves them.
+//! Icons are Lucide (ISC, `assets/icons/LICENSE`). Class icons are the game's
+//! PNGs in `assets/game/class/`.
 
 use std::borrow::Cow;
 
@@ -67,15 +67,15 @@ static ASSETS: &[(&str, &[u8])] = embedded! {
     "icons/signal-high.svg" => "../assets/icons/signal-high.svg",
     "icons/trending-down.svg" => "../assets/icons/trending-down.svg",
     "icons/trending-up.svg" => "../assets/icons/trending-up.svg",
-    "class/assassin.png" => "../../../public/aion2/class/assassin.png",
-    "class/chanter.png" => "../../../public/aion2/class/chanter.png",
-    "class/cleric.png" => "../../../public/aion2/class/cleric.png",
-    "class/elementalist.png" => "../../../public/aion2/class/elementalist.png",
-    "class/fighter.png" => "../../../public/aion2/class/fighter.png",
-    "class/gladiator.png" => "../../../public/aion2/class/gladiator.png",
-    "class/ranger.png" => "../../../public/aion2/class/ranger.png",
-    "class/sorcerer.png" => "../../../public/aion2/class/sorcerer.png",
-    "class/templar.png" => "../../../public/aion2/class/templar.png",
+    "class/assassin.png" => "../assets/game/class/assassin.png",
+    "class/chanter.png" => "../assets/game/class/chanter.png",
+    "class/cleric.png" => "../assets/game/class/cleric.png",
+    "class/elementalist.png" => "../assets/game/class/elementalist.png",
+    "class/fighter.png" => "../assets/game/class/fighter.png",
+    "class/gladiator.png" => "../assets/game/class/gladiator.png",
+    "class/ranger.png" => "../assets/game/class/ranger.png",
+    "class/sorcerer.png" => "../assets/game/class/sorcerer.png",
+    "class/templar.png" => "../assets/game/class/templar.png",
 };
 
 pub struct Assets;

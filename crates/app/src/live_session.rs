@@ -1,5 +1,6 @@
-//! Live capture: the same meter, data folders and settings the Tauri app uses,
-//! so history, personal bests and recordings are shared between the two.
+//! Live capture. The data and log folders keep the identifier of the Tauri app
+//! this one replaced, so existing history, personal bests and recordings are
+//! reused.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,15 +10,15 @@ use aether_core::engine::meter::DpsMeter;
 use aether_core::events::EventSink;
 use aether_core::logger::AppLogger;
 
-/// Tauri's bundle identifier for this app (`tauri.conf.json`).
+/// Bundle identifier of the app this one replaced; it names the data folders.
 const IDENTIFIER: &str = "com.helveticxa.aether";
 
-/// `app_data_dir()` in Tauri 2 on Windows: `%APPDATA%/<identifier>`.
+/// `%APPDATA%/<identifier>`, where the Tauri app kept its data.
 fn data_dir() -> Option<PathBuf> {
     std::env::var_os("APPDATA").map(|dir| PathBuf::from(dir).join(IDENTIFIER))
 }
 
-/// `app_log_dir()` in Tauri 2 on Windows: `%LOCALAPPDATA%/<identifier>/logs`.
+/// `%LOCALAPPDATA%/<identifier>/logs`, where the Tauri app kept its log.
 fn log_file() -> PathBuf {
     match std::env::var_os("LOCALAPPDATA") {
         Some(dir) => PathBuf::from(dir).join(IDENTIFIER).join("logs").join("aether.log"),
@@ -25,9 +26,9 @@ fn log_file() -> PathBuf {
     }
 }
 
-/// The backend settings `src/hooks/use-settings.ts` applies on a fresh install
-/// (`DEFAULTS.aion2.backend`). Only two differ from the core's own defaults.
-pub fn tauri_backend_config() -> DpsMeterConfig {
+/// The backend settings Aether applied on a fresh install, as of `tauri-final`.
+/// Only two differ from the core's own defaults.
+pub fn default_backend_config() -> DpsMeterConfig {
     DpsMeterConfig {
         dps_snapshot_interval_ms: 200,
         unknown_packet_stall_resync_delay_ms: 50,
@@ -35,13 +36,13 @@ pub fn tauri_backend_config() -> DpsMeterConfig {
     }
 }
 
-/// The Tauri defaults plus what the GPUI meter decided on: the "possible
+/// The defaults plus what the GPUI meter decided on: the "possible
 /// boss" HP rule is always on, and mob collection follows the launch flag.
 pub fn gpui_backend_config(collect_mobs: bool) -> DpsMeterConfig {
     DpsMeterConfig {
         show_possible_boss: true,
         collect_mobs,
-        ..tauri_backend_config()
+        ..default_backend_config()
     }
 }
 
@@ -65,8 +66,8 @@ mod tests {
     use aether_core::config::CaptureBackendPriority;
 
     #[test]
-    fn backend_config_matches_the_tauri_frontend_defaults() {
-        let config = tauri_backend_config();
+    fn backend_config_matches_the_defaults_of_the_previous_app() {
+        let config = default_backend_config();
         assert_eq!(config.dps_snapshot_interval_ms, 200);
         assert_eq!(config.memory_snapshot_interval_ms, 2000);
         assert_eq!(config.max_packet_size_threshold, 8192);
@@ -87,6 +88,6 @@ mod tests {
         assert!(!gpui_backend_config(false).collect_mobs);
         assert!(gpui_backend_config(true).collect_mobs);
         assert!(!gpui_backend_config(false).output_debug_log, "the core's per-packet debug stays off");
-        assert!(!tauri_backend_config().show_possible_boss && !tauri_backend_config().collect_mobs);
+        assert!(!default_backend_config().show_possible_boss && !default_backend_config().collect_mobs);
     }
 }

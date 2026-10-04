@@ -211,7 +211,7 @@
             [5, "Tobiah", "elementalist", "34, 211, 238", "35,020", "28.9K", 0.473],
           ];
           const rows = P.map(
-            ([rk, n, cls, rgb, cp, dps, s, you]) => `<div class="o-row${you ? " is-you" : ""}"><span class="o-rk">${rk}</span><span class="o-track" style="--rgb:${rgb}"><span class="o-fill" style="width:${(s * 100).toFixed(0)}%"></span><img class="o-icon" src="../../../public/aion2/class/${cls}.png" alt="${cls}"><span class="o-name">${n}<small>${cp}</small></span><span class="o-num" style="font-weight:600">${dps}</span></span></div>`
+            ([rk, n, cls, rgb, cp, dps, s, you]) => `<div class="o-row${you ? " is-you" : ""}"><span class="o-rk">${rk}</span><span class="o-track" style="--rgb:${rgb}"><span class="o-fill" style="width:${(s * 100).toFixed(0)}%"></span><img class="o-icon" src="../../../crates/app/assets/game/class/${cls}.png" alt="${cls}"><span class="o-name">${n}<small>${cp}</small></span><span class="o-num" style="font-weight:600">${dps}</span></span></div>`
           ).join("");
           const gauge = Array.from({ length: 10 }, (_, i) => `<i class="${i < 6 ? "on" : ""}"></i>`).join("");
           return `<div class="pv"><div class="grp-title is-first" style="margin-top:0">Preview</div><div class="pv-stage scene--busy"><div class="ov o"><div class="pv-head">Veilwarden Orsikh<b>3:41</b></div><div class="pv-gauge">${gauge}</div><div class="o-rows">${rows}</div></div></div><div class="pv-note">Sample data. Follows every change on this page.</div></div>`;
@@ -360,7 +360,7 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
               lead +
               `<div class="grp" style="margin-top:18px"><div class="tbl-head"><span class="row-desc">${B.length} bosses, 2 characters</span>${action}</div>
 <table class="tbl"><thead><tr><th>Boss</th><th>Character</th><th class="num">Best DPS</th><th class="num">Date</th></tr></thead><tbody>${B.map(
-                ([b, c, cls, d, t]) => `<tr><td>${b}</td><td><span class="cell-ic"><img src="../../../public/aion2/class/${cls}.png" alt="${cls}">${c}</span></td><td class="num"><b>${d}</b><span class="faint">/s</span></td><td class="num muted">${t}</td></tr>`
+                ([b, c, cls, d, t]) => `<tr><td>${b}</td><td><span class="cell-ic"><img src="../../../crates/app/assets/game/class/${cls}.png" alt="${cls}">${c}</span></td><td class="num"><b>${d}</b><span class="faint">/s</span></td><td class="num muted">${t}</td></tr>`
               ).join("")}</tbody></table></div>`
             );
           },

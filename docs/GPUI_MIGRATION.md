@@ -5,6 +5,10 @@ This repository is a fork of [Aether](https://github.com/Helveticxa/Aether-Aion2
 [NOIA2](https://github.com/ZDYoung0519/NOIA2). Both are GPL-3.0-only, so this
 fork is too: any build shared with others ships with its source.
 
+> **Status (2026-10-04):** the Tauri app has been removed (tag `tauri-final`);
+> see [Cutover](#cutover). Text below about Tauri services and the old frontend
+> is the assessment that led here.
+
 The goal of this fork is to replace the Tauri + WebView2 frontend with a native
 [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui) UI. This document records the assessment and the
 plan agreed before starting.
@@ -333,7 +337,7 @@ the needed code copied in.
 - The GPUI app is written as new crates. The Tauri app keeps working on `main`
   until the GPUI app covers the kept scope. Then `src/`, the Tauri app and the
   dropped plugins are deleted in one cutover commit, and the commit before it is
-  tagged `tauri-final`.
+  tagged `tauri-final`. **Done early on 2026-10-04**, see [Cutover](#cutover).
 - Line endings: the repository sets `core.autocrlf=true` in `.git/config`, so
   Windows git and WSL git agree. Commits must not turn LF files into CRLF.
 
@@ -952,3 +956,34 @@ Done. A two-minute automatic recording of one fight on the global servers is at
 outside the repository because it contains other players' data. The meter
 named the user's character in that session. Phases 1 and 2 start from that
 recording.
+
+## Cutover
+
+Decided by the user on 2026-10-04, ahead of the original plan: the Tauri app is
+gone, since it was never used. Branch `cutover-remove-tauri`, built on `main`
+at `90bac82` (phases 1 and 2), and that commit is tagged `tauri-final`.
+
+- **Removed:** `src-tauri/`, `src/`, `public/`, `index.html`, all Node tooling
+  (Vite, TypeScript, ESLint, Prettier, shadcn, `package.json`, the pnpm files),
+  `app-icon.png`, the Tauri release workflow and the two scripts that served it
+  (`copy-windivert-runtime.ps1`, `release-version.mjs`). The workspace no longer
+  excludes `src-tauri`.
+- **Moved with `git mv`:** compiled-in game data (`servers.json`,
+  `dungeons.json`, `skill_names_en.json`) to `crates/app/assets/game/data/`
+  (the UI is its only reader; the core's own data stays in
+  `crates/aether-core/data/`); class icons, the skill icons (471 files, 9.4 MB,
+  needed by the phase 3 detail window) and `profile_power_icon_pc.png` to
+  `crates/app/assets/game/`; WinDivert to `crates/app/windivert/`; `icon.ico` to
+  `crates/app/windows/`.
+- **Mechanism:** `crates/app/build.rs` copies the two WinDivert files beside the
+  exe in `target/<profile>/` (and again if they go missing), and the `.rc`
+  files embed the icon next to the manifest. No pnpm or PowerShell step.
+  Phase 6 packages the same files into the portable zip.
+- **Not carried over:** `bossIcon.png`, `logo.png`, the background video and
+  image, the Korean strings and the Tauri overlay locale files. They are in
+  `tauri-final` if a later phase wants them; buff icons come from the skill set.
+- **Upstream merges:** changes to deleted paths are resolved by keeping them
+  deleted; core changes follow the phase 1 renames.
+- **Plan now:** phases 1 and 2 done, cutover done. Phases 3 (PvP, detail,
+  history overlays), 4, 5, 6 and 7 remain. The Tauri-side text elsewhere in
+  this document describes the old app and is kept as history.

@@ -1,8 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["crates/aether-core", "crates/app"]
-# The Tauri app stays a separate package with its own lockfile and target dir.
-exclude = ["src-tauri"]
 
 # GPUI embeds its own asInvoker manifest through embed-resource, which collides
 # with the app's requireAdministrator one (LNK1123). The patched copy skips

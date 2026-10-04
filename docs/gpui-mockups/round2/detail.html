@@ -381,7 +381,7 @@
           }
           return `<div class="o-head">
   <span class="det-who"><img class="cls" src="${actor.icon}" alt="${actor.cls}"><b>${actor.label}</b>${ctx.opts.server ? `<span class="srv">${actor.server}</span>` : ""}</span>
-  <span class="det-cp"><img src="../../../public/aion2/profile_power_icon_pc.png" alt="Combat power">${fmt.int(actor.cp)}</span>
+  <span class="det-cp"><img src="../../../crates/app/assets/game/profile_power_icon_pc.png" alt="Combat power">${fmt.int(actor.cp)}</span>
   <span class="grow"></span>${chip}${btn("close", "Close")}
 </div>
 <div class="det-sub">${icon(mode === "history" ? "clock" : "target")}${ctx.boss.label}<span class="faint">·</span>${mode === "history" ? "Today 21:42, saved record" : "current target"}</div>`;

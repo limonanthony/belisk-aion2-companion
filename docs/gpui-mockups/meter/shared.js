@@ -164,7 +164,7 @@
           rank: i + 1,
           dmg,
           rgb: CLASS_RGB[p.cls],
-          icon: `../../../public/aion2/class/${p.cls}.png`,
+          icon: `../../../crates/app/assets/game/class/${p.cls}.png`,
           label: esc(opts.mask ? mask(p.name) : p.name),
           scale: Math.max(0.06, p.dps / top),
           pct: opts.pctMode === "share" ? p.dps / partyDps : (p.dps * 1.0) / bossTaken,
