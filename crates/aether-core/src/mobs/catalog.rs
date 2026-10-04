@@ -213,14 +213,7 @@ impl MobCatalog {
         let Some(disk) = &self.shared.disk else {
             return;
         };
-        {
-            let mut pending = disk.pending.lock().unwrap();
-            if !pending.dirty {
-                return;
-            }
-            pending.dirty = false;
-        }
-        self.shared.write_file(disk);
+        self.shared.write_if_dirty(disk);
     }
 }
 
@@ -264,16 +257,25 @@ impl Shared {
                 };
                 pending = disk.wake.wait_timeout(pending, wait).unwrap().0;
             }
-            pending.dirty = false;
             drop(pending);
 
-            self.write_file(disk);
+            self.write_if_dirty(disk);
             last_write = Some(Instant::now());
         }
     }
 
-    fn write_file(&self, disk: &Disk) {
+    /// Writes if anything changed since the last write. The dirty flag is
+    /// consumed under the write lock, so a caller that finds nothing to do
+    /// knows any write that took the change has finished.
+    fn write_if_dirty(&self, disk: &Disk) {
         let _writing = disk.writing.lock().unwrap();
+        {
+            let mut pending = disk.pending.lock().unwrap();
+            if !pending.dirty {
+                return;
+            }
+            pending.dirty = false;
+        }
         let encoded = store::encode(&self.records.read().unwrap());
         let result = encoded
             .map_err(|error| error.to_string())

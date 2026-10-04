@@ -368,6 +368,9 @@ impl DataStorage {
         if let Some(owner_id) = inner.summon_owner_map.get(&actor_id) {
             actor_id = *owner_id;
         }
+        if actor_id == 0 {
+            return;
+        }
 
         let target_mob_code = inner.mob_id_code_map.get(&packet.target_id).copied();
         let is_target_boss = target_mob_code.is_some_and(|mob_code| self.mobs.is_boss(mob_code));
@@ -586,6 +589,9 @@ impl DataStorage {
     }
 
     pub fn append_summon(&self, owner_id: u32, summon_id: u32) {
+        if owner_id == 0 {
+            return;
+        }
         let mut inner = self.inner.write().unwrap();
         if inner.actor_id_name_map.contains_key(&summon_id) {
             return;
@@ -1127,5 +1133,78 @@ mod own_fight_tests {
     #[test]
     fn someone_else_fighting_nearby_does_not() {
         assert!(!is_own_fight(&inner(Some(ME), Some(BOSS)), STRANGER, OTHER_MOB));
+    }
+}
+
+#[cfg(test)]
+mod unowned_hit_tests {
+    use std::sync::{Arc, RwLock};
+
+    use super::DataStorage;
+    use crate::config::DpsMeterConfig;
+    use crate::events::{EventSink, MeterEvent};
+    use crate::mobs::catalog::MobCatalog;
+    use crate::models::packet::ParsedDamagePacket;
+
+    struct Silent;
+    impl EventSink for Silent {
+        fn emit(&self, _: MeterEvent) {}
+    }
+
+    const SUMMON: u32 = 500;
+    const MOB: u32 = 900;
+    const PLAYER: u32 = 7;
+
+    fn storage() -> DataStorage {
+        let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
+        let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
+        DataStorage::new(Arc::new(Silent), config, mobs)
+    }
+
+    fn hit(actor_id: u32) -> ParsedDamagePacket {
+        ParsedDamagePacket {
+            target_id: MOB,
+            actor_id,
+            skill_code: 11_000_000,
+            ori_skill_code: 11_000_000,
+            damage: 407,
+            is_dot: false,
+            is_crit: false,
+            multi_hit_damage: 0,
+            multi_hit_count: 0,
+            specials: Vec::new(),
+        }
+    }
+
+    fn attackers(storage: &DataStorage) -> Vec<u32> {
+        let mut ids: Vec<u32> = storage
+            .get_dps_stats_snapshot()
+            .values()
+            .flat_map(|actors| actors.keys().copied())
+            .collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    #[test]
+    fn a_summon_whose_owner_reads_as_zero_does_not_create_an_actor_zero() {
+        let storage = storage();
+        storage.append_summon(PLAYER, SUMMON);
+        storage.append_summon(0, SUMMON);
+
+        storage.append_damage(hit(SUMMON));
+
+        assert_eq!(attackers(&storage), vec![PLAYER], "a bad owner must not replace the real one");
+    }
+
+    #[test]
+    fn a_hit_that_resolves_to_actor_zero_is_dropped() {
+        let storage = storage();
+        storage.inner.write().unwrap().summon_owner_map.insert(SUMMON, 0);
+
+        storage.append_damage(hit(SUMMON));
+        storage.append_damage(hit(0));
+
+        assert!(attackers(&storage).is_empty());
     }
 }
