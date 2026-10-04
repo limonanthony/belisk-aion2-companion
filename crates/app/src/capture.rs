@@ -24,6 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_LBUTTONUP, WM_MOUSEMOVE,
 };
 
+use crate::capture_secondary;
 use crate::fixtures;
 use crate::meter::{
     Board, BossChoice, Layout, MeterModel, MeterView, OverlaySettings, PctMode, ReplayState,
@@ -62,8 +63,14 @@ pub fn run(
         let result = match std::fs::create_dir_all(&dir) {
             Err(error) => Err(format!("cannot create {}: {error}", dir.display())),
             Ok(()) => match source {
-                Source::Fixtures => capture_fixtures(window, &model, &dir, cx).await,
-                Source::Replay => capture_replay(window, &model, &dir, cx).await,
+                Source::Fixtures => match capture_fixtures(window, &model, &dir, cx).await {
+                    Ok(()) => capture_secondary::from_fixtures(window, &model, &dir, cx).await,
+                    failed => failed,
+                },
+                Source::Replay => match capture_replay(window, &model, &dir, cx).await {
+                    Ok(()) => capture_secondary::from_replay(&model, &dir, cx).await,
+                    failed => failed,
+                },
             },
         };
         if let Err(error) = result {
@@ -211,10 +218,10 @@ async fn capture_fixtures(
 
 /// Client points on the Session card at 100% (310x260): a row, the switch's
 /// Target side, and the "…" tool.
-const ROW_POINT: (i32, i32) = (40, 60);
+pub(crate) const ROW_POINT: (i32, i32) = (40, 60);
 const SWITCH_TARGET_POINT: (i32, i32) = (276, 243);
 const MORE_POINT: (i32, i32) = (266, 20);
-const MK_LBUTTON: usize = 0x0001;
+pub(crate) const MK_LBUTTON: usize = 0x0001;
 
 /// Posts real mouse messages to our own window (nothing else receives any)
 /// and reports how the "…" menu reacts: a press elsewhere closes it without
@@ -469,10 +476,16 @@ async fn shoot(
     name: &str,
     cx: &mut AsyncApp,
 ) -> Result<(), String> {
-    cx.background_executor().timer(SETTLE).await;
     let hwnd = window
         .update(cx, |_, window, _| overlay::hwnd(window))
         .map_err(|error| format!("overlay window gone: {error:#}"))??;
+    shoot_hwnd(hwnd, dir, name, cx).await
+}
+
+/// Waits for the window to settle, checks it is still off screen, and saves
+/// what it draws.
+pub async fn shoot_hwnd(hwnd: HWND, dir: &Path, name: &str, cx: &mut AsyncApp) -> Result<(), String> {
+    cx.background_executor().timer(SETTLE).await;
     let raw = hwnd.0 as isize;
     let path = dir.join(format!("{name}.png"));
     let target = path.clone();

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use aether_core::engine::meter::DpsMeter;
@@ -13,13 +14,16 @@ use gpui::{Context, SharedString, Task};
 use super::board::{Board, BoardChoice};
 use super::decisions::DecisionLog;
 use super::fight::{FightTracker, TargetFacts};
-use super::focus::{BossFocus, Change, Release, Released};
-use super::format;
+use super::focus::{BossFocus, Change, Involvement, Release, Released};
+use crate::format;
+use crate::game_data::PlayerClass;
 use super::live::{self, LiveBoard, PaceLine};
 use super::session_board::SessionBoard;
 use super::settings::OverlaySettings;
 use super::shades::ShadeBook;
 use super::summary::{FightSummary, Subject};
+
+static SNAPSHOT_IDS: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ReplayState {
@@ -124,6 +128,9 @@ pub struct MeterModel {
     /// Where boss corrections live: the meter's catalog.
     mobs: Option<Arc<MobCatalog>>,
     snapshot: Option<CombatSnapshot>,
+    /// Changes with every snapshot taken in, across models, so a window built
+    /// from the snapshot can tell a new one from other notifications.
+    snapshot_id: u64,
     live: Option<LiveBoard>,
     summary: Option<FightSummary>,
     tracker: FightTracker,
@@ -156,6 +163,7 @@ impl MeterModel {
             mobs: meter.as_ref().map(|meter| Arc::clone(meter.mobs())),
             meter,
             snapshot: None,
+            snapshot_id: 0,
             live: None,
             summary: None,
             system: SystemLine::default(),
@@ -261,6 +269,47 @@ impl MeterModel {
 
     pub fn can_reset(&self) -> bool {
         self.meter.is_some()
+    }
+
+    /// The latest snapshot the meter took in: what the player detail window
+    /// and the PvP lists are built from.
+    pub fn snapshot(&self) -> Option<&CombatSnapshot> {
+        self.snapshot.as_ref()
+    }
+
+    pub fn snapshot_id(&self) -> u64 {
+        self.snapshot_id
+    }
+
+    /// The target the Target board is about: the engaged boss, else the one
+    /// being hit.
+    pub fn board_target_id(&self) -> Option<u32> {
+        self.snapshot.as_ref().and_then(|snapshot| self.board_target(snapshot))
+    }
+
+    /// The meter itself, for the windows that ask it for history and PvP data.
+    pub fn meter(&self) -> Option<&Arc<DpsMeter>> {
+        self.meter.as_ref()
+    }
+
+    /// The player's colour as the meter draws it: their shade while the meter
+    /// has drawn them since the last reset, else the plain class colour.
+    pub fn player_colour(&self, class: PlayerClass, actor_id: u32, actor_name: &str) -> u32 {
+        self.shades.known(class, actor_id, actor_name).unwrap_or_else(|| class.rgb())
+    }
+
+    /// [`Self::player_colour`] for a player known only by id, with the name
+    /// and class the latest snapshot has for them.
+    pub fn actor_colour(&self, actor_id: u32) -> Option<u32> {
+        let snapshot = self.snapshot.as_ref()?;
+        let (name, class) = match snapshot.session.players.iter().find(|player| player.actor_id == actor_id) {
+            Some(player) => (player.actor_name.as_str(), player.actor_class.as_str()),
+            None => {
+                let actor = snapshot.combat_infos.actor_infos.get(&actor_id)?;
+                (actor.actor_name.as_deref().unwrap_or(""), actor.actor_class.as_deref()?)
+            }
+        };
+        Some(self.player_colour(PlayerClass::parse(class)?, actor_id, name))
     }
 
     /// Folds an event in and reports whether something a view draws changed.
@@ -501,6 +550,7 @@ impl MeterModel {
             self.apply_focus_change(change);
         }
         self.snapshot = Some(snapshot);
+        self.snapshot_id = SNAPSHOT_IDS.fetch_add(1, Ordering::Relaxed) + 1;
         let tracked = self.settle_focus(now);
         let facts = self
             .snapshot
@@ -520,12 +570,23 @@ impl MeterModel {
     fn settle_focus(&mut self, now: Instant) -> Option<u32> {
         let snapshot = self.snapshot.as_ref()?;
         let current = live::target_of(snapshot).map(|target| target.id);
-        let change = self.focus.observe(current, |id| facts_of(snapshot, id), now);
+        let change = self.focus.observe(
+            current,
+            |id| facts_of(snapshot, id),
+            |id| involvement_of(snapshot, id),
+            now,
+        );
         self.apply_focus_change(change);
-        self.focus
+        let snapshot = self.snapshot.as_ref()?;
+        let tracked = self
+            .focus
             .focused()
             .or(change.released.map(|released| released.id))
-            .or(current)
+            .or(current)?;
+        // A stranger's boss dying is not your kill, so no summary for it.
+        let strangers = facts_of(snapshot, tracked).is_some_and(|facts| facts.is_boss)
+            && involvement_of(snapshot, tracked).is_none();
+        (!strangers).then_some(tracked)
     }
 
     fn apply_focus_change(&mut self, change: Change) {
@@ -550,8 +611,12 @@ impl MeterModel {
             });
         }
         if let Some(id) = change.engaged {
+            let why = change.engaged_because.map_or("", Involvement::describe);
             self.decisions.event("boss focus", || {
-                format!("engaged {:?} ({id}); the Target board stays on it until it dies or is let go", name_of(id))
+                format!(
+                    "engaged {:?} ({id}) because {why}; the Target board stays on it until it dies or is let go",
+                    name_of(id)
+                )
             });
         }
         self.note_board();
@@ -662,6 +727,28 @@ impl MeterModel {
     }
 }
 
+/// Why `boss` is the local player's fight. The core records every hit as
+/// `by_target_player_stats[target][attacker]`, mobs included, so "you hit it"
+/// is your row under the boss and "it hit you" is the boss's id under your own
+/// actor id. Before the game has named you nothing can be told.
+fn involvement_of(snapshot: &CombatSnapshot, boss: u32) -> Option<Involvement> {
+    if !live::is_identified(snapshot) {
+        return Some(Involvement::Unidentified);
+    }
+    let hit_by_you = snapshot.by_target_player_stats.get(&boss).is_some_and(|rows| {
+        live::find_you(snapshot, rows.values().map(|row| (row.actor_id, row.actor_name.as_str()))).is_some()
+    });
+    if hit_by_you {
+        return Some(Involvement::YouHitIt);
+    }
+    let hit_you = snapshot
+        .combat_infos
+        .main_actor_id
+        .and_then(|me| snapshot.by_target_player_stats.get(&me))
+        .is_some_and(|attackers| attackers.contains_key(&boss));
+    hit_you.then_some(Involvement::ItHitYou)
+}
+
 /// What the fight tracker and the focus need to know about a target.
 fn facts_of(snapshot: &CombatSnapshot, id: u32) -> Option<TargetFacts> {
     let target = live::target_info(snapshot, id)?;
@@ -699,7 +786,7 @@ mod tests {
     use aether_core::models::session::{SessionPlayerStat, SessionSummary};
 
     use super::*;
-    use crate::meter::game_data::PlayerClass;
+    use crate::game_data::PlayerClass;
     use crate::meter::live::Lead;
     use crate::meter::fight::SummaryKind;
 
@@ -1321,13 +1408,86 @@ mod tests {
         let mut model = boss_fight_with_adds(start);
         let mobs = [
             mob(BOSS_ID, true, 800, 40.0, boss_party()),
-            mob(OTHER_BOSS_ID, true, 1_000, 2.0, trash_party()),
+            mob(OTHER_BOSS_ID, true, 1_000, 2.0, vec![player(4, "Puller", 9_000, 90.0), player(2, "You", 500, 5.0)]),
         ];
 
         model.apply(MeterEvent::DpsSnapshot(world(OTHER_BOSS_ID, &mobs, Some((2, "You")))), at(start, 30));
 
         assert_eq!(model.focused_boss(), Some(OTHER_BOSS_ID));
         assert_eq!(model.live().unwrap().rows[0].name.as_deref(), Some("Puller"));
+    }
+
+    #[test]
+    fn a_second_boss_you_did_not_touch_does_not_take_the_board_over() {
+        let start = Instant::now();
+        let mut model = boss_fight_with_adds(start);
+        let mobs = [
+            mob(BOSS_ID, true, 800, 40.0, boss_party()),
+            mob(OTHER_BOSS_ID, true, 1_000, 2.0, trash_party()),
+        ];
+
+        model.apply(MeterEvent::DpsSnapshot(world(OTHER_BOSS_ID, &mobs, Some((2, "You")))), at(start, 30));
+
+        assert_eq!(model.focused_boss(), Some(BOSS_ID));
+    }
+
+    #[test]
+    fn a_strangers_boss_hit_only_by_others_is_not_engaged_once_you_are_identified() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let mobs = [mob(BOSS_ID, true, 800, 40.0, trash_party())];
+
+        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &mobs, Some((2, "You")))), Instant::now());
+
+        assert_eq!(model.focused_boss(), None);
+        assert_eq!(model.active_board(), Board::Session);
+    }
+
+    #[test]
+    fn a_boss_that_hit_you_is_engaged() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let mobs = [mob(BOSS_ID, true, 800, 40.0, trash_party())];
+        let mut snapshot = world(BOSS_ID, &mobs, Some((2, "You")));
+        let boss_row = player(BOSS_ID, "", 300, 5.0);
+        snapshot.by_target_player_stats.insert(2, HashMap::from([(BOSS_ID, boss_row)]));
+
+        model.apply(MeterEvent::DpsSnapshot(snapshot), Instant::now());
+
+        assert_eq!(model.focused_boss(), Some(BOSS_ID));
+    }
+
+    #[test]
+    fn a_boss_you_hit_is_engaged() {
+        let start = Instant::now();
+        let model = boss_fight_with_adds(start);
+
+        assert_eq!(model.focused_boss(), Some(BOSS_ID));
+    }
+
+    #[test]
+    fn a_boss_engaged_before_identification_is_released_when_it_is_not_your_fight() {
+        let start = Instant::now();
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let mobs = [mob(BOSS_ID, true, 800, 40.0, trash_party())];
+        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &mobs, None)), start);
+        assert_eq!(model.focused_boss(), Some(BOSS_ID), "unidentified: anyone's target counts");
+
+        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &mobs, Some((2, "You")))), at(start, 1));
+
+        assert_eq!(model.focused_boss(), None);
+        assert_eq!(model.active_board(), Board::Session);
+    }
+
+    #[test]
+    fn a_strangers_boss_dying_gives_no_summary() {
+        let start = Instant::now();
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let alive = [mob(BOSS_ID, true, 800, 40.0, trash_party())];
+        let dead = [mob(BOSS_ID, true, 0, 45.0, trash_party())];
+        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &alive, Some((2, "You")))), start);
+
+        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &dead, Some((2, "You")))), at(start, 45));
+
+        assert!(model.summary().is_none());
     }
 
     #[test]
@@ -1401,9 +1561,14 @@ mod tests {
         let alive = [mob(BOSS_ID, true, 800, 40.0, boss_party())];
         let dead = [mob(BOSS_ID, true, 0, 45.0, boss_party())];
         let me = Some((9, "Absent"));
-        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &alive, me)), start);
+        // The boss hit you, so it is your fight, but you dealt it no damage.
+        let hit_by_boss = |mut snapshot: CombatSnapshot| {
+            snapshot.by_target_player_stats.insert(9, HashMap::from([(BOSS_ID, player(BOSS_ID, "", 100, 1.0))]));
+            snapshot
+        };
+        model.apply(MeterEvent::DpsSnapshot(hit_by_boss(world(BOSS_ID, &alive, me))), start);
 
-        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &dead, me)), at(start, 45));
+        model.apply(MeterEvent::DpsSnapshot(hit_by_boss(world(BOSS_ID, &dead, me))), at(start, 45));
 
         let summary = model.summary().expect("final summary");
         assert!(!summary.personal);

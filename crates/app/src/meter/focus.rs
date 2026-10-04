@@ -36,6 +36,7 @@ pub enum Release {
     Quiet,
     Gone,
     NoLongerBoss,
+    NotYourFight,
     ZoneChange,
     Reset,
 }
@@ -48,8 +49,30 @@ impl Release {
             Self::Quiet => "no hit on the boss for the quiet limit",
             Self::Gone => "the boss left the snapshot",
             Self::NoLongerBoss => "the boss is no longer ruled a boss",
+            Self::NotYourFight => "not your fight: you neither hit it nor were hit by it",
             Self::ZoneChange => "the local player's actor id changed (zone change)",
             Self::Reset => "the meter was reset",
+        }
+    }
+}
+
+/// Why a boss is the local player's fight. Once the game has named the
+/// player, only a boss they hit, or that hit them, qualifies: until they hit
+/// something, the game's "current target" is anyone's last target.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Involvement {
+    YouHitIt,
+    ItHitYou,
+    /// The meter does not know who you are, so it cannot tell.
+    Unidentified,
+}
+
+impl Involvement {
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::YouHitIt => "you hit it",
+            Self::ItHitYou => "it hit you",
+            Self::Unidentified => "you are not identified yet, so anyone's target counts",
         }
     }
 }
@@ -66,6 +89,7 @@ pub struct Change {
     pub released: Option<Released>,
     /// A boss was engaged; `released` may name the one it replaced.
     pub engaged: Option<u32>,
+    pub engaged_because: Option<Involvement>,
 }
 
 impl Change {
@@ -101,11 +125,13 @@ impl BossFocus {
     }
 
     /// A new snapshot. `current` is the game's current target; `facts_of`
-    /// describes any target in the snapshot.
+    /// describes any target in the snapshot; `involvement_of` says why a boss
+    /// is the local player's fight, or `None` if it is not.
     pub fn observe(
         &mut self,
         current: Option<u32>,
         facts_of: impl Fn(u32) -> Option<TargetFacts>,
+        involvement_of: impl Fn(u32) -> Option<Involvement>,
         now: Instant,
     ) -> Change {
         let mut change = Change::default();
@@ -116,6 +142,7 @@ impl BossFocus {
                 None => Some(Release::Gone),
                 Some(facts) if !facts.is_boss => Some(Release::NoLongerBoss),
                 Some(facts) if facts.killed() => Some(Release::Died),
+                Some(_) if involvement_of(id).is_none() => Some(Release::NotYourFight),
                 Some(facts) => {
                     if facts.duration_secs > focused.duration_secs + NEW_HIT_SECS {
                         focused.duration_secs = facts.duration_secs;
@@ -132,8 +159,9 @@ impl BossFocus {
 
         let candidate = current
             .and_then(&facts_of)
-            .filter(|facts| facts.is_boss && !facts.killed() && Some(facts.id) != self.focused());
-        if let Some(facts) = candidate.filter(|facts| self.may_engage(facts)) {
+            .filter(|facts| facts.is_boss && !facts.killed() && Some(facts.id) != self.focused())
+            .and_then(|facts| involvement_of(facts.id).map(|why| (facts, why)));
+        if let Some((facts, why)) = candidate.filter(|(facts, _)| self.may_engage(facts)) {
             if let Some(replaced) = self.focused {
                 self.release(Release::DifferentBoss, replaced.duration_secs, &mut change);
             }
@@ -143,6 +171,7 @@ impl BossFocus {
                 last_hit_at: now,
             });
             change.engaged = Some(facts.id);
+            change.engaged_because = Some(why);
         }
         change
     }
@@ -189,14 +218,17 @@ impl BossFocus {
         let Some(focused) = self.focused.take() else {
             return;
         };
-        self.finished.retain(|finished| finished.id != focused.id);
-        self.finished.push_back(Finished {
-            id: focused.id,
-            died: reason == Release::Died,
-            duration_secs,
-        });
-        if self.finished.len() > REMEMBERED_BOSSES {
-            self.finished.pop_front();
+        // Not remembered: it was never the player's fight, and may become it.
+        if reason != Release::NotYourFight {
+            self.finished.retain(|finished| finished.id != focused.id);
+            self.finished.push_back(Finished {
+                id: focused.id,
+                died: reason == Release::Died,
+                duration_secs,
+            });
+            if self.finished.len() > REMEMBERED_BOSSES {
+                self.finished.pop_front();
+            }
         }
         change.released = Some(Released { id: focused.id, reason });
     }
@@ -224,7 +256,17 @@ mod tests {
         }
 
         fn observe(&self, focus: &mut BossFocus, current: u32, now: Instant) -> Change {
-            focus.observe(Some(current), |id| self.0.get(&id).copied(), now)
+            focus.observe(Some(current), |id| self.0.get(&id).copied(), |_| Some(Involvement::YouHitIt), now)
+        }
+
+        fn observe_involved(
+            &self,
+            focus: &mut BossFocus,
+            current: u32,
+            involved: Option<Involvement>,
+            now: Instant,
+        ) -> Change {
+            focus.observe(Some(current), |id| self.0.get(&id).copied(), |_| involved, now)
         }
     }
 
@@ -377,5 +419,44 @@ mod tests {
         focus.release_all(Release::Reset);
         world.set(BOSS, true, 900, 1.0);
         assert_eq!(world.observe(&mut focus, BOSS, start).engaged, Some(BOSS));
+    }
+
+    #[test]
+    fn a_boss_nobody_involved_you_in_is_not_engaged() {
+        let mut world = World::default();
+        world.set(BOSS, true, 900, 3.0);
+        let mut focus = BossFocus::default();
+
+        let change = world.observe_involved(&mut focus, BOSS, None, Instant::now());
+
+        assert!(!change.any());
+    }
+
+    #[test]
+    fn the_reason_for_engaging_is_reported() {
+        for why in [Involvement::YouHitIt, Involvement::ItHitYou, Involvement::Unidentified] {
+            let mut world = World::default();
+            world.set(BOSS, true, 900, 3.0);
+            let mut focus = BossFocus::default();
+
+            let change = world.observe_involved(&mut focus, BOSS, Some(why), Instant::now());
+
+            assert_eq!(change.engaged_because, Some(why));
+        }
+    }
+
+    #[test]
+    fn losing_your_involvement_releases_the_boss_and_a_later_hit_engages_it_again() {
+        let start = Instant::now();
+        let mut world = World::default();
+        world.set(BOSS, true, 900, 3.0);
+        let mut focus = BossFocus::default();
+        world.observe_involved(&mut focus, BOSS, Some(Involvement::Unidentified), start);
+
+        let change = world.observe_involved(&mut focus, BOSS, None, start);
+        assert_eq!(change.released, Some(Released { id: BOSS, reason: Release::NotYourFight }));
+
+        let change = world.observe_involved(&mut focus, BOSS, Some(Involvement::YouHitIt), start);
+        assert_eq!(change.engaged, Some(BOSS), "not remembered as finished");
     }
 }

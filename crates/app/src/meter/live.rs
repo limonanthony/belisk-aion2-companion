@@ -4,8 +4,8 @@
 use aether_core::models::combat::{CombatSnapshot, PlayerOverviewStat, TargetInfo};
 use gpui::SharedString;
 
-use super::format;
-use super::game_data::{self, PlayerClass};
+use crate::format;
+use crate::game_data::{self, PlayerClass};
 use super::settings::{OverlaySettings, PctMode};
 use super::shades::ShadeBook;
 

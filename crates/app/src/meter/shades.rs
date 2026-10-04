@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use super::game_data::PlayerClass;
+use crate::game_data::PlayerClass;
 
 /// HSL lightness per step.
 const STEP: f32 = 0.10;
@@ -48,7 +48,7 @@ impl ShadeBook {
     /// The player's colour; the first call for a player fixes their shade.
     pub fn colour(&mut self, class: PlayerClass, actor_id: u32, actor_name: &str) -> u32 {
         let seen = &mut self.seen_per_class[class as usize];
-        let mut next = || {
+        let next = || {
             let order = *seen;
             *seen += 1;
             order
@@ -64,6 +64,13 @@ impl ShadeBook {
             order
         };
         shade(class, order)
+    }
+
+    /// The colour [`Self::colour`] gave the player, without giving one to a
+    /// player the meter has not drawn.
+    pub fn known(&self, class: PlayerClass, actor_id: u32, actor_name: &str) -> Option<u32> {
+        let by_name = (!actor_name.is_empty()).then(|| self.by_name.get(actor_name)).flatten();
+        by_name.or_else(|| self.by_id.get(&actor_id)).map(|&order| shade(class, order))
     }
 
     pub fn clear(&mut self) {
@@ -173,6 +180,17 @@ mod tests {
         assert_eq!(book.colour(PlayerClass::Ranger, 2, "Second"), second, "asked first after a rank swap");
         assert_eq!(book.colour(PlayerClass::Ranger, 1, "First"), first);
         assert_eq!(book.colour(PlayerClass::Ranger, 77, "Second"), second, "a new id after a zone change");
+    }
+
+    #[test]
+    fn known_reports_drawn_players_only_and_assigns_nothing() {
+        let mut book = ShadeBook::default();
+        let first = book.colour(PlayerClass::Templar, 9, "First");
+        let unnamed = book.colour(PlayerClass::Templar, 10, "");
+        assert_eq!(book.known(PlayerClass::Templar, 9, "First"), Some(first));
+        assert_eq!(book.known(PlayerClass::Templar, 10, ""), Some(unnamed));
+        assert_eq!(book.known(PlayerClass::Templar, 11, "Other"), None);
+        assert_eq!(book.colour(PlayerClass::Templar, 11, "Other"), shade(PlayerClass::Templar, 2));
     }
 
     #[test]

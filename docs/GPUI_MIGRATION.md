@@ -311,7 +311,10 @@ cleanly. UI fixes from upstream have to be redone by hand.
    (`.aetherpc`, replayed by `capture/recorder.rs::replay_recording`, which needs
    no capture driver). This phase shows whether GPUI handles the overlay
    requirements on Windows.
-3. The other overlays: PvP, detail, history.
+3. The other overlays: PvP, detail, history. **3a done** (branch
+   `phase-3-overlays`: windows, the typing focus exception and the data, with
+   placeholder views; see [Phase 3a results](#phase-3a-results-windows-focus-and-data-for-pvp-detail-and-history));
+   3b draws them from the approved mockups.
 4. Main window, startup gate and settings, with GPUI Kit.
 5. Tray, global hotkeys, single instance, window position memory,
    translations (English and French).
@@ -748,10 +751,26 @@ The game's "current target" is whatever was hit last (by you, or by anyone
 when you are not identified), so in a boss fight with adds it jumped between
 the boss and trash and the automatic board flapped between Session and Target.
 `meter/focus.rs` (`BossFocus`) fixes that. The first snapshot whose current
-target is a live boss **engages** it, and the Target board, its gauge, time,
-pace and the header name then follow *that boss*, from the snapshot's
-per-target overview (`by_target_player_stats`, `target_infos`), whatever is
-hit meanwhile. It is let go when:
+target is a live boss **that is your fight** engages it, and the Target board,
+its gauge, time, pace and the header name then follow *that boss*, from the
+snapshot's per-target overview (`by_target_player_stats`, `target_infos`),
+whatever is hit meanwhile.
+
+"Your fight" (`Involvement`): once the game has named the local player, a
+boss qualifies only if **you hit it** (your row under the boss in
+`by_target_player_stats[boss]`) or **it hit you**. The core records every hit
+as `by_target_player_stats[target][attacker]`, mobs as attackers included, so
+"it hit you" is the boss's id under your own actor id
+(`by_target_player_stats[you][boss]`); that is how a tank or healer who only
+takes hits still engages it. Being merely the fallback "last target" is not
+enough: until you hit something, the core's current target is *anyone's* last
+target, which once put the board on a world boss in a PvP zone that the player
+never touched. Before identification the meter cannot tell, so any boss target
+engages as before; if one was engaged then and, once identified, you have
+neither hit it nor been hit by it, it is released ("not your fight"). A
+second boss takes over only if it also qualifies. A stranger's boss that dies
+gets no summary. The decision is logged with `--debug-log` (reason "you hit
+it" or "it hit you"). It is let go when:
 
 - the boss **dies** (the final summary follows, then the automatic board is
   Session again; a dead boss is never engaged again);
@@ -920,6 +939,295 @@ figures on every added shade over a dark scene) and off screen
 
 No Settings switch for collection and no name-review UI. The Copy report still
 describes the target board.
+
+## Phase 3a results: windows, focus and data for PvP, detail and history
+
+Branch `phase-3-overlays`. Everything the three windows need except their
+look: the placeholder views (`view.rs` in `src/history/`, `src/detail/`,
+`src/pvp/`) are plain lists of the data, so the flow can be seen and tested;
+phase 3b replaces their drawing from `docs/gpui-mockups/approved/{pvp,detail,history}.html`
+and keeps the models.
+
+### Windows (`src/secondary/`)
+
+- **One window per kind**, in a registry (`registry.rs`, `WindowKind::{History,
+  Detail, Pvp}`). Opening a kind that is open **raises it without activating
+  it** (`SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE)`); it does not toggle, since
+  the meter's "…" menu is the only way in and a window can sit behind others.
+  The detail window is also pointed at the new player or board. A window is
+  forgotten when its view is released, however it ends (its ×, or the app
+  quitting, which closes them all).
+- **Same window as the meter's:** `overlay::popup_options` (pop-up, so topmost
+  and tool window, transparent, never shown by GPUI) and `overlay::make_overlay`
+  (frame removed, `WS_POPUP` plus the DWM attributes, `WS_EX_NOACTIVATE`). The
+  window is as large as its card: `overlay::fit_to_children` runs after layout
+  and resizes with `SWP_NOACTIVATE | SWP_NOZORDER`. Header drag is
+  `WindowControlArea::Drag`, with the × outside it, as on the meter.
+- **Placement, first open only (no position memory yet, phase 5):** beside the
+  meter, on the monitor's work area (`placement.rs`, tested): detail to its
+  right, history below it (both as in the Tauri app), PvP to its left; each
+  flips to the opposite side when it does not fit, then is pulled inside the
+  work area. The Tauri app also followed the meter when it moved; this does not.
+- **Lock (Alt+CapsLock) applies to the meter only.** Checked in the Tauri code
+  (`tauri-final`, `plugins/aion2_overlay.rs`): the lock flag was applied to the
+  DPS overlay window, and the PvP window was created with
+  `set_ignore_cursor_events(false)`.
+- **Entry points.** The "…" menu has "Fight history" and "PvP meter" above a
+  separator and the boss corrections. A press on a meter row opens the detail
+  window: on the Target board, that player on the board's target (the engaged
+  boss, else the one being hit); on the Session board, that player's session
+  totals. Rows are not drag areas (the header's name area is), so a click and a
+  drag do not conflict. A locked meter is click-through, so rows are not
+  reachable then. History players open the detail in history mode; PvP rows open
+  it too (a damage-taken row: that player on you; a damage-dealt row: you on that
+  player), as in Aether.
+- **PvP mode** (`DpsMeter::set_pvp_mode`, a core addition that touches no other
+  setting) is on from the moment the PvP window opens until it closes.
+
+### Typing: the one focus exception
+
+The PvP add-to-watch field is the only place an overlay takes keyboard focus
+(`secondary/typing.rs`, used by `pvp/view.rs`).
+
+1. A press on "+" (a click on our window, which is what lets this process call
+   `SetForegroundWindow`) removes `WS_EX_NOACTIVATE` and calls
+   `SetForegroundWindow` **on our own window only**, then focuses the field.
+   GPUI's `Window::activate_window` is not used: it injects an Alt key press with
+   `SendInput`, which is input injection and has no place next to the game.
+2. Enter (adds the name), Escape (cancels), the window losing activation, the
+   field losing focus, or the pointer being away from the window for 400 ms all
+   end the edit: `WS_EX_NOACTIVATE` goes back on and, if the window still holds
+   the foreground, it is hidden and shown again without activation.
+3. **Nothing else is given focus.** Hiding the foreground window makes Windows
+   activate the next window in the z-order (the documented behaviour of
+   `ShowWindow(SW_HIDE)`: "hides the window and activates another window"), and
+   it skips `WS_EX_NOACTIVATE` windows when it chooses ("the system does not
+   bring this window to the foreground when the user minimizes or closes the
+   foreground window"), so our meter is not picked. That is the game, or whatever
+   the player was using. `SetForegroundWindow` is never called on another
+   process's window. The window calls run on the next turn rather than inside a
+   GPUI event handler, because `SetWindowPos` and `ShowWindow` send messages back
+   into GPUI synchronously.
+4. **The request in flight** (added in 3b review). The foreground request runs
+   on the turn after the press, so the edit can stop before it is answered.
+   `typing::Edit` (Idle, Starting, Editing; unit-tested) tracks it: the request
+   is made only while still Starting, and if the edit stopped while it was
+   answered (or the view is gone), focus is given back at once. Closing the
+   window (×) and quitting mid-edit also give it back (`on_release`,
+   `on_app_quit`), with the window handle kept from creation so a failed
+   lookup cannot skip it.
+
+**Not verified:** that Windows really hands focus back to the game. An agent
+run must not take the user's foreground, so this stays a manual check (type a
+name, press Enter, keep playing without clicking the game).
+
+**Text input: a minimal one**, `secondary/text_input.rs`, adapted from GPUI's
+own `examples/input.rs` (Apache-2.0) without selections or mouse dragging:
+typing, IME composition, caret keys, Ctrl+V, Enter, Escape, a 32-character
+limit. GPUI Kit's `Input` was not added now: the Kit is the planned library for
+the main window (phase 4), and pulling it in for one 26 px field would put its
+dependency tree and theme into the overlay build early and then have to be
+restyled to the overlay tokens. When the Kit arrives, the field can be swapped
+without touching the model (`PvpModel::add_name`).
+
+### Data, per window
+
+- **History** (`src/history/`): `list.rs` is the pure part, tested: records newest
+  first (from `DpsMeter::get_history`), each row with target, local time
+  (`when.rs`, Windows time zone rules), main player, named-player count, damage and
+  duration; filters by target and by main player with their record counts, most
+  frequent first ("Unknown" for no main player); a filter nobody has any more falls
+  back to all; "N records" or "n / N records"; a record's players by damage. The
+  model deletes one record or all (`DpsMeter::delete_history_record`,
+  `delete_all_history`) and reloads; a delete-all sets the "Deleted N records.
+  Personal bests are kept." line for four seconds. The window refreshes on
+  `MeterEvent::HistoryUpdated`: the pump in `bridge.rs` calls
+  `secondary::history_updated`, which reaches the open history model. The two-step
+  confirmation is the view's, in 3b.
+- **Detail** (`src/detail/`): `data.rs` builds `DetailData` from a `DetailSource`:
+  - *Target board*: the player on one target, as Aether. Skills sorted by damage
+    with hits, share, min, max, average, the seven hit-type rates (critical,
+    back, front, double, perfect, parry, multi-hit), multi-hit damage and its
+    "2 hits, 3 hits…" breakdown, and the five spec slots; summary (damage, DPS and
+    fight time from the player's own window on the target, hits); the player's
+    buffs and the target's (active first, then by coverage, caster name and
+    class); identity (name, class, short server, combat power). Live: rebuilt from
+    each snapshot, redrawing only when the result differs.
+  - *Session board*: the player's skills **summed per skill code across every
+    mob** (below), with DPS and combat time from the Session board's own row for
+    that player (so the window and the board agree). No target buffs.
+  - *History*: the same figures from the saved record, frozen.
+  Skill and buff names come from `skill_names_en.json`, icons from
+  `assets/game/skills/` (471 files, 9.4 MB, now embedded: `build.rs` lists the
+  folder, `game_data::skill_icon` applies Aether's rule: a six-digit id has its
+  own icon, any other id uses its first four digits). `format.rs` and
+  `game_data.rs` moved from `meter/` to the crate root, since the new windows are
+  their second user.
+- **PvP** (`src/pvp/`): `data.rs`, tested. The watch list: add and remove by
+  name (trimmed, no blanks or repeats), shown in the order added, a name the game
+  has not shown as "Not in range"; **your last attacker is pinned on top, is not
+  removable, and shows once even when also watched** (Aether's rule). Suggestions
+  from the players seen this session (prefix matches first, at most six).
+  Kill stats sort by damage, kills, assists or deaths (3b keeps damage and kills
+  only, as approved), ties falling back to kills,
+  assists, fewer deaths, name. Damage dealt and damage taken come from the
+  snapshot's lists. The watch list and stats are read from the meter every 500
+  ms and redraw only on a change; Clear empties the tally at once. The watch
+  names are not saved (phase 4).
+
+### Session detail: the aggregation and its cost
+
+`engine::session::session_skill_totals(by_target_player_skill_stats, actor, is_mob)`
+in the core (additive, tested): one pass over that player's own tables, adding
+hits, damage, min and max and every special count per skill code, skipping
+targets that are players (PvP damage is not the session's, as on the board). The
+snapshot already carries every target's skill tables, so this adds **nothing to
+the capture or snapshot path**: the app calls it on each snapshot only while a
+detail window is open on a Session source, and the work is at most one hash
+lookup per target the core keeps (512) plus that player's skills. The detail
+model compares the result with the last one and redraws only when it changed.
+
+### Checked
+
+`cargo test --workspace`: core 93 + 1 ignored (new: session skill totals, history
+deletion), app 155 (new: window registry single instance, placement, history list
+filters and deletion, PvP watch list, kill stats, suggestions, detail data for all
+three sources, skill icons, local time).
+
+Off screen (`--features probes`, `--capture <dir> --fixtures`, invented data;
+every window is outside all monitors and `MonitorFromRect` is checked before each
+capture; nothing asks Windows for the foreground):
+
+- `history-01-list` … `history-04-empty`, `detail-01-history` … `detail-04-session`,
+  `pvp-01-lists` … `pvp-04-cleared`.
+- Window style of each: topmost, tool window, non-activating, frameless.
+- Single instance: History opened twice leaves two windows in all (meter + history);
+  Detail opened again is retargeted, still two.
+- Typing, with posted messages to our own window: "Dov" typed, Enter adds the
+  name; Escape cancels; the pointer being away ends an edit within 750 ms; the
+  window style is non-activating, activatable while editing, and non-activating
+  again after.
+- Entry points, with posted mouse messages: the menu's two links and a Session row
+  open their windows.
+
+`--capture <dir> --replay <file>` also opens the detail window on the recording's
+local player on both boards and a history window, printing the figures with names
+masked (`replay-detail-target`, `replay-detail-session`, `replay-history`).
+
+### Not done in 3a
+
+The approved drawing (3b); tabs, popovers, the two-step delete confirmation and
+the "last attacker" tooltip. Settings, saved watch names and window positions
+(phases 4 and 5). Healing and damage taken. Following the meter when it moves.
+
+## Phase 3b results: the approved PvP, detail and history windows
+
+The three placeholder views are replaced by the approved designs
+(`docs/gpui-mockups/approved/{pvp,detail,history}.html`, values in `tokens.md`),
+in plain GPUI and in the language the meter ships: Barlow Semi Condensed with
+tabular figures, no card shadow, the window exactly as large as the card,
+frameless, the window's actions at the top right. Content scale and card
+opacity are the meter's settings (`OverlaySettings::scale`,
+`background_alpha`), as the mockups' controls apply them.
+
+### Shared pieces
+
+- `src/style.rs`: `Scale`, the class-coloured bar (`class_fill`, `track`,
+  `bar`) and the health fill. The meter's view uses the same functions now
+  instead of its own copies.
+- `src/secondary/chrome.rs`: the overlay.css classes as functions — card,
+  header, tool and text buttons (quiet, danger, disabled), chips, section rows,
+  tabs, table head, rank badge, inputs and selects, popover and menu items,
+  empty state, note, footer, a GPUI tooltip in the popover colours, and
+  `scroll_list`.
+- **Scroll thumb.** GPUI draws none, so `scroll_list` paints the approved 3 px
+  thumb from the scroll handle in a `canvas` during paint: scrolling redraws
+  it without another render. The views know their row heights, so whether a
+  list overflows (and reserves the thumb's 8 px) is decided before layout.
+- **Popovers** (history filter dropdown, PvP suggestions) are the window
+  root's own children, drawn over the card. `chrome::Anchor` records where the
+  select or field is in a `canvas` prepaint and asks for one more frame only
+  when it moved; the popover hangs from it. The root fits the window to all of
+  its children, so the window grows while a popover reaches below the card
+  and shrinks back when it closes, as the meter's menu does (captured: 169 →
+  197 → 169 px). No popover shadow: it would be cut at the window edge; the
+  meter's menu has none either.
+- The text field draws only text and caret; the PvP view draws the approved
+  box around it.
+
+### Per window
+
+- **Record times** follow the page (`history/when.rs`, tested at midnight
+  and seven days): "Today 21:42", "Yesterday 22:07", the weekday for two to
+  six days back ("Mon 19:12"), then "3 Oct 20:42"; the history-mode detail
+  line uses the same form. A list left open over midnight keeps the old words
+  until it reloads (a fight saved, a delete).
+- **History**: every state of the page — empty, records, filter dropdown,
+  record opened (its players open the detail in history mode), deleting one
+  and all with the confirmation in the button (reverts after 4 s, the record
+  concerned gets the pending rim), after deleting all (the note fades in over
+  150 ms). The dropdown closes on a press elsewhere (a scrim, as in the meter),
+  on a second press on its select, or 400 ms after the pointer leaves. An
+  opened record adds its players' height to the list instead of being
+  scrolled into a fixed box.
+- **Detail**: nothing selected, live, a skill opened to its twelve figures
+  (multi-hit breakdown as a tooltip on "Multi dmg"), buffs open, history
+  mode, no skill data. The target panel says "Boss buffs" for a boss and
+  "Target buffs" otherwise (`DetailData::target_is_boss`). Lists scroll past
+  eight skills and six buffs.
+- **Detail, Session source** (no mockup): the header line reads "Session ·
+  every target since the last reset" where a target would be, the chip says
+  Live, the figures and skills add every mob since the reset, and only the
+  player buff panel shows — no single target's buffs belong to a session.
+- **PvP**: just opened (with the passive-capture note, which the info button
+  also toggles), kill stats by damage or kills, damage dealt and taken (a row
+  opens the detail; the eye adds the player to the watch list), adding to the
+  watch list with suggestions, the long list scrolling. Only Damage and Kills
+  sort, as approved; `StatsSort` lost Assists and Deaths. Enter takes the
+  suggestion matching the text, else the first suggestion, else the text.
+  Dealt bars now scale to the biggest row, as approved (they were full).
+
+### Colours
+
+A player's class colour is their meter shade wherever the meter has drawn
+them since the reset (`ShadeBook::known`, read through
+`MeterModel::player_colour` / `actor_colour`; nothing is assigned by
+looking): live and Session detail skill bars, buff coverage by caster, PvP
+damage rows. Anyone the meter has not drawn gets the plain class colour. A
+saved fight shades its own players afresh, most damage first
+(`history::record_colours`), so a record's player list and its history-mode
+detail agree. Watch rows use the health colour, kill stats the neutral bar.
+
+### Deviations from the mockups
+
+- Barlow Semi Condensed instead of Bahnschrift (narrower, as in the meter).
+- No popover shadow (see above).
+- History's empty line drops "(Alt+Q)": the GPUI app has no reset shortcut
+  until phase 5.
+- Detail without skill data shows "--" for the fight time: the mockup's
+  target time is not known for a player who never hit it.
+- PvP's "Last attacker" has no tooltip (none is drawn in the mockup either).
+
+### Checked
+
+`cargo test --workspace`: core 93 + 1 ignored, app 163 (new: `ShadeBook::known`,
+dealt bars scaled to the biggest row; after review: the typing edit state, record
+times at midnight and seven days, the mob name left unmasked).
+
+Off screen (`--features probes`, `--capture <dir> --fixtures`), each compared
+side by side with the approved page's dark-scene tile at the same width:
+`history-01-empty` … `history-10-dropdown-grows-window`, `detail-01-empty` …
+`detail-08-session-buffs-open`, `pvp-01-just-opened` … `pvp-08-cleared`. The
+typing, single-instance and entry-point checks of 3a still pass. `--replay`
+writes `replay-detail-target` and `replay-detail-session` for the recording's
+local player, names masked.
+
+### Not done in 3b
+
+Settings, saved watch names and window positions (phases 4 and 5). The
+frames-per-idle-second probe exists for the meter only; the new windows redraw
+on model changes, anchor moves and tweens, but that was read from the code,
+not measured.
 
 ## Effort
 

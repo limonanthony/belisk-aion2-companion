@@ -2,19 +2,28 @@ mod assets;
 mod bridge;
 #[cfg(feature = "probes")]
 mod capture;
+#[cfg(feature = "probes")]
+mod capture_secondary;
 mod cli;
+mod detail;
 #[cfg(feature = "probes")]
 mod fixtures;
 #[cfg(feature = "probes")]
 mod font_probe;
 mod fonts;
+mod format;
+mod game_data;
+mod history;
 mod hotkey;
 mod live_session;
 mod meter;
 mod overlay;
 #[cfg(feature = "probes")]
 mod probe;
+mod pvp;
 mod replay;
+mod secondary;
+mod style;
 
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -108,6 +117,7 @@ fn start(args: Args, cx: &mut App) -> Result<(), String> {
     #[cfg(feature = "probes")]
     let foreground_before_open = probe::foreground_window();
     let window = overlay::open(cx, model.clone(), placement)?;
+    secondary::init(&window, placement, cx)?;
 
     #[cfg(feature = "probes")]
     if let Some(dir) = args.capture.clone() {

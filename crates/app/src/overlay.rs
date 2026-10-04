@@ -17,7 +17,7 @@ use windows::Win32::Graphics::Dwm::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClientRect, GetWindowLongPtrW, GetWindowRect, SetLayeredWindowAttributes,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE, GWL_STYLE,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE, GWL_STYLE, HWND_TOPMOST,
     LWA_ALPHA, SPI_GETCLIENTAREAANIMATION, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
     SWP_NOSIZE, SWP_NOZORDER, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
     WINDOW_STYLE, WS_CAPTION, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT,
@@ -40,48 +40,52 @@ pub enum Placement {
     OffScreen,
 }
 
+/// The window every overlay is: a pop-up (topmost, tool window) with no title
+/// bar, never focused or shown by GPUI itself, so the caller can strip the
+/// frame before it appears.
+pub fn popup_options(width: f32, height: f32) -> WindowOptions {
+    let bounds = Bounds::new(point(px(OVERLAY_MARGIN), px(OVERLAY_MARGIN)), size(px(width), px(height)));
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        titlebar: None,
+        focus: false,
+        show: false,
+        kind: WindowKind::PopUp,
+        is_movable: true,
+        is_resizable: false,
+        is_minimizable: false,
+        window_background: WindowBackgroundAppearance::Transparent,
+        ..Default::default()
+    }
+}
+
+/// Strips the frame and makes the window non-activating: clicking it never
+/// takes focus from the game.
+pub fn make_overlay(hwnd: HWND) {
+    remove_frame(hwnd);
+    update_ex_style(hwnd, |style| style | WS_EX_NOACTIVATE.0);
+}
+
 pub fn open(
     cx: &mut App,
     model: Entity<MeterModel>,
     placement: Placement,
 ) -> Result<WindowHandle<MeterView>, String> {
-    let bounds = Bounds::new(
-        point(px(OVERLAY_MARGIN), px(OVERLAY_MARGIN)),
-        size(px(INITIAL_WIDTH), px(INITIAL_HEIGHT)),
-    );
     let handle = cx
-        .open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: None,
-                focus: false,
-                // Shown below, once the frame is gone, so it never flashes.
-                show: false,
-                kind: WindowKind::PopUp,
-                is_movable: true,
-                is_resizable: false,
-                is_minimizable: false,
-                window_background: WindowBackgroundAppearance::Transparent,
-                ..Default::default()
-            },
-            |_, cx| cx.new(|cx| MeterView::new(model, cx)),
-        )
+        .open_window(popup_options(INITIAL_WIDTH, INITIAL_HEIGHT), |_, cx| cx.new(|cx| MeterView::new(model, cx)))
         .map_err(|error| format!("cannot open the overlay window: {error:#}"))?;
 
     handle
         .update(cx, |_, window, _| -> Result<(), String> {
             let hwnd = hwnd(window)?;
-            remove_frame(hwnd);
-            update_ex_style(hwnd, |style| style | WS_EX_NOACTIVATE.0);
+            make_overlay(hwnd);
             let scale = window.scale_factor();
             let (width, height) = (INITIAL_WIDTH * scale, INITIAL_HEIGHT * scale);
             match placement {
                 Placement::Screen => {
                     let margin = (OVERLAY_MARGIN * scale).round() as i32;
                     place(hwnd, margin, margin, width, height)?;
-                    unsafe {
-                        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-                    }
+                    show_without_activating(hwnd);
                     Ok(())
                 }
                 #[cfg(feature = "probes")]
@@ -90,6 +94,35 @@ pub fn open(
         })
         .map_err(|error| format!("cannot reach the overlay window: {error:#}"))??;
     Ok(handle)
+}
+
+pub fn show_without_activating(hwnd: HWND) {
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    }
+}
+
+/// Puts the window above every non-topmost window and above the other
+/// topmost ones, without activating it.
+pub fn raise_without_activating(hwnd: HWND) {
+    unsafe {
+        let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+}
+
+/// Sizes the window to the content whose children's bounds were just laid
+/// out, when it differs from the window; see [`fit_client_size`].
+pub fn fit_to_children(children: &[Bounds<Pixels>], window: &Window, cx: &mut App) {
+    let wanted = children.iter().fold(size(px(0.), px(0.)), |wanted, child| {
+        size(
+            wanted.width.max(child.origin.x + child.size.width),
+            wanted.height.max(child.origin.y + child.size.height),
+        )
+    });
+    let current = window.viewport_size();
+    if (wanted.width - current.width).abs() >= px(0.5) || (wanted.height - current.height).abs() >= px(0.5) {
+        fit_client_size(window, wanted, cx);
+    }
 }
 
 /// GPUI creates its pop-up with an overlapped style, so Windows gives it a
@@ -121,7 +154,7 @@ fn set_dwm_attribute<T: Copy>(hwnd: HWND, attribute: DWMWINDOWATTRIBUTE, value: 
 }
 
 /// Moves and sizes the window, in device pixels, without activating it.
-fn place(hwnd: HWND, x: i32, y: i32, width: f32, height: f32) -> Result<(), String> {
+pub(crate) fn place(hwnd: HWND, x: i32, y: i32, width: f32, height: f32) -> Result<(), String> {
     unsafe {
         SetWindowPos(
             hwnd,
@@ -228,7 +261,7 @@ pub fn system_animates() -> bool {
     queried.is_err() || enabled.as_bool()
 }
 
-fn update_ex_style(hwnd: HWND, change: impl FnOnce(u32) -> u32) {
+pub(crate) fn update_ex_style(hwnd: HWND, change: impl FnOnce(u32) -> u32) {
     unsafe {
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, change(ex_style(hwnd)) as isize);
         let _ = SetWindowPos(

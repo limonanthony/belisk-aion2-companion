@@ -6,15 +6,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    div, img, linear_color_stop, linear_gradient, prelude::*, px, relative, rgb, rgba, size, svg,
-    Animation, AnimationExt as _, AnyElement, Background, ClipboardItem, Context, Div, ElementId,
-    Entity, FontFeatures, FontWeight, Hsla, IntoElement, Pixels, Render, SharedString, Stateful,
+    div, img, prelude::*, px, relative, rgb, rgba, size, svg,
+    Animation, AnimationExt as _, AnyElement, App, ClipboardItem, Context, Div, ElementId,
+    Entity, FontFeatures, FontWeight, Hsla, IntoElement, Render, SharedString, Stateful,
     Task, Window, WindowControlArea,
 };
 
 use super::board::Board;
 use super::fight::SummaryKind;
-use super::game_data::PlayerClass;
+use crate::game_data::PlayerClass;
 use super::live::{Gauge, Lead, LiveBoard, PaceLine, PlayerRow};
 use super::session_board::SessionBoard;
 use super::model::{BossChoice, Footer, MeterModel, PingQuality};
@@ -23,8 +23,11 @@ use super::settings::{Layout, OverlaySettings};
 use super::shades;
 use super::summary::{BestLine, FightSummary};
 use crate::assets::Icon;
+use crate::detail::DetailSource;
 use crate::fonts::OVERLAY_FAMILY;
 use crate::overlay;
+use crate::secondary;
+use crate::style::{class_fill, track, Scale};
 
 const TEXT: u32 = 0xfff6ecf5;
 const SECONDARY: u32 = 0xfff6ecd1;
@@ -33,7 +36,6 @@ const FAINT: u32 = 0xfff6ec70;
 const INK: u32 = 0x17120d;
 const CARD_RGB: u32 = 0x100e0c;
 const CARD_BORDER: u32 = 0xffecd61a;
-const TRACK: u32 = 0x00000057;
 const SOFT: u32 = 0xfff0e114;
 const HOT: u32 = 0xfff0e121;
 const RANK_BADGE: u32 = 0xfff0e117;
@@ -53,8 +55,6 @@ const CHIP_WARN: u32 = 0xf2c66d21;
 const CHIP_BAD: u32 = 0xf7a8a821;
 const PB_NEW_FILL: u32 = 0xfacc152b;
 const PB_NEW_TEXT: u32 = 0xfde68a;
-const NEUTRAL_FROM: u32 = 0xfff0e10a;
-const NEUTRAL_TO: u32 = 0xfff0e129;
 
 const CARD_WIDTH: f32 = 310.0;
 const CARD_WIDTH_WITH_DAMAGE: f32 = 340.0;
@@ -77,16 +77,6 @@ const EXPAND_FADE: Duration = Duration::from_millis(180);
 
 const WAITING_HINT: &str = "Alt+CapsLock locks and unlocks the meter";
 const UNIDENTIFIED_HINT: &str = "Start before login, or relog via character select";
-
-/// Content pixels at the user's content scale.
-#[derive(Clone, Copy)]
-struct Scale(f32);
-
-impl Scale {
-    fn px(self, value: f32) -> Pixels {
-        px(value * self.0)
-    }
-}
 
 struct RowMotion {
     slot: Tween,
@@ -672,8 +662,12 @@ impl MeterView {
             motion.slot.retarget(slot, now, animate);
             motion.bar.retarget(row.bar, now, animate);
             moving |= motion.slot.is_running(now) || motion.bar.is_running(now);
+            let actor_id = row.actor_id;
             list = list.child(
                 player_row(row, board, motion.bar.value(now), settings, s)
+                    .id(ElementId::NamedInteger("row".into(), u64::from(actor_id)))
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_detail(actor_id, board, cx)))
                     .absolute()
                     .left_0()
                     .right_0()
@@ -685,6 +679,16 @@ impl MeterView {
             window.request_animation_frame();
         }
         list
+    }
+
+    /// The Target board's row opens that player's skills on the board's
+    /// target; the Session board's opens their totals across every mob.
+    fn open_detail(&mut self, actor_id: u32, board: Board, cx: &mut Context<Self>) {
+        let source = match board {
+            Board::Session => DetailSource::Session { actor_id },
+            Board::Target => DetailSource::Target { actor_id, target_id: self.model.read(cx).board_target_id() },
+        };
+        secondary::open_detail(&self.model, source, cx);
     }
 
     fn waiting_card(&self, model: &MeterModel, s: Scale, cx: &Context<Self>) -> Div {
@@ -763,6 +767,26 @@ impl MeterView {
                         }))
                 })
         };
+        let link = |id: &'static str, text: &'static str, open: fn(&Entity<MeterModel>, &mut App)| {
+            div()
+                .id(id)
+                .h(s.px(26.))
+                .px(s.px(8.))
+                .flex()
+                .items_center()
+                .gap(s.px(8.))
+                .rounded(s.px(6.))
+                .text_color(rgba(TEXT))
+                .cursor_pointer()
+                .hover(|item| item.bg(rgba(HOT)))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.close_menu();
+                    open(&this.model, cx);
+                    cx.notify();
+                }))
+                .child(div().flex_none().size(s.px(12.)))
+                .child(div().flex_1().min_w_0().truncate().font_weight(FontWeight::MEDIUM).child(text))
+        };
         div()
             .absolute()
             .top(s.px(MENU_TOP))
@@ -777,6 +801,9 @@ impl MeterView {
             .border_color(rgba(POPOVER_BORDER))
             .bg(rgba(POPOVER))
             .text_size(s.px(12.5))
+            .child(link("menu-history", "Fight history", secondary::open_history))
+            .child(link("menu-pvp", "PvP meter", secondary::open_pvp))
+            .child(div().h(s.px(1.)).mx(s.px(4.)).my(s.px(4.)).bg(rgba(DIVIDER)))
             .when(target.is_none(), |menu| {
                 menu.child(
                     div()
@@ -1368,47 +1395,6 @@ fn gauge_bar(gauge: Option<&Gauge>, fraction: f32, s: Scale) -> Div {
             .text_color(rgba(if gauge.is_some() { MUTED } else { FAINT }))
             .child(gauge.map_or(SharedString::new_static("--"), |gauge| gauge.label.clone())),
     )
-}
-
-/// `colour` is a class colour (or a player's shade of it) as `0xRRGGBB`.
-fn class_fill(colour: Option<u32>) -> Background {
-    match colour {
-        Some(colour) => {
-            let rgb = colour << 8;
-            linear_gradient(
-                90.,
-                linear_color_stop(rgba(rgb | 0x24), 0.),
-                linear_color_stop(rgba(rgb | 0x80), 1.),
-            )
-        }
-        None => linear_gradient(
-            90.,
-            linear_color_stop(rgba(NEUTRAL_FROM), 0.),
-            linear_color_stop(rgba(NEUTRAL_TO), 1.),
-        ),
-    }
-}
-
-/// A soft rectangle that brightens to its leading edge, clipped by the track.
-fn track(fill: Background, length: f32, height: f32, s: Scale) -> Div {
-    div()
-        .relative()
-        .flex_1()
-        .min_w_0()
-        .h(s.px(height))
-        .rounded(s.px(5.))
-        .bg(rgba(TRACK))
-        .overflow_hidden()
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .bottom_0()
-                .left_0()
-                .w(relative(length.clamp(0.0, 1.0)))
-                .rounded(s.px(5.))
-                .bg(fill),
-        )
 }
 
 /// Target board: optional damage, then DPS in bold. Session board: DPS quiet

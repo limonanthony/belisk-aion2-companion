@@ -65,7 +65,7 @@ impl OverlaySettings {
 
     pub fn display_name(&self, name: &str) -> String {
         if self.mask_nicknames {
-            super::format::mask(name)
+            crate::format::mask(name)
         } else {
             name.to_string()
         }

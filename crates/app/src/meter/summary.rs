@@ -6,8 +6,8 @@ use aether_core::models::combat::{CombatSnapshot, PlayerOverviewStat, TargetInfo
 use gpui::SharedString;
 
 use super::fight::SummaryKind;
-use super::format;
-use super::game_data::{self, PlayerClass};
+use crate::format;
+use crate::game_data::{self, PlayerClass};
 use super::live::{self, pace_against, Gauge, TargetView, YouMatch};
 use super::settings::OverlaySettings;
 

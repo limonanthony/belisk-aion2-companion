@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 
-use crate::models::combat::{PlayerOverviewStat, TargetInfo};
+use crate::models::combat::{PlayerOverviewStat, SkillStats, TargetInfo};
 use crate::models::session::{SessionPlayerStat, SessionSummary};
 
 const MIN_WINDOW_SECS: f64 = 1.0;
@@ -181,6 +181,35 @@ fn union_length(windows: &mut [Window]) -> f64 {
         };
     }
     length + open.map_or(0.0, |last| last.end - last.start)
+}
+
+/// One player's skills summed per skill code across every mob target, for the
+/// player detail window on the Session board. The snapshot already holds every
+/// target's skill table (the core keeps at most 512 targets), so this is one
+/// pass over that player's own tables: no new bookkeeping in the hot path, and
+/// the caller runs it only while that window is open.
+pub fn session_skill_totals(
+    skills_by_target: &HashMap<u32, HashMap<u32, HashMap<u32, SkillStats>>>,
+    actor_id: u32,
+    is_mob_target: impl Fn(u32) -> bool,
+) -> HashMap<u32, SkillStats> {
+    let mut totals: HashMap<u32, SkillStats> = HashMap::new();
+    for (target_id, actors) in skills_by_target {
+        let Some(skills) = actors.get(&actor_id).filter(|_| is_mob_target(*target_id)) else {
+            continue;
+        };
+        for (code, stats) in skills {
+            let total = totals.entry(*code).or_default();
+            total.counts += stats.counts;
+            total.total_damage += stats.total_damage;
+            total.min_damage = total.min_damage.min(stats.min_damage);
+            total.max_damage = total.max_damage.max(stats.max_damage);
+            for (kind, count) in &stats.special_counts {
+                *total.special_counts.entry(kind.clone()).or_insert(0) += count;
+            }
+        }
+    }
+    totals
 }
 
 #[cfg(test)]
@@ -414,5 +443,64 @@ mod tests {
         let summary = Fight::new().summary(false, 10);
 
         assert_eq!(summary, SessionSummary::default());
+    }
+
+    fn skill(counts: u32, total: u64, min: u64, max: u64, kinds: &[(&str, u32)]) -> SkillStats {
+        SkillStats {
+            counts,
+            total_damage: total,
+            min_damage: min,
+            max_damage: max,
+            special_counts: kinds.iter().map(|(kind, count)| (kind.to_string(), *count)).collect(),
+        }
+    }
+
+    fn tables(
+        entries: &[(u32, u32, u32, SkillStats)],
+    ) -> HashMap<u32, HashMap<u32, HashMap<u32, SkillStats>>> {
+        let mut tables: HashMap<u32, HashMap<u32, HashMap<u32, SkillStats>>> = HashMap::new();
+        for (target, actor, code, stats) in entries {
+            tables.entry(*target).or_default().entry(*actor).or_default().insert(*code, stats.clone());
+        }
+        tables
+    }
+
+    #[test]
+    fn session_skills_are_summed_per_skill_code_across_targets() {
+        let tables = tables(&[
+            (PACK_A, ME, 7, skill(10, 1_000, 50, 200, &[("CRITICAL", 4)])),
+            (PACK_B, ME, 7, skill(5, 800, 30, 300, &[("CRITICAL", 1), ("BACK", 2)])),
+            (PACK_B, ME, 8, skill(2, 90, 40, 50, &[])),
+            (PACK_A, ALLY, 7, skill(99, 9_999, 1, 999, &[])),
+        ]);
+
+        let totals = session_skill_totals(&tables, ME, |_| true);
+
+        assert_eq!(totals.len(), 2);
+        let summed = &totals[&7];
+        assert_eq!((summed.counts, summed.total_damage), (15, 1_800));
+        assert_eq!((summed.min_damage, summed.max_damage), (30, 300));
+        assert_eq!(summed.special_counts["CRITICAL"], 5);
+        assert_eq!(summed.special_counts["BACK"], 2);
+        assert_eq!(totals[&8].total_damage, 90);
+    }
+
+    #[test]
+    fn session_skills_leave_out_damage_dealt_to_players() {
+        let tables = tables(&[
+            (PACK_A, ME, 7, skill(1, 100, 100, 100, &[])),
+            (PLAYER_TARGET, ME, 7, skill(1, 5_000, 5_000, 5_000, &[])),
+        ]);
+
+        let totals = session_skill_totals(&tables, ME, |target| target != PLAYER_TARGET);
+
+        assert_eq!(totals[&7].total_damage, 100);
+    }
+
+    #[test]
+    fn a_player_who_hit_nothing_has_no_session_skills() {
+        let tables = tables(&[(PACK_A, ALLY, 7, skill(1, 100, 100, 100, &[]))]);
+
+        assert!(session_skill_totals(&tables, ME, |_| true).is_empty());
     }
 }

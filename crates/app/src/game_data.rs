@@ -7,9 +7,9 @@ use std::sync::LazyLock;
 
 use serde::Deserialize;
 
-const SERVERS_JSON: &str = include_str!("../../assets/game/data/servers.json");
-const DUNGEONS_JSON: &str = include_str!("../../assets/game/data/dungeons.json");
-const SKILLS_JSON: &str = include_str!("../../assets/game/data/skill_names_en.json");
+const SERVERS_JSON: &str = include_str!("../assets/game/data/servers.json");
+const DUNGEONS_JSON: &str = include_str!("../assets/game/data/dungeons.json");
+const SKILLS_JSON: &str = include_str!("../assets/game/data/skill_names_en.json");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlayerClass {
@@ -139,9 +139,10 @@ pub fn dungeon_of(mob_code: u32) -> Option<&'static str> {
     DUNGEONS_BY_BOSS.get(&mob_code).map(String::as_str)
 }
 
-/// The same lookup as the Tauri overlay's `skillName`: the exact id first,
-/// then the forms the backend normalises skill ids to.
-pub fn skill_name(code: u32) -> String {
+/// The key the bundled tables know a skill under: the exact id first, then the
+/// forms the backend normalises skill ids to. The same lookup as the Tauri
+/// overlay's `resolveSkillId`.
+fn resolve_skill_id(code: u32) -> String {
     let raw = code.to_string();
     let head = |n: usize| &raw[..raw.len().min(n)];
     let mut candidates = vec![raw.clone(), head(8).to_string()];
@@ -155,10 +156,25 @@ pub fn skill_name(code: u32) -> String {
         candidates.push(format!("{:0<8}", head(6)));
     }
     candidates
-        .iter()
-        .find_map(|candidate| SKILLS.get(candidate))
+        .into_iter()
+        .find(|candidate| SKILLS.contains_key(candidate))
+        .unwrap_or_else(|| head(8).to_string())
+}
+
+pub fn skill_name(code: u32) -> String {
+    SKILLS
+        .get(&resolve_skill_id(code))
         .cloned()
         .unwrap_or_else(|| format!("Skill {code}"))
+}
+
+/// Asset path of a skill or buff icon, when the game data has one: a six-digit
+/// id has its own icon, any other id shares the icon of its first four digits.
+pub fn skill_icon(code: u32) -> Option<String> {
+    let base = resolve_skill_id(code);
+    let file = if base.len() == 6 { base } else { base[..base.len().min(4)].to_string() };
+    let path = format!("skills/{file}.png");
+    crate::assets::has(&path).then_some(path)
 }
 
 #[cfg(test)]
@@ -189,5 +205,12 @@ mod tests {
         assert_eq!(dungeon_of(2300243), Some("Azure Breath Island · Hard"));
         assert_eq!(skill_name(100001), "Basic Attack");
         assert_eq!(skill_name(4_000_000), "Skill 4000000");
+    }
+
+    #[test]
+    fn skill_icons_follow_the_six_or_four_digit_rule_and_must_exist() {
+        assert_eq!(skill_icon(11_020_150).as_deref(), Some("skills/1102.png"));
+        assert_eq!(skill_icon(100_010).as_deref(), Some("skills/100010.png"));
+        assert_eq!(skill_icon(4_000_000), None);
     }
 }

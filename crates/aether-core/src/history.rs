@@ -271,3 +271,89 @@ impl HistoryStore {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::models::session::SessionSummary;
+
+    use super::*;
+
+    fn fight_on(targets: &[u32]) -> CombatSnapshot {
+        let player = |damage: u64| PlayerOverviewStat {
+            actor_id: 1,
+            actor_name: "Me".to_string(),
+            actor_server_id: String::new(),
+            actor_class: String::new(),
+            combat_power: None,
+            counts: 1,
+            total_damage: damage,
+            min_damage: 1,
+            max_damage: 1,
+            special_counts: HashMap::new(),
+            dps: 1.0,
+            damage_share: 1.0,
+            damage_contribution: 1.0,
+        };
+        CombatSnapshot {
+            total_damage: 0,
+            by_target_player_skill_stats: HashMap::new(),
+            by_target_player_stats: targets
+                .iter()
+                .map(|target| (*target, HashMap::from([(1, player(HISTORY_THRESHOLD + 1))])))
+                .collect(),
+            use_buffs_by_target: HashMap::new(),
+            combat_infos: CombatInfos {
+                actor_infos: HashMap::new(),
+                target_infos: HashMap::new(),
+                main_actor_id: Some(1),
+                main_actor_name: Some("Me".to_string()),
+                last_target_by_main_actor: None,
+                last_target: None,
+                time_now: 0.0,
+            },
+            last_target_info: None,
+            last_target_all_players_overview_stats: Vec::new(),
+            main_actor_received_player_overview_stats: Vec::new(),
+            main_actor_dealt_player_overview_stats: Vec::new(),
+            session: SessionSummary::default(),
+        }
+    }
+
+    fn ids(store: &HistoryStore) -> Vec<String> {
+        let mut ids: Vec<String> = store.get_records().into_iter().map(|record| record.id).collect();
+        ids.sort();
+        ids
+    }
+
+    #[test]
+    fn a_fight_under_the_threshold_on_every_target_is_not_saved() {
+        let store = HistoryStore::new();
+        let mut small = fight_on(&[1]);
+        small.by_target_player_stats.get_mut(&1).unwrap().get_mut(&1).unwrap().total_damage = HISTORY_THRESHOLD;
+
+        assert!(store.save_and_clear(small).is_empty());
+        assert!(store.get_records().is_empty());
+    }
+
+    #[test]
+    fn one_record_is_deleted_by_id_and_the_others_stay() {
+        let store = HistoryStore::new();
+        store.save_and_clear(fight_on(&[1, 2, 3]));
+        let doomed = ids(&store).remove(1);
+
+        assert!(store.delete_record(&doomed));
+        assert!(!store.delete_record(&doomed));
+        assert_eq!(ids(&store).len(), 2);
+        assert!(!ids(&store).contains(&doomed));
+    }
+
+    #[test]
+    fn deleting_everything_reports_how_many_went() {
+        let store = HistoryStore::new();
+        store.save_and_clear(fight_on(&[1, 2, 3]));
+
+        assert_eq!(store.clear_all(), 3);
+        assert!(store.get_records().is_empty());
+        assert_eq!(store.clear_all(), 0);
+    }
+}

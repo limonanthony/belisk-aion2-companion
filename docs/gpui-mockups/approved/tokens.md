@@ -173,8 +173,11 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
   this boss once the fight is 10 s old (`good` ahead, `bad` behind, trend
   icon, "−6.8% vs PB"); without a personal best, or before 10 s, the party's
   Damage on this target. Then ping and the Session | Target switch.
-- **Board choice**: Target while a boss is engaged, Session otherwise. The
-  first hit on a boss engages it and the Target board stays on that boss,
+- **Board choice**: Target while a boss is engaged, Session otherwise. A boss
+  is engaged only once you have engaged it yourself: you hit it, or it hit
+  you (before the game has named you, any boss target counts, and it is
+  released again if it turns out not to be yours). The Target board then
+  stays on that boss,
   whatever else is hit, until it dies, another boss is engaged, it goes two
   minutes without a hit, or the meter is reset. (A zone change would release
   it too, but the game does not re-send the player's identity on a zone, so

@@ -6,6 +6,7 @@ use futures::StreamExt;
 use gpui::{App, Entity, Task};
 
 use crate::meter::{MeterModel, ReplayState};
+use crate::secondary;
 
 /// After a replay ends the pipeline still holds packets; the app may exit once
 /// no event has arrived for this long.
@@ -42,6 +43,7 @@ pub fn spawn_pump(
             while let Ok(event) = events.try_recv() {
                 batch.push(event);
             }
+            let saved_a_fight = batch.iter().any(|event| matches!(event, MeterEvent::HistoryUpdated));
 
             let (changed, replay_just_ended, replay_over) = cx.update(|cx| {
                 model.update(cx, |model, cx| {
@@ -59,7 +61,9 @@ pub fn spawn_pump(
                     (changed, replay_over && !replay_was_over, replay_over)
                 })
             });
-
+            if saved_a_fight {
+                cx.update(secondary::history_updated);
+            }
             if quit_when_replay_is_quiet && replay_over && (changed || replay_just_ended) {
                 quit_timer = Some(cx.spawn(async move |cx| {
                     cx.background_executor().timer(QUIET_AFTER_REPLAY).await;

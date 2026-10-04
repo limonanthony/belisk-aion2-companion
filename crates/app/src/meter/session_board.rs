@@ -5,7 +5,7 @@ use aether_core::models::combat::CombatSnapshot;
 use aether_core::models::session::SessionPlayerStat;
 use gpui::SharedString;
 
-use super::format;
+use crate::format;
 use super::live::{find_you, player_row, visible_indexes, Lead, PlayerRow, RowFacts};
 use super::settings::OverlaySettings;
 use super::shades::ShadeBook;

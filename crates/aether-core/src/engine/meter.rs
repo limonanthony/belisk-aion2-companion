@@ -379,6 +379,11 @@ impl DpsMeter {
         self.config.read().unwrap().clone()
     }
 
+    /// Turns PvP tracking on or off without touching any other setting.
+    pub fn set_pvp_mode(&self, on: bool) {
+        self.config.write().unwrap().pvp_mode_on = on;
+    }
+
     pub fn start_dps_meter(&self) -> Result<(), String> {
         self.start(true)
     }

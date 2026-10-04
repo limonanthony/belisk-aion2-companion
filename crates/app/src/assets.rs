@@ -23,6 +23,20 @@ pub enum Icon {
     Signal,
     TrendingDown,
     TrendingUp,
+    ArrowDown,
+    ChevronDown,
+    ChevronRight,
+    ChevronUp,
+    Clock,
+    External,
+    Eye,
+    Heart,
+    History,
+    Info,
+    Plus,
+    Swords,
+    Trash,
+    User,
 }
 
 impl Icon {
@@ -42,9 +56,26 @@ impl Icon {
             Self::Signal => "icons/signal-high.svg",
             Self::TrendingDown => "icons/trending-down.svg",
             Self::TrendingUp => "icons/trending-up.svg",
+            Self::ArrowDown => "icons/arrow-down.svg",
+            Self::ChevronDown => "icons/chevron-down.svg",
+            Self::ChevronRight => "icons/chevron-right.svg",
+            Self::ChevronUp => "icons/chevron-up.svg",
+            Self::Clock => "icons/clock.svg",
+            Self::External => "icons/external-link.svg",
+            Self::Eye => "icons/eye.svg",
+            Self::Heart => "icons/heart.svg",
+            Self::History => "icons/history.svg",
+            Self::Info => "icons/info.svg",
+            Self::Plus => "icons/plus.svg",
+            Self::Swords => "icons/swords.svg",
+            Self::Trash => "icons/trash-2.svg",
+            Self::User => "icons/user.svg",
         }
     }
 }
+
+/// The game's combat power mark, shown beside a player's combat power.
+pub const COMBAT_POWER: &str = "game/combat-power.png";
 
 macro_rules! embedded {
     ($($path:literal => $file:literal),* $(,)?) => {
@@ -67,6 +98,20 @@ static ASSETS: &[(&str, &[u8])] = embedded! {
     "icons/signal-high.svg" => "../assets/icons/signal-high.svg",
     "icons/trending-down.svg" => "../assets/icons/trending-down.svg",
     "icons/trending-up.svg" => "../assets/icons/trending-up.svg",
+    "icons/arrow-down.svg" => "../assets/icons/arrow-down.svg",
+    "icons/chevron-down.svg" => "../assets/icons/chevron-down.svg",
+    "icons/chevron-right.svg" => "../assets/icons/chevron-right.svg",
+    "icons/chevron-up.svg" => "../assets/icons/chevron-up.svg",
+    "icons/clock.svg" => "../assets/icons/clock.svg",
+    "icons/external-link.svg" => "../assets/icons/external-link.svg",
+    "icons/eye.svg" => "../assets/icons/eye.svg",
+    "icons/heart.svg" => "../assets/icons/heart.svg",
+    "icons/history.svg" => "../assets/icons/history.svg",
+    "icons/info.svg" => "../assets/icons/info.svg",
+    "icons/plus.svg" => "../assets/icons/plus.svg",
+    "icons/swords.svg" => "../assets/icons/swords.svg",
+    "icons/trash-2.svg" => "../assets/icons/trash-2.svg",
+    "icons/user.svg" => "../assets/icons/user.svg",
     "class/assassin.png" => "../assets/game/class/assassin.png",
     "class/chanter.png" => "../assets/game/class/chanter.png",
     "class/cleric.png" => "../assets/game/class/cleric.png",
@@ -76,21 +121,35 @@ static ASSETS: &[(&str, &[u8])] = embedded! {
     "class/ranger.png" => "../assets/game/class/ranger.png",
     "class/sorcerer.png" => "../assets/game/class/sorcerer.png",
     "class/templar.png" => "../assets/game/class/templar.png",
+    "game/combat-power.png" => "../assets/game/profile_power_icon_pc.png",
 };
+
+/// Every PNG in `assets/game/skills`, listed by `build.rs`.
+static SKILL_ICONS: &[(&str, &[u8])] = include!(concat!(env!("OUT_DIR"), "/skill_icons.rs"));
+
+fn find(path: &str) -> Option<&'static [u8]> {
+    ASSETS
+        .iter()
+        .chain(SKILL_ICONS)
+        .find(|(known, _)| *known == path)
+        .map(|(_, bytes)| *bytes)
+}
+
+pub fn has(path: &str) -> bool {
+    find(path).is_some()
+}
 
 pub struct Assets;
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
-        Ok(ASSETS
-            .iter()
-            .find(|(known, _)| *known == path)
-            .map(|(_, bytes)| Cow::Borrowed(*bytes)))
+        Ok(find(path).map(Cow::Borrowed))
     }
 
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
         Ok(ASSETS
             .iter()
+            .chain(SKILL_ICONS)
             .filter(|(known, _)| known.starts_with(path))
             .map(|(known, _)| SharedString::from(*known))
             .collect())
@@ -118,6 +177,20 @@ mod tests {
             Icon::Signal,
             Icon::TrendingDown,
             Icon::TrendingUp,
+            Icon::ArrowDown,
+            Icon::ChevronDown,
+            Icon::ChevronRight,
+            Icon::ChevronUp,
+            Icon::Clock,
+            Icon::External,
+            Icon::Eye,
+            Icon::Heart,
+            Icon::History,
+            Icon::Info,
+            Icon::Plus,
+            Icon::Swords,
+            Icon::Trash,
+            Icon::User,
         ];
         for icon in icons {
             assert!(Assets.load(icon.path()).unwrap().is_some_and(|bytes| !bytes.is_empty()), "{icon:?}");

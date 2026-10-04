@@ -16,7 +16,7 @@ PowerShell 5.1 on the development machine has no `&&` — chain with `;`. Cargo
 runs from the Windows toolchain (`cmd.exe /c "cargo ..."` from WSL).
 
 ```
-cargo test --workspace            # the quality gate: aether-core (87 + 1 ignored) + the app (106), no elevation needed
+cargo test --workspace            # the quality gate: aether-core (93 + 1 ignored) + the app (163), no elevation needed
 cargo build -p aion-2-dps-meter   # add --release for the shipped build
 cargo run -p aion-2-dps-meter -- --replay <file.aetherpc> [--speed 1.0] [--exit-after-replay]   # replay starts no driver, but the default exe still asks for Administrator; --features probes builds run unelevated
 cargo run -p aion-2-dps-meter     # live capture; the exe asks for Administrator, so run it from an ELEVATED terminal. --collect-mobs also records the mobs fought into mobs.json (off by default); --debug-log writes the meter's decisions (board, boss focus, who "you" are) to aether.log as [meter] lines (off by default)
@@ -42,8 +42,8 @@ node scripts/build-npc-names.mjs <kuroukihime mobs.json> [noia2 npc_names.json] 
 |Path|What lives there|
 |---|---|
 |`crates/aether-core/`|The backend, no UI dependency: `capture/` (capture, TCP reassembly, dispatch, opcode parsing, recorder/replay, census), `engine/` (DPS calculation, meter lifecycle), `region.rs`, `preflight.rs`, `events.rs` (`MeterEvent` + `EventSink`, how the core talks to its host), `logger.rs`, `data/` (bundled JSON read by the core), `examples/replay.rs`|
-|`crates/app/`|The GPUI app (package `aion-2-dps-meter`): `src/overlay.rs` (window, Win32 styles, fit-to-card), `src/bridge.rs` (meter events to the UI thread), `src/meter/` (the approved meter view, its model, boss focus, fight summary), `src/hotkey.rs` (Alt+CapsLock), `src/fonts.rs`, `src/assets.rs`, `src/replay.rs`, `src/live_session.rs`, `src/lib.rs` with a three-line `src/main.rs`; behind `probes`: `probe.rs`, `font_probe.rs`, `capture.rs`, `fixtures.rs`|
-|`crates/app/assets/`|`fonts/` (Barlow Semi Condensed, OFL), `icons/` (Lucide SVGs), `game/` (game data used by the UI: `data/` servers, dungeons, skill names; `class/`, `skills/` and `profile_power_icon_pc.png` icons — `skills/` is for the phase 3 detail window)|
+|`crates/app/`|The GPUI app (package `aion-2-dps-meter`): `src/overlay.rs` (window, Win32 styles, fit-to-card), `src/bridge.rs` (meter events to the UI thread), `src/meter/` (the approved meter view, its model, boss focus, fight summary), `src/secondary/` (what the history, detail and PvP windows share: one-window-per-kind registry, placement, the typing focus exception, the text field), `src/history/`, `src/detail/`, `src/pvp/` (each a `model.rs`/`data` part and a `view.rs`), `src/format.rs`, `src/game_data.rs`, `src/hotkey.rs` (Alt+CapsLock), `src/fonts.rs`, `src/assets.rs`, `src/replay.rs`, `src/live_session.rs`, `src/lib.rs` with a three-line `src/main.rs`; behind `probes`: `probe.rs`, `font_probe.rs`, `capture.rs`, `capture_secondary.rs`, `fixtures.rs`|
+|`crates/app/assets/`|`fonts/` (Barlow Semi Condensed, OFL), `icons/` (Lucide SVGs), `game/` (game data used by the UI: `data/` servers, dungeons, skill names; `class/`, `skills/` (embedded by `build.rs`) and `profile_power_icon_pc.png` icons)|
 |`crates/app/windivert/`|`WinDivert.dll` and `WinDivert64.sys`, copied beside the exe by `build.rs`|
 |`crates/app/windows/`|Administrator and unelevated manifests, `icon.ico`, the `.rc` files|
 |`vendor/embed-resource/`|Patched copy so GPUI's own manifest does not collide with ours (see docs/GPUI_MIGRATION.md, "Live capture and the manifest")|

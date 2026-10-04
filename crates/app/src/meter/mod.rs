@@ -2,8 +2,6 @@ mod board;
 mod decisions;
 mod fight;
 mod focus;
-mod format;
-mod game_data;
 mod live;
 mod model;
 mod motion;
@@ -17,8 +15,10 @@ mod view;
 pub use board::Board;
 #[cfg(feature = "probes")]
 pub use model::BossChoice;
+pub use live::target_name;
 pub use model::{MeterModel, ReplayState};
 #[cfg(feature = "probes")]
 pub use settings::{Layout, PctMode};
 pub use settings::OverlaySettings;
+pub use shades::ShadeBook;
 pub use view::MeterView;
