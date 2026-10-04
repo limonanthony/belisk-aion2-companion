@@ -16,10 +16,12 @@ const STEP: f32 = 0.10;
 /// step is used only where white figures on the bar's bright end keep 4.5:1
 /// over a dark scene; cleric and ranger are bright already, so they only
 /// darken, and only the assassin's deep violet takes two lighter steps.
+/// Chanter and fighter skip −2, where neither badge ink reaches 4.5:1.
 fn steps(class: PlayerClass) -> &'static [i8] {
     match class {
         PlayerClass::Assassin => &[1, -1, 2, -2],
         PlayerClass::Cleric | PlayerClass::Ranger => &[-1, -2, -3],
+        PlayerClass::Chanter | PlayerClass::Fighter => &[1, -1, -3, -4],
         _ => &[1, -1, -2, -3],
     }
 }
@@ -56,7 +58,8 @@ impl ShadeBook {
         } else if let Some(&order) = self.by_name.get(actor_name) {
             order
         } else {
-            let order = next();
+            // Named now: keep the shade they had while known only by id.
+            let order = self.by_id.get(&actor_id).copied().unwrap_or_else(next);
             self.by_name.insert(actor_name.to_string(), order);
             order
         };
@@ -68,6 +71,27 @@ impl ShadeBook {
         self.by_id.clear();
         self.seen_per_class = [0; 9];
     }
+}
+
+/// Text colour for a badge filled with `fill`: the dark ink the badges use,
+/// or cream on the darker shades where the ink loses contrast.
+pub fn ink_on(fill: u32) -> u32 {
+    const INK: u32 = 0x17120d;
+    const CREAM: u32 = 0xfff6ec;
+    if contrast(fill, INK) >= contrast(fill, CREAM) { INK } else { CREAM }
+}
+
+fn contrast(a: u32, b: u32) -> f32 {
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+}
+
+fn luminance(rgb: u32) -> f32 {
+    let linear = |shift: u32| {
+        let channel = ((rgb >> shift) & 0xff) as f32 / 255.0;
+        if channel <= 0.04045 { channel / 12.92 } else { ((channel + 0.055) / 1.055).powf(2.4) }
+    };
+    0.2126 * linear(16) + 0.7152 * linear(8) + 0.0722 * linear(0)
 }
 
 /// Moves `rgb`'s HSL lightness by `delta`, keeping hue and saturation.
@@ -152,6 +176,15 @@ mod tests {
     }
 
     #[test]
+    fn a_player_named_later_keeps_the_shade_they_had_by_id() {
+        let mut book = ShadeBook::default();
+        book.colour(PlayerClass::Templar, 9, "First");
+        let unnamed = book.colour(PlayerClass::Templar, 10, "");
+        assert_eq!(book.colour(PlayerClass::Templar, 10, "A"), unnamed);
+        assert_eq!(book.colour(PlayerClass::Templar, 11, "B"), shade(PlayerClass::Templar, 2), "no order was used up");
+    }
+
+    #[test]
     fn unnamed_players_are_told_apart_by_id() {
         let mut book = ShadeBook::default();
         let a = book.colour(PlayerClass::Templar, 10, "");
@@ -202,6 +235,18 @@ mod tests {
                 let text = over(rgb(0xfff6ec), 0.96, end);
                 let ratio = (luminance(text) + 0.05) / (luminance(end) + 0.05);
                 assert!(ratio >= 4.5, "{class:?} shade {order}: {ratio:.2}:1");
+            }
+        }
+    }
+
+    #[test]
+    fn badge_text_is_dark_on_bright_shades_and_cream_on_dark_ones() {
+        assert_eq!(ink_on(PlayerClass::Ranger.rgb()), 0x17120d);
+        assert_eq!(ink_on(shade(PlayerClass::Ranger, 3)), 0xfff6ec);
+        for class in ALL {
+            for order in 0..5 {
+                let fill = shade(class, order);
+                assert!(contrast(fill, ink_on(fill)) >= 4.5, "{class:?} shade {order}");
             }
         }
     }

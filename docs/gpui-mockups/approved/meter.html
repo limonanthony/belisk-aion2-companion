@@ -838,7 +838,7 @@
 
         // Class shades (tokens.md): the n-th player of a class seen since the
         // reset takes a lightness step; the first keeps the class colour.
-        const SHADE_STEPS = { assassin: [1, -1, 2, -2], cleric: [-1, -2, -3], ranger: [-1, -2, -3] };
+        const SHADE_STEPS = { assassin: [1, -1, 2, -2], cleric: [-1, -2, -3], ranger: [-1, -2, -3], chanter: [1, -1, -3, -4], fighter: [1, -1, -3, -4] };
         function shadeRgb(ctx, cls, order) {
           const steps = SHADE_STEPS[cls] || [1, -1, -2, -3];
           const n = order % (steps.length + 1);

@@ -20,6 +20,7 @@ use super::session_board::SessionBoard;
 use super::model::{BossChoice, Footer, MeterModel, PingQuality};
 use super::motion::Tween;
 use super::settings::{Layout, OverlaySettings};
+use super::shades;
 use super::summary::{BestLine, FightSummary};
 use crate::assets::Icon;
 use crate::fonts::OVERLAY_FAMILY;
@@ -1184,7 +1185,7 @@ fn capsule_badge(rank: SharedString, colour: Option<u32>, s: Scale) -> Div {
         .justify_center()
         .rounded(s.px(5.))
         .bg(fill)
-        .text_color(rgb(INK))
+        .text_color(rgb(colour.map_or(INK, shades::ink_on)))
         .text_size(s.px(13.))
         .font_weight(FontWeight::BOLD)
         .child(rank)

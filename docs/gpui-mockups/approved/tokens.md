@@ -96,6 +96,7 @@ order starts over:
 |---|---|
 | Assassin | +1, −1, +2, −2 |
 | Cleric, Ranger | −1, −2, −3 |
+| Chanter, Fighter | +1, −1, −3, −4 (no −2: neither badge ink reaches 4.5:1 there) |
 | All others | +1, −1, −2, −3 |
 
 A lighter step is used only where the white figures on the bar's bright end
@@ -103,7 +104,9 @@ keep 4.5:1 over a dark scene, so the already bright cleric and ranger only
 darken. A player keeps their shade, by name (by id until named), on both
 boards until the meter is reset: it follows the player, not the rank. The
 shade colours the bar gradient and your capsule badge; summary skill bars
-keep your plain class colour. Your row keeps its cream rim.
+keep your plain class colour. Your row keeps its cream rim. The capsule
+badge's number is `#17120d` ink, or cream `rgb(255, 246, 236)` on the darker
+shades where the ink would fall below 4.5:1.
 
 ## Shape
 
