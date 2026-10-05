@@ -82,8 +82,7 @@ service when the meter closes; a restart clears it for certain.
 LICENCE AND SOURCE
 ------------------
 AION 2 DPS Meter is free software under the GNU General Public License,
-version 3 (LICENSE.txt). The complete source code of this build is in
-source\aion-2-dps-meter-{version}-source.zip.
+version 3 (LICENSE.txt). {source_statement}
 
 It builds on Aether (Helveticxa), NOIA2 (ZDYoung0519) and data from
 Kuroukihime/AIon2-Dps-Meter. Licences of everything bundled are listed in

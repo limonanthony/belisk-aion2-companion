@@ -6,8 +6,8 @@ use crate::{spdx, Result};
 
 const DIVIDER: &str = "==============================================================================";
 
-pub fn third_party_notices(root: &Path, metadata: &Metadata) -> Result<String> {
-    let mut text = String::from(include_str!("../dist/notices-header.txt"));
+pub fn third_party_notices(root: &Path, metadata: &Metadata, source_statement: &str) -> Result<String> {
+    let mut text = String::from(include_str!("../dist/notices-header.txt")).replace("{source_statement}", source_statement);
     let gpui = metadata.crate_named("gpui-pre")?;
     for (title, path) in [
         ("WinDivert 2.2.2 licence", root.join("crates/app/windivert/LICENSE")),

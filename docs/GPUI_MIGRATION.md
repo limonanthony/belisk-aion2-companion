@@ -96,6 +96,14 @@ full, plus every linked crate and its licence from `cargo metadata`, with
 non-GPL-3.0-compatible ones flagged) and `source/…-source.zip`, a `git archive`
 of HEAD, which is the GPL source offer since there is no public repository.
 
+`cargo xtask dist --no-source [--source-contact "<text>"]` writes the zip
+without `source/` to `target/dist/no-source/`. README.txt and the notices then
+carry a GPL-3.0 section 6(b) written offer instead: the complete corresponding
+source for that version and commit (short hash of HEAD) free on request for at
+least three years from the contact given (default "the person who gave you this
+copy"). The dirty-tree refusal still applies, since the offer names a commit;
+the offer is only honest while that commit is kept and can be handed over.
+
 `WinDivert.dll` is a load-time import of the exe, so it is needed even when
 Npcap does the capturing; only `WinDivert64.sys` is the fallback driver.
 

@@ -24,7 +24,7 @@ cd crates/aether-core; cargo run --example replay -- <file.aetherpc>
 # --features probes adds --overlay-probe, --font-probe and --capture <dir> (--fixtures | --replay <file>):
 # --capture draws the overlay off every monitor and saves PrintWindow images, safe while someone plays
 node scripts/build-npc-names.mjs <kuroukihime mobs.json> [noia2 npc_names.json]   # regenerates npc_names_en.json; plain node, no packages
-cargo xtask dist [--allow-dirty]   # builds the portable zip: target/dist/aion-2-dps-meter-<version>-windows-x64.zip (see docs/GPUI_MIGRATION.md, Distribution). Does not run the exe; refuses on a dirty tree (the source zip is `git archive HEAD`) or a locked exe
+cargo xtask dist [--allow-dirty] [--no-source [--source-contact "<text>"]]   # builds the portable zip: target/dist/aion-2-dps-meter-<version>-windows-x64.zip (see docs/GPUI_MIGRATION.md, Distribution). --no-source omits source/ for a GPL-3.0 §6(b) written offer in README.txt (zip goes to target/dist/no-source/). Does not run the exe; refuses on a dirty tree (source = `git archive HEAD` / the commit the offer names) or a locked exe
 ```
 
 `build.rs` copies `crates/app/windivert/*` beside the exe in `target/<profile>/`

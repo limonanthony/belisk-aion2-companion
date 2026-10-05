@@ -19,8 +19,14 @@ const WINDIVERT_FILES: [(&str, &str); 2] = [
     ("WinDivert64.sys", "8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2"),
 ];
 
+pub enum SourceDelivery {
+    Bundled,
+    WrittenOffer { contact: String },
+}
+
 pub struct Options {
     pub allow_dirty: bool,
+    pub source: SourceDelivery,
 }
 
 pub fn run(root: &Path, options: &Options) -> Result<()> {
@@ -42,15 +48,26 @@ pub fn run(root: &Path, options: &Options) -> Result<()> {
     refuse_profile_path_in_exe(&exe)?;
 
     let dist_directory = metadata.target_directory.join("dist");
-    fs::create_dir_all(&dist_directory)?;
-    let source_archive = dist_directory.join(format!("{PACKAGE}-{version}-source.zip"));
-    archive_head(root, version, &source_archive)?;
+    let (output_directory, source_archive) = match &options.source {
+        SourceDelivery::Bundled => {
+            fs::create_dir_all(&dist_directory)?;
+            let archive = dist_directory.join(format!("{PACKAGE}-{version}-source.zip"));
+            archive_head(root, version, &archive)?;
+            (dist_directory, Some(archive))
+        }
+        SourceDelivery::WrittenOffer { .. } => (dist_directory.join("no-source"), None),
+    };
+    fs::create_dir_all(&output_directory)?;
 
-    let readme = include_str!("../dist/README.txt").replace("{version}", version);
+    let commit = String::from_utf8(git(root, &["rev-parse", "--short", "HEAD"])?)?.trim().to_owned();
+    let source_statement = source_statement(&options.source, version, &commit);
+    let readme = include_str!("../dist/README.txt")
+        .replace("{version}", version)
+        .replace("{source_statement}", &source_statement);
     let license = read_text(&root.join("LICENSE"))?;
-    let third_party = notices::third_party_notices(root, &metadata)?;
+    let third_party = notices::third_party_notices(root, &metadata, &source_statement)?;
 
-    let zip_path = dist_directory.join(format!("{PACKAGE}-{version}-windows-x64.zip"));
+    let zip_path = output_directory.join(format!("{PACKAGE}-{version}-windows-x64.zip"));
     let mut zip = ZipWriter::new(File::create(&zip_path)?);
     let mut add = |name: &str, bytes: &[u8], method: CompressionMethod| -> Result<()> {
         zip.start_file(
@@ -67,14 +84,30 @@ pub fn run(root: &Path, options: &Options) -> Result<()> {
     add("README.txt", crlf(&readme).as_bytes(), CompressionMethod::Deflated)?;
     add("LICENSE.txt", crlf(&license).as_bytes(), CompressionMethod::Deflated)?;
     add("THIRD-PARTY-NOTICES.txt", crlf(&third_party).as_bytes(), CompressionMethod::Deflated)?;
-    add(
-        &format!("source/{PACKAGE}-{version}-source.zip"),
-        &fs::read(&source_archive)?,
-        CompressionMethod::Stored,
-    )?;
+    if let Some(source_archive) = source_archive {
+        add(
+            &format!("source/{PACKAGE}-{version}-source.zip"),
+            &fs::read(&source_archive)?,
+            CompressionMethod::Stored,
+        )?;
+    }
     zip.finish()?;
 
     report(&zip_path)
+}
+
+fn source_statement(source: &SourceDelivery, version: &str, commit: &str) -> String {
+    match source {
+        SourceDelivery::Bundled => format!(
+            "The complete source code of this build is in source\\{PACKAGE}-{version}-source.zip."
+        ),
+        SourceDelivery::WrittenOffer { contact } => format!(
+            "The source code is not included in this zip. As section 6(b) of the GPL-3.0 allows, this is a\n\
+             written offer: the complete corresponding source code for this exact build (version {version},\n\
+             commit {commit}) is available free of charge, on request, for at least three years from {contact}.\n\
+             The offer holds for anyone who received this copy."
+        ),
+    }
 }
 
 fn refuse_dirty_tree(root: &Path, options: &Options) -> Result<()> {
@@ -86,12 +119,12 @@ fn refuse_dirty_tree(root: &Path, options: &Options) -> Result<()> {
     if options.allow_dirty {
         println!(
             "warning: --allow-dirty: the working tree has uncommitted changes. The exe is built from them, but the \
-             source zip is `git archive HEAD` and will NOT contain them:\n{changes}"
+             source (the zip, or the commit a written offer names) is HEAD and will NOT contain them:\n{changes}"
         );
         return Ok(());
     }
     Err(format!(
-        "the working tree has uncommitted changes, so the source zip (git archive of HEAD) would not match the \
+        "the working tree has uncommitted changes, so the source (HEAD) would not match the \
          exe built from it. Commit them, or pass --allow-dirty to package anyway:\n{changes}"
     )
     .into())
@@ -254,5 +287,26 @@ mod tests {
             sha256_hex(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+}
+
+#[cfg(test)]
+mod source_statement_tests {
+    use super::{source_statement, SourceDelivery};
+
+    #[test]
+    fn written_offer_names_the_commit_version_and_contact() {
+        let offer = SourceDelivery::WrittenOffer { contact: "the person who gave you this copy".into() };
+        let text = source_statement(&offer, "2.4.0", "276d5e1");
+        assert!(text.contains("commit 276d5e1"));
+        assert!(text.contains("version 2.4.0"));
+        assert!(text.contains("from the person who gave you this copy"));
+        assert!(text.contains("three years"));
+    }
+
+    #[test]
+    fn bundled_statement_points_at_the_source_zip() {
+        let text = source_statement(&SourceDelivery::Bundled, "2.4.0", "276d5e1");
+        assert!(text.contains("source\\aion-2-dps-meter-2.4.0-source.zip"));
     }
 }

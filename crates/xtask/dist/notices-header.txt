@@ -2,8 +2,9 @@ THIRD-PARTY NOTICES
 ===================
 
 AION 2 DPS Meter is licensed under the GNU General Public License, version 3
-(see LICENSE.txt). It includes or links the components below, under their own
-licences.
+(see LICENSE.txt). {source_statement}
+
+It includes or links the components below, under their own licences.
 
 
 PROJECT LINEAGE AND DATA
