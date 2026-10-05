@@ -57,7 +57,7 @@ cargo test --workspace
 
 `--collect-mobs` records the mobs fought into `mobs.json`; `--debug-log` writes
 the meter's decisions to `aether.log`. Both are off by default.
-[CLAUDE.md](./CLAUDE.md) has the layout and the gotchas;
+[AGENTS.md](./AGENTS.md) has the layout and the gotchas;
 [docs/GPUI_MIGRATION.md](./docs/GPUI_MIGRATION.md) the plan and status;
 [FORK.md](./FORK.md) what differs from upstream and why.
 

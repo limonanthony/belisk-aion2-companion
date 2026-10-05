@@ -118,7 +118,7 @@ No meter functionality is gated behind it.
 Packet capture needs Npcap (or the WinDivert fallback) **and Administrator
 rights**. The Tauri app baked `requireAdministrator` into the Windows manifest
 in `src-tauri/build.rs` and was started with `pnpm tauri:dev` from an elevated
-terminal. Current commands are in [CLAUDE.md](./CLAUDE.md); the GPUI exe embeds
+terminal. Current commands are in [AGENTS.md](./AGENTS.md); the GPUI exe embeds
 the same manifest from `crates/app/windows/`.
 
 ## Staying current with upstream
@@ -180,7 +180,7 @@ Server names now fall back to `Server <id>` instead of a hardcoded
 Before the cutover the gates were `pnpm build` and `cd src-tauri && cargo test
 --lib`; `pnpm check` failed on a clean upstream checkout and `pnpm format` was
 never to be run. None of that exists any more. The gate today is
-`cargo test --workspace`, described in [CLAUDE.md](./CLAUDE.md).
+`cargo test --workspace`, described in [AGENTS.md](./AGENTS.md).
 
 ## Gotcha: moving the repository folder
 

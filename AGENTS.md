@@ -1,0 +1,82 @@
+# AION 2 DPS Meter — working notes
+
+A real-time DPS meter for AION 2, aimed at the global servers. A native GPUI
+overlay on a Rust capture/parse/DPS core. Fork of
+[Aether](https://github.com/Helveticxa/Aether-Aion2-DPS-meter-Global), itself a fork of
+[NOIA2](https://github.com/ZDYoung0519/NOIA2) (GPL-3.0). The Tauri + React app
+was removed on 2026-10-04; tag `tauri-final` is its last commit.
+
+[FORK.md](./FORK.md) is the record of what diverges from upstream and why (its
+Tauri-only sections are history). [docs/GPUI_MIGRATION.md](./docs/GPUI_MIGRATION.md)
+holds the scope, plan and per-phase results. Approved designs: `docs/gpui-mockups/approved/`.
+
+## Commands
+
+PowerShell 5.1 on the development machine has no `&&` — chain with `;`. Cargo
+runs from the Windows toolchain (`cmd.exe /c "cargo ..."` from WSL).
+
+```
+cargo test --workspace            # the quality gate: aether-core (93 + 1 ignored) + the app (172) + xtask (5), no elevation needed
+cargo build -p aion-2-dps-meter   # add --release for the shipped build
+cargo run -p aion-2-dps-meter -- --replay <file.aetherpc> [--speed 1.0] [--exit-after-replay]   # replay starts no driver, but the default exe still asks for Administrator; --features probes builds run unelevated
+cargo run -p aion-2-dps-meter     # live capture; the exe asks for Administrator, so run it from an ELEVATED terminal. --collect-mobs also records the mobs fought into mobs.json (off by default); --debug-log writes the meter's decisions (board, boss focus, who "you" are) to aether.log as [meter] lines (off by default)
+cd crates/aether-core; cargo run --example replay -- <file.aetherpc>
+# --features probes adds --overlay-probe, --font-probe and --capture <dir> (--fixtures | --replay <file>):
+# --capture draws the overlay off every monitor and saves PrintWindow images, safe while someone plays
+node scripts/build-npc-names.mjs <kuroukihime mobs.json> [noia2 npc_names.json]   # regenerates npc_names_en.json; plain node, no packages
+cargo xtask dist [--allow-dirty] [--no-source [--source-contact "<text>"]]   # builds the portable zip: target/dist/aion-2-dps-meter-<version>-windows-x64.zip (see docs/GPUI_MIGRATION.md, Distribution). --no-source omits source/ for a GPL-3.0 §6(b) written offer in README.txt (zip goes to target/dist/no-source/). Does not run the exe; refuses on a dirty tree (source = `git archive HEAD` / the commit the offer names) or a locked exe
+```
+
+`build.rs` copies `crates/app/windivert/*` beside the exe in `target/<profile>/`
+(and embeds the manifest and icon), so a fresh `cargo run` finds `WinDivert.dll`.
+
+## Conventions
+
+- **Comments and logs in English**, everywhere.
+- Keep core diffs against upstream **small and anchored**; `git fetch upstream && git merge upstream/main` should stay cheap.
+- Files use **CRLF** with `core.autocrlf=true`. Scripts that rewrite files must preserve CRLF, or the diff becomes a whole-file rewrite.
+- Forward slashes in paths inside Rust strings.
+- Moving the project directory requires `cargo clean` — Cargo bakes absolute paths into `target`.
+
+## Layout
+
+|Path|What lives there|
+|---|---|
+|`crates/aether-core/`|The backend, no UI dependency: `capture/` (capture, TCP reassembly, dispatch, opcode parsing, recorder/replay, census), `engine/` (DPS calculation, meter lifecycle), `region.rs`, `preflight.rs`, `events.rs` (`MeterEvent` + `EventSink`, how the core talks to its host), `logger.rs`, `data/` (bundled JSON read by the core), `examples/replay.rs`|
+|`crates/app/`|The GPUI app (package `aion-2-dps-meter`): `src/overlay.rs` (window, Win32 styles, fit-to-card), `src/bridge.rs` (meter events to the UI thread), `src/meter/` (the approved meter view, its model, boss focus, fight summary), `src/secondary/` (what the history, detail and PvP windows share: one-window-per-kind registry, placement, the typing focus exception, the text field), `src/history/`, `src/detail/`, `src/pvp/` (each a `model.rs`/`data` part and a `view.rs`), `src/format.rs`, `src/game_data.rs`, `src/hotkey.rs` (Alt+CapsLock), `src/fonts.rs`, `src/assets.rs`, `src/replay.rs`, `src/live_session.rs`, `src/lib.rs` with a three-line `src/main.rs`; behind `probes`: `probe.rs`, `font_probe.rs`, `capture.rs`, `capture_secondary.rs`, `fixtures.rs`|
+|`crates/app/assets/`|`fonts/` (Barlow Semi Condensed, OFL), `icons/` (Lucide SVGs), `game/` (game data used by the UI: `data/` servers, dungeons, skill names; `class/`, `skills/` (embedded by `build.rs`) and `profile_power_icon_pc.png` icons)|
+|`crates/app/windivert/`|`WinDivert.dll` and `WinDivert64.sys`, copied beside the exe by `build.rs`|
+|`crates/app/windows/`|Administrator and unelevated manifests, `icon.ico`, the `.rc` files|
+|`vendor/embed-resource/`|Patched copy so GPUI's own manifest does not collide with ours (see docs/GPUI_MIGRATION.md, "Live capture and the manifest")|
+|`scripts/`|`build-npc-names.mjs`, `resize-aion2-skill-icons.py`|
+|`crates/xtask/`|`cargo xtask dist` (alias in `.cargo/config.toml`): static-CRT release build into `target/x86_64-pc-windows-msvc/release/`, exe checks, licence notices, the zip; `dist/` holds the player README and the notices header|
+|`docs/`|Migration plan, design mockups, upstream's protocol notes (`AION2_PACKET_PROTOCOL_ANALYSIS.zh-CN.md`, Chinese)|
+
+## Things that will bite you
+
+- **Elevation.** The exe's manifest demands Administrator (capture needs it); a
+  `probes` build is `asInvoker`. Tests live in the library and run unelevated.
+  Never run the release exe from an agent session: the user may be playing.
+- **Never touch a game's process.** No `OpenProcess` on another program, no
+  `sysinfo` refresh of all processes, no injection, input or hooks. WinDivert
+  is opened only when Npcap cannot capture, and unloaded when the last handle
+  closes. See FORK.md, *Staying clear of anti-cheat*.
+- **WinDivert files must ship.** A release needs `WinDivert.dll` and
+  `WinDivert64.sys` beside the exe; the DLL is imported at load time. They
+  drifted out of a release once while working for whoever built it.
+- **Region profiles are load-bearing.** A server id is used *structurally* to
+  locate fields inside player-info packets; the profile is always `Auto`.
+- **No blocking in the meter's threads.** The core calls `EventSink::emit` on
+  its own threads; the sink must not block. UI work goes through `bridge.rs` to
+  the UI thread, never a window call from the meter thread.
+- **There is no cloud.** Upstream's Supabase/leaderboard code was removed in
+  2.2.0; a merge that brings it back is resolved by dropping it.
+- **English only.** Bundled data carries no Chinese: `npc_names_en.json` is
+  built by `scripts/build-npc-names.mjs` from Kuroukihime's GPL data, and a test
+  fails if a Han character appears in it. Regenerate rather than edit by hand.
+- **Upstream merges.** Changes to paths deleted at the cutover (`src/`,
+  `src-tauri/`, `public/`, frontend tooling) are resolved by keeping them
+  deleted. Core changes follow the phase 1 renames (`src-tauri/src/dps_meter/**`
+  became `crates/aether-core/src/**`).
+- **Never run the release or elevated app, or launch the game, in agent work.**
+  Visual checks go through `--features probes --capture`, which renders off every monitor.

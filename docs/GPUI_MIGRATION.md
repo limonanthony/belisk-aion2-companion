@@ -211,7 +211,7 @@ Measured at `d9f1d98`.
 
 The WinDivert files have gone missing from released installers before, because
 the local copy script and the installer's resource list drifted apart (see
-`CLAUDE.md`). The zip build script has to be checked for this.
+`AGENTS.md`). The zip build script has to be checked for this.
 
 ## Window features the overlays need
 
@@ -305,7 +305,7 @@ the game's process.
 
 ## Rules carried over from Aether
 
-These still apply. See `CLAUDE.md` and `FORK.md` for the details.
+These still apply. See `AGENTS.md` and `FORK.md` for the details.
 
 - Never touch the game's process: no `OpenProcess` on it, no `sysinfo` refresh
   of all processes, no injection, input or hooks.
