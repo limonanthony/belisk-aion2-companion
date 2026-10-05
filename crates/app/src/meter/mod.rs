@@ -17,8 +17,6 @@ pub use board::Board;
 pub use model::BossChoice;
 pub use live::target_name;
 pub use model::{MeterModel, ReplayState};
-#[cfg(feature = "probes")]
-pub use settings::{Layout, PctMode};
-pub use settings::OverlaySettings;
+pub use settings::{Layout, OverlaySettings, PctMode, PLAYERS_SHOWN_RANGE};
 pub use shades::ShadeBook;
-pub use view::MeterView;
+pub use view::{board_width, install_window, window, LockChanged, MeterView};

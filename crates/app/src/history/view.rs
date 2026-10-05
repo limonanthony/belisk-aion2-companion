@@ -15,6 +15,7 @@ use crate::assets::Icon;
 use crate::detail::DetailSource;
 use crate::format;
 use crate::meter::{MeterModel, OverlaySettings};
+use crate::overlay::WindowDrag;
 use crate::secondary::chrome::{self, Anchor, ButtonKind, Look, Scale, FAINT, MUTED, TEXT};
 use crate::secondary;
 use crate::style::{class_fill, track};
@@ -55,6 +56,7 @@ pub struct HistoryView {
     menu_scroll: ScrollHandle,
     target_anchor: Anchor,
     player_anchor: Anchor,
+    drag: WindowDrag,
     /// A capture's window is off screen, so no pointer is ever over it.
     #[cfg(feature = "probes")]
     pointer_held_over: bool,
@@ -83,6 +85,7 @@ impl HistoryView {
             menu_scroll: ScrollHandle::new(),
             target_anchor: Anchor::default(),
             player_anchor: Anchor::default(),
+            drag: WindowDrag::default(),
             #[cfg(feature = "probes")]
             pointer_held_over: false,
             _model: subscription,
@@ -165,6 +168,7 @@ impl Render for HistoryView {
         let header = chrome::header(
             chrome::title(Icon::History, "Fight history", Some(model.list.count_label().into()), s),
             Vec::new(),
+            &self.drag,
             s,
         );
         let records = model.list.visible();
@@ -525,5 +529,9 @@ impl HistoryView {
             (None, false) => self.settle(cx),
         }
         cx.notify();
+    }
+
+    pub fn menu_is_open(&self) -> bool {
+        self.menu.is_some()
     }
 }

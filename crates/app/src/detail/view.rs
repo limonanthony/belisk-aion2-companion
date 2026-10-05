@@ -20,6 +20,7 @@ use crate::assets::{Icon, COMBAT_POWER};
 use crate::format;
 use crate::history;
 use crate::meter::{MeterModel, OverlaySettings};
+use crate::overlay::WindowDrag;
 use crate::secondary::chrome::{self, Look, Scale, Tone, CREAM, FAINT, GOOD, MUTED, SOFT};
 use crate::style::{bar, class_fill, track};
 
@@ -51,6 +52,7 @@ pub struct DetailView {
     skills_scroll: ScrollHandle,
     player_buffs_scroll: ScrollHandle,
     target_buffs_scroll: ScrollHandle,
+    drag: WindowDrag,
     _model: Subscription,
 }
 
@@ -65,6 +67,7 @@ impl DetailView {
             skills_scroll: ScrollHandle::new(),
             player_buffs_scroll: ScrollHandle::new(),
             target_buffs_scroll: ScrollHandle::new(),
+            drag: WindowDrag::default(),
             _model: subscription,
         }
     }
@@ -97,6 +100,7 @@ impl Render for DetailView {
             let header = chrome::header(
                 div().text_size(s.px(14.5)).font_weight(FontWeight::SEMIBOLD).text_color(rgba(FAINT)).child("No player selected"),
                 Vec::new(),
+                &self.drag,
                 s,
             );
             let empty = chrome::empty(
@@ -114,7 +118,7 @@ impl Render for DetailView {
         let none = data.skills.is_empty();
 
         let mut card = chrome::card(WIDTH, look)
-            .child(header(data, &meter.settings, s))
+            .child(header(data, &meter.settings, &self.drag, s))
             .child(sub_line(data, saved_at, s))
             .child(figures(&data.summary, none, s));
         card = if none {
@@ -282,7 +286,7 @@ impl DetailView {
     }
 }
 
-fn header(data: &DetailData, settings: &OverlaySettings, s: Scale) -> Div {
+fn header(data: &DetailData, settings: &OverlaySettings, drag: &WindowDrag, s: Scale) -> Div {
     let identity = &data.identity;
     let who = div()
         .min_w_0()
@@ -319,6 +323,7 @@ fn header(data: &DetailData, settings: &OverlaySettings, s: Scale) -> Div {
     chrome::header(
         div().min_w_0().flex().items_center().gap(s.px(8.)).child(who).children(power),
         vec![chip.into_any_element()],
+        drag,
         s,
     )
 }

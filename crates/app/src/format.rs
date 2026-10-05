@@ -96,6 +96,21 @@ pub fn report_duration(secs: f64) -> String {
     format!("{}m{:02}s", total / 60, total % 60)
 }
 
+/// A file size as the storage summary shows it: "6 KB", "2.1 MB".
+pub fn file_size(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    let size = bytes as f64;
+    if size < KB {
+        format!("{bytes} B")
+    } else if size < KB * KB {
+        format!("{:.0} KB", size / KB)
+    } else if size < KB * KB * KB {
+        format!("{:.1} MB", size / (KB * KB))
+    } else {
+        format!("{:.1} GB", size / (KB * KB * KB))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +176,13 @@ mod tests {
         assert_eq!(memory(800.0).as_deref(), Some("800 MB"));
         assert_eq!(memory(11_468.8).as_deref(), Some("11.2 GB"));
         assert_eq!(memory(0.0), None);
+    }
+
+    #[test]
+    fn file_sizes_pick_the_unit_that_reads_best() {
+        assert_eq!(file_size(0), "0 B");
+        assert_eq!(file_size(6_144), "6 KB");
+        assert_eq!(file_size(2_200_000), "2.1 MB");
+        assert_eq!(file_size(3 * 1024 * 1024 * 1024), "3.0 GB");
     }
 }

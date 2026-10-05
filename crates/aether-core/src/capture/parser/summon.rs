@@ -246,6 +246,20 @@ impl StreamProcessor {
             return false;
         }
 
+        // Your own HP is thousands; an opening packet above the boss
+        // threshold is a big mob, and must not become "you". The connection
+        // settles either way.
+        let claimed = self.own_actor.claim_opening_hp_packet();
+        if claimed
+            && !exceeds_possible_boss_hp(target_hp)
+            && self.data_storage.rebind_main_actor(target_id)
+        {
+            self.logger.info(format!(
+                "[{}] main actor rebound to actor={} from the opening hp packet of a new connection",
+                self.port, target_id
+            ));
+        }
+
         // Mark as possible boss if HP exceeds threshold
         let show_possible_boss = self.config.read().unwrap().show_possible_boss;
         if show_possible_boss && exceeds_possible_boss_hp(target_hp) {

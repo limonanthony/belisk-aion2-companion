@@ -2,25 +2,29 @@
 //! taskbar and Alt+Tab, never activated, click-through while locked, and
 //! exactly as large as the card it shows.
 
+use std::cell::Cell;
 use std::ffi::c_void;
+use std::rc::Rc;
 
 use gpui::{
-    point, px, size, App, AppContext as _, Bounds, Entity, Pixels, Size, Window,
+    canvas, point, px, size, App, AppContext as _, Bounds, DispatchPhase, Div, Entity, InteractiveElement as _,
+    IntoElement, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels, Point, Size, Styled as _, Window,
     WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::Win32::Foundation::{COLORREF, HWND, RECT};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
     DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
     DWMWINDOWATTRIBUTE,
 };
+use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClientRect, GetWindowLongPtrW, GetWindowRect, SetLayeredWindowAttributes,
     SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE, GWL_STYLE, HWND_TOPMOST,
-    LWA_ALPHA, SPI_GETCLIENTAREAANIMATION, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+    LWA_ALPHA, MA_NOACTIVATE, SPI_GETCLIENTAREAANIMATION, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
     SWP_NOSIZE, SWP_NOZORDER, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    WINDOW_STYLE, WS_CAPTION, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT,
+    WINDOW_STYLE, WM_MOUSEACTIVATE, WM_NCDESTROY, WS_CAPTION, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT,
     WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
@@ -30,6 +34,7 @@ use crate::meter::{MeterModel, MeterView};
 const INITIAL_WIDTH: f32 = 310.0;
 const INITIAL_HEIGHT: f32 = 280.0;
 const OVERLAY_MARGIN: f32 = 64.0;
+const NO_CLICK_ACTIVATION_SUBCLASS: usize = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Placement {
@@ -61,9 +66,36 @@ pub fn popup_options(width: f32, height: f32) -> WindowOptions {
 
 /// Strips the frame and makes the window non-activating: clicking it never
 /// takes focus from the game.
-pub fn make_overlay(hwnd: HWND) {
+pub fn make_overlay(hwnd: HWND) -> Result<(), String> {
     remove_frame(hwnd);
     update_ex_style(hwnd, |style| style | WS_EX_NOACTIVATE.0);
+    unsafe { SetWindowSubclass(hwnd, Some(refuse_click_activation), NO_CLICK_ACTIVATION_SUBCLASS, 0) }
+        .as_bool()
+        .then_some(())
+        .ok_or_else(|| "cannot keep the overlay from activating on a click: SetWindowSubclass failed".to_string())
+}
+
+/// GPUI answers `WM_MOUSEACTIVATE` with `MA_ACTIVATE` itself and never asks
+/// `DefWindowProc`, the only place `WS_EX_NOACTIVATE` stops a click from
+/// activating a window. The style is read per message because the typing
+/// focus exception clears it while a field is edited. `MA_NOACTIVATE`, not
+/// `MA_NOACTIVATEANDEAT`: the click still reaches GPUI.
+unsafe extern "system" fn refuse_click_activation(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    subclass: usize,
+    _: usize,
+) -> LRESULT {
+    match message {
+        WM_MOUSEACTIVATE if ex_style(hwnd) & WS_EX_NOACTIVATE.0 != 0 => LRESULT(MA_NOACTIVATE as isize),
+        WM_NCDESTROY => unsafe {
+            let _ = RemoveWindowSubclass(hwnd, Some(refuse_click_activation), subclass);
+            DefSubclassProc(hwnd, message, wparam, lparam)
+        },
+        _ => unsafe { DefSubclassProc(hwnd, message, wparam, lparam) },
+    }
 }
 
 pub fn open(
@@ -78,7 +110,7 @@ pub fn open(
     handle
         .update(cx, |_, window, _| -> Result<(), String> {
             let hwnd = hwnd(window)?;
-            make_overlay(hwnd);
+            make_overlay(hwnd)?;
             let scale = window.scale_factor();
             let (width, height) = (INITIAL_WIDTH * scale, INITIAL_HEIGHT * scale);
             match placement {
@@ -242,6 +274,123 @@ fn set_client_size(hwnd: HWND, width: i32, height: i32) -> Result<(), String> {
     }
 }
 
+/// Where a drag took hold of the window: the pointer's offset from the
+/// window's top left in device pixels, taken once at the press. Kept in
+/// device pixels so a move onto a monitor with another DPI (which changes the
+/// window's scale) does not make the window jump.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Grab {
+    x: i32,
+    y: i32,
+}
+
+impl Grab {
+    /// `position` is the press, in the window's logical pixels.
+    fn at(window: &Window, position: Point<Pixels>) -> Self {
+        Self::at_scale(position, window.scale_factor())
+    }
+
+    fn at_scale(position: Point<Pixels>, scale: f32) -> Self {
+        let (x, y) = device(position, scale);
+        Self { x, y }
+    }
+
+    /// How far the window must move, in device pixels, for the grabbed point
+    /// to be under the pointer at `position` (logical, at `scale`).
+    fn offset(self, position: Point<Pixels>, scale: f32) -> (i32, i32) {
+        let (x, y) = device(position, scale);
+        (x - self.x, y - self.y)
+    }
+}
+
+fn device(position: Point<Pixels>, scale: f32) -> (i32, i32) {
+    ((position.x.as_f32() * scale).round() as i32, (position.y.as_f32() * scale).round() as i32)
+}
+
+/// Moves the window so the grabbed point is under the pointer at `position`
+/// (logical, at the window's current scale), after the current event as in
+/// [`fit_client_size`]. The target is computed now, from the position the
+/// event's coordinates are relative to, so moves that arrive before the
+/// window has caught up do not add up.
+fn drag_to(window: &Window, grab: Grab, position: Point<Pixels>, cx: &mut App) {
+    let (dx, dy) = grab.offset(position, window.scale_factor());
+    if dx == 0 && dy == 0 {
+        return;
+    }
+    let target = hwnd(window).and_then(|hwnd| {
+        let mut rect = RECT::default();
+        unsafe { GetWindowRect(hwnd, &mut rect) }.map_err(|error| format!("GetWindowRect failed: {error}"))?;
+        Ok((hwnd, rect.left + dx, rect.top + dy))
+    });
+    let (hwnd, x, y) = match target {
+        Ok(target) => target,
+        Err(error) => {
+            eprintln!("cannot move the overlay: {error}");
+            return;
+        }
+    };
+    cx.spawn(async move |_| {
+        if let Err(error) = unsafe { SetWindowPos(hwnd, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) } {
+            eprintln!("cannot move the overlay: {error}");
+        }
+    })
+    .detach();
+}
+
+/// Pressing a handle and moving drags the window. Not GPUI's
+/// `WindowControlArea::Drag`: that makes the area non-client, and Windows
+/// reports the pointer crossing between client and non-client area as a
+/// leave, which clears GPUI's hover flag while the pointer stays on the
+/// window. The grab lives from the press to the release, or to a move
+/// without the left button.
+#[derive(Clone, Default)]
+pub struct WindowDrag(Rc<Cell<Option<Grab>>>);
+
+impl WindowDrag {
+    pub fn handle(&self, handle: Div) -> Div {
+        let grab = self.0.clone();
+        handle.on_mouse_down(MouseButton::Left, move |event, window, _| {
+            grab.set(Some(Grab::at(window, event.position)));
+        })
+    }
+
+    pub fn stop(&self) {
+        self.0.set(None);
+    }
+
+    /// Drawn once per window: the window follows the pointer wherever it is
+    /// while the button is held, not only while it is over a handle.
+    pub fn listener(&self) -> impl IntoElement {
+        let grab = self.0.clone();
+        canvas(
+            |_, _, _| {},
+            move |_, _, window, _| {
+                let moved = grab.clone();
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                    if phase != DispatchPhase::Bubble {
+                        return;
+                    }
+                    let Some(from) = moved.get() else {
+                        return;
+                    };
+                    if event.pressed_button == Some(MouseButton::Left) {
+                        drag_to(window, from, event.position, cx);
+                    } else {
+                        moved.set(None);
+                    }
+                });
+                let released = grab.clone();
+                window.on_mouse_event(move |event: &MouseUpEvent, phase, _, _| {
+                    if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
+                        released.set(None);
+                    }
+                });
+            },
+        )
+        .absolute()
+    }
+}
+
 pub fn ex_style(hwnd: HWND) -> u32 {
     unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 }
 }
@@ -354,5 +503,28 @@ pub mod off_screen {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::{point, px};
+
+    use super::Grab;
+
+    #[test]
+    fn a_drag_follows_the_pointer_in_device_pixels() {
+        let grab = Grab::at_scale(point(px(60.), px(20.)), 1.0);
+        assert_eq!(grab.offset(point(px(30.), px(32.)), 1.0), (-30, 12));
+        assert_eq!(grab.offset(point(px(60.), px(20.)), 1.0), (0, 0));
+    }
+
+    #[test]
+    fn a_new_dpi_mid_drag_does_not_move_the_window() {
+        let grab = Grab::at_scale(point(px(60.), px(20.)), 1.0);
+        // The window reached a 150% monitor: the same device point now reads
+        // as 40 x 13.3 logical pixels.
+        assert_eq!(grab.offset(point(px(40.), px(20. / 1.5)), 1.5), (0, 0));
+        assert_eq!(grab.offset(point(px(50.), px(20. / 1.5)), 1.5), (15, 0));
     }
 }

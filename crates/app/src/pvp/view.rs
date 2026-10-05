@@ -62,6 +62,7 @@ pub struct PvpView {
     field: Anchor,
     kills_scroll: ScrollHandle,
     damage_scroll: ScrollHandle,
+    drag: overlay::WindowDrag,
     /// A capture's window is off screen, so no pointer is ever over it.
     #[cfg(feature = "probes")]
     pointer_held_over: bool,
@@ -105,6 +106,7 @@ impl PvpView {
             field: Anchor::default(),
             kills_scroll: ScrollHandle::new(),
             damage_scroll: ScrollHandle::new(),
+            drag: overlay::WindowDrag::default(),
             #[cfg(feature = "probes")]
             pointer_held_over: false,
             _subscriptions: subscriptions,
@@ -234,7 +236,7 @@ impl Render for PvpView {
                 cx.notify();
             }))
             .into_any_element();
-        let header = chrome::header(chrome::title(Icon::Swords, "PvP", None, s), vec![info], s);
+        let header = chrome::header(chrome::title(Icon::Swords, "PvP", None, s), vec![info], &self.drag, s);
 
         let watching = model.watch().len();
         let watch_head = chrome::section(s)

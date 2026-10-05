@@ -153,6 +153,22 @@
       .sel-wrap {
         position: relative;
       }
+
+      /* Reminders: with the master switch off, every row below it dims
+         (labels at 0.5 in app.css, controls at 0.4) and keeps its state. */
+      .row.is-dim .sw,
+      .row.is-dim .sel,
+      .row.is-dim .btn {
+        opacity: 0.4;
+      }
+
+      .sel.is-lead {
+        min-width: 130px;
+      }
+
+      .row-ctl .badge {
+        margin-right: 2px;
+      }
     </style>
   </head>
   <body>
@@ -166,12 +182,14 @@
         <a href="pvp.html">PvP overlay</a>
         <a href="detail.html">Player detail</a>
         <a href="history.html">Fight history</a>
+        <a href="reminders.html">Reminder card</a>
       </nav>
-      <h1>Settings <small>approved, round 3</small></h1>
+      <h1>Settings <small>approved, round 3; Reminders 2026-10-05</small></h1>
       <ul class="rationale">
         <li>Everything kept: overlay look and rows (with a live preview beside them), meter behaviour, the three shortcuts, capture (backend, connection status, recording and replay, log folder), personal bests, language and About. Changes apply at once; there is no Save.</li>
         <li>Rows are a label and one sentence on the left, the control on a stable right edge, in titled groups. Sidebar navigation, shared with Home.</li>
         <li>Same warm near-black, cream primary and status colours as the overlays, in Kit components: Switch, Slider, Select, segmented control, Kbd, Table, Tooltip, Dialog. Values are in <a href="tokens.md">tokens.md</a>.</li>
+        <li>Reminders (approved 2026-10-05) sits after Personal bests: the master switch and how you are reminded, then one switch per event grouped by how often it comes. No preview column; the test button shows the real <a href="reminders.html">reminder card</a>.</li>
       </ul>
     </header>
 
@@ -186,6 +204,15 @@
         <li>Developer tuning stays out: snapshot interval, packet size threshold and the resync delays.</li>
         <li>Clear cache: the exact effect (what is reset, what is kept) is to be confirmed during implementation against the Rust storage; the dialog copy follows that.</li>
         <li>About lists only what the repository grounds: GPL-3.0-only (LICENSE), the fork chain Helveticxa/Aether then ZDYoung0519/NOIA2 (both GPL-3.0-only), Kuroukihime's data (GPL-3.0), GPUI Kit (Apache-2.0) and Lucide (ISC). Npcap is a dependency the user installs; WinDivert is bundled, and no licence text for it is in the repository yet.</li>
+      </ul>
+      <h2>Reminders</h2>
+      <ul>
+        <li><b>Event reminders</b> off: no card and no sound at any event time. Every row under it dims (label and description at 50%, control at 40%) and does not react, but keeps its value; turning reminders back on restores the same choices.</li>
+        <li><b>Remind me</b>: 1, 2, 3 or 5 min before; 1 by default. One lead time for every event.</li>
+        <li><b>Sound</b>: Windows' own Chimes sound (no bundled file), one per card, even when several events share it.</li>
+        <li><b>Show a test reminder</b>: shows the card above the meter now, with the sound if it is on, whatever the event switches say. Because Settings may cover the meter, a good badge "Shown above the meter" appears beside the button and fades after 4 s.</li>
+        <li><b>Events</b>: Shugo Festival, Dimensional Invasion and Rift portals are on by default; the others are listed, off.</li>
+        <li>Times follow this PC's clock. They are the European servers' times (Berlin), so a PC on another time zone would be off by its difference.</li>
       </ul>
       <h2>GPUI Kit notes</h2>
       <ul>
@@ -408,6 +435,61 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
               )
             );
           },
+
+          reminders(ctx, st) {
+            const off = st === "off";
+            const dim = off ? " is-dim" : "";
+            const lead =
+              st === "select"
+                ? `<span class="sel-wrap">${C.sel("1 min before", { open: true, items: ["1 min before", "2 min before", "3 min before", "5 min before"], hot: "2 min before" }).replace('class="sel', 'class="sel is-lead')}</span>`
+                : C.sel("1 min before").replace('class="sel', 'class="sel is-lead');
+            const test = (st === "test" ? C.badge("Shown above the meter", "good", "check") : "") + C.btn("Show a test reminder", { ic: "play" });
+            // [group title, [label, description, on by default]]
+            const EVENTS = [
+              [
+                "Every hour",
+                [
+                  ["Shugo Festival", "At :00. The minigames, with 3 min to join; which games are open shows only in the game.", true],
+                  ["Dimensional Invasion", "At :30. Somewhere in the field, with 3 min to join.", true],
+                ],
+              ],
+              [
+                "Every 3 hours",
+                [
+                  ["Rift portals", "02:00, 05:00, 08:00, 11:00, 14:00, 17:00, 20:00 and 23:00. Altgard, Verteron, Morheim and Eltnen.", true],
+                  ["Watcher Kaira", "01:00, 04:00, 07:00, 10:00, 13:00, 16:00, 19:00 and 22:00. Field boss in Chaotic Lower Reshanta.", false],
+                ],
+              ],
+              [
+                "Weekly",
+                [
+                  ["Artifact Siege", "Monday, Thursday and Saturday at 21:00. Chaotic Lower Reshanta.", false],
+                  ["Abyss field bosses", "Monday, Thursday and Saturday at 21:30. Three Executors in Lower Reshanta, three more bosses in Middle Reshanta.", false],
+                  ["Guardian Lord Nahma", "Friday and Sunday at 21:00. Lv 65, and the Enraged Lv 80.", false],
+                ],
+              ],
+              [
+                "Daily",
+                [
+                  ["Arena of Tactics opens", "11:00 and 19:00, when the 10 vs 10 queue opens (until 14:00 and 21:00).", false],
+                  ["Reward keys refill", "16:00. Shugo Festival and Dimensional Invasion keys.", false],
+                ],
+              ],
+            ];
+            return (
+              head("Reminders", "A reminder before timed events, so you can get there in time. Times follow this PC's clock and are set for the European servers, which run on Berlin time.") +
+              group(
+                "How you are reminded",
+                row("Event reminders", "A small card above the meter before each event switched on below. It goes by itself after 30 s; a click dismisses it.", C.sw(!off)) +
+                  row("Remind me", "How long before the event starts.", lead, dim) +
+                  row("Sound", "Windows' Chimes sound, once per reminder.", C.sw(true), dim) +
+                  row("Test reminder", "Shows a reminder above the meter now, with its sound.", test, dim),
+                true
+              ) +
+              EVENTS.map(([title, list]) => group(title, list.map(([l, d, on]) => row(l, d, C.sw(on), dim)).join(""))).join("") +
+              '<div style="height:28px"></div>'
+            );
+          },
         };
 
         function render(state, ctx) {
@@ -417,8 +499,8 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
             sub === "clear"
               ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true"><h3>Clear the cache?</h3><p>Settings, shortcuts and window positions go back to their defaults. Fight history, personal bests and recordings are kept.</p><div class="dlg-actions">${C.btn("Cancel")}${C.btn("Clear cache", { kind: "danger" })}</div></div></div>`
               : "";
-          const thumb = { overlay: 150, behaviour: 360, capture: 200, about: 280 }[section] || 0;
-          const scroll = { "capture:rec": 300, "capture:replay": 470 }[state] || 0;
+          const thumb = { overlay: 150, behaviour: 360, capture: 200, reminders: 272, about: 280 }[section] || 0;
+          const scroll = { "capture:rec": 300, "capture:replay": 470, "reminders:scrolled": 640 }[state] || 0;
           return ctx.shell(ctx, section, content, {
             meter: { tone: "live", label: `${ctx.t.running} · 12:41` },
             overlayHtml: dialog,
@@ -440,6 +522,11 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
             { id: "bests", title: "Personal bests", sub: "per boss and character" },
             { id: "bests:confirm", title: "Personal bests, resetting", sub: "asks for a second click" },
             { id: "bests:empty", title: "Personal bests, none yet", sub: "first run" },
+            { id: "reminders", title: "Reminders", sub: "defaults: Shugo Festival, Dimensional Invasion and Rift portals on" },
+            { id: "reminders:scrolled", title: "Reminders, scrolled", sub: "weekly and daily events, off by default" },
+            { id: "reminders:off", title: "Reminders off", sub: "every row under the master switch dims and keeps its own state" },
+            { id: "reminders:select", title: "Remind me, open", sub: "1, 2, 3 or 5 min before; 1 by default" },
+            { id: "reminders:test", title: "Test reminder shown", sub: "a note for 4 s, since Settings may cover the meter" },
             { id: "general:lang", title: "General", sub: "language menu open" },
             { id: "about", title: "About", sub: "version, licence, credits, storage" },
             { id: "about:clear", title: "About, clearing the cache", sub: "Kit Dialog" },

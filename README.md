@@ -55,8 +55,9 @@ cargo run -p aion-2-dps-meter -- --replay <file.aetherpc>   # replay a recording
 cargo test --workspace
 ```
 
-`--collect-mobs` records the mobs fought into `mobs.json`; `--debug-log` writes
-the meter's decisions to `aether.log`. Both are off by default.
+Settings (the "..." menu on the meter) has the switches "Collect mob data",
+which records the mobs fought into `mobs.json`, and "Decision log", which
+writes the meter's decisions to `aether.log`. Both are off by default.
 [AGENTS.md](./AGENTS.md) has the layout and the gotchas;
 [docs/GPUI_MIGRATION.md](./docs/GPUI_MIGRATION.md) the plan and status;
 [FORK.md](./FORK.md) what differs from upstream and why.

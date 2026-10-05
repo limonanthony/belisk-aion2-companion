@@ -3,7 +3,11 @@ mod bridge;
 #[cfg(feature = "probes")]
 mod capture;
 #[cfg(feature = "probes")]
+mod capture_reminders;
+#[cfg(feature = "probes")]
 mod capture_secondary;
+#[cfg(feature = "probes")]
+mod capture_settings;
 mod cli;
 mod detail;
 #[cfg(feature = "probes")]
@@ -21,8 +25,11 @@ mod overlay;
 #[cfg(feature = "probes")]
 mod probe;
 mod pvp;
+mod reminders;
 mod replay;
+mod sample;
 mod secondary;
+mod settings;
 mod style;
 
 use std::process::ExitCode;
@@ -35,6 +42,7 @@ use gpui::{App, AppContext as _};
 use cli::Args;
 use meter::{MeterModel, OverlaySettings};
 use overlay::Placement;
+use settings::{AppSettings, Settings};
 
 static FAILED: AtomicBool = AtomicBool::new(false);
 
@@ -75,13 +83,21 @@ fn start(args: Args, cx: &mut App) -> Result<(), String> {
         return font_probe::open(cx, args.capture.clone());
     }
 
+    let (overlay, placement) = overlay_setup(&args);
+    let settings = if args.wants_live() {
+        Settings::load(live_session::data_dir().as_deref())
+    } else {
+        Settings::in_memory(non_live_settings(overlay, args.replay.is_some()))
+    };
+    let initial = settings.get().clone();
+
     let (sink, events) = bridge::channel();
     let sink = Arc::new(sink);
     let mut unavailable = None;
     let meter: Option<Arc<DpsMeter>> = match &args.replay {
         Some(recording) => Some(replay::start(sink, recording, args.speed)?),
         None if args.wants_live() => {
-            let (meter, started) = live_session::start(sink, args.collect_mobs);
+            let (meter, started) = live_session::start(sink, &initial);
             match started {
                 Ok(()) => Some(meter),
                 Err(reason) => {
@@ -102,21 +118,32 @@ fn start(args: Args, cx: &mut App) -> Result<(), String> {
         .detach();
     }
 
-    let (settings, placement) = overlay_setup(&args);
-    let model = cx.new(|_| {
-        let mut model = MeterModel::new(settings, meter);
-        if args.debug_log {
-            model.enable_decision_log();
+    let settings = cx.new(|_| settings);
+    settings::install(&settings, cx);
+    reminders::install(&settings, args.wants_live(), cx);
+    cx.on_app_quit({
+        let settings = settings.clone();
+        move |cx| {
+            settings.update(cx, |settings, _| settings.flush());
+            async {}
         }
+    })
+    .detach();
+
+    let meter_for_settings = meter.clone();
+    let model = cx.new(|_| {
+        let mut model = MeterModel::new(initial.overlay.clone(), meter);
         if let Some(reason) = unavailable {
             model.set_unavailable(reason);
         }
         model
     });
+    settings::connect(&settings, &model, meter_for_settings, cx);
     bridge::spawn_pump(model.clone(), events, args.exit_after_replay, cx).detach();
     #[cfg(feature = "probes")]
     let foreground_before_open = probe::foreground_window();
     let window = overlay::open(cx, model.clone(), placement)?;
+    meter::install_window(window, cx);
     secondary::init(&window, placement, cx)?;
 
     #[cfg(feature = "probes")]
@@ -143,6 +170,18 @@ fn start(args: Args, cx: &mut App) -> Result<(), String> {
         probe::run(window, foreground_before_open, args.replay.is_some(), cx);
     }
     Ok(())
+}
+
+/// Settings for runs that never read the user's file. A replay starts from
+/// the options `replay::start` gives the core, so the first change made in
+/// Settings does not overwrite them with the live defaults.
+fn non_live_settings(overlay: OverlaySettings, replaying: bool) -> AppSettings {
+    let mut settings = AppSettings { overlay, ..AppSettings::default() };
+    if replaying {
+        settings.behaviour.end_fight_after_secs = 0;
+        settings.capture.record_unfamiliar_servers = false;
+    }
+    settings
 }
 
 #[cfg(not(feature = "probes"))]

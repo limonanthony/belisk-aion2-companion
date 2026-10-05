@@ -5,6 +5,8 @@ pub enum WindowKind {
     History,
     Detail,
     Pvp,
+    Settings,
+    Reminder,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

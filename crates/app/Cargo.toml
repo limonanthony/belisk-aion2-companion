@@ -26,16 +26,23 @@ windows = { version = "0.61.3", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
     "Win32_System_Time",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
 image = { version = "0.25", default-features = false, features = ["png"], optional = true }
 
-# GPUI is pinned to the exact snapshot GPUI Kit 0.7.0 pins (gpui-component
-# requires `gpui-pre = "=0.3.7"`), so phase 4 can add `gpui-kit` without two
-# GPUI copies in the tree. Bump these together with the Kit.
+# GPUI is pinned to the exact snapshot (`gpui-pre =
+# "=0.3.7"`) that GPUI Kit 0.7.0 pinned; the Kit is not used. Bump both
+# crates together.
 gpui = { package = "gpui-pre", version = "=0.3.7" }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7" }
+
+[dev-dependencies]
+# The Settings window's keyboard and focus tests drive the real view in
+# GPUI's test platform.
+gpui = { package = "gpui-pre", version = "=0.3.7", features = ["test-support"] }
 
 [features]
 # `--overlay-probe`, `--font-probe` and `--capture`: checks of the overlay

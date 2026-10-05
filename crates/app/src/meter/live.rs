@@ -9,7 +9,6 @@ use crate::game_data::{self, PlayerClass};
 use super::settings::{OverlaySettings, PctMode};
 use super::shades::ShadeBook;
 
-const MAX_ROWS: usize = 10;
 /// Someone contributing 1% still gets a readable sliver of their colour.
 const BAR_FLOOR: f32 = 0.06;
 const PACE_MIN_FIGHT_SECS: f64 = 10.0;
@@ -201,7 +200,7 @@ pub fn is_identified(snapshot: &CombatSnapshot) -> bool {
 /// Whether your row is on a board and how it was matched, for the diagnostic
 /// log. Row numbers and counts are left out so the text changes only when the
 /// answer does.
-pub fn you_status(snapshot: &CombatSnapshot, found: Option<FoundYou>, count: usize) -> String {
+pub fn you_status(snapshot: &CombatSnapshot, found: Option<FoundYou>, count: usize, cap: usize) -> String {
     let infos = &snapshot.combat_infos;
     match found {
         Some(found) => format!(
@@ -210,7 +209,7 @@ pub fn you_status(snapshot: &CombatSnapshot, found: Option<FoundYou>, count: usi
                 YouMatch::Name => "name",
                 YouMatch::UnnamedId => "actor id (the row has no name)",
             },
-            if found.index >= MAX_ROWS { "ranked below the row cap, so it takes the last row" } else { "within the row cap" }
+            if found.index >= cap { "ranked below the row cap, so it takes the last row" } else { "within the row cap" }
         ),
         None if !is_identified(snapshot) => {
             "not identified: the game has not named the local player, so no row is marked".to_string()
@@ -251,7 +250,7 @@ impl LiveBoard {
             .map(|found| found.index);
         let top_damage = ranked[0].total_damage.max(1) as f32;
 
-        let rows: Vec<PlayerRow> = visible_indexes(ranked.len(), you)
+        let rows: Vec<PlayerRow> = visible_indexes(ranked.len(), you, settings.players_shown)
             .into_iter()
             .map(|index| {
                 let facts = RowFacts::of_target_player(ranked[index], settings.pct_mode);
@@ -326,12 +325,12 @@ impl<'a> RowFacts<'a> {
     }
 }
 
-/// Which of `count` ranked players get a row: the first `MAX_ROWS`, with
-/// your row taking the last place when you rank below them.
-pub fn visible_indexes(count: usize, you: Option<usize>) -> Vec<usize> {
-    let mut shown: Vec<usize> = (0..count.min(MAX_ROWS)).collect();
-    if let Some(you) = you.filter(|&you| you >= MAX_ROWS) {
-        shown[MAX_ROWS - 1] = you;
+/// Which of `count` ranked players get a row: the first `cap`, with your row
+/// taking the last place when you rank below them.
+pub fn visible_indexes(count: usize, you: Option<usize>, cap: usize) -> Vec<usize> {
+    let mut shown: Vec<usize> = (0..count.min(cap)).collect();
+    if let Some(you) = you.filter(|&you| you >= cap) {
+        shown[cap - 1] = you;
     }
     shown
 }
@@ -410,4 +409,22 @@ pub fn battle_report(snapshot: &CombatSnapshot, target_id: u32) -> Option<String
     }
     report.push_str("\n— AION 2 DPS Meter");
     Some(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn your_row_takes_the_last_place_when_you_rank_below_the_cap() {
+        assert_eq!(visible_indexes(15, Some(13), 12), vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13]);
+        assert_eq!(visible_indexes(15, Some(3), 12), (0..12).collect::<Vec<_>>());
+        assert_eq!(visible_indexes(4, Some(2), 12), vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn the_cap_is_the_players_shown_setting() {
+        assert_eq!(visible_indexes(20, None, 5).len(), 5);
+        assert_eq!(visible_indexes(20, None, 20).len(), 20);
+    }
 }

@@ -40,21 +40,27 @@ CONTROLS
   go through it to the game.
 - Move the pointer over the header to see the buttons: reset, capsule, lock,
   copy, the "..." menu and close.
-- The "..." menu holds fight history, the PvP meter and the boss corrections
-  ("Treat as a boss" / "Not a boss").
+- The "..." menu holds fight history, the PvP meter, Settings and the boss
+  corrections ("Treat as a boss" / "Not a boss").
 - The Session / Target switch in the footer chooses between everything you
   fought since the last reset and the single target (a boss) you are on.
   Normally it switches by itself. A pin marks a manual choice; click the
   active side again to go back to automatic.
 
 
-LAUNCH OPTIONS
---------------
-Start the exe from a terminal, or from a shortcut with the option added to
-its Target, to use these. Both are off by default.
-
-  --debug-log     write the meter's decisions to the log file
-  --collect-mobs  record the monsters you fight into mobs.json
+SETTINGS
+--------
+The "..." menu opens Settings: how the overlay looks, what the meter counts,
+capture and recordings, personal bests, event reminders. Changes apply at
+once and are kept in settings.json (see below). Two switches on the Capture
+page are off by default: "Collect mob data" records the monsters you fight
+into mobs.json, and "Decision log" writes the meter's decisions to the log
+file. The Reminders page shows a small card above the meter shortly before
+the game's timed events (Shugo Festival, Dimensional Invasion and Rift
+portals by default, on this PC's clock), with a sound; "Show a test
+reminder" tries it. Settings works with the keyboard too: Tab moves between
+controls, Space or Enter presses, the arrow keys move sliders and choices,
+Escape closes a list.
 
 
 WHERE DATA IS STORED

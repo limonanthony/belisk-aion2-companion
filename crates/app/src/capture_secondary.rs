@@ -13,11 +13,13 @@ use aether_core::models::combat::CombatSnapshot;
 use gpui::{AsyncApp, Entity};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    PostMessageW, WM_CHAR, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST,
+    PostMessageW, HTCLIENT, MA_ACTIVATE, MA_NOACTIVATE, WM_CHAR, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 
-use crate::capture::{shoot_hwnd, MK_LBUTTON, ROW_POINT};
+use crate::capture::{self, shoot_hwnd, MK_LBUTTON, ROW_POINT};
+use crate::capture_reminders;
+use crate::capture_settings;
 use crate::detail::{DetailModel, DetailSource, DetailView};
 use crate::fixtures;
 use crate::history::{HistoryModel, HistoryView};
@@ -32,6 +34,11 @@ const TICK: Duration = Duration::from_millis(150);
 /// The menu's first two entries at 100% scale, in the meter's client area.
 const HISTORY_ITEM_POINT: (i32, i32) = (150, 47);
 const PVP_ITEM_POINT: (i32, i32) = (150, 73);
+/// On the title, left of anything else in the header, at 100% scale.
+const TITLE_POINT: (i32, i32) = (60, 20);
+/// Only a `WindowControlArea` answers anything but HTCLIENT, and none would
+/// be shorter than a button, so every sixth logical row is enough.
+const HIT_TEST_STEP: f32 = 6.0;
 
 type Result<T, E = String> = std::result::Result<T, E>;
 
@@ -45,7 +52,9 @@ pub async fn from_fixtures(
     history_window(model, dir, cx).await?;
     detail_window(model, dir, cx).await?;
     pvp_window(model, dir, cx).await?;
-    entry_points(meter, model, cx).await
+    entry_points(meter, model, cx).await?;
+    capture_settings::from_fixtures(meter, model, dir, cx).await?;
+    capture_reminders::from_fixtures(meter, model, dir, cx).await
 }
 
 /// After a replay: the detail window on the recording's local player, on both
@@ -96,7 +105,7 @@ pub async fn from_replay(model: &Entity<MeterModel>, dir: &Path, cx: &mut AsyncA
     close(WindowKind::History, cx).await
 }
 
-fn show_scene(model: &Entity<MeterModel>, snapshot: CombatSnapshot, cx: &mut AsyncApp) {
+pub(crate) fn show_scene(model: &Entity<MeterModel>, snapshot: CombatSnapshot, cx: &mut AsyncApp) {
     cx.update(|cx| {
         model.update(cx, |model, cx| {
             *model = MeterModel::new(OverlaySettings::default(), None);
@@ -127,6 +136,7 @@ async fn history_window(model: &Entity<MeterModel>, dir: &Path, cx: &mut AsyncAp
     });
     shoot_window(WindowKind::History, dir, "history-02-records", cx).await?;
     print_size(WindowKind::History, "records", cx)?;
+    check_title(WindowKind::History, "records", cx).await?;
 
     let handle = window_handle::<HistoryView>(WindowKind::History, cx)?;
     cx.update(|cx| {
@@ -143,6 +153,21 @@ async fn history_window(model: &Entity<MeterModel>, dir: &Path, cx: &mut AsyncAp
     println!("history filter: target Veilwarden Orsikh shows {shown}, dropdown open");
     shoot_window(WindowKind::History, dir, "history-03-filter-open", cx).await?;
     print_size(WindowKind::History, "target dropdown open", cx)?;
+    check_client_area(WindowKind::History, "target dropdown open", cx)?;
+    let (hwnd, scale, _) = frame(WindowKind::History, cx)?;
+    let drag = capture::post_drag(hwnd, scale, TITLE_POINT, cx).await?;
+    let open = handle.update(cx, |view, _, _| view.menu_is_open()).map_err(|error| format!("history window gone: {error:#}"))?;
+    println!(
+        "history dropdown: pressed on the title and dragged {:?} with the dropdown open: dropdown open {open}, window moved {:?} (the scrim takes the press, as it did over the native caption)",
+        drag.pointer, drag.moved
+    );
+    if open || drag.moved != (0, 0) {
+        return Err("history dropdown: a press on the title with the dropdown open must only close it".to_string());
+    }
+    handle
+        .update(cx, |view, _, cx| view.show_state(Some(true), None, false, cx))
+        .map_err(|error| format!("history window gone: {error:#}"))?;
+    pause(cx, TICK).await;
 
     cx.update(|cx| {
         history.update(cx, |history, cx| {
@@ -229,6 +254,7 @@ async fn detail_window(model: &Entity<MeterModel>, dir: &Path, cx: &mut AsyncApp
     pause(cx, TICK).await;
     println!("detail (target board): {}", describe_detail(cx)?);
     shoot_window(WindowKind::Detail, dir, "detail-02-live", cx).await?;
+    check_title(WindowKind::Detail, "live", cx).await?;
 
     let handle = window_handle::<DetailView>(WindowKind::Detail, cx)?;
     handle
@@ -273,6 +299,7 @@ async fn pvp_window(model: &Entity<MeterModel>, dir: &Path, cx: &mut AsyncApp) -
     let (names, response, stats) = fixtures::pvp_watch();
     cx.update(|cx| pvp.update(cx, |pvp, cx| pvp.show_fixture(&names, response.clone(), stats.clone(), cx)));
     shoot_window(WindowKind::Pvp, dir, "pvp-02-kills-by-damage", cx).await?;
+    check_title(WindowKind::Pvp, "kills", cx).await?;
     cx.update(|cx| pvp.update(cx, |pvp, cx| pvp.sort_by(StatsSort::Kills, cx)));
     shoot_window(WindowKind::Pvp, dir, "pvp-03-kills-by-kills", cx).await?;
     cx.update(|cx| pvp.update(cx, |pvp, cx| pvp.sort_by(StatsSort::Damage, cx)));
@@ -317,13 +344,27 @@ async fn pvp_window(model: &Entity<MeterModel>, dir: &Path, cx: &mut AsyncApp) -
     println!("typing: Escape cancels: still editing {editing}");
 
     handle
+        .update(cx, |view, window, cx| view.start_editing_without_activation(true, window, cx))
+        .map_err(|error| format!("pvp window gone: {error:#}"))?;
+    pause(cx, TICK).await;
+    let (_, scale, _) = frame(WindowKind::Pvp, cx)?;
+    capture::check_drag(hwnd, scale, TITLE_POINT, "the PvP title while editing", cx).await?;
+    let editing = handle.update(cx, |view, _, _| view.is_editing()).unwrap_or(false);
+    println!("pvp edit: after a drag on the title: still editing {editing}");
+    if !editing {
+        return Err("pvp edit: a drag on the title ended the edit".to_string());
+    }
+    post(hwnd, WM_KEYDOWN, VK_ESCAPE, 0);
+    pause(cx, TICK).await;
+
+    handle
         .update(cx, |view, window, cx| view.start_editing_without_activation(false, window, cx))
         .map_err(|error| format!("pvp window gone: {error:#}"))?;
     pause(cx, TICK * 5).await;
     let editing = handle.update(cx, |view, _, _| view.is_editing()).unwrap_or(true);
     println!("typing: the pointer is not over the window: still editing {editing} after {} ms", (TICK * 5).as_millis());
 
-    check_typing_style(hwnd);
+    check_typing_style(hwnd)?;
 
     cx.update(|cx| pvp.update(cx, |pvp, cx| pvp.show_fixture(&names, response, fixtures::pvp_stats_long(), cx)));
     shoot_window(WindowKind::Pvp, dir, "pvp-07-long-list", cx).await?;
@@ -342,16 +383,62 @@ fn print_size(kind: WindowKind, label: &str, cx: &mut AsyncApp) -> Result<()> {
     Ok(())
 }
 
+fn frame(kind: WindowKind, cx: &mut AsyncApp) -> Result<(HWND, f32, f32)> {
+    let handle = cx.update(|cx| secondary::window_of(kind, cx)).ok_or_else(|| format!("no {kind:?} window"))?;
+    handle
+        .update(cx, |_, window, _| {
+            overlay::hwnd(window).map(|hwnd| (hwnd, window.scale_factor(), window.viewport_size().height.as_f32()))
+        })
+        .map_err(|error| format!("{kind:?} window gone: {error:#}"))?
+}
+
+/// Windows reports the pointer crossing between client and non-client area
+/// as a leave, and GPUI clears its hover flag on it, so no part of the window
+/// may be non-client.
+fn check_client_area(kind: WindowKind, state: &str, cx: &mut AsyncApp) -> Result<()> {
+    let (hwnd, scale, height) = frame(kind, cx)?;
+    let title = capture::hit_test_runs(hwnd, scale, TITLE_POINT.1 as f32);
+    println!("hit-test {kind:?} {state}, title row y {}: {}", TITLE_POINT.1, capture::describe_runs(&title));
+    let mut rows = 0;
+    let mut not_client = Vec::new();
+    let mut y = 0.0;
+    while y < height {
+        let runs = capture::hit_test_runs(hwnd, scale, y);
+        if runs.iter().any(|(code, _, _)| *code as u32 != HTCLIENT) {
+            not_client.push(format!("y {y}: {}", capture::describe_runs(&runs)));
+        }
+        rows += 1;
+        y += HIT_TEST_STEP;
+    }
+    println!("hit-test {kind:?} {state}: {rows} rows every {HIT_TEST_STEP} px down to {height:.0}, {} not all HTCLIENT", not_client.len());
+    if title.iter().any(|(code, _, _)| *code as u32 != HTCLIENT) || !not_client.is_empty() {
+        return Err(format!("hit-test {kind:?} {state}: not all client area: {}", not_client.join("; ")));
+    }
+    Ok(())
+}
+
+/// The whole window is client area, and a drag on the title moves it by the
+/// pointer's delta while a later move without the button does not.
+async fn check_title(kind: WindowKind, state: &str, cx: &mut AsyncApp) -> Result<()> {
+    check_client_area(kind, state, cx)?;
+    let (hwnd, scale, _) = frame(kind, cx)?;
+    capture::check_drag(hwnd, scale, TITLE_POINT, &format!("the {kind:?} title"), cx).await
+}
+
 /// The window turns focusable while a field is edited and non-activating
-/// again after. The style is all that is exercised: asking for the
-/// foreground would take focus from whatever the user is doing.
-fn check_typing_style(hwnd: HWND) {
+/// again after, and a click activates it only in between. The style is all
+/// that is exercised: asking for the foreground would take focus from
+/// whatever the user is doing.
+fn check_typing_style(hwnd: HWND) -> Result<()> {
     let before = typing::is_activatable(hwnd);
     typing::set_activatable(hwnd, true);
     let during = typing::is_activatable(hwnd);
+    let editing = capture::check_click_activation(hwnd, "a click on the PvP window while editing", MA_ACTIVATE);
     typing::end(hwnd);
     let after = typing::is_activatable(hwnd);
     println!("typing focus: activatable before {before}, while editing {during}, after {after} (expected false, true, false)");
+    editing?;
+    capture::check_click_activation(hwnd, "a click on the PvP window after the edit", MA_NOACTIVATE)
 }
 
 /// The real entry points, with mouse messages posted to the meter's own
@@ -441,20 +528,20 @@ fn pvp_model(cx: &mut AsyncApp) -> Result<Entity<PvpModel>> {
     cx.update(|cx| secondary::model_of::<PvpModel>(WindowKind::Pvp, cx)).ok_or_else(|| "no PvP window".to_string())
 }
 
-fn window_handle<V: gpui::Render + 'static>(kind: WindowKind, cx: &mut AsyncApp) -> Result<gpui::WindowHandle<V>> {
+pub(crate) fn window_handle<V: gpui::Render + 'static>(kind: WindowKind, cx: &mut AsyncApp) -> Result<gpui::WindowHandle<V>> {
     cx.update(|cx| secondary::window_of(kind, cx))
         .and_then(|handle| handle.downcast::<V>())
         .ok_or_else(|| format!("no {kind:?} window of the expected kind"))
 }
 
-fn window_hwnd(kind: WindowKind, cx: &mut AsyncApp) -> Result<HWND> {
+pub(crate) fn window_hwnd(kind: WindowKind, cx: &mut AsyncApp) -> Result<HWND> {
     let handle = cx.update(|cx| secondary::window_of(kind, cx)).ok_or_else(|| format!("no {kind:?} window"))?;
     handle
         .update(cx, |_, window, _| overlay::hwnd(window))
         .map_err(|error| format!("{kind:?} window gone: {error:#}"))?
 }
 
-async fn shoot_window(kind: WindowKind, dir: &Path, name: &str, cx: &mut AsyncApp) -> Result<()> {
+pub(crate) async fn shoot_window(kind: WindowKind, dir: &Path, name: &str, cx: &mut AsyncApp) -> Result<()> {
     let hwnd = window_hwnd(kind, cx)?;
     shoot_hwnd(hwnd, dir, name, cx).await
 }
@@ -471,11 +558,11 @@ fn report_window(kind: WindowKind, cx: &mut AsyncApp) -> Result<()> {
         style & WS_EX_NOACTIVATE.0 != 0,
         off_screen::frame_report(hwnd)
     );
-    Ok(())
+    capture::check_click_activation(hwnd, &format!("a click on the {kind:?} window"), MA_NOACTIVATE)
 }
 
 /// Closes the window as its × would and checks the registry let go of it.
-async fn close(kind: WindowKind, cx: &mut AsyncApp) -> Result<()> {
+pub(crate) async fn close(kind: WindowKind, cx: &mut AsyncApp) -> Result<()> {
     let handle = cx.update(|cx| secondary::window_of(kind, cx)).ok_or_else(|| format!("no {kind:?} window to close"))?;
     handle
         .update(cx, |_, window, _| window.remove_window())
@@ -488,15 +575,15 @@ async fn close(kind: WindowKind, cx: &mut AsyncApp) -> Result<()> {
     Ok(())
 }
 
-async fn pause(cx: &mut AsyncApp, duration: Duration) {
+pub(crate) async fn pause(cx: &mut AsyncApp, duration: Duration) {
     cx.background_executor().timer(duration).await;
 }
 
-fn pack((x, y): (i32, i32)) -> isize {
+pub(crate) fn pack((x, y): (i32, i32)) -> isize {
     (((y as u16) as isize) << 16) | (x as u16) as isize
 }
 
-fn post(hwnd: HWND, message: u32, wparam: usize, lparam: isize) {
+pub(crate) fn post(hwnd: HWND, message: u32, wparam: usize, lparam: isize) {
     unsafe {
         let _ = PostMessageW(Some(hwnd), message, WPARAM(wparam), LPARAM(lparam));
     }

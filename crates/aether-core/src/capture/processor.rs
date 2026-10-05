@@ -96,6 +96,38 @@ struct StallCandidate {
     opcode: Option<(u8, u8)>,
 }
 
+/// Where a connection stands on learning which actor is the local character.
+/// The game names the character on login (`Settled` once it did). A later
+/// connection (a zone change) opens with the character's combat power and its
+/// own HP instead: that HP packet is the first after the combat power
+/// (`Expected`), and whatever it says settles the connection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum OwnActor {
+    Unsettled,
+    Expected,
+    Settled,
+}
+
+impl OwnActor {
+    fn named_by_game(&mut self) {
+        *self = Self::Settled;
+    }
+
+    fn combat_power_seen(&mut self) {
+        if *self == Self::Unsettled {
+            *self = Self::Expected;
+        }
+    }
+
+    pub(super) fn claim_opening_hp_packet(&mut self) -> bool {
+        let expected = *self == Self::Expected;
+        if expected {
+            *self = Self::Settled;
+        }
+        expected
+    }
+}
+
 pub struct StreamProcessor {
     pub(super) data_storage: Arc<DataStorage>,
     pub(super) logger: Arc<AppLogger>,
@@ -106,6 +138,7 @@ pub struct StreamProcessor {
     stalled_since: Option<Instant>,
     stalled_candidate: Option<StallCandidate>,
     combat_damage_enabled: bool,
+    pub(super) own_actor: OwnActor,
 }
 
 impl StreamProcessor {
@@ -125,6 +158,7 @@ impl StreamProcessor {
             stalled_since: None,
             stalled_candidate: None,
             combat_damage_enabled: false,
+            own_actor: OwnActor::Unsettled,
         }
     }
 
@@ -144,6 +178,7 @@ impl StreamProcessor {
             stalled_since: None,
             stalled_candidate: None,
             combat_damage_enabled: false,
+            own_actor: OwnActor::Unsettled,
         }
     }
 
@@ -387,16 +422,27 @@ impl StreamProcessor {
         match self.mode {
             ProcessorMode::Full => match (payload[0], payload[1]) {
                 (0x33, 0x36) => {
-                    nickname::parse_main(&self.parser_context(), payload, is_compressed_bundle)
+                    let parsed =
+                        nickname::parse_main(&self.parser_context(), payload, is_compressed_bundle);
+                    if parsed {
+                        self.own_actor.named_by_game();
+                    }
+                    parsed
                 }
                 (0x45, 0x36) => {
                     nickname::parse_other(&self.parser_context(), payload, is_compressed_bundle)
                 }
-                (0x56, 0x36) => nickname::parse_main_combat_power(
-                    &self.parser_context(),
-                    payload,
-                    is_compressed_bundle,
-                ),
+                (0x56, 0x36) => {
+                    let parsed = nickname::parse_main_combat_power(
+                        &self.parser_context(),
+                        payload,
+                        is_compressed_bundle,
+                    );
+                    if parsed {
+                        self.own_actor.combat_power_seen();
+                    }
+                    parsed
+                }
                 (0x41, 0x36) => self.parse_summon_packet(payload, is_compressed_bundle),
                 (0x04, 0x38) if self.combat_damage_enabled => {
                     self.parse_damage_packet(payload, is_compressed_bundle)
@@ -431,5 +477,165 @@ impl StreamProcessor {
 
     fn parser_context(&self) -> ParserContext<'_> {
         ParserContext::new(&self.data_storage, &self.logger, &self.port)
+    }
+}
+
+#[cfg(test)]
+mod own_actor_tests {
+    use std::sync::{Arc, RwLock};
+
+    use super::StreamProcessor;
+    use crate::config::DpsMeterConfig;
+    use crate::events::{EventSink, MeterEvent};
+    use crate::logger::AppLogger;
+    use crate::mobs::catalog::MobCatalog;
+    use crate::storage::data_storage::DataStorage;
+
+    struct Silent;
+    impl EventSink for Silent {
+        fn emit(&self, _: MeterEvent) {}
+    }
+
+    const BEFORE_ZONE_CHANGE: u32 = 6812;
+    const AFTER_ZONE_CHANGE: u32 = 7735;
+    const MOB: u32 = 900;
+    const NAME: &str = "Tester";
+
+    fn connection(named: bool) -> (StreamProcessor, Arc<DataStorage>) {
+        let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
+        let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
+        let storage = Arc::new(DataStorage::new(Arc::new(Silent), Arc::clone(&config), mobs));
+        if named {
+            storage.set_main_actor(BEFORE_ZONE_CHANGE, NAME);
+        }
+        let log = std::env::temp_dir().join("aether-own-actor-tests").join("aether.log");
+        let logger = Arc::new(AppLogger::new(log, Box::new(|_| {})));
+        let processor = StreamProcessor::new(Arc::clone(&storage), logger, "test".to_string(), config);
+        (processor, storage)
+    }
+
+    fn frame(payload: &[u8]) -> Vec<u8> {
+        let mut frame = vec![u8::try_from(payload.len() + 1).expect("short frame")];
+        frame.extend_from_slice(payload);
+        frame
+    }
+
+    fn combat_power() -> Vec<u8> {
+        let mut payload = vec![0x56, 0x36];
+        payload.extend_from_slice(&50_099u32.to_le_bytes());
+        frame(&payload)
+    }
+
+    fn varint(mut value: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        loop {
+            let low = (value & 0x7F) as u8;
+            value >>= 7;
+            bytes.push(if value == 0 { low } else { low | 0x80 });
+            if value == 0 {
+                return bytes;
+            }
+        }
+    }
+
+    fn remain_hp(target: u32, hp: u32) -> Vec<u8> {
+        let mut payload = vec![0x00, 0x8D];
+        payload.extend(varint(target));
+        payload.extend_from_slice(&[1, 1, 1]);
+        payload.extend_from_slice(&hp.to_le_bytes());
+        frame(&payload)
+    }
+
+    fn named_by_the_game(actor_id: u32, name: &str) -> Vec<u8> {
+        let mut payload = vec![0x33, 0x36];
+        payload.extend(varint(actor_id));
+        payload.extend_from_slice(&[0; 5]);
+        payload.push(u8::try_from(name.len()).expect("short name"));
+        payload.extend_from_slice(name.as_bytes());
+        payload.extend_from_slice(&1302u16.to_le_bytes());
+        payload.push(22);
+        frame(&payload)
+    }
+
+    fn feed(processor: &mut StreamProcessor, packets: &[Vec<u8>]) {
+        for packet in packets {
+            assert!(processor.parse_packet(packet, false), "packet {packet:02X?} parsed");
+        }
+    }
+
+    #[test]
+    fn a_new_connection_gives_the_named_character_its_new_actor_id() {
+        let (mut processor, storage) = connection(true);
+
+        feed(&mut processor, &[combat_power(), remain_hp(AFTER_ZONE_CHANGE, 2_332)]);
+
+        assert_eq!(storage.main_actor_id(), Some(AFTER_ZONE_CHANGE));
+        assert_eq!(storage.main_actor_name().as_deref(), Some(NAME));
+        assert_eq!(storage.actor_id_name_snapshot().get(&AFTER_ZONE_CHANGE).map(String::as_str), Some(NAME));
+    }
+
+    #[test]
+    fn only_the_hp_packet_right_after_the_combat_power_counts() {
+        let (mut processor, storage) = connection(true);
+
+        feed(
+            &mut processor,
+            &[combat_power(), remain_hp(AFTER_ZONE_CHANGE, 2_332), remain_hp(MOB, 40_000)],
+        );
+
+        assert_eq!(storage.main_actor_id(), Some(AFTER_ZONE_CHANGE));
+    }
+
+    #[test]
+    fn an_hp_packet_without_a_combat_power_before_it_changes_nothing() {
+        let (mut processor, storage) = connection(true);
+
+        feed(&mut processor, &[remain_hp(AFTER_ZONE_CHANGE, 2_332)]);
+
+        assert_eq!(storage.main_actor_id(), Some(BEFORE_ZONE_CHANGE));
+    }
+
+    #[test]
+    fn an_opening_hp_packet_above_the_boss_threshold_is_not_you_and_still_settles() {
+        let (mut processor, storage) = connection(true);
+
+        feed(
+            &mut processor,
+            &[combat_power(), remain_hp(MOB, 9_800_000), remain_hp(AFTER_ZONE_CHANGE, 2_332)],
+        );
+
+        assert_eq!(storage.main_actor_id(), Some(BEFORE_ZONE_CHANGE));
+    }
+
+    #[test]
+    fn a_connection_that_named_the_character_keeps_what_the_game_said() {
+        let (mut processor, storage) = connection(false);
+
+        feed(
+            &mut processor,
+            &[named_by_the_game(BEFORE_ZONE_CHANGE, NAME), combat_power(), remain_hp(MOB, 40_000)],
+        );
+
+        assert_eq!(storage.main_actor_id(), Some(BEFORE_ZONE_CHANGE));
+    }
+
+    #[test]
+    fn a_mob_the_game_already_described_is_not_the_character() {
+        let (mut processor, storage) = connection(true);
+        storage.append_mob(MOB, 2_300_810);
+
+        feed(&mut processor, &[combat_power(), remain_hp(MOB, 5_153_701)]);
+
+        assert_eq!(storage.main_actor_id(), Some(BEFORE_ZONE_CHANGE));
+    }
+
+    #[test]
+    fn nobody_is_named_when_the_game_never_named_the_character() {
+        let (mut processor, storage) = connection(false);
+
+        feed(&mut processor, &[combat_power(), remain_hp(AFTER_ZONE_CHANGE, 2_332)]);
+
+        assert_eq!(storage.main_actor_id(), None);
+        assert_eq!(storage.main_actor_name(), None);
     }
 }

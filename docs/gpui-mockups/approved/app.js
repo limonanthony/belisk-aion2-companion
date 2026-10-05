@@ -28,6 +28,8 @@
       '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
     trophy:
       '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>',
+    bell:
+      '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
     languages:
       '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
     info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
@@ -82,6 +84,7 @@
       shortcuts: "Shortcuts",
       capture: "Capture",
       bests: "Personal bests",
+      reminders: "Reminders",
       general: "General",
       about: "About",
       ready: "Ready",
@@ -112,6 +115,7 @@
       shortcuts: "Raccourcis",
       capture: "Capture",
       bests: "Records perso",
+      reminders: "Rappels",
       general: "Général",
       about: "À propos",
       ready: "Prêt",
@@ -144,6 +148,7 @@
     ["shortcuts", "keyboard"],
     ["capture", "radio"],
     ["bests", "trophy"],
+    ["reminders", "bell"],
     ["general", "languages"],
     ["about", "info"],
   ];

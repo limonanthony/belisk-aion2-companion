@@ -10,19 +10,22 @@ use aether_core::engine::meter::DpsMeter;
 use aether_core::events::EventSink;
 use aether_core::logger::AppLogger;
 
+use crate::settings::AppSettings;
+
 /// Bundle identifier of the app this one replaced; it names the data folders.
 const IDENTIFIER: &str = "com.helveticxa.aether";
 
-/// `%APPDATA%/<identifier>`, where the Tauri app kept its data.
-fn data_dir() -> Option<PathBuf> {
+/// `%APPDATA%/<identifier>`, where the Tauri app kept its data and where
+/// `settings.json` lives.
+pub fn data_dir() -> Option<PathBuf> {
     std::env::var_os("APPDATA").map(|dir| PathBuf::from(dir).join(IDENTIFIER))
 }
 
 /// `%LOCALAPPDATA%/<identifier>/logs`, where the Tauri app kept its log.
-fn log_file() -> PathBuf {
+pub fn log_dir() -> PathBuf {
     match std::env::var_os("LOCALAPPDATA") {
-        Some(dir) => PathBuf::from(dir).join(IDENTIFIER).join("logs").join("aether.log"),
-        None => std::env::temp_dir().join("aether").join("aether.log"),
+        Some(dir) => PathBuf::from(dir).join(IDENTIFIER).join("logs"),
+        None => std::env::temp_dir().join("aether"),
     }
 }
 
@@ -36,26 +39,20 @@ pub fn default_backend_config() -> DpsMeterConfig {
     }
 }
 
-/// The defaults plus what the GPUI meter decided on: the "possible
-/// boss" HP rule is always on, and mob collection follows the launch flag.
-pub fn gpui_backend_config(collect_mobs: bool) -> DpsMeterConfig {
-    DpsMeterConfig {
-        show_possible_boss: true,
-        collect_mobs,
-        ..default_backend_config()
-    }
+/// The core's config for these settings, on top of what the previous app
+/// applied on a fresh install.
+pub fn backend_config(settings: &AppSettings) -> DpsMeterConfig {
+    settings.backend_config(default_backend_config())
 }
 
-/// Creates the meter and starts capture, Npcap first with WinDivert as the
+/// Creates the meter and starts capture with the backend priority and the
+/// other options of `settings`; Npcap first by default, with WinDivert as the
 /// fallback. The meter is returned even when capture fails so the caller can
 /// report why.
-pub fn start(
-    events: Arc<dyn EventSink>,
-    collect_mobs: bool,
-) -> (Arc<DpsMeter>, Result<(), String>) {
-    let logger = Arc::new(AppLogger::new(log_file(), Box::new(|_| {})));
+pub fn start(events: Arc<dyn EventSink>, settings: &AppSettings) -> (Arc<DpsMeter>, Result<(), String>) {
+    let logger = Arc::new(AppLogger::new(log_dir().join("aether.log"), Box::new(|_| {})));
     let meter = Arc::new(DpsMeter::new(events, logger, data_dir()));
-    meter.apply_config(gpui_backend_config(collect_mobs));
+    meter.apply_config(backend_config(settings));
     let started = meter.start_dps_meter();
     (meter, started)
 }
@@ -83,11 +80,19 @@ mod tests {
     }
 
     #[test]
-    fn the_gpui_meter_shows_possible_bosses_and_collects_mobs_only_on_request() {
-        assert!(gpui_backend_config(false).show_possible_boss);
-        assert!(!gpui_backend_config(false).collect_mobs);
-        assert!(gpui_backend_config(true).collect_mobs);
-        assert!(!gpui_backend_config(false).output_debug_log, "the core's per-packet debug stays off");
+    fn the_settings_decide_what_the_meter_starts_with() {
+        let defaults = backend_config(&AppSettings::default());
+        assert!(defaults.show_possible_boss);
+        assert!(!defaults.collect_mobs);
+        assert!(!defaults.output_debug_log, "the core's per-packet debug stays off");
+        assert_eq!(defaults.dps_snapshot_interval_ms, 200);
+
+        let mut settings = AppSettings::default();
+        settings.capture.collect_mob_data = true;
+        settings.capture.backend_priority = CaptureBackendPriority::WinDivertFirst;
+        let config = backend_config(&settings);
+        assert!(config.collect_mobs);
+        assert_eq!(config.capture_backend_priority, CaptureBackendPriority::WinDivertFirst);
         assert!(!default_backend_config().show_possible_boss && !default_backend_config().collect_mobs);
     }
 }

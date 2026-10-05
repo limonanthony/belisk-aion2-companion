@@ -4,12 +4,6 @@ pub struct Args {
     pub replay: Option<PathBuf>,
     pub speed: f64,
     pub exit_after_replay: bool,
-    /// Record the mobs fought into `mobs.json`. Live capture only: a replay
-    /// has no data folder.
-    pub collect_mobs: bool,
-    /// Write the meter's decisions (board, boss focus, who "you" are) to the
-    /// log as `[meter]` lines. The core's per-packet debug level stays off.
-    pub debug_log: bool,
     #[cfg(feature = "probes")]
     pub probe: Option<Probe>,
     /// Where `--capture` writes its images.
@@ -27,10 +21,10 @@ pub enum Probe {
 }
 
 #[cfg(not(feature = "probes"))]
-pub const USAGE: &str = "usage: aion-2-dps-meter [--collect-mobs] [--debug-log] [--replay <file.aetherpc> [--speed <factor>] [--exit-after-replay]]";
+pub const USAGE: &str = "usage: aion-2-dps-meter [--replay <file.aetherpc> [--speed <factor>] [--exit-after-replay]]";
 
 #[cfg(feature = "probes")]
-pub const USAGE: &str = "usage: aion-2-dps-meter [--collect-mobs] [--debug-log] [--replay <file.aetherpc> [--speed <factor>] [--exit-after-replay]]\n\
+pub const USAGE: &str = "usage: aion-2-dps-meter [--replay <file.aetherpc> [--speed <factor>] [--exit-after-replay]]\n\
        aion-2-dps-meter --overlay-probe [--replay <file.aetherpc>]\n\
        aion-2-dps-meter --font-probe [--capture <dir>]\n\
        aion-2-dps-meter --capture <dir> (--fixtures | --replay <file.aetherpc> [--speed <factor>])";
@@ -49,8 +43,6 @@ impl Args {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut parsed = Self {
             replay: None,
-            collect_mobs: false,
-            debug_log: false,
             speed: 1.0,
             exit_after_replay: false,
             #[cfg(feature = "probes")]
@@ -74,8 +66,6 @@ impl Args {
                         .map_err(|_| format!("--speed expects a number, got {value:?}"))?;
                 }
                 "--exit-after-replay" => parsed.exit_after_replay = true,
-                "--collect-mobs" => parsed.collect_mobs = true,
-                "--debug-log" => parsed.debug_log = true,
                 #[cfg(feature = "probes")]
                 "--overlay-probe" => parsed.probe = Some(Probe::Overlay),
                 #[cfg(feature = "probes")]
@@ -140,18 +130,6 @@ mod tests {
     }
 
     #[test]
-    fn the_diagnostic_log_is_off_unless_asked_for() {
-        assert!(!parse(&[]).unwrap().debug_log);
-        assert!(parse(&["--debug-log"]).unwrap().debug_log);
-    }
-
-    #[test]
-    fn mob_collection_is_off_unless_asked_for() {
-        assert!(!parse(&[]).unwrap().collect_mobs);
-        assert!(parse(&["--collect-mobs"]).unwrap().collect_mobs);
-    }
-
-    #[test]
     fn exiting_after_a_replay_needs_a_replay() {
         assert!(parse(&["--exit-after-replay"]).is_err());
     }
@@ -159,6 +137,8 @@ mod tests {
     #[test]
     fn unknown_and_incomplete_arguments_are_refused() {
         assert!(parse(&["--bogus"]).is_err());
+        assert!(parse(&["--collect-mobs"]).is_err(), "now a switch in Settings");
+        assert!(parse(&["--debug-log"]).is_err(), "now a switch in Settings");
         assert!(parse(&["--replay"]).is_err());
         assert!(parse(&["--speed", "fast"]).is_err());
     }

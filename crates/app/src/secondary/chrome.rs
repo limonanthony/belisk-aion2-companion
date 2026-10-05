@@ -1,8 +1,9 @@
-//! The approved overlay language the history, player detail and PvP windows
-//! share (docs/gpui-mockups/approved/overlay.css, values in tokens.md): the
-//! card the window is exactly as large as, a header that drags the window,
-//! tool and text buttons, tabs, inputs, popovers, empty states and the thin
-//! scroll thumb. The user's content scale and card opacity are the meter's.
+//! The approved overlay language the history, player detail, PvP and reminder
+//! windows share (docs/gpui-mockups/approved/overlay.css, values in
+//! tokens.md): the card the window is exactly as large as, a header that drags
+//! the window, tool and text buttons, tabs, inputs, popovers, empty states and
+//! the thin scroll thumb. The user's content scale and card opacity are the
+//! meter's.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -11,7 +12,7 @@ use std::sync::Arc;
 use gpui::{
     canvas, div, fill, img, point, prelude::*, relative, rgb, rgba, size, svg, AnyElement, AnyView, App, Bounds,
     Context, Div, ElementId, FontFeatures, FontWeight, Hsla, IntoElement, Pixels, Render, ScrollHandle,
-    SharedString, Stateful, Svg, Window, WindowControlArea,
+    SharedString, Stateful, Svg, Window,
 };
 
 use crate::assets::Icon;
@@ -31,6 +32,7 @@ pub const GOOD: u32 = 0x86e3a8;
 pub const WARN: u32 = 0xf2c66d;
 pub const BAD: u32 = 0xf7a8a8;
 pub const INK: u32 = 0x17120d;
+pub const GAUGE_EMPTY: u32 = 0xfff0e11f;
 const CARD_RGB: u32 = 0x100e0c;
 const CARD_BORDER: u32 = 0xffecd61a;
 const RANK_BADGE: u32 = 0xfff0e117;
@@ -65,6 +67,11 @@ impl Look {
 /// (a popover and the scrim that dismisses it). The window is fitted to all
 /// of them, so it grows while a popover hangs below the card.
 pub fn root(look: Look) -> Div {
+    surface(look).on_children_prepainted(|bounds, window, cx| overlay::fit_to_children(&bounds, window, cx))
+}
+
+/// [`root`] for a window that sizes and places itself.
+pub fn surface(look: Look) -> Div {
     div()
         .size_full()
         .relative()
@@ -76,7 +83,6 @@ pub fn root(look: Look) -> Div {
         .line_height(relative(1.))
         .text_size(look.s.px(13.))
         .text_color(rgba(TEXT))
-        .on_children_prepainted(|bounds, window, cx| overlay::fit_to_children(&bounds, window, cx))
 }
 
 pub fn card(width: f32, look: Look) -> Div {
@@ -97,7 +103,8 @@ pub fn card(width: f32, look: Look) -> Div {
 
 /// The header row: `title` drags the window; `tools` and the close button sit
 /// at the top right.
-pub fn header(title: impl IntoElement, tools: Vec<AnyElement>, s: Scale) -> Div {
+pub fn header(title: impl IntoElement, tools: Vec<AnyElement>, drag: &overlay::WindowDrag, s: Scale) -> Div {
+    let handle = div().flex_1().min_w_0().h_full().flex().items_center().gap(s.px(8.));
     div()
         .flex_none()
         .h(s.px(28.))
@@ -105,19 +112,10 @@ pub fn header(title: impl IntoElement, tools: Vec<AnyElement>, s: Scale) -> Div 
         .flex()
         .items_center()
         .gap(s.px(8.))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .h_full()
-                .flex()
-                .items_center()
-                .gap(s.px(8.))
-                .window_control_area(WindowControlArea::Drag)
-                .child(title),
-        )
+        .child(drag.handle(handle).child(title))
         .children(tools)
         .child(close_button(s))
+        .child(drag.listener())
 }
 
 /// Icon and name of a window, with an optional count after it.

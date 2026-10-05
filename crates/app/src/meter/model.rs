@@ -191,9 +191,22 @@ impl MeterModel {
         self.unavailable.as_deref()
     }
 
-    /// Starts writing `[meter]` decision lines to the log (`--debug-log`).
-    pub fn enable_decision_log(&mut self) {
-        self.decisions.enable();
+    /// Switches the `[meter]` decision lines in the log on or off.
+    pub fn set_decision_log(&mut self, enabled: bool) {
+        self.decisions.set_enabled(enabled);
+    }
+
+    /// Takes new overlay options in and redraws what was prepared with the
+    /// old ones, unless only the opacity or scale changed: those are painted
+    /// from the settings and prepare nothing.
+    pub fn set_overlay_settings(&mut self, settings: OverlaySettings) {
+        let boards_stay = self.settings.same_boards_as(&settings);
+        self.tracker.set_enabled(settings.show_fight_summary);
+        self.settings = settings;
+        if !boards_stay {
+            self.rebuild_live();
+            self.rebuild_summary();
+        }
     }
 
     /// The Target board: the engaged boss, else the current target. `None`
@@ -423,15 +436,6 @@ impl MeterModel {
         }
     }
 
-    pub fn toggle_layout(&mut self, cx: &mut Context<Self>) {
-        use super::settings::Layout;
-        self.settings.layout = match self.settings.layout {
-            Layout::Full => Layout::Capsule,
-            Layout::Capsule => Layout::Full,
-        };
-        cx.notify();
-    }
-
     /// What Copy puts on the clipboard: the summary when one is up, otherwise
     /// the live fight.
     pub fn report(&self) -> Option<String> {
@@ -539,7 +543,13 @@ impl MeterModel {
         true
     }
 
-    fn accept_snapshot(&mut self, snapshot: CombatSnapshot, now: Instant) -> bool {
+    fn accept_snapshot(&mut self, mut snapshot: CombatSnapshot, now: Instant) -> bool {
+        if !live::is_identified(&snapshot) {
+            if let Some(actor) = &self.main_actor {
+                snapshot.combat_infos.main_actor_id = Some(actor.actor_id);
+                snapshot.combat_infos.main_actor_name = Some(actor.actor_name.clone());
+            }
+        }
         let emptied = snapshot.total_damage == 0 && snapshot.session.players.is_empty();
         let target = live::target_of(&snapshot);
         // A target the game has not described yet: the Tauri overlay skips
@@ -706,7 +716,7 @@ impl MeterModel {
                 view.players.iter().map(|player| (player.actor_id, player.actor_name.as_str())),
             );
             self.decisions.on_change("your row on the Target board", || {
-                live::you_status(snapshot, found, view.players.len())
+                live::you_status(snapshot, found, view.players.len(), self.settings.players_shown)
             });
         }
         let players = &snapshot.session.players;
@@ -715,7 +725,7 @@ impl MeterModel {
             players.iter().map(|player| (player.actor_id, player.actor_name.as_str())),
         );
         self.decisions.on_change("your row on the Session board", || {
-            live::you_status(snapshot, found, players.len())
+            live::you_status(snapshot, found, players.len(), self.settings.players_shown)
         });
     }
 
@@ -964,6 +974,31 @@ mod tests {
         model.apply(MeterEvent::DpsSnapshot(snapshot(500, Some(9), 30.0)), Instant::now());
         assert_eq!(model.header_name().map(|name| name.as_ref()), Some("B**s"));
         assert_eq!(model.live().unwrap().rows[0].name.as_deref(), Some("O***r"));
+    }
+
+    #[test]
+    fn new_overlay_settings_redraw_what_was_prepared_with_the_old_ones() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        model.apply(MeterEvent::DpsSnapshot(snapshot(500, Some(9), 30.0)), Instant::now());
+        assert_eq!(model.header_name().map(|name| name.as_ref()), Some("Boss"));
+
+        model.set_overlay_settings(OverlaySettings { mask_nicknames: true, ..OverlaySettings::default() });
+
+        assert_eq!(model.header_name().map(|name| name.as_ref()), Some("B**s"));
+        assert_eq!(model.live().unwrap().rows[0].name.as_deref(), Some("O***r"));
+    }
+
+    #[test]
+    fn switching_summaries_off_takes_the_one_that_is_up_down() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let now = Instant::now();
+        model.apply(MeterEvent::DpsSnapshot(snapshot(500, Some(9), 30.0)), now);
+        model.apply(MeterEvent::DpsSnapshot(snapshot(0, Some(9), 31.0)), now);
+        assert!(model.summary().is_some());
+
+        model.set_overlay_settings(OverlaySettings { show_fight_summary: false, ..OverlaySettings::default() });
+
+        assert!(model.summary().is_none());
     }
 
     #[test]
@@ -1646,6 +1681,30 @@ mod tests {
         model.apply(detected(7), at(start, 3));
 
         assert_eq!(model.focused_boss(), None);
+    }
+
+    #[test]
+    fn the_emptied_snapshot_after_a_reset_does_not_forget_who_you_are() {
+        let start = Instant::now();
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        model.apply(
+            MeterEvent::MainActorDetected(MainActorDetectedPayload {
+                actor_id: 2,
+                actor_name: "You".to_string(),
+                sid: None,
+            }),
+            start,
+        );
+        let mut emptied = world(BOSS_ID, &[], None);
+        emptied.total_damage = 0;
+        model.apply(MeterEvent::DpsSnapshot(emptied), at(start, 1));
+        let infos = &model.snapshot().unwrap().combat_infos;
+        assert_eq!((infos.main_actor_id, infos.main_actor_name.as_deref()), (Some(2), Some("You")));
+
+        let strangers_boss = [mob(BOSS_ID, true, 800, 40.0, vec![player(3, "Healer", 1_000, 20.0)])];
+        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &strangers_boss, None)), at(start, 2));
+
+        assert_eq!(model.focused_boss(), None, "a boss you have not fought is not engaged as if you were unknown");
     }
 
     #[test]

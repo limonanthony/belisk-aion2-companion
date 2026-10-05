@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use gpui::{
     div, img, prelude::*, px, relative, rgb, rgba, size, svg,
     Animation, AnimationExt as _, AnyElement, App, ClipboardItem, Context, Div, ElementId,
-    Entity, FontFeatures, FontWeight, Hsla, IntoElement, Render, SharedString, Stateful,
-    Task, Window, WindowControlArea,
+    Entity, EventEmitter, FontFeatures, FontWeight, Global, Hsla, IntoElement, Render, SharedString, Stateful,
+    Task, Window, WindowHandle,
 };
 
 use super::board::Board;
@@ -129,12 +129,36 @@ pub struct MeterView {
     tip_timer: Option<Task<()>>,
     menu_open: bool,
     menu_close: Option<Task<()>>,
+    drag: overlay::WindowDrag,
     /// Dev captures cannot move a real pointer, so they set it here.
     #[cfg(feature = "probes")]
     pub(crate) forced_pointer: Option<bool>,
     /// How many frames this view has built, for the idle-cost check.
     #[cfg(feature = "probes")]
     pub(crate) renders: u64,
+    /// Drawn inside the Settings window at this zoom: never under the
+    /// pointer, and the window is not fitted to it.
+    preview_zoom: Option<f32>,
+}
+
+/// The overlay was locked (click-through) or unlocked, by its button, the
+/// shortcut or Settings.
+pub struct LockChanged(pub bool);
+
+impl EventEmitter<LockChanged> for MeterView {}
+
+struct MeterWindow(WindowHandle<MeterView>);
+
+impl Global for MeterWindow {}
+
+/// Makes `window` the meter's window, for [`window`].
+pub fn install_window(window: WindowHandle<MeterView>, cx: &mut App) {
+    cx.set_global(MeterWindow(window));
+}
+
+/// The meter's window, to read or change the lock from Settings.
+pub fn window(cx: &App) -> WindowHandle<MeterView> {
+    cx.global::<MeterWindow>().0
 }
 
 impl MeterView {
@@ -160,11 +184,20 @@ impl MeterView {
             tip_timer: None,
             menu_open: false,
             menu_close: None,
+            drag: overlay::WindowDrag::default(),
             #[cfg(feature = "probes")]
             forced_pointer: None,
             #[cfg(feature = "probes")]
             renders: 0,
+            preview_zoom: None,
         }
+    }
+
+    /// The meter as Settings shows it beside the overlay options: the same
+    /// view at `zoom`, which takes no pointer and leaves its window's size
+    /// alone.
+    pub fn preview(model: Entity<MeterModel>, zoom: f32, cx: &mut Context<Self>) -> Self {
+        Self { preview_zoom: Some(zoom), ..Self::new(model, cx) }
     }
 
     pub fn enable_lock_shortcut(&mut self, cx: &mut Context<Self>) {
@@ -172,9 +205,14 @@ impl MeterView {
         cx.notify();
     }
 
-    #[cfg(feature = "probes")]
     pub fn is_locked(&self) -> bool {
         self.locked
+    }
+
+    /// Whether Alt+CapsLock is registered, i.e. whether a locked overlay can
+    /// be unlocked again. Without it nothing offers to lock.
+    pub fn can_unlock(&self) -> bool {
+        self.lock_shortcut
     }
 
     #[cfg(feature = "probes")]
@@ -206,7 +244,11 @@ impl MeterView {
             return;
         }
         self.locked = locked;
+        cx.emit(LockChanged(locked));
         if locked {
+            // Click-through mid-drag: GPUI still holds the capture and would
+            // keep moving the window until the release.
+            self.drag.stop();
             self.close_menu();
             self.hover_switch_off();
         }
@@ -214,6 +256,9 @@ impl MeterView {
     }
 
     fn pointer_is_over(&self, window: &Window) -> bool {
+        if self.preview_zoom.is_some() {
+            return false;
+        }
         #[cfg(feature = "probes")]
         if let Some(forced) = self.forced_pointer {
             return forced && !self.locked;
@@ -267,6 +312,13 @@ impl MeterView {
                 this.menu_close = None;
             });
         }));
+    }
+
+    fn drag_handle(&self, handle: Div) -> Div {
+        if self.preview_zoom.is_some() {
+            return handle;
+        }
+        self.drag.handle(handle)
     }
 
     fn hover_switch_off(&mut self) {
@@ -330,7 +382,7 @@ impl MeterView {
             })
             .child(
                 tool_button("capsule", Icon::Capsule, capsule_on, s).on_click(cx.listener(
-                    |this, _, _, cx| this.model.update(cx, |model, cx| model.toggle_layout(cx)),
+                    |_, _, _, cx| crate::settings::toggle_layout(cx),
                 )),
             )
             .when(self.lock_shortcut, |row| {
@@ -390,21 +442,14 @@ impl MeterView {
             .pl(s.px(4.))
             .pr(s.px(2.))
             .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .h_full()
-                    .flex()
-                    .items_center()
-                    .window_control_area(WindowControlArea::Drag)
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_color(rgba(if bright { TEXT } else { MUTED }))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(name),
-                    ),
+                self.drag_handle(div().flex_1().min_w_0().h_full().flex().items_center()).child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(rgba(if bright { TEXT } else { MUTED }))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(name),
+                ),
             )
             .child(right)
     }
@@ -463,7 +508,7 @@ impl MeterView {
             self.motion.clear();
             self.boss_hp = None;
         }
-        let width = if model.settings.show_damage { CARD_WIDTH_WITH_DAMAGE } else { CARD_WIDTH };
+        let width = board_width(&model.settings);
         let name = model.header_name().cloned().unwrap_or_else(|| SharedString::new_static("DPS Meter"));
         let time = div()
             .flex_none()
@@ -803,6 +848,7 @@ impl MeterView {
             .text_size(s.px(12.5))
             .child(link("menu-history", "Fight history", secondary::open_history))
             .child(link("menu-pvp", "PvP meter", secondary::open_pvp))
+            .child(link("menu-settings", "Settings", secondary::open_settings))
             .child(div().h(s.px(1.)).mx(s.px(4.)).my(s.px(4.)).bg(rgba(DIVIDER)))
             .when(target.is_none(), |menu| {
                 menu.child(
@@ -862,13 +908,7 @@ impl MeterView {
             .gap(s.px(8.))
             .pr(s.px(2.))
             .child(
-                div()
-                    .flex_1()
-                    .h_full()
-                    .flex()
-                    .items_center()
-                    .gap(s.px(8.))
-                    .window_control_area(WindowControlArea::Drag)
+                self.drag_handle(div().flex_1().h_full().flex().items_center().gap(s.px(8.)))
                     .child(chip)
                     .child(div().flex_1())
                     .child(
@@ -1089,7 +1129,8 @@ impl Render for MeterView {
 
         let model_entity = self.model.clone();
         let model = model_entity.read(cx);
-        let s = Scale(model.settings.scale());
+        let s = Scale(model.settings.scale() * self.preview_zoom.unwrap_or(1.0));
+        let fits_window = self.preview_zoom.is_none();
         let capsule = model.settings.layout == Layout::Capsule;
         let shown = match model.active_board() {
             Board::Session => model.session().map(Shown::Session).or(model.live().map(Shown::Target)),
@@ -1155,6 +1196,9 @@ impl Render for MeterView {
             .text_size(s.px(13.))
             .text_color(rgba(TEXT))
             .on_children_prepainted(move |bounds, window, cx| {
+                if !fits_window {
+                    return;
+                }
                 // The card, and the open menu where it hangs below the card;
                 // the scrim only covers whatever the window already is.
                 let card = bounds.first();
@@ -1175,6 +1219,16 @@ impl Render for MeterView {
             .child(card)
             .children(scrim)
             .children(menu)
+            .children(fits_window.then(|| self.drag.listener()))
+    }
+}
+
+/// The card's width at 100% content scale.
+pub fn board_width(settings: &OverlaySettings) -> f32 {
+    if settings.show_damage {
+        CARD_WIDTH_WITH_DAMAGE
+    } else {
+        CARD_WIDTH
     }
 }
 

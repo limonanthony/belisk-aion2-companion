@@ -1,12 +1,17 @@
-//! The windows besides the meter: fight history, player detail and PvP.
+//! The windows besides the meter: fight history, player detail, PvP,
+//! Settings and the event reminder.
 //!
-//! Each kind has at most one window. Opening one that is already open raises
-//! it, without activating it, and the player detail window is pointed at the
-//! new player instead. A window closes with its own × or when the app quits.
-//! Like the meter's, these windows are frameless, topmost, out of the taskbar
-//! and non-activating, and are exactly as large as their card; they are placed
-//! beside the meter the first time they open. The lock (Alt+CapsLock) applies
-//! to the meter only, as in the Tauri app.
+//! Each kind has at most one window. Opening one that is already open brings
+//! it forward, and the player detail window is pointed at the new player
+//! instead; a newer reminder takes the place of the one up. A window closes
+//! with its own × or when the app quits.
+//! Like the meter's, the history, detail, PvP and reminder windows are
+//! frameless, topmost, out of the taskbar and non-activating, and are exactly
+//! as large as their card; they are placed beside the meter the first time
+//! they open, and the reminder keeps to the meter while it is up.
+//! Settings is a normal window instead: it takes the keyboard focus, has a
+//! taskbar button and opens in the middle of the screen. The lock
+//! (Alt+CapsLock) applies to the meter, and to the reminder sitting on it.
 
 pub mod chrome;
 mod monitor;
@@ -15,20 +20,23 @@ mod registry;
 pub mod text_input;
 pub mod typing;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gpui::{
-    AnyEntity, AnyWindowHandle, App, AppContext as _, Entity, Global, Render, Window, WindowHandle,
+    AnyEntity, AnyWindowHandle, App, AppContext as _, Entity, Global, Pixels, Render, Size, Window, WindowHandle,
 };
 use windows::Win32::Foundation::HWND;
 
 use crate::detail::{DetailModel, DetailSource, DetailView};
 use crate::history::{HistoryModel, HistoryView};
-use crate::meter::{MeterModel, MeterView};
+use crate::meter::{self, MeterModel, MeterView};
 use crate::overlay::{self, Placement};
 use crate::pvp::{PvpModel, PvpView};
-use placement::Side;
+use crate::reminders::{self, MeterLink, ReminderView, ShowReminder};
+use crate::settings::{self, DetailPlacement, RuntimeModel, SettingsView};
+use placement::{Anchor, Side};
+pub use placement::Rect;
 pub use registry::WindowKind;
 use registry::{Opened, Registry};
 
@@ -39,7 +47,9 @@ const PVP_SIZE: (f32, f32) = (340.0, 420.0);
 #[derive(Clone)]
 struct Open {
     window: AnyWindowHandle,
-    model: AnyEntity,
+    /// What the window shows, kept by the registry; none when the view is
+    /// all there is, so closing the window releases it.
+    model: Option<AnyEntity>,
 }
 
 struct Secondary {
@@ -59,6 +69,7 @@ pub fn init(meter: &WindowHandle<MeterView>, placement: Placement, cx: &mut App)
     text_input::bind_keys(cx);
     let registry = Rc::new(RefCell::new(Registry::default()));
     cx.set_global(Secondary { registry: registry.clone(), meter_hwnd, placement });
+    cx.subscribe(&reminders::global(cx), |_, request: &ShowReminder, cx| show_reminder(request, cx)).detach();
     cx.on_app_quit(move |cx| {
         let open = registry.borrow_mut().drain();
         for open in open {
@@ -80,12 +91,12 @@ pub fn open_history(meter_model: &Entity<MeterModel>, cx: &mut App) {
         let window = create_window(
             WindowKind::History,
             HISTORY_SIZE,
-            Side::Below,
+            Anchor::Beside(Side::Below),
             move |window, cx| cx.new(|cx| HistoryView::new(view_model, meter_model, window, cx)),
             |_| {},
             cx,
         )?;
-        Ok(Open { window, model: model.into() })
+        Ok(Open { window, model: Some(model.into()) })
     });
     finish(WindowKind::History, opened, cx);
 }
@@ -100,7 +111,7 @@ pub fn open_pvp(meter_model: &Entity<MeterModel>, cx: &mut App) {
         let window = create_window(
             WindowKind::Pvp,
             PVP_SIZE,
-            Side::Left,
+            Anchor::Beside(Side::Left),
             move |window, cx| cx.new(|cx| PvpView::new(view_model, window, cx)),
             move |_| {
                 if let Some(meter) = &pvp_mode_to_reset {
@@ -112,7 +123,7 @@ pub fn open_pvp(meter_model: &Entity<MeterModel>, cx: &mut App) {
         if let Some(meter) = &meter {
             meter.set_pvp_mode(true);
         }
-        Ok(Open { window, model: model.into() })
+        Ok(Open { window, model: Some(model.into()) })
     });
     finish(WindowKind::Pvp, opened, cx);
 }
@@ -120,21 +131,25 @@ pub fn open_pvp(meter_model: &Entity<MeterModel>, cx: &mut App) {
 /// Opens the player detail window on `source`, or points the open one at it.
 pub fn open_detail(meter_model: &Entity<MeterModel>, source: DetailSource, cx: &mut App) {
     let registry = registry(cx);
+    let anchor = match settings::global(cx).read(cx).get().windows.detail_opens {
+        DetailPlacement::Beside => Anchor::Beside(Side::Right),
+        DetailPlacement::Centred => Anchor::Centre,
+    };
     let opened = registry.borrow_mut().open(WindowKind::Detail, || {
         let model = cx.new(|cx| DetailModel::new(meter_model.clone(), source.clone(), cx));
         let view_model = model.clone();
         let window = create_window(
             WindowKind::Detail,
             DETAIL_SIZE,
-            Side::Right,
+            anchor,
             move |_, cx| cx.new(|cx| DetailView::new(view_model, cx)),
             |_| {},
             cx,
         )?;
-        Ok(Open { window, model: model.into() })
+        Ok(Open { window, model: Some(model.into()) })
     });
     if opened == Ok(Opened::Existing) {
-        let existing = registry.borrow().get(WindowKind::Detail).map(|open| open.model.clone());
+        let existing = registry.borrow().get(WindowKind::Detail).and_then(|open| open.model.clone());
         if let Some(model) = existing.and_then(|model| model.downcast::<DetailModel>().ok()) {
             model.update(cx, |model, cx| model.select(source, cx));
         }
@@ -142,15 +157,143 @@ pub fn open_detail(meter_model: &Entity<MeterModel>, source: DetailSource, cx: &
     finish(WindowKind::Detail, opened, cx);
 }
 
+/// Opens Settings, or brings the open window to the front. It happens once
+/// the current event is over: the window reads the meter's lock, and the
+/// meter's window is still busy with the menu click that asked for Settings.
+pub fn open_settings(meter_model: &Entity<MeterModel>, cx: &mut App) {
+    let meter_model = meter_model.clone();
+    cx.defer(move |cx| open_settings_now(&meter_model, cx));
+}
+
+fn open_settings_now(meter_model: &Entity<MeterModel>, cx: &mut App) {
+    let registry = registry(cx);
+    let placement = cx.global::<Secondary>().placement;
+    let opened = registry.borrow_mut().open(WindowKind::Settings, || {
+        let runtime = cx.new(|cx| RuntimeModel::new(meter_model.clone(), cx));
+        let meter_window = meter::window(cx);
+        let view_runtime = runtime.clone();
+        let handle = settings::open_window(
+            placement,
+            move |window, cx| cx.new(|cx| SettingsView::new(view_runtime, Some(meter_window), window, cx)),
+            cx,
+        )?;
+        let view = handle.entity(cx).map_err(|error| format!("cannot reach the Settings view: {error:#}"))?;
+        let forget = registry.clone();
+        cx.observe_release(&view, move |_, _| {
+            forget.borrow_mut().remove(WindowKind::Settings);
+        })
+        .detach();
+        Ok(Open { window: handle.into(), model: Some(runtime.into()) })
+    });
+    finish(WindowKind::Settings, opened, cx);
+}
+
+/// Shows a reminder on the meter, or puts it in place of the one up.
+pub fn show_reminder(request: &ShowReminder, cx: &mut App) {
+    let registry = registry(cx);
+    let open = registry.borrow().get(WindowKind::Reminder).and_then(|open| open.window.downcast::<ReminderView>());
+    if let Some(window) = open {
+        if window.update(cx, |view, _, cx| view.show(request, cx)).is_ok() {
+            return;
+        }
+        registry.borrow_mut().remove(WindowKind::Reminder);
+    }
+    let (meter_hwnd, placement) = {
+        let secondary = cx.global::<Secondary>();
+        (secondary.meter_hwnd, secondary.placement)
+    };
+    let overlay = settings::global(cx).read(cx).get().overlay.clone();
+    let expected = reminders::expected_size(request, &overlay);
+    let gap = reminders::GAP * overlay.scale();
+    let meter_window = meter::window(cx);
+    let request = request.clone();
+    let opened: Result<Opened, String> = registry.borrow_mut().open(WindowKind::Reminder, || {
+        let on_meter = Rc::new(OnMeter { meter_hwnd, placement, placed: Cell::new(None) });
+        let handle = create_window(
+            WindowKind::Reminder,
+            (expected.width.as_f32(), expected.height.as_f32()),
+            Anchor::Stacked { gap },
+            move |window, cx| {
+                let link = MeterLink { window: meter_window, placement: on_meter };
+                cx.new(|cx| ReminderView::new(&request, Some(link), window, cx))
+            },
+            |_| {},
+            cx,
+        )?;
+        Ok(Open { window: handle, model: None })
+    });
+    if let Err(error) = opened {
+        eprintln!("cannot open the Reminder window: {error}");
+    }
+}
+
+/// Keeps a window on the meter's left edge, a gap above it, or below it when
+/// its monitor has no room above, as the meter moves and the window's card
+/// changes size. Off screen (dev captures) the meter is past every monitor,
+/// and the window with it.
+pub struct OnMeter {
+    meter_hwnd: HWND,
+    placement: Placement,
+    /// Where the window was last put, in device pixels.
+    placed: Cell<Option<Rect>>,
+}
+
+impl OnMeter {
+    /// `card` and `gap` are logical pixels at the window's scale.
+    pub fn place(&self, card: Size<Pixels>, gap: f32, window: &Window, cx: &mut App) {
+        let Some((meter, work)) = monitor::window_and_work_area(self.meter_hwnd) else {
+            return;
+        };
+        let scale = window.scale_factor();
+        let size = ((card.width.as_f32() * scale).ceil() as i32, (card.height.as_f32() * scale).ceil() as i32);
+        let (x, y) = Anchor::Stacked { gap }.corner(meter, size, work, scale);
+        let target = Rect { left: x, top: y, right: x + size.0, bottom: y + size.1 };
+        if self.placed.replace(Some(target)) == Some(target) {
+            return;
+        }
+        let hwnd = match overlay::hwnd(window) {
+            Ok(hwnd) => hwnd,
+            Err(error) => {
+                eprintln!("cannot place the reminder: {error}");
+                return;
+            }
+        };
+        let placement = self.placement;
+        // After the current frame: SetWindowPos sends WM_SIZE back into GPUI.
+        cx.spawn(async move |_| {
+            if let Err(error) = overlay::place(hwnd, x, y, size.0 as f32, size.1 as f32) {
+                eprintln!("{error}");
+            }
+            match placement {
+                Placement::Screen => {}
+                #[cfg(feature = "probes")]
+                Placement::OffScreen => {
+                    if let Err(error) = overlay::off_screen::ensure_off_screen(hwnd) {
+                        eprintln!("the reminder: {error}");
+                    }
+                }
+            }
+        })
+        .detach();
+    }
+}
+
 /// The meter saved a fight: the history window, if open, lists it.
 pub fn history_updated(cx: &mut App) {
     let Some(secondary) = cx.try_global::<Secondary>() else {
         return;
     };
-    let open = secondary.registry.borrow().get(WindowKind::History).map(|open| open.model.clone());
+    let open = secondary.registry.borrow().get(WindowKind::History).and_then(|open| open.model.clone());
     if let Some(model) = open.and_then(|model| model.downcast::<HistoryModel>().ok()) {
         model.update(cx, |model, cx| model.refresh(cx));
     }
+}
+
+/// The meter's window and the work area of its monitor, in device pixels,
+/// for the capture tooling.
+#[cfg(feature = "probes")]
+pub fn meter_and_work_area(cx: &App) -> Option<(Rect, Rect)> {
+    monitor::window_and_work_area(cx.try_global::<Secondary>()?.meter_hwnd)
 }
 
 /// The open window's handle, for the capture tooling.
@@ -162,7 +305,7 @@ pub fn window_of(kind: WindowKind, cx: &App) -> Option<AnyWindowHandle> {
 /// The open window's model, for the capture tooling.
 #[cfg(feature = "probes")]
 pub fn model_of<T: 'static>(kind: WindowKind, cx: &App) -> Option<Entity<T>> {
-    let model = cx.try_global::<Secondary>()?.registry.borrow().get(kind)?.model.clone();
+    let model = cx.try_global::<Secondary>()?.registry.borrow().get(kind)?.model.clone()?;
     model.downcast::<T>().ok()
 }
 
@@ -171,14 +314,20 @@ fn registry(cx: &App) -> Rc<RefCell<Registry<Open>>> {
 }
 
 /// A window that was already open comes forward; a failed open is reported.
+/// Settings is brought to the foreground like any normal window; the overlays
+/// never are.
 fn finish(kind: WindowKind, opened: Result<Opened, String>, cx: &mut App) {
     match opened {
         Ok(Opened::Created) => {}
         Ok(Opened::Existing) => {
             let open = registry(cx).borrow().get(kind).cloned();
+            let foreground = kind == WindowKind::Settings && cx.global::<Secondary>().placement == Placement::Screen;
             if let Some(open) = open {
                 let _ = open.window.update(cx, |_, window, _| {
-                    if let Ok(hwnd) = overlay::hwnd(window) {
+                    let Ok(hwnd) = overlay::hwnd(window) else { return };
+                    if foreground {
+                        settings::bring_forward(hwnd);
+                    } else {
                         overlay::raise_without_activating(hwnd);
                     }
                 });
@@ -194,7 +343,7 @@ fn finish(kind: WindowKind, opened: Result<Opened, String>, cx: &mut App) {
 fn create_window<V: Render + 'static>(
     kind: WindowKind,
     (width, height): (f32, f32),
-    side: Side,
+    anchor: Anchor,
     build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
     on_close: impl FnOnce(&mut App) + 'static,
     cx: &mut App,
@@ -213,14 +362,14 @@ fn create_window<V: Render + 'static>(
             handle
                 .update(cx, |_, window, _| -> Result<(), String> {
                     let hwnd = overlay::hwnd(window)?;
-                    overlay::make_overlay(hwnd);
+                    overlay::make_overlay(hwnd)?;
                     let scale = window.scale_factor();
                     let (device_width, device_height) = (width * scale, height * scale);
                     match placement {
                         Placement::Screen => {
                             let size = (device_width.ceil() as i32, device_height.ceil() as i32);
                             let (x, y) = monitor::window_and_work_area(meter_hwnd)
-                                .map_or((64, 64), |(meter, work)| placement::beside(meter, size, work, side));
+                                .map_or((64, 64), |(meter, work)| anchor.corner(meter, size, work, scale));
                             overlay::place(hwnd, x, y, device_width, device_height)?;
                             overlay::show_without_activating(hwnd);
                             Ok(())

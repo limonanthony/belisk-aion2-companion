@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use aether_core::events::MeterEvent;
 use aether_core::models::diagnostics::MemorySnapshot;
-use gpui::{App, AsyncApp, Entity, WindowHandle};
+use gpui::{App, AsyncApp, Context, Entity, WindowHandle};
 use windows::Win32::Foundation::{FILETIME, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     ClientToScreen, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject,
@@ -20,8 +20,9 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
 use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetWindowRect, PostMessageW, PW_RENDERFULLCONTENT, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE,
+    GetClientRect, GetWindowRect, PostMessageW, SendMessageW, HTCAPTION, HTCLIENT, HTCLOSE, HTMINBUTTON,
+    MA_ACTIVATE, MA_ACTIVATEANDEAT, MA_NOACTIVATE, MA_NOACTIVATEANDEAT, PW_RENDERFULLCONTENT, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCHITTEST,
 };
 
 use crate::capture_secondary;
@@ -30,9 +31,10 @@ use crate::meter::{
     Board, BossChoice, Layout, MeterModel, MeterView, OverlaySettings, PctMode, ReplayState,
 };
 use crate::overlay::{self, off_screen};
+use crate::sample;
 
 /// Long enough for a 240 ms tween, a fade and the window fitting its card.
-const SETTLE: Duration = Duration::from_millis(700);
+pub(crate) const SETTLE: Duration = Duration::from_millis(700);
 const REPLAY_INTERVAL: Duration = Duration::from_secs(15);
 /// After the replay, a provisional summary needs 15 s of quiet.
 const AFTER_REPLAY: Duration = Duration::from_secs(25);
@@ -212,8 +214,37 @@ async fn capture_fixtures(
         show_fixture(window, model, fixture, cx)?;
         measure_idle(window, fixture.name, cx).await?;
     }
+    check_hit_test(window, model, &[&fixtures[14], &fixtures[0], &fixtures[19]], cx).await?;
     show_fixture(window, model, &fixtures[0], cx)?;
-    check_menu_dismissal(window, model, cx).await
+    check_menu_dismissal(window, model, cx).await?;
+    // GPUI routes the press by the last frame drawn, so the menu the
+    // previous check closed must be gone from it first.
+    cx.background_executor().timer(SETTLE).await;
+    let (hwnd, scale) = window
+        .update(cx, |_, window, _| overlay::hwnd(window).map(|hwnd| (hwnd, window.scale_factor())))
+        .map_err(|error| format!("overlay window gone: {error:#}"))??;
+    check_click_activation(hwnd, "a click on the meter", MA_NOACTIVATE)?;
+    check_drag(hwnd, scale, NAME_POINT, "the meter's name", cx).await
+}
+
+/// Asks our own window what a left click on its client area would answer to
+/// `WM_MOUSEACTIVATE`. A sent message activates nothing; only a real click,
+/// which a capture never makes, would act on the answer.
+pub(crate) fn check_click_activation(hwnd: HWND, label: &str, expected: u32) -> Result<(), String> {
+    let hit = LPARAM(((WM_LBUTTONDOWN as isize) << 16) | HTCLIENT as isize);
+    let answer = unsafe { SendMessageW(hwnd, WM_MOUSEACTIVATE, Some(WPARAM(hwnd.0 as usize)), Some(hit)) }.0 as u32;
+    let name = |code: u32| match code {
+        MA_ACTIVATE => "MA_ACTIVATE".to_string(),
+        MA_ACTIVATEANDEAT => "MA_ACTIVATEANDEAT".to_string(),
+        MA_NOACTIVATE => "MA_NOACTIVATE".to_string(),
+        MA_NOACTIVATEANDEAT => "MA_NOACTIVATEANDEAT".to_string(),
+        other => format!("{other}"),
+    };
+    println!("{label}: WM_MOUSEACTIVATE answers {} (expected {})", name(answer), name(expected));
+    if answer != expected {
+        return Err(format!("{label}: WM_MOUSEACTIVATE answers {}, not {}", name(answer), name(expected)));
+    }
+    Ok(())
 }
 
 /// Client points on the Session card at 100% (310x260): a row, the switch's
@@ -325,6 +356,155 @@ async fn check_menu_dismissal(
     Ok(())
 }
 
+/// What a posted drag did to the window, in device pixels.
+pub(crate) struct DragOutcome {
+    /// How far the pointer moved with the button held.
+    pub pointer: (i32, i32),
+    pub moved: (i32, i32),
+    /// How far a move without the button, after the release, moved it.
+    pub after_release: (i32, i32),
+}
+
+/// A press on `from` (logical client pixels), a move with the button held,
+/// the release, then a move without it, all posted to our own window in one
+/// batch so the capture GPUI takes on the press never waits on the real
+/// mouse.
+pub(crate) async fn post_drag(hwnd: HWND, scale: f32, from: (i32, i32), cx: &mut AsyncApp) -> Result<DragOutcome, String> {
+    let post = |message: u32, wparam: usize, (x, y): (i32, i32)| unsafe {
+        let lparam = LPARAM((((y as u16) as isize) << 16) | (x as u16) as isize);
+        let _ = PostMessageW(Some(hwnd), message, WPARAM(wparam), lparam);
+    };
+    let origin = || {
+        let mut rect = RECT::default();
+        unsafe {
+            let _ = GetWindowRect(hwnd, &mut rect);
+        }
+        (rect.left, rect.top)
+    };
+    let settle = Duration::from_millis(150);
+    let device = |(x, y): (i32, i32)| ((x as f32 * scale).round() as i32, (y as f32 * scale).round() as i32);
+    let (from, to) = (device(from), device((from.0 - 30, from.1 + 12)));
+
+    let before = origin();
+    post(WM_MOUSEMOVE, 0, from);
+    post(WM_LBUTTONDOWN, MK_LBUTTON, from);
+    post(WM_MOUSEMOVE, MK_LBUTTON, to);
+    post(WM_LBUTTONUP, 0, to);
+    cx.background_executor().timer(settle).await;
+    off_screen::ensure_off_screen(hwnd)?;
+    let dragged = origin();
+    post(WM_MOUSEMOVE, 0, from);
+    cx.background_executor().timer(settle).await;
+    off_screen::ensure_off_screen(hwnd)?;
+    let released = origin();
+    Ok(DragOutcome {
+        pointer: (to.0 - from.0, to.1 - from.1),
+        moved: (dragged.0 - before.0, dragged.1 - before.1),
+        after_release: (released.0 - dragged.0, released.1 - dragged.1),
+    })
+}
+
+/// A drag on `handle` at `from` must move the window exactly with the held
+/// move and ignore the later one.
+pub(crate) async fn check_drag(
+    hwnd: HWND,
+    scale: f32,
+    from: (i32, i32),
+    handle: &str,
+    cx: &mut AsyncApp,
+) -> Result<(), String> {
+    let DragOutcome { pointer, moved, after_release } = post_drag(hwnd, scale, from, cx).await?;
+    println!(
+        "drag-check: pressed on {handle} at {from:?}, pointer moved {pointer:?} with the button held: window moved {moved:?}; a move after the release moved it {after_release:?}",
+    );
+    if moved != pointer {
+        return Err(format!("drag-check on {handle}: the window moved {moved:?}, expected {pointer:?}"));
+    }
+    if after_release != (0, 0) {
+        return Err(format!("drag-check on {handle}: a move after the release still moved the window by {after_release:?}"));
+    }
+    Ok(())
+}
+
+/// On the header's name, left of anything the pointer shows.
+const NAME_POINT: (i32, i32) = (60, 20);
+
+/// Header and row hit tests, left to right, with the tools shown and at rest.
+/// Windows reports the pointer crossing between client and non-client area
+/// as a leave, and GPUI clears its hover flag on it, so the card must have no
+/// non-client part.
+async fn check_hit_test(
+    window: WindowHandle<MeterView>,
+    model: &Entity<MeterModel>,
+    fixtures: &[&Fixture],
+    cx: &mut AsyncApp,
+) -> Result<(), String> {
+    let (hwnd, scale) = window
+        .update(cx, |_, window, _| overlay::hwnd(window).map(|hwnd| (hwnd, window.scale_factor())))
+        .map_err(|error| format!("overlay window gone: {error:#}"))??;
+    let mut not_client = Vec::new();
+    for fixture in fixtures {
+        for pointer in [true, false] {
+            show_fixture(window, model, fixture, cx)?;
+            set_view(window, Some(pointer), false, cx)?;
+            cx.background_executor().timer(SETTLE).await;
+            for y in [HEADER_Y, ROW_POINT.1 as f32] {
+                let runs = hit_test_runs(hwnd, scale, y);
+                let state = format!("{} pointer {} y {y}", fixture.name, if pointer { "over" } else { "away" });
+                println!("hit-test {state}: {}", describe_runs(&runs));
+                if runs.iter().any(|(code, _, _)| *code as u32 != HTCLIENT) {
+                    not_client.push(state);
+                }
+            }
+        }
+    }
+    if !not_client.is_empty() {
+        return Err(format!("hit-test: not all client area in {}", not_client.join("; ")));
+    }
+    Ok(())
+}
+
+const HEADER_Y: f32 = 20.0;
+
+/// `WM_NCHITTEST` along the client row at `y` (logical), as runs of equal
+/// answers `(code, first x, last x)` in logical x. GPUI answers from the last
+/// mouse move it handled, not from the point in the message, so each point
+/// is sent as a move first.
+pub(crate) fn hit_test_runs(hwnd: HWND, scale: f32, y: f32) -> Vec<(isize, i32, i32)> {
+    let mut client = RECT::default();
+    unsafe {
+        let _ = GetClientRect(hwnd, &mut client);
+    }
+    let pack = |point: POINT| LPARAM((((point.y as u16) as isize) << 16) | (point.x as u16) as isize);
+    let mut runs: Vec<(isize, i32, i32)> = Vec::new();
+    for x in 0..client.right {
+        let mut point = POINT { x, y: (y * scale).round() as i32 };
+        let code = unsafe {
+            let _ = SendMessageW(hwnd, WM_MOUSEMOVE, Some(WPARAM(0)), Some(pack(point)));
+            let _ = ClientToScreen(hwnd, &mut point);
+            SendMessageW(hwnd, WM_NCHITTEST, Some(WPARAM(0)), Some(pack(point))).0
+        };
+        let logical = (x as f32 / scale) as i32;
+        match runs.last_mut() {
+            Some((last, _, end)) if *last == code => *end = logical,
+            _ => runs.push((code, logical, logical)),
+        }
+    }
+    runs
+}
+
+/// "HTCLIENT 0-309" or "HTCLIENT 0-3, HTCAPTION 4-201, …".
+pub(crate) fn describe_runs(runs: &[(isize, i32, i32)]) -> String {
+    let name = |code: isize| match code as u32 {
+        HTCLIENT => "HTCLIENT".to_string(),
+        HTCAPTION => "HTCAPTION".to_string(),
+        HTMINBUTTON => "HTMINBUTTON".to_string(),
+        HTCLOSE => "HTCLOSE".to_string(),
+        other => format!("hit {other}"),
+    };
+    runs.iter().map(|(code, start, end)| format!("{} {start}-{end}", name(*code))).collect::<Vec<_>>().join(", ")
+}
+
 fn show_fixture(
     window: WindowHandle<MeterView>,
     model: &Entity<MeterModel>,
@@ -336,7 +516,7 @@ fn show_fixture(
             *model = MeterModel::new(fixture.settings.clone(), None);
             model.use_memory_mobs();
             if let Some(best) = fixture.best {
-                model.seed_personal_best(fixtures::YOU, fixtures::BOSS_MOB, best);
+                model.seed_personal_best(sample::YOU, sample::BOSS_MOB, best);
             }
             let now = Instant::now();
             let quiet = now - Duration::from_secs(125);
@@ -351,16 +531,16 @@ fn show_fixture(
                 Scene::SameClassSession => vec![(fixtures::same_classes(fixtures::open_world()), now)],
                 Scene::SameClassBoss => vec![
                     (fixtures::same_classes(fixtures::open_world()), now),
-                    (fixtures::same_classes(fixtures::boss_fight(221.0, 624)), now),
+                    (fixtures::same_classes(sample::boss_fight(221.0, 624)), now),
                 ],
                 Scene::Unidentified => vec![(fixtures::unidentified(), now)],
-                Scene::Boss => vec![(fixtures::boss_fight(221.0, 624), now)],
+                Scene::Boss => vec![(sample::boss_fight(221.0, 624), now)],
                 Scene::LongBoss => vec![(fixtures::long_boss_fight(221.0, 624), now)],
                 Scene::Final => vec![
-                    (fixtures::boss_fight(247.0, 40), now),
-                    (fixtures::boss_fight(248.0, 0), now),
+                    (sample::boss_fight(247.0, 40), now),
+                    (sample::boss_fight(248.0, 0), now),
                 ],
-                Scene::Provisional => vec![(fixtures::boss_fight(177.0, 183), quiet)],
+                Scene::Provisional => vec![(sample::boss_fight(177.0, 183), quiet)],
             };
             for (snapshot, at) in snapshots {
                 model.apply(MeterEvent::DpsSnapshot(snapshot), at);
@@ -433,9 +613,9 @@ async fn capture_replay(
         set_view(window, Some(false), true, cx)?;
         shoot(window, dir, &format!("{name}-locked"), cx).await?;
         set_view(window, Some(false), false, cx)?;
-        cx.update(|cx| model.update(cx, |model, cx| model.toggle_layout(cx)));
+        cx.update(|cx| model.update(cx, toggle_layout));
         shoot(window, dir, &format!("{name}-capsule"), cx).await?;
-        cx.update(|cx| model.update(cx, |model, cx| model.toggle_layout(cx)));
+        cx.update(|cx| model.update(cx, toggle_layout));
 
         let replay = cx.update(|cx| model.read(cx).replay.clone());
         if let ReplayState::Failed(error) = replay {
@@ -451,6 +631,15 @@ async fn capture_replay(
         }
         cx.background_executor().timer(REPLAY_INTERVAL).await;
     }
+}
+
+/// The capsule button's effect, without the settings store: captures never
+/// touch the user's `settings.json`.
+fn toggle_layout(model: &mut MeterModel, cx: &mut Context<MeterModel>) {
+    let mut settings = model.settings.clone();
+    settings.layout = settings.layout.toggled();
+    model.set_overlay_settings(settings);
+    cx.notify();
 }
 
 fn set_view(
@@ -499,6 +688,13 @@ pub async fn shoot_hwnd(hwnd: HWND, dir: &Path, name: &str, cx: &mut AsyncApp) -
 
 /// The client area as the compositor has it, with its alpha.
 pub fn grab(hwnd: HWND, path: &Path) -> Result<(u32, u32), String> {
+    let image = grab_image(hwnd)?;
+    image.save(path).map_err(|error| format!("cannot write {}: {error}", path.display()))?;
+    Ok(image.dimensions())
+}
+
+/// [`grab`] without writing a file.
+pub fn grab_image(hwnd: HWND) -> Result<image::RgbaImage, String> {
     off_screen::ensure_off_screen(hwnd)?;
     let mut outer = RECT::default();
     let mut client = RECT::default();
@@ -523,10 +719,7 @@ pub fn grab(hwnd: HWND, path: &Path) -> Result<(u32, u32), String> {
         }
     }
     image::RgbaImage::from_raw(client_width, client_height, rgba)
-        .ok_or("captured pixels do not match the client size")?
-        .save(path)
-        .map_err(|error| format!("cannot write {}: {error}", path.display()))?;
-    Ok((client_width, client_height))
+        .ok_or_else(|| "captured pixels do not match the client size".to_string())
 }
 
 fn print_window(hwnd: HWND, width: i32, height: i32) -> Result<Vec<u8>, String> {

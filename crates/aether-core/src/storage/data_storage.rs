@@ -675,6 +675,32 @@ impl DataStorage {
         }));
     }
 
+    /// The game names the local character once, at login. A later connection (a
+    /// zone change) opens with the character's combat power and its own HP, and
+    /// gives it a new actor id without naming it again, so that HP packet's
+    /// target is the character under the name already known. Nothing changes
+    /// when no character was named, or the id already belongs to someone.
+    pub fn rebind_main_actor(&self, actor_id: u32) -> bool {
+        let (name, sid) = {
+            let inner = self.inner.read().unwrap();
+            if inner.actor_id_name_map.contains_key(&actor_id)
+                || inner.mob_id_code_map.contains_key(&actor_id)
+            {
+                return false;
+            }
+            let Some(name) = inner.main_actor_name.clone() else {
+                return false;
+            };
+            let sid = inner
+                .main_actor_id
+                .and_then(|previous| inner.actor_id_server_map.get(&previous).cloned());
+            (name, sid)
+        };
+        self.append_actor(actor_id, &name, sid.as_deref());
+        self.set_main_actor(actor_id, &name);
+        true
+    }
+
     pub fn get_dps_stats_snapshot(&self) -> HashMap<u32, HashMap<u32, HashMap<u32, SkillStats>>> {
         self.inner.read().unwrap().dps_stats.map.clone()
     }

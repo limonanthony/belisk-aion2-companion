@@ -143,8 +143,8 @@ fn assemble(
         detail: if elevated {
             "Running elevated, which packet capture requires.".to_string()
         } else {
-            "Aether is not running as Administrator. Capture drivers cannot be opened without it \
-             -- close Aether and start it again."
+            "The meter is not running as Administrator. Capture drivers cannot be opened without it \
+             -- close the meter and start it again."
                 .to_string()
         },
         ok: elevated,
@@ -181,7 +181,7 @@ fn assemble(
         label: "WinDivert",
         detail: match &windivert {
             None if npcap_ok => "Bundled as a fallback. Its driver is loaded only if Npcap cannot \
-                                 capture, and unloaded again when Aether is done with it."
+                                 capture, and unloaded again when the meter is done with it."
                 .to_string(),
             None => "Bundled driver answering, and used for capture.".to_string(),
             Some(error) if windivert_file_missing => format!(

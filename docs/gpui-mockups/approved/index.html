@@ -119,6 +119,7 @@
         <a href="pvp.html">PvP overlay</a>
         <a href="detail.html">Player detail</a>
         <a href="history.html">Fight history</a>
+        <a href="reminders.html">Reminder card</a>
       </nav>
       <h1>Approved screens <small>reference for the GPUI implementation</small></h1>
       <ul class="rationale">
@@ -153,10 +154,11 @@
       <section class="screen is-wide">
         <div>
           <h2><a href="settings.html">Settings</a></h2>
-          <p>Validated in round 3. Overlay (with the live preview), Meter behaviour, Shortcuts (recorder, conflict), Capture (status, backend, recording, replay, log folder), Personal bests (reset confirm, empty), General (language), About (licence, credits, storage, clear-cache dialog).</p>
+          <p>Validated in round 3. Overlay (with the live preview), Meter behaviour, Shortcuts (recorder, conflict), Capture (status, backend, recording, replay, log folder), Personal bests (reset confirm, empty), Reminders (added 2026-10-05: master switch, lead time, sound, test, one switch per event; rows dim when reminders are off), General (language), About (licence, credits, storage, clear-cache dialog).</p>
         </div>
         <div class="frames">
           <iframe title="Settings, overlay" src="settings.html?embed&amp;states=overlay" height="680"></iframe>
+          <iframe title="Settings, reminders" src="settings.html?embed&amp;states=reminders" height="680"></iframe>
         </div>
       </section>
 
@@ -204,6 +206,18 @@
         </div>
       </section>
 
+      <section class="screen">
+        <div>
+          <h2><a href="reminders.html">Reminder card</a></h2>
+          <p>Validated 2026-10-05. Its own overlay window 6 px above the meter (below it when the meter is at the top of the screen), on the meter's left edge and at its width; a fixed 220 px card in the capsule layout. A "In 1 min · 16:00" header, then each event's name and one line of fact; events at the same minute share one card, the rarer first.</p>
+          <p>Goes by itself after 30 s, with a thin line draining over them; the pointer over it pauses. Unlocked, a click or its × dismisses it; locked, it is click-through with no ×. States: one, two and three events, 5 min ahead, pointer over, last seconds, capsule, below the meter, locked, test, live.</p>
+        </div>
+        <div class="frames">
+          <iframe title="Reminder card, two events" src="reminders.html?embed&amp;scenes=bright&amp;states=two" height="440"></iframe>
+          <iframe title="Reminder card, meter locked" src="reminders.html?embed&amp;scenes=dark&amp;states=locked" height="440"></iframe>
+        </div>
+      </section>
+
       <section class="tokens" aria-labelledby="tokens-title">
         <h2 id="tokens-title">Design tokens in short</h2>
         <ul>
@@ -215,6 +229,7 @@
           <li>Text: <code>rgba(255, 246, 236, …)</code> at 0.96, 0.82 (combat power), 0.66 and 0.44. Accents: good <code>#86e3a8</code>, warn <code>#f2c66d</code>, bad <code>#f7a8a8</code>, boss HP <code>#e8735f</code>, new PB <code>#fde68a</code> on amber 0.17. Class colours appear only on bars, coverage bars and the capsule badge.</li>
           <li>Overlay window parts: segmented tabs, 26 px inputs and selects, popovers on <code>rgba(30, 26, 22, 0.98)</code>, a "Delete?" danger fill with Cancel for confirmations, rows that open to a four-column figure block.</li>
           <li>Main window: opaque canvas <code>#141210</code>, sidebar and title bar <code>#0e0c0b</code>, groups <code>#1b1815</code> with 10 px radius; one cream primary button (<code>#f3ebe1</code> on <code>#17120d</code>) per view; cream switches and sliders.</li>
+          <li>Reminder card: the meter's card at the meter's width (220 px over the capsule), 6 px above it; bell header, 13 px event names, 11.5 px facts, a 2 px time-left line; 150 ms fades, 30 s, paused under the pointer.</li>
         </ul>
       </section>
 

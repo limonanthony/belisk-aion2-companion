@@ -65,6 +65,14 @@ impl FightTracker {
         }
     }
 
+    /// Switching summaries off takes the one that is up down with it.
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+        if !enabled {
+            self.shown = None;
+        }
+    }
+
     pub fn shown(&self) -> Option<ShownSummary> {
         self.shown
     }

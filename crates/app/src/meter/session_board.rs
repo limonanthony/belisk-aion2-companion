@@ -30,7 +30,7 @@ impl SessionBoard {
         let you = you_index(snapshot, players);
         let top_damage = top.total_damage.max(1) as f32;
 
-        let rows: Vec<PlayerRow> = visible_indexes(players.len(), you)
+        let rows: Vec<PlayerRow> = visible_indexes(players.len(), you, settings.players_shown)
             .into_iter()
             .map(|index| {
                 let player = &players[index];

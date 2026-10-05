@@ -20,7 +20,7 @@ use windows::Win32::UI::HiDpi::{
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClientRect, GetForegroundWindow, GetWindow, GetWindowRect,
     IsWindowVisible, PostMessageW, SendMessageW, SetWindowPos, WindowFromPoint, GW_OWNER,
-    HTCAPTION, HTCLIENT, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST,
+    HTCLIENT, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST,
     WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
     WS_EX_TRANSPARENT,
 };
@@ -157,7 +157,7 @@ async fn probe(window: WindowHandle<MeterView>, foreground_before_open: HWND, ha
         info("5f.cross", "only one DPI in use on this machine; cross-monitor check not possible");
     }
 
-    // 5d: hover while unfocused, and the drag region.
+    // 5d: hover while unfocused; the whole card, header included, is client area.
     let hover_at = |point| {
         let (x, y) = physical(point);
         unsafe {
@@ -180,7 +180,7 @@ async fn probe(window: WindowHandle<MeterView>, foreground_before_open: HWND, ha
     report("5d.unhover", !hovered, "the pointer leaving the window put the gauge back");
 
     for (id, point, expected, what) in [
-        ("5d.hit.title", TITLE_POINT, HTCAPTION, "header title area is HTCAPTION"),
+        ("5d.hit.title", TITLE_POINT, HTCLIENT, "header title area is client area"),
         ("5d.hit.button", lock_button, HTCLIENT, "tool row button is client area"),
         ("5d.hit.row", ROW_POINT, HTCLIENT, "row area is client area"),
     ] {

@@ -132,7 +132,8 @@ reference for the implementation:
   (meter, PvP, detail, history, startup gate, Home, Settings). Open
   `index.html` in a browser; there is no build step.
 - `docs/gpui-mockups/approved/tokens.md`: colours, radii, type, spacing,
-  motion, interaction patterns, and how each maps to GPUI and GPUI Kit.
+  motion, interaction patterns, and how each maps to GPUI. (The mockups name
+  GPUI Kit components; the Kit is not used, see "Component library".)
 
 Only validated choices go into `approved/`. The other folders under
 `docs/gpui-mockups/` are exploration history. The main choices:
@@ -173,7 +174,7 @@ keeps per-target totals; the change is in what the meter shows.
   Order: exclusions, then the user's additions, then the bundled list, then the
   HP rule.
 - **Mob collection, off by default.** A "Collect mob data" switch (Settings →
-  Capture; a `--collect-mobs` launch flag until Settings exists) records mobs
+  Capture, stored in `settings.json` and applied live) records mobs
   into `mobs.json` in the app data folder: code, highest HP seen, first
   and last seen, times fought, boss flag, and the name with where it came from
   (bundled list, the user, or a review). The network sends codes, never names,
@@ -238,37 +239,17 @@ the local copy script and the installer's resource list drifted apart (see
   with English and French; Korean is dropped. The overlays currently carry their
   own small i18n module; the rewrite merges them into one.
 
-## Component library: GPUI Kit
+## Component library: none, plain GPUI
 
-[GPUI Kit](https://github.com/longbridge/gpui-kit) is Longbridge's new name for
-`gpui-component`. It is Apache-2.0, which is compatible with GPL-3.0.
-
-Where it saves time:
-
-- It is modeled on shadcn (`gpui-component` is the styled layer, `gpui-base` the
-  unstyled one) and ships the Lucide icon set. The current UI uses shadcn/Radix
-  and `lucide-react`, so most components translate one-for-one.
-- It has 75+ components, including buttons, switches, dialogs, dropdowns,
-  tooltips, inputs, virtual-scrolling tables and lists, and charts.
-- `gpui-kit` pins a GPUI version that is known to work with it, so the app
-  depends on one crate instead of tracking GPUI's own changes.
-- It has headless UI tests that render real components and simulate clicks and
-  keystrokes without opening a window. These cover interaction checks before
-  manual testing.
-
-Where it does not help much:
-
-- The overlays (meter, PvP, detail, history, log) have their own look: damage
-  bars, animated numbers, class and skill icons. That is custom drawing in plain
-  GPUI, using the kit's theme colors so the windows stay consistent.
-- Window-level work (click-through, non-focusable windows, tray, hotkeys,
-  updater, installer) is outside its scope.
-
-Decision: use `gpui-kit` styled components for the main app and settings, and
-plain GPUI for the overlays.
-
-Caveat: GPUI Kit is pre-1.0 (0.6.x to 0.7 at the time of writing). Upgrades can
-break things, so upgrade deliberately.
+Decision (user, 2026-10-05): GPUI Kit is not used. The main window and
+Settings are built from our own components on plain GPUI, with the minimum
+accessibility GPUI 0.3.7 offers (AccessKit roles, labels and toggled/numeric
+values, tab stops, keyboard focus order) and web-like focus and blur (a click
+outside an input or menu takes the focus away or closes it). The overlays
+already worked this way. The Kit was weighed for its component count and
+shadcn model, and dropped because the dependency tree and theme it brings are
+not worth the few widgets Settings needs (switch, slider, segmented control,
+select, key field, table, dialog).
 
 ## Performance
 
@@ -343,7 +324,10 @@ cleanly. UI fixes from upstream have to be redone by hand.
    `phase-3-overlays`: windows, the typing focus exception and the data, with
    placeholder views; see [Phase 3a results](#phase-3a-results-windows-focus-and-data-for-pvp-detail-and-history));
    3b draws them from the approved mockups.
-4. Main window, startup gate and settings, with GPUI Kit.
+4. Main window, startup gate and settings, with our own components (no GPUI
+   Kit). The Settings model, storage and live application
+   ([results](#phase-4-results-the-settings-model)) and the Settings window are
+   done on `phase-4-settings`; the main window and startup gate remain.
 5. Tray, global hotkeys, single instance, window position memory,
    translations (English and French).
 6. Portable zip build (WinDivert files, Administrator manifest) and release
@@ -381,14 +365,11 @@ meter design (2b) only has to draw.
 ### Versions
 
 - **GPUI:** `gpui-pre` and `gpui-pre-platform`, both `=0.3.7` (a snapshot of
-  Zed at `1a28cff`, repackaged on crates.io as the `gpui-pre-*` family). These are
-  the exact pins that GPUI Kit 0.7.0 carries: `gpui-component 0.7.0` requires
-  `gpui-pre = "=0.3.7"`. The `gpui` crate on crates.io (0.2.2, October 2025) is an
-  older line the Kit no longer uses.
-- **GPUI Kit:** 0.7.0 (`gpui-kit`, `gpui-component`, `gpui-base`, all 0.7.0). Not
-  added yet. In phase 4, replace the two direct GPUI dependencies in
-  `crates/app/Cargo.toml` with `gpui-kit` and the tree stays on one GPUI.
-- Both are pre-1.0 and exact-pinned, so upgrade them together.
+  Zed at `1a28cff`, repackaged on crates.io as the `gpui-pre-*` family), the
+  line GPUI Kit 0.7.0 pinned when the Kit was still the plan. The `gpui` crate
+  on crates.io (0.2.2, October 2025) is an older line.
+- GPUI Kit is not used (see "Component library"). Both GPUI crates are
+  pre-1.0 and exact-pinned, so upgrade them together.
 
 ### What is in the repository
 
@@ -432,9 +413,9 @@ foreground one, by handle.
 | | Requirement | Result | How, and what was observed |
 |---|---|---|---|
 | 5a | Transparent, borderless, always on top, out of taskbar and Alt+Tab | Works | `WindowKind::PopUp` creates `WS_EX_TOOLWINDOW \| WS_EX_TOPMOST` and no `WS_EX_APPWINDOW`; `WindowBackgroundAppearance::Transparent` is real per-pixel alpha (the game shows through the card and its rounded corners). Read back: ex-style `0x08200188`, no owner, visible. Screenshots: `unlocked.png`, `locked.png` |
-| 5b | Never takes focus | Works for creation and style changes; a real click is not tested | `focus: false` shows it with `SW_SHOWNOACTIVATE`; `overlay.rs` then adds `WS_EX_NOACTIVATE`, so clicking it does not activate it. `GetForegroundWindow` was the same before and after opening, after every lock toggle, and GPUI reports the window inactive. GPUI's `WM_MOUSEACTIVATE` handler answers `MA_ACTIVATE`; per the Win32 documentation `WS_EX_NOACTIVATE` is what stops it, and that was not exercised with a real mouse press (it would need synthetic input over the game). **Manual check:** click and drag the overlay in game and confirm the game keeps focus |
+| 5b | Never takes focus | Works for creation, style changes and the click answer; a real click is not tested | `focus: false` shows it with `SW_SHOWNOACTIVATE`; `overlay::make_overlay` then adds `WS_EX_NOACTIVATE`. `GetForegroundWindow` was the same before and after opening, after every lock toggle, and GPUI reports the window inactive. The style alone does not stop a click: it only changes what `DefWindowProc` answers to `WM_MOUSEACTIVATE`, and GPUI answers `MA_ACTIVATE` itself without calling it. So `make_overlay` also subclasses the window (`SetWindowSubclass`, removed on `WM_NCDESTROY`): while the window has `WS_EX_NOACTIVATE` it answers `MA_NOACTIVATE` (the click still reaches GPUI; not `MA_NOACTIVATEANDEAT`), otherwise GPUI answers, so the PvP field's typing exception, which clears the style, still activates on a click. Only overlays are subclassed; Settings is a normal window and activates. `--capture --fixtures` sends `WM_MOUSEACTIVATE` to our own windows and fails unless the meter, History, Detail, PvP and reminder answer `MA_NOACTIVATE`, PvP answers `MA_ACTIVATE` while editing and `MA_NOACTIVATE` after, and Settings answers `MA_ACTIVATE`. **Manual check:** click and drag the overlay in game and confirm the game keeps focus; click "+" in the PvP window and confirm the field takes the keys |
 | 5c | Lock is click-through, toggled at runtime | Works | `WS_EX_LAYERED \| WS_EX_TRANSPARENT` (plus `SetLayeredWindowAttributes(255)`) set and cleared with `SetWindowLongPtrW` on the UI thread. Read back `0x082801a8` locked, `0x08280188` unlocked. `WindowFromPoint` over the card skips the window when locked and returns it when unlocked. The window keeps drawing after becoming layered. The header button reaches the same path and unlocks itself after 5 s |
-| 5d | Drag by the header; hover while unfocused | Works; drag itself not exercised with a real mouse | A div marked `window_control_area(WindowControlArea::Drag)` answers `WM_NCHITTEST` with `HTCAPTION` (read back: 2 over the title area, 1 over the button and rows), so Windows runs the native move loop. A mouse move posted to the unfocused window set the button's hover state and cleared it again. The drag area must be its own element: a button inside it would start a drag instead of a click. **Manual check:** drag the header in game. |
+| 5d | Drag by the header; hover while unfocused | Works; drag itself not exercised with a real mouse | First a div marked `window_control_area(WindowControlArea::Drag)`, answering `WM_NCHITTEST` with `HTCAPTION` so Windows ran the native move loop. Replaced on 2026-10-05: Windows reports the pointer crossing between client and non-client area as a leave (`WM_MOUSELEAVE` / `WM_NCMOUSELEAVE`), GPUI clears its hover flag on either, and the name area reached further right when the tools hid (waiting card: `HTCAPTION` 13–200 with the tools, 13–241 without), so the tools flashed on every mouse move over the header. The whole card is now client area: a press on the header's name (the summary's chip and time) records the point, and the window follows the pointer while the left button is held (`overlay::WindowDrag`, moving with `SWP_NOACTIVATE`; the History, Detail and PvP headers use the same). The grab is kept in device pixels from the press (`overlay::Grab`), so reaching a monitor with another DPI mid-drag does not make the window jump (unit-tested; no second DPI here to try it), and locking mid-drag drops it. `--capture --fixtures` fails the run unless every `hit-test` answer is `HTCLIENT` and the posted `drag-check` press at (60, 20) moved to (30, 32) moves the window by (−30, 12) and a later move without the button moves it not at all. A mouse move posted to the unfocused window set the button's hover state and cleared it again. **Manual check:** drag the header in game. |
 | 5e | HWND from GPUI | Works | `Window` implements `raw_window_handle::HasWindowHandle`; `RawWindowHandle::Win32` gives the `HWND` (`overlay::hwnd`). No private API needed |
 | 5f | Per-monitor DPI | Works at 100%; cross-DPI not testable here | GPUI's embedded manifest declares PerMonitorV2 and the window reports it. At 96 dpi the scale is 1.0 and the client is 310 px for 310 logical. Both monitors run at 96 dpi, so a move to a different DPI could not be exercised; the probe does it automatically when it finds one |
 | 5g | Fonts | See below | Bahnschrift SemiCondensed cannot be selected; the rest works |
@@ -651,7 +632,7 @@ first hit" forever: launched without `--replay`, the app created no meter.
   defaults in two values: a 200 ms snapshot interval and a 50 ms unknown-packet
   resync delay (a unit test pins the full set). A user's own backend settings live
   in the Tauri webview's local storage, which the GPUI app cannot read, so they
-  are not carried over until the GPUI Settings exist. The meter starts with
+  are not carried over: the GPUI settings start from these defaults. The meter starts with
   `start_dps_meter` (Npcap first, WinDivert fallback) and is stopped on quit.
   The development checks (`--capture`, `--overlay-probe`, `--font-probe`) never
   start live capture.
@@ -677,7 +658,7 @@ first hit" forever: launched without `--replay`, the app created no meter.
     second `RT_MANIFEST` made the link fail (LNK1123). Features cannot turn it
     off. The root `Cargo.toml` patches `embed-resource` with `vendor/embed-resource`,
     a copy of 3.0.11 whose `compile()` returns early when the calling package is
-    `gpui-pre`. Drop the patch when GPUI stops embedding, or when the Kit's pinned
+    `gpui-pre`. Drop the patch when GPUI stops embedding, or when the pinned
     snapshot changes how it does it.
   - The manifest is linked into every binary of the package, including a bin's
     unit-test harness, which then cannot start unelevated (os error 740). The
@@ -748,8 +729,8 @@ Every field but `timesFought` is optional. Times are epoch seconds. There is
 so there is nothing to record. No player data is stored.
 
 - **What is saved.** User corrections always. Everything else (unknown mobs,
-  HP, counts, names) only when `DpsMeterConfig.collect_mobs` is on: the GPUI
-  app's `--collect-mobs` flag, live mode only. The default is off.
+  HP, counts, names) only when `DpsMeterConfig.collect_mobs` is on: the
+  "Collect mob data" switch in Settings → Capture. The default is off.
 - **When it is written.** A change sets a flag; a writer thread (`mob-store-writer`)
   writes when the file is dirty and the last write is at least 30 s old, so the
   first change goes out at once and a burst costs one write. A fight ending
@@ -797,7 +778,7 @@ never touched. Before identification the meter cannot tell, so any boss target
 engages as before; if one was engaged then and, once identified, you have
 neither hit it nor been hit by it, it is released ("not your fight"). A
 second boss does not replace it (see below). A stranger's boss that dies
-gets no summary. The decision is logged with `--debug-log` (reason "you hit
+gets no summary. The decision is logged with the decision log (reason "you hit
 it" or "it hit you"). It is let go when:
 
 - the boss **dies** (the final summary follows, then the automatic board is
@@ -810,12 +791,16 @@ it" or "it hit you"). It is let go when:
 - it is gone from the snapshot, or the user ruled it "not a boss";
 - the meter is **reset** (button, hotkey, idle reset or character change);
 - the local player's **actor id changes**: ids are per-zone handles, so that
-  would show a zone change. The code path exists, but the identification
-  packet is not re-sent on a zone change in the recorded sessions, so in
-  practice a boss that is left behind is let go by the 2-minute quiet rule.
-  The core parses no despawn or entity-removed packet, so nothing more
-  precise is known. (A re-sent identification with the same id is not a zone
-  change.)
+  shows a zone change. The identification packet is not re-sent on a zone
+  change, but the new connection opens with the character's combat power
+  (`0x56 0x36`) followed by its own HP packet; the core takes the actor of
+  that first HP packet as the character under the name already known
+  (`StreamProcessor::own_actor`, `DataStorage::rebind_main_actor`), which the
+  app sees as this change. Not on a connection that was named by `0x33 0x36`
+  itself, and only the first HP packet after the combat power counts. The core
+  parses no despawn or entity-removed packet, so nothing more precise is known
+  about a boss left behind (the 2-minute quiet rule covers it). (A re-sent
+  identification with the same id is not a zone change.)
 
 Bosses fought together (two sub-bosses of an expedition or conquest, a
 sub-boss beside the main boss) used to flip the board, because any other
@@ -835,7 +820,7 @@ summary and does not record it as finished, so it can come back under the same
 rule. When A dies, its final summary shows as usual and B (the boss you hit
 last, or the current target) engages at once; B does not take A's summary down.
 With no boss focused, the boss you hit within the last 20 s engages even if the
-current target is trash. `--debug-log` records the switch with the reason and
+current target is trash. The decision log records the switch with the reason and
 the timing.
 
 A user pin overrides the board but does not release the boss: unpinning goes
@@ -868,7 +853,8 @@ limit is armed on the model's timer, since snapshots stop when nothing is hit.
 
 ### Diagnostic log
 
-`--debug-log` (app launch flag; a Settings switch comes later) turns on the
+The "Decision log" switch (Settings → Capture, stored; it was the `--debug-log` launch
+flag) turns on the
 app's own decision log. It does not touch the core logger's debug level, which
 also writes a line per hit and buff on the packet thread and stays off. It
 writes, to `aether.log` (live) or
@@ -878,7 +864,7 @@ and released with the reason, whether and how your row is on the Target and
 Session boards (not identified, matched by name or by id, below the row cap,
 absent), identification and zone changes, summaries and who they are about,
 and boss corrections. Lines may hold player names, as the log already does;
-the log stays on the machine. With the flag off the cost is one flag check.
+the log stays on the machine. With the switch off the cost is one flag check.
 
 ### Layout D in the view
 
@@ -986,7 +972,7 @@ figures on every added shade over a dark scene) and off screen
 
 ### Not done
 
-No Settings switch for collection and no name-review UI. The Copy report still
+No name-review UI (the collection switch is in Settings). The Copy report still
 describes the target board.
 
 ## Phase 3a results: windows, focus and data for PvP, detail and history
@@ -1010,8 +996,15 @@ and keeps the models.
   and tool window, transparent, never shown by GPUI) and `overlay::make_overlay`
   (frame removed, `WS_POPUP` plus the DWM attributes, `WS_EX_NOACTIVATE`). The
   window is as large as its card: `overlay::fit_to_children` runs after layout
-  and resizes with `SWP_NOACTIVATE | SWP_NOZORDER`. Header drag is
-  `WindowControlArea::Drag`, with the × outside it, as on the meter.
+  and resizes with `SWP_NOACTIVATE | SWP_NOZORDER`. The header's title area
+  drags the window as the meter's does (`overlay::WindowDrag`, see 5d), with
+  the × outside it. Until 2026-10-05 it was `WindowControlArea::Drag`, whose
+  non-client crossings cleared GPUI's hover flag, which History reads to
+  close a dropdown and PvP to end the name edit. `--capture --fixtures` fails
+  unless all three windows answer `HTCLIENT` everywhere and a drag on the
+  title moves them by the pointer's delta; a drag on the PvP title keeps an
+  edit going, and a press on the History title with a dropdown open still
+  only closes it (the scrim takes it).
 - **Placement, first open only (no position memory yet, phase 5):** beside the
   meter, on the monitor's work area (`placement.rs`, tested): detail to its
   right, history below it (both as in the Tauri app), PvP to its left; each
@@ -1073,11 +1066,10 @@ name, press Enter, keep playing without clicking the game).
 **Text input: a minimal one**, `secondary/text_input.rs`, adapted from GPUI's
 own `examples/input.rs` (Apache-2.0) without selections or mouse dragging:
 typing, IME composition, caret keys, Ctrl+V, Enter, Escape, a 32-character
-limit. GPUI Kit's `Input` was not added now: the Kit is the planned library for
-the main window (phase 4), and pulling it in for one 26 px field would put its
-dependency tree and theme into the overlay build early and then have to be
-restyled to the overlay tokens. When the Kit arrives, the field can be swapped
-without touching the model (`PvpModel::add_name`).
+limit. GPUI Kit's `Input` was not added: the Kit is not used (see "Component
+library"), and one 26 px field does not need a dependency tree and theme
+restyled to the overlay tokens. The Settings key field and any other input
+can reuse or extend this one without touching the model (`PvpModel::add_name`).
 
 ### Data, per window
 
@@ -1278,6 +1270,142 @@ frames-per-idle-second probe exists for the meter only; the new windows redraw
 on model changes, anchor moves and tweens, but that was read from the code,
 not measured.
 
+## Phase 4 results: the settings model
+
+Branch `phase-4-settings`. The non-rendered half of Settings; the window is
+drawn from `docs/gpui-mockups/approved/settings.html` with our own components.
+
+- **Store.** `%APPDATA%/com.helveticxa.aether/settings.json`: versioned JSON,
+  missing fields take defaults, unknown fields are ignored, values are clamped
+  on load. An unreadable file or one from a newer build is renamed
+  `settings.json.bad-<seconds>` (as `mobs.json`) and the defaults are used.
+  Writes are atomic and happen 400 ms after the last change, plus once on quit.
+  Replay and capture runs use an in-memory store and never touch the file.
+- **Live application.** `settings::Settings` is the one entity everything
+  observes. A change replaces `MeterModel.settings` (the overlay and every
+  secondary window read it), switches the decision log, and, 150 ms after the
+  last change, applies the core options through `current_config()` +
+  `apply_config()` (never a stored full config: the PvP window switches
+  `pvp_mode_on` on the running meter). The capture backend priority is read
+  only when the meter starts, so it applies at the next launch.
+- **Launch flags.** `--collect-mobs` and `--debug-log` are gone; they are the
+  Capture switches "Collect mob data" and "Decision log".
+- **Defaults.** "Detect possible bosses" is on (the 1M HP rule), as the meter
+  has behaved so far; the mockup's Off is a sample. The lock is a live toggle,
+  not stored. "Players shown" (5–20) caps the rows of both boards and the
+  core's player limit.
+- **Left out of this cut:** the Shortcuts page, "Hide between fights" and the
+  other window rules (phase 5), font, fit height, language, window positions.
+- **Reset settings** (the mockup's "Clear cache") puts the settings back to
+  their defaults. History, personal bests, recordings and boss corrections in
+  `mobs.json` are kept.
+
+### The Settings window
+
+- **Window.** "Settings" in the meter's "…" menu opens one window
+  (`WindowKind::Settings`, a second open brings it forward). Unlike the
+  overlays it is a normal window: own 36 px title bar (drag, minimise,
+  close), a taskbar button, activated, 960 × 620, in the middle of the
+  screen. The title bar keeps Windows' caption and buttons
+  (`WindowControlArea::Drag`/`Min`/`Close`): crossing into them clears GPUI's
+  hover flag, which nothing in this window reads. It opens just after the
+  menu click, since it reads the meter's lock while the meter's window is
+  still dispatching that click.
+- **Sections.** Overlay (with the live preview), Meter behaviour, Capture,
+  Personal bests, Reminders, About; only the rows of this cut. Values are read from
+  `Settings` and written back on every change; there is no Save.
+- **Preview.** The real `MeterView` (`MeterView::preview`: zoomed so the plain
+  card is 236 px at 100%, never under the pointer, never fitting its window)
+  on a model fed `sample.rs`'s boss fight, re-set on every change. Its column
+  keeps the mockup's 262 px whatever the settings, so the rows beside it never
+  move; a card wider than the stage (Total damage, a larger content scale) is
+  drawn at the largest content scale that fits.
+- **Own controls, no Kit** (`settings/widgets.rs`): switch, slider (press,
+  drag, keys), segmented control (one tab stop, arrows), select (combobox
+  with a listbox), buttons, sidebar tabs, tooltip, dialog. Each has an
+  AccessKit role, label and state (toggled, numeric value/min/max/step,
+  value text, expanded, selected) and the slider answers Increment,
+  Decrement and SetValue.
+- **Keyboard and focus, as in a browser.** Tab/Shift+Tab walk the sidebar then
+  the page in reading order and scroll the page to the focused control;
+  Space/Enter press (on release); arrows, PageUp/PageDown, Home/End move
+  sliders, segmented controls, the list and the sidebar; Escape closes the
+  list or the Reset dialog and returns the focus to its opener; the dialog
+  keeps Tab inside it. A press on anything but a control (or outside the open
+  list) takes the focus to the window and closes the list. The cream ring
+  shows only when the focus came from the keyboard. Motion (list and dialog
+  fades, spinner) follows Windows' "Animation effects".
+- **Tests** (`settings/view.rs`, GPUI's test platform through the
+  `test-support` dev-dependency): Tab order and wrap, Space/Enter on a switch
+  reaching the overlay model, slider keys, slider press and drag, select
+  open/move/pick/Escape/click, dialog focus trap and Escape, press outside
+  blurring and closing, a change surviving a reload of `settings.json` in a
+  temp folder. The test platform measures text as zero-width, so layout is
+  checked by the captures.
+- **Captures.** `--capture --fixtures` ends with the Settings window
+  (`capture_settings.rs`): opened by a click on the menu item, every section,
+  the focus ring, keyboard and drag on sliders, the open select, the capture
+  check running and done, a recording, a replay, personal bests (confirm,
+  empty), the Reset dialog, and the meter captured after the page changed
+  it. Keys and clicks are posted to our window; the meter's state shown is
+  invented and held still (`RuntimeModel::hold_for_capture`).
+- **Differences from the mockup.** Barlow Semi Condensed for titles and
+  figures (as the overlays); no "Meter" sidebar entry (no Home yet); credits
+  without GPUI Kit, with Barlow (OFL) and no link buttons; the licence row
+  drops "Any shared build ships with its source" (a `--no-source` zip ships a
+  written offer; "Source and notice" opens README.txt); "Applies at next
+  start" under Backend priority; the Character tile and bests table follow
+  "Mask nicknames"; a focus ring (not in the mockup) in cream.
+
+### Event reminders
+
+`crates/app/src/reminders/` (Backlog TASK-1). A heads-up before the game's
+recurring timed events: Shugo Festival (:00), Dimensional Invasion (:30) and
+Rift portals (every 3 h from 02:00) are on by default; Watcher Kaira (every 3 h
+from 01:00), Artifact Siege, the Abyss field bosses, Guardian Lord Nahma, the
+Arena of Tactics queue and the reward-key refill can be switched on. A lead of
+1, 2, 3 or 5 minutes (default 1), a sound switch and a master switch live
+under `settings.json` → `reminders`; events starting in the same minute share
+one reminder.
+
+- **Data source.** MetaBot's event tables (`metabot.gg/en/aion-2/events`, read
+  from game client build 0.0.4387.0), kept as data in `reminders/events.rs`.
+  Its times are server times; MetaBot assumes Europe = Berlin without
+  confirming it.
+- **Clock rule.** The rules are read on the PC's local clock (Windows' time
+  zone, queried per instant), which equals server time for an EU player.
+  Hourly events follow the real hour; fixed wall times (the 3-hourly, weekly
+  and daily events) happen once per day, and a time skipped by a daylight-saving
+  changeover happens at the end of the gap. Details are at the top of
+  `reminders/schedule.rs`, with a test for each changeover.
+- **Runtime.** `Reminders` (a GPUI entity on the UI thread) sleeps on a GPUI
+  timer until the next reminder, at most 30 s at a time, so a PC that slept or a
+  changed clock is noticed within 30 s; a reminder whose event has already
+  started is dropped. It re-plans when the Settings change. It sends
+  `ShowReminder` for the view to draw and plays Windows' own `Media\chimes.wav`
+  (`PlaySoundW`, asynchronous, nothing bundled; the "SystemNotification" sound if
+  the file is missing). Replay, capture and
+  probe runs have no schedule and no sound; `test_reminder` still sends the
+  request.
+- **The card** (`reminders/view.rs`, approved `reminders.html`; Settings →
+  Reminders, after Personal bests). Its own overlay window
+  (`WindowKind::Reminder` in `secondary/`): frameless, topmost, tool window,
+  `WS_EX_NOACTIVATE`, shown with `SW_SHOWNOACTIVATE`, so it never takes focus.
+  6 px × content scale above the meter on its left edge, below it when its
+  monitor's work area has no room above; the meter's width (310 / 340 with
+  total damage, 220 in Capsule) and opacity. It follows the meter if the meter
+  is dragged while the card is up (checked every 100 ms), so it never ends up
+  over or away from it. A newer reminder replaces the card in the same window.
+  30 s, paused while the pointer is over it, then a 150 ms fade (both fades
+  dropped when Windows' animation effects are off); a click or × dismisses it.
+  While the meter is locked it is click-through (`WS_EX_TRANSPARENT`) with no
+  ×, following `LockChanged` live. Rarer events come first; the event lines
+  are the approved copy, so `EventInfo` keeps only id, name and rule. The test
+  card names the next real reminder. Redrawn ten times a second for the line,
+  only while it runs. `--capture --fixtures` shoots it (`reminder-*.png`, card
+  and meter where they sit) and fails if it is activatable or focused,
+  overlaps the meter, sits off its gap or edge, or takes clicks while locked.
+
 ## Effort
 
 Rough estimate, to be revised after phase 2:
@@ -1298,7 +1426,7 @@ What can move it:
 
 ## Who tests what
 
-- Agent: builds, `cargo test`, GPUI Kit headless UI tests, and replaying a
+- Agent: builds, `cargo test`, and replaying a
   recorded fight through the meter.
 - User: everything in-game. Overlay click-through, focus never leaving the game,
   staying on top of a borderless-fullscreen game, live capture, looks, and

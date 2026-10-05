@@ -6,9 +6,11 @@ and rank b; the round 2 combat-power fix; round 4, layout D with the Session
 and Target boards), [pvp.html](pvp.html),
 [detail.html](detail.html) and [history.html](history.html) (round 2), and
 [gate.html](gate.html), [home.html](home.html) and
-[settings.html](settings.html) (round 3). The shared overlay classes live in
-[overlay.css](overlay.css), the main-window components in [app.css](app.css).
-Later rounds extend this file only with values the user has approved.
+[settings.html](settings.html) (round 3), [reminders.html](reminders.html)
+and the Reminders section of settings.html (2026-10-05). The shared overlay
+classes live in [overlay.css](overlay.css), the main-window components in
+[app.css](app.css). Later rounds extend this file only with values the user
+has approved.
 
 Colours are sRGB. `a` is the user's background opacity (0–255 in Settings,
 default 150, so `a = 150/255 ≈ 0.59`).
@@ -224,7 +226,46 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
 - Chips and notes fade in over 150 ms. Nothing flashes or pulses.
 - The capsule grows into the card over 180 ms on pointer over and returns
   after a 350 ms grace period.
+- The reminder card fades in over 150 ms and fades out over 150 ms, on
+  time-out and on dismissal alike; no slide, no scale. Its time-left line
+  needs about one frame per pixel (10 per second at 100%), only while the
+  card is up.
 - Frames are drawn only on a snapshot or while a tween runs.
+
+## Reminder card
+
+A small overlay window of its own before timed events
+([reminders.html](reminders.html)). It uses the overlay values above: `card`
+at the user's opacity, `card-border`, no shadow, Barlow Semi Condensed, the
+meter's content scale.
+
+| Element | Value |
+|---|---|
+| Placement | 6 px above the meter's top edge, left edges aligned. If it does not fit above the meter on that monitor: 6 px below the meter's bottom edge, following the meter's height. Capsule layout: 6 px above the capsule, on its left edge |
+| Width | The meter's: 310 px, 340 with total damage; capsule layout a fixed 220 px. All times the content scale |
+| Height | Hugs the content, border included, at 100%: 1 event 84 px, 2 events 123, 3 events 162 |
+| Card | 14 px radius; 8 px sides and top, 6 px bottom |
+| Header | 22 px, 4 px left inset, 6 px gaps: Lucide `bell` 13 px in `muted`; "In 1 min" 12.5 px / 600 `text`; a `faint` "·"; the start time 12.5 px / 500 `muted`. Unlocked, the × is the meter's 22 px tool button (7 px radius, `muted`; pointer over the card: `hot` fill, `text`), flush right |
+| Event block | 23 px left inset, so names line up with the header text; 4 px right. 4 px under the header, 7 px between events. Name 13 px / 600 `text`, 17 px line; one line of fact 11.5 px / 500 `muted`, 15 px line; both cut off with an ellipsis |
+| Time-left line | 2 px tall, 1 px radius, 4 px inset on both sides, 8 px under the last event; track `gauge-empty`, fill `faint`; drains right to left, linear, over 30 s. Inset and rounded like the gauge, not an edge stripe |
+
+- **When**: the lead time set in Settings (1 min by default) before each
+  event switched on. "In 1 min" is rounded up to the minute and does not tick
+  while the card is up; the clock time beside it never changes. The test
+  reminder's header reads "Test reminder", without a time.
+- **Same minute**: every event due at that minute shares one card and one
+  sound, the rarer first: weekly, daily, every 3 hours, hourly. Up to three
+  events meet (11:00, 16:00, 19:00 with everything on).
+- **Lifetime**: 30 s, then the fade out. The pointer over the card pauses the
+  30 s (the line stops) and lights the ×. A newer reminder replaces one still
+  on screen.
+- **Unlocked**: a click anywhere on the card, or on ×, dismisses it at once.
+- **Locked**: click-through like the meter: no ×, nothing reacts to the
+  pointer, and it runs out by itself.
+- **Focus**: the window never activates (the meter's no-activate, tool-window
+  styles); the game keeps keyboard and mouse focus. No Windows notification.
+- Not built yet, decided with those features: where the card goes while the
+  meter is hidden between fights, and whether Alt+E also dismisses it.
 
 ## Main window (GPUI Kit)
 
@@ -258,6 +299,7 @@ French strings run 20–30% longer; Home was checked in French at these sizes.
 | `danger` | `rgba(247, 168, 168, 0.15)` bg, `bad` text | Stop meter, Stop recording, Clear cache, reset confirmation |
 | `blocking` | `rgba(247, 168, 168, 0.07)` bg, `rgba(247, 168, 168, 0.35)` border | Gate check that blocks start-up |
 | `scrim` | `rgba(8, 7, 6, 0.62)` | Behind a dialog |
+| `focus-ring` | `rgba(243, 235, 225, 0.90)` (`primary` at 0.90) | Keyboard focus around any control |
 
 Text, `good`, `warn` and `bad` are the overlay values.
 
@@ -267,9 +309,11 @@ Text, `good`, `warn` and `bad` are the overlay values.
 |---|---|---|
 | Window | borderless window | 960 × 620 (gate 600 × 470, not resizable), 9 px radius, 1 px `rgba(255, 236, 214, 0.12)` border |
 | Title bar | `TitleBar` | 36 px; 20 px cream logo square (6 px radius) + "AION 2 DPS Meter"; minimise, maximise, close 46 × 36 (gate: close only) |
-| Sidebar | `Sidebar` | 208 px; Meter, then a "Settings" label and seven sections; items 32 px, 7 px radius; the meter's status line (dot + "Running · 12:41") at the bottom |
+| Sidebar | `Sidebar` | 208 px; Meter, then a "Settings" label and eight sections (Reminders after Personal bests); items 32 px, 7 px radius; the meter's status line (dot + "Running · 12:41") at the bottom |
 | Settings group | styled div | title above; 10 px radius, `win-surface`, 1 px `win-line`; rows ≥ 54 px, 11 × 16 px padding, 1 px dividers |
 | Settings row | styled div | label and one-sentence description on the left (≤ 58ch), control on a stable right edge |
+| Settings row, dimmed | styled div | While the section's master switch is off (Reminders): label and description at 0.5 opacity, the control at 0.4 and inert; every control keeps its own value |
+| Focus ring | custom | `focus-ring`, 2 px, 3 px outside the control, radius the control's + 3 px; drawn only when the focus came from the keyboard |
 | Button | `Button` | 30 px, 7 px radius, 13 px / 600; variants primary, secondary (soft + strong border), ghost, danger; small 26 px; large 46 px, 10 px radius, Bahnschrift 16 px |
 | Switch | `Switch` | 36 × 20; off `rgba(255, 240, 225, 0.16)` with a cream knob; on cream with a dark knob |
 | Slider | `Slider` | 4 px track `rgba(255, 240, 225, 0.14)`, cream range, 16 px cream thumb with a 2 px dark ring; value right-aligned in Bahnschrift |
@@ -285,6 +329,17 @@ Text, `good`, `warn` and `bad` are the overlay values.
 | Tooltip | `Tooltip` | `win-raised`, 8 px radius, 12 px text, ≤ 250 px wide |
 | Dialog | `Modal` / `Dialog` | 400 px, 12 px radius, `win-raised`, shadow `0 24 60 rgba(0, 0, 0, 0.6)` over `scrim`; actions right: Cancel, then the action |
 | Overlay preview | custom | 262 px column beside the Overlay settings: the real meter view with sample data over a game-like backdrop |
+
+### Settings → Reminders
+
+| Part | Value |
+|---|---|
+| Place | Sidebar item after Personal bests, Lucide `bell`; no preview column (the test button shows the real card) |
+| Lead | "A reminder before timed events, so you can get there in time. Times follow this PC's clock and are set for the European servers, which run on Berlin time." |
+| How you are reminded | Event reminders (master switch, on); Remind me (select, 130 px minimum: 1, 2, 3 or 5 min before, 1 by default); Sound (switch, on: Windows' Chimes sound, once per card); Test reminder (secondary button "Show a test reminder", Lucide `play`) |
+| Events | One switch per event in groups by how often it comes: Every hour (Shugo Festival, Dimensional Invasion), Every 3 hours (Rift portals, Watcher Kaira), Weekly (Artifact Siege, Abyss field bosses, Guardian Lord Nahma), Daily (Arena of Tactics opens, Reward keys refill). On by default: Shugo Festival, Dimensional Invasion, Rift portals |
+| Master switch off | Every row under it dimmed (Settings row, dimmed); no card and no sound |
+| Test shown | A good badge "Shown above the meter" with a check, 2 px before the button, for 4 s (Settings may cover the meter) |
 
 ### Custom work beyond GPUI Kit
 
@@ -322,3 +377,8 @@ pinned version before planning.
 - Icons are single-colour Lucide SVGs; class icons are the PNGs in
   `crates/app/assets/game/class/`, skill and buff icons the PNGs in
   `crates/app/assets/game/skills/`.
+- The reminder card is a second overlay window with the meter's styles
+  (transparent, no-activate, tool window, click-through while locked), sized
+  to the card and placed from the meter window's bounds in device pixels. The
+  fade is the card's opacity inside the window; the window appears at full
+  size, transparent.

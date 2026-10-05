@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Approved: reminder card</title>
+    <link rel="stylesheet" href="shared.css" />
+    <style>
+      /* The approved reminder card (2026-10-05). The meter beside it is a
+         copy of meter.html's classes (layout D), kept only so the two
+         windows are judged together. Values are in tokens.md, "Reminder
+         card"; a change here changes them too. */
+
+      @font-face {
+        font-family: "Meter Barlow";
+        src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Regular.ttf") format("truetype");
+        font-weight: 400;
+      }
+
+      @font-face {
+        font-family: "Meter Barlow";
+        src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Medium.ttf") format("truetype");
+        font-weight: 500;
+      }
+
+      @font-face {
+        font-family: "Meter Barlow";
+        src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-SemiBold.ttf") format("truetype");
+        font-weight: 600;
+      }
+
+      @font-face {
+        font-family: "Meter Barlow";
+        src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Bold.ttf") format("truetype");
+        font-weight: 700;
+      }
+
+      /* ---- Two windows on one stage: the reminder, 6 px, the meter ---- */
+      .stack {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: calc(6px * var(--scale));
+      }
+
+      .stack.at-top {
+        margin-top: -16px;
+      }
+
+      /* Mockup chrome: the screen's top edge. */
+      .edge {
+        position: absolute;
+        z-index: 2;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: rgba(138, 180, 255, 0.85);
+      }
+
+      .edge-tag {
+        position: absolute;
+        z-index: 2;
+        padding: 2px 7px;
+        border-radius: 4px;
+        background: rgba(14, 16, 21, 0.85);
+        color: #cfe0ff;
+        font: 600 11px/1.4 "Segoe UI", system-ui, sans-serif;
+      }
+
+      .edge-tag {
+        top: 6px;
+        right: 10px;
+      }
+
+      .replay {
+        position: absolute;
+        z-index: 2;
+        right: 12px;
+        bottom: 12px;
+        padding: 4px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 6px;
+        background: rgba(14, 16, 21, 0.85);
+        color: #cfe0ff;
+        font: 600 12px/1.4 "Segoe UI", system-ui, sans-serif;
+        cursor: pointer;
+      }
+
+      /* ---- The reminder card ------------------------------------------- */
+      .ov.rm {
+        --r-text: rgba(255, 246, 236, 0.96);
+        --r-muted: rgba(255, 246, 236, 0.66);
+        --r-faint: rgba(255, 246, 236, 0.44);
+        --r-hot: rgba(255, 240, 225, 0.13);
+
+        position: relative;
+        zoom: var(--scale);
+        width: 310px;
+        padding: 8px 8px 6px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 236, 214, 0.1);
+        border-radius: 14px;
+        background: rgba(16, 14, 12, var(--bg-a));
+        color: var(--r-text);
+        font: 13px/1 "Meter Barlow", "Barlow Semi Condensed", "Bahnschrift", sans-serif;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        cursor: default;
+      }
+
+      .ov.rm.has-dmg {
+        width: 340px;
+      }
+
+      /* Capsule layout: a fixed narrow card on the capsule's left edge. */
+      .ov.rm.is-narrow {
+        width: 220px;
+      }
+
+      .rm .i {
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
+        stroke-width: 2;
+      }
+
+      /* Header, as the meter's: 22 px, 4 px inset; the × flush right. */
+      .rm-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 22px;
+        padding: 0 0 0 4px;
+        margin-right: -2px;
+      }
+
+      .rm-head > .i {
+        color: var(--r-muted);
+      }
+
+      .rm-when {
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .rm-dot {
+        color: var(--r-faint);
+      }
+
+      .rm-at {
+        color: var(--r-muted);
+        font-size: 12.5px;
+        font-weight: 500;
+      }
+
+      .rm-x {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        margin-left: auto;
+        border-radius: 7px;
+        color: var(--r-muted);
+        cursor: pointer;
+      }
+
+      .rm-x:hover,
+      .rm-x.is-hot {
+        background: var(--r-hot);
+        color: var(--r-text);
+      }
+
+      /* One block per event, under the header text (4 + 13 + 6 px in). */
+      .rm-ev {
+        margin-top: 4px;
+        padding-left: 23px;
+        padding-right: 4px;
+      }
+
+      .rm-ev + .rm-ev {
+        margin-top: 7px;
+      }
+
+      .rm-name {
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 17px;
+        text-overflow: ellipsis;
+      }
+
+      .rm-detail {
+        overflow: hidden;
+        color: var(--r-muted);
+        font-size: 11.5px;
+        font-weight: 500;
+        line-height: 15px;
+        text-overflow: ellipsis;
+      }
+
+      /* Time left: a 2 px inset line in the gauge colours' neutral pair,
+         draining right to left over 30 s. */
+      .rm-left {
+        height: 2px;
+        margin: 8px 4px 0;
+        overflow: hidden;
+        border-radius: 1px;
+        background: rgba(255, 240, 225, 0.12);
+      }
+
+      .rm-left i {
+        display: block;
+        height: 100%;
+        border-radius: 1px;
+        background: rgba(255, 246, 236, 0.44);
+      }
+
+      /* Unlocked, the whole card is the dismiss target. */
+      .ov.rm.is-click {
+        cursor: pointer;
+      }
+
+      /* Motion, played by the "Live" scene. */
+      .ov.rm.is-live {
+        animation:
+          rm-in 150ms ease-out both,
+          rm-out 150ms ease-in 30s forwards;
+      }
+
+      .ov.rm.is-live .rm-left i {
+        animation: rm-drain 30s linear forwards;
+      }
+
+      .ov.rm.is-live:hover,
+      .ov.rm.is-live:hover .rm-left i {
+        animation-play-state: paused;
+      }
+
+      .ov.rm.is-gone {
+        animation: none;
+        opacity: 0;
+        transition: opacity 150ms ease-in;
+      }
+
+      @keyframes rm-in {
+        from {
+          opacity: 0;
+        }
+      }
+
+      @keyframes rm-out {
+        to {
+          opacity: 0;
+        }
+      }
+
+      @keyframes rm-drain {
+        from {
+          width: 100%;
+        }
+
+        to {
+          width: 0;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .ov.rm.is-live {
+          animation: rm-out 1ms linear 30s forwards;
+        }
+      }
+
+      /* ---- The meter: a copy of approved/meter.html's classes ----------- */
+      .ov.d {
+        --d-bg: rgba(16, 14, 12, var(--bg-a));
+        --d-track: rgba(0, 0, 0, 0.34);
+        --d-soft: rgba(255, 240, 225, 0.08);
+        --d-hot: rgba(255, 240, 225, 0.13);
+        --d-text: rgba(255, 246, 236, 0.96);
+        --d-muted: rgba(255, 246, 236, 0.66);
+        --d-faint: rgba(255, 246, 236, 0.44);
+        --d-good: #86e3a8;
+        --d-font: "Meter Barlow", "Barlow Semi Condensed", "Bahnschrift", sans-serif;
+
+        position: relative;
+        zoom: var(--scale);
+        width: 310px;
+        padding: 8px 8px 6px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 236, 214, 0.1);
+        border-radius: 14px;
+        background: var(--d-bg);
+        color: var(--d-text);
+        font: 13px/1 var(--d-font);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .ov.d.has-dmg {
+        width: 340px;
+      }
+
+      .d .i {
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
+        stroke-width: 2;
+      }
+
+      .d-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 22px;
+        padding: 0 2px 0 4px;
+      }
+
+      .d-tgt {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        color: var(--d-muted);
+        font-size: 13px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+      }
+
+      .d-time {
+        flex-shrink: 0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .d-label {
+        flex-shrink: 0;
+        color: var(--d-faint);
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .d-val {
+        flex-shrink: 0;
+        color: var(--d-text);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .d-foot {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 20px;
+        margin-top: 5px;
+        padding: 0 0 0 4px;
+        color: var(--d-muted);
+        font-size: 11.5px;
+      }
+
+      .d-count {
+        margin-left: 4px;
+      }
+
+      .d-count .i {
+        color: var(--d-faint);
+      }
+
+      .d-ping {
+        margin-left: auto;
+      }
+
+      .d-sys {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 3px;
+      }
+
+      .d-sys .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .d-sys.is-good {
+        color: var(--d-good);
+      }
+
+      .seg {
+        display: inline-flex;
+        flex-shrink: 0;
+        width: 100px;
+        height: 18px;
+        margin-left: 6px;
+        padding: 2px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.3);
+      }
+
+      .seg-opt {
+        display: inline-flex;
+        flex: 1 1 0;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        color: var(--d-muted);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .seg-opt.is-on {
+        background: var(--d-hot);
+        color: var(--d-text);
+      }
+
+      .d-rows {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .d-row {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+      }
+
+      .d-rk {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        margin-right: 3px;
+        border-radius: 4px;
+        background: rgba(255, 240, 225, 0.09);
+        color: var(--d-muted);
+        font-size: 11.5px;
+        font-weight: 600;
+      }
+
+      .d-track {
+        position: relative;
+        display: flex;
+        flex: 1;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        height: 22px;
+        padding: 0 9px 0 4px;
+        overflow: hidden;
+        border-radius: 5px;
+        background: var(--d-track);
+      }
+
+      .d-fill {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        border-radius: 5px;
+        background: linear-gradient(90deg, rgba(var(--rgb), 0.14), rgba(var(--rgb), 0.5));
+      }
+
+      .d-track > :not(.d-fill) {
+        position: relative;
+      }
+
+      .d-icon {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        border-radius: 8px;
+      }
+
+      .d-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        font-weight: 500;
+        text-overflow: ellipsis;
+      }
+
+      .d-name small {
+        margin-left: 5px;
+        color: rgba(255, 246, 236, 0.82);
+        font-size: 11px;
+      }
+
+      .d-dmg {
+        color: var(--d-muted);
+        font-size: 11.5px;
+      }
+
+      .d-unit {
+        color: var(--d-faint);
+      }
+
+      .d-dps {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .d-pc {
+        width: 38px;
+        flex-shrink: 0;
+        color: var(--d-muted);
+        font-size: 12px;
+        text-align: right;
+      }
+
+      .d-row.is-you .d-rk {
+        background: rgba(255, 246, 236, 0.9);
+        color: #17120d;
+      }
+
+      .d-row.is-you .d-track {
+        outline: 1px solid rgba(255, 246, 236, 0.45);
+        outline-offset: -1px;
+      }
+
+      .d-row.is-you .d-name {
+        font-weight: 600;
+      }
+
+      .ov.d.is-capsule {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: auto;
+        height: 30px;
+        padding: 0 12px 0 4px;
+        border-radius: 999px;
+      }
+
+      .d-cap-rk {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        background: rgb(var(--rgb));
+        color: #17120d;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .d-cap-dps {
+        font-size: 17px;
+        font-weight: 600;
+      }
+
+      .d-vr {
+        width: 1px;
+        height: 12px;
+        background: rgba(255, 240, 225, 0.18);
+      }
+
+      .notes h3 {
+        margin: 14px 0 4px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Approved screens">
+        <a href="index.html">Approved screens</a>
+        <a href="meter.html">Meter overlay</a>
+        <a href="reminders.html" aria-current="page">Reminder card</a>
+        <a href="settings.html?states=reminders,reminders:off,reminders:test">Settings, Reminders</a>
+      </nav>
+      <h1>Reminder card <small>approved 2026-10-05</small></h1>
+      <ul class="rationale">
+        <li>Its own small overlay window just above the meter (just below it when the meter sits at the top of the screen), on the meter's left edge and at its width; same translucent card, opacity and content scale as the meter. It never takes focus.</li>
+        <li>A quiet header says when ("In 1 min · 16:00"); under it, each event's name in bold and one line of fact from the game data. Events at the same minute share one card and one sound, the rarer event first.</li>
+        <li>It goes by itself after 30 s; a thin line at the bottom drains over those 30 s. Unlocked, a click anywhere on the card, or its ×, dismisses it; locked, it is click-through and simply runs out. All names and figures are invented except the event facts (from the game client's tables).</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>When.</b> At the lead time chosen in Settings (1 min by default) before each event switched on. The header reads "In 1 min" rounded up to the minute, so it does not tick while the card is up; the clock time beside it never changes.</li>
+        <li><b>Same minute.</b> All events due at that minute go into one card with one sound. Order: weekly, then daily, then every 3 hours, then hourly (the rarer event matters more). With everything on, three can meet: 11:00 (Arena of Tactics, Rift portals, Shugo Festival), 16:00 (reward keys, Watcher Kaira, Shugo Festival), 19:00 (Arena of Tactics, Watcher Kaira, Shugo Festival). Three on one card is fine.</li>
+        <li><b>Placement.</b> 6 px above the meter's top edge, left edges aligned. If the card does not fit above the meter on its monitor, it goes 6 px below the meter's bottom edge and follows the meter's height. In the capsule layout, a fixed 220 px card on the capsule's left edge.</li>
+        <li><b>Dismissal.</b> Unlocked: a click anywhere on the card or on × closes it at once; the pointer over the card pauses the 30 s (the line stops) and lights the ×. Locked: the card is click-through like the meter, shows no × and simply runs out. A newer reminder replaces an older one still on screen.</li>
+        <li><b>Focus.</b> The window never activates (same no-activate, tool-window styles as the meter); the game keeps keyboard and mouse focus. No Windows notification is produced.</li>
+      </ul>
+
+      <h2>Values</h2>
+      <ul>
+        <li>In <a href="tokens.md">tokens.md</a>, "Reminder card": widths 310, 340 and 220 px, heights 84, 123 and 162 px, the header, the event block, the time-left line and the 150 ms fades.</li>
+      </ul>
+
+      <h2>Not built yet</h2>
+      <ul>
+        <li>Meter hidden between fights: where the card goes while the meter is hidden is decided when that feature is built.</li>
+        <li>Alt+E (show or hide the overlay) dismissing a reminder: comes with that shortcut.</li>
+      </ul>
+
+      <h2>GPUI notes</h2>
+      <ul>
+        <li>A second overlay window with the meter's styles (transparent, no-activate, tool window, click-through while locked), sized to the card like the meter (fit-to-card); positioned from the meter window's bounds in device pixels.</li>
+        <li>The fade is the card's opacity tween inside the window; the window itself appears at full size, transparent. The line is a 2 px div whose width is recomputed per frame only while the card is up.</li>
+      </ul>
+    </section>
+
+    <script src="kit.js"></script>
+    <script>
+      (function () {
+        // Lucide "bell" (ISC License, see kit.js).
+        const BELL =
+          '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>';
+        const icon = (name) =>
+          name === "bell"
+            ? `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${BELL}</svg>`
+            : Kit.icon(name);
+
+        // ---- Event facts (local://timed-events.md) -------------------------------
+        const EV = {
+          shugo: ["Shugo Festival", "3 min to join"],
+          invasion: ["Dimensional Invasion", "Somewhere in the field · 3 min to join"],
+          rifts: ["Rift portals", "Altgard · Verteron · Morheim · Eltnen"],
+          kaira: ["Watcher Kaira", "Field boss · Chaotic Lower Reshanta"],
+          siege: ["Artifact Siege", "Chaotic Lower Reshanta"],
+          abyss: ["Abyss field bosses", "Lower and Middle Reshanta"],
+          nahma: ["Guardian Lord Nahma", "Lv 65, and the Enraged Lv 80"],
+          arena11: ["Arena of Tactics", "10 vs 10 queue open until 14:00"],
+          keys: ["Reward keys refill", "Shugo Festival and Invasion keys"],
+          test: ["Reminders look like this", "Next: Dimensional Invasion at 15:30"],
+        };
+
+        // r: { events, when, at, left (0..1), locked, hot, narrow, live }
+        function reminder(ctx, r) {
+          const cls = ["ov", "rm"];
+          if (ctx.opts.damage && !r.narrow) cls.push("has-dmg");
+          if (r.narrow) cls.push("is-narrow");
+          if (!r.locked) cls.push("is-click");
+          if (r.live) cls.push("is-live");
+          const when = r.at
+            ? `<span class="rm-when">${r.when}</span><span class="rm-dot">·</span><span class="rm-at">${r.at}</span>`
+            : `<span class="rm-when">${r.when}</span>`;
+          const x = r.locked ? "" : `<span class="rm-x${r.hot ? " is-hot" : ""}" role="button" title="Dismiss" aria-label="Dismiss">${icon("close")}</span>`;
+          const evs = r.events
+            .map((k) => `<div class="rm-ev"><div class="rm-name">${EV[k][0]}</div><div class="rm-detail">${EV[k][1]}</div></div>`)
+            .join("");
+          const left = `<div class="rm-left"><i style="width:${((r.left ?? 1) * 100).toFixed(0)}%"></i></div>`;
+          return `<div class="${cls.join(" ")}" role="status" aria-label="Event reminder">${`<div class="rm-head">${icon("bell")}${when}${x}</div>`}${evs}${left}</div>`;
+        }
+
+        // ---- The meter (copy of approved/meter.html, Session board) --------------
+        const SESSION_SECS = 1122;
+        const SESSION = [
+          { name: "Vaelith", cls: "sorcerer", cp: 41820, dmg: 17.84e6, dps: 41240 },
+          { name: "Mirelle", cls: "ranger", cp: 38904, dmg: 14.62e6, dps: 38420, you: true },
+          { name: "Korrinth", cls: "gladiator", cp: 40112, dmg: 11.05e6, dps: 29610 },
+          { name: "Ilyrae", cls: "chanter", cp: 34210, dmg: 4.31e6, dps: 12870 },
+          { name: "Brannoc", cls: "templar", cp: 37450, dmg: 2.18e6, dps: 24730 },
+        ];
+        const TOTAL = SESSION.reduce((s, p) => s + p.dmg, 0);
+
+        function meter(ctx, { locked = false } = {}) {
+          const { fmt } = ctx;
+          const top = SESSION[0].dmg;
+          const rows = SESSION.map((p, i) => {
+            const meta = ctx.opts.cp ? `<small>${fmt.int(p.cp)}</small>` : "";
+            return `<div class="d-row${p.you ? " is-you" : ""}"><span class="d-rk">${i + 1}</span><span class="d-track" style="--rgb:${ctx.CLASS_RGB[p.cls]}"><span class="d-fill" style="width:${((p.dmg / top) * 100).toFixed(1)}%"></span><img class="d-icon" src="${ctx.classIcon(p.cls)}" alt="${p.cls}"><span class="d-name">${fmt.esc(p.name)}${meta}</span><span class="d-dmg">${fmt.compact(p.dps)}<span class="d-unit">/s</span></span><span class="d-dps">${fmt.compact(p.dmg)}</span></span><span class="d-pc">${fmt.pct(p.dmg / TOTAL)}</span></div>`;
+          }).join("");
+          const seg = `<span class="seg${locked ? " is-locked" : ""}"><span class="seg-opt is-on">Session</span><span class="seg-opt">Target</span></span>`;
+          return `<div class="ov d${ctx.opts.damage ? " has-dmg" : ""}"><div class="d-head"><span class="d-tgt">Thornback Boar</span><span class="d-time">${fmt.time(SESSION_SECS)}</span></div><div class="d-rows">${rows}</div><div class="d-foot"><span class="d-label">Damage</span><span class="d-val">${fmt.compact(TOTAL)}</span><span class="d-sys d-count">${icon("target")}37</span><span class="d-sys d-ping is-good">${icon("signal")}${ctx.sys.pingMs} ms</span>${seg}</div></div>`;
+        }
+
+        function capsule(ctx) {
+          return `<div class="ov d is-capsule" style="--rgb:${ctx.CLASS_RGB.ranger}"><span class="d-cap-rk">2</span><span class="d-cap-dps">${ctx.fmt.compact(14.62e6)}</span><span class="d-label">damage</span><span class="d-vr"></span><span class="d-label">Session</span><span style="font-weight:600;color:var(--d-muted)">${ctx.fmt.time(SESSION_SECS)}</span></div>`;
+        }
+
+        const above = (rm, m) => `<div class="stack">${rm}${m}</div>`;
+
+        function render(state, ctx) {
+          switch (state) {
+            case "one":
+              return above(reminder(ctx, { events: ["shugo"], when: "In 1 min", at: "16:00", left: 0.72 }), meter(ctx));
+            case "two":
+              return above(reminder(ctx, { events: ["rifts", "shugo"], when: "In 1 min", at: "02:00", left: 0.72 }), meter(ctx));
+            case "two-weekly":
+              return above(reminder(ctx, { events: ["siege", "shugo"], when: "In 5 min", at: "21:00", left: 0.72 }), meter(ctx));
+            case "three":
+              return above(reminder(ctx, { events: ["arena11", "rifts", "shugo"], when: "In 1 min", at: "11:00", left: 0.72 }), meter(ctx));
+            case "pointer":
+              return above(reminder(ctx, { events: ["invasion"], when: "In 1 min", at: "15:30", left: 0.55, hot: true }), meter(ctx));
+            case "late":
+              return above(reminder(ctx, { events: ["invasion"], when: "In 1 min", at: "15:30", left: 0.06 }), meter(ctx));
+            case "capsule":
+              return above(reminder(ctx, { events: ["rifts", "shugo"], when: "In 1 min", at: "02:00", left: 0.72, narrow: true }), capsule(ctx));
+            case "below":
+              return `<span class="edge" aria-hidden="true"></span><span class="edge-tag">Top of the screen</span><div class="stack at-top">${meter(ctx)}${reminder(ctx, { events: ["invasion"], when: "In 1 min", at: "15:30", left: 0.72 })}</div>`;
+            case "locked":
+              return above(reminder(ctx, { events: ["rifts", "shugo"], when: "In 1 min", at: "02:00", left: 0.72, locked: true }), meter(ctx, { locked: true }));
+            case "test":
+              return above(reminder(ctx, { events: ["test"], when: "Test reminder", left: 0.72 }), meter(ctx));
+            case "live":
+              return above(reminder(ctx, { events: ["rifts", "shugo"], when: "In 1 min", at: "02:00", live: true }), meter(ctx)) + `<button class="replay" type="button">Play again</button>`;
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "one", title: "One event", sub: "Shugo Festival at 16:00, the default 1 min ahead; above the meter, same width and left edge" },
+            { id: "two", title: "Two at the same minute", sub: "02:00: Rift portals and the Shugo Festival share one card and one sound, the rarer first" },
+            { id: "two-weekly", title: "Monday 21:00, 5 min ahead", sub: "Artifact Siege (switched on) with the Shugo Festival; lead time set to 5 min" },
+            { id: "three", title: "Three at once", sub: "11:00 with every event on: Arena of Tactics, Rift portals, Shugo Festival" },
+            { id: "pointer", title: "Pointer over", sub: "the × lights up and the 30 s pause; a click anywhere on the card dismisses it" },
+            { id: "late", title: "Last seconds", sub: "the line has nearly run out; the card then fades out over 150 ms" },
+            { id: "capsule", title: "Capsule layout", sub: "a fixed 220 px card on the capsule's left edge" },
+            { id: "below", title: "Meter at the top of the screen", sub: "no room above, so the card sits 6 px below the meter" },
+            { id: "locked", title: "Meter locked", sub: "click-through like the meter: no ×, it runs out by itself" },
+            { id: "test", title: "Test reminder", sub: "from Settings → Reminders; plays the sound too" },
+            { id: "live", title: "Live", sub: "fades in, the line runs 30 s, fades out; pointer over pauses, a click dismisses" },
+          ],
+          controls: ["alpha", "scale", "damage", "cp"],
+          stageMin: 400,
+          render,
+        });
+
+        // Live scene: a click dismisses; "Play again" restarts the motion.
+        document.addEventListener("click", (e) => {
+          const replay = e.target.closest(".replay");
+          if (replay) {
+            const old = replay.parentElement.querySelector(".ov.rm");
+            const fresh = old.cloneNode(true);
+            fresh.classList.remove("is-gone");
+            old.replaceWith(fresh);
+            return;
+          }
+          const card = e.target.closest(".ov.rm.is-live");
+          if (card) card.classList.add("is-gone");
+        });
+      })();
+    </script>
+  </body>
+</html>

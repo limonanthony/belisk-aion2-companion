@@ -1,6 +1,6 @@
 //! Diagnostic lines for what the meter decided: which board, which boss, who
-//! "you" are. They go to the core's log, but only after `enable` (the app's
-//! `--debug-log` flag), and a state is written only when it changes, never per
+//! "you" are. They go to the core's log, but only while switched on (Settings →
+//! Capture → Log), and a state is written only when it changes, never per
 //! snapshot. The switch is the app's own: the core's debug level also writes a
 //! line for every hit and buff on the packet thread, and stays off. Lines may
 //! hold player names: the log stays on the player's machine.
@@ -22,8 +22,13 @@ impl DecisionLog {
         Self { logger, enabled: false, last: HashMap::new() }
     }
 
-    pub fn enable(&mut self) {
-        self.enabled = true;
+    /// Turning it off forgets what was written, so a state that has not
+    /// changed since is written again when it is turned back on.
+    pub fn set_enabled(&mut self, enabled: bool) {
+        if !enabled {
+            self.last.clear();
+        }
+        self.enabled = enabled;
     }
 
     pub fn enabled(&self) -> bool {
@@ -90,7 +95,7 @@ mod tests {
     fn the_cores_per_packet_debug_level_is_not_needed_and_not_turned_on() {
         let (logger, lines) = logger("core");
         let mut log = DecisionLog::new(Some(Arc::clone(&logger)));
-        log.enable();
+        log.set_enabled(true);
 
         log.on_change("board", || "Session".to_string());
 
@@ -102,7 +107,7 @@ mod tests {
     fn a_state_is_written_once_until_it_changes() {
         let (logger, lines) = logger("change");
         let mut log = DecisionLog::new(Some(logger));
-        log.enable();
+        log.set_enabled(true);
 
         log.on_change("board", || "Session".to_string());
         log.on_change("board", || "Session".to_string());
@@ -116,9 +121,24 @@ mod tests {
     }
 
     #[test]
+    fn switching_off_stops_the_lines_and_switching_on_writes_the_state_again() {
+        let (logger, lines) = logger("toggle");
+        let mut log = DecisionLog::new(Some(logger));
+        log.set_enabled(true);
+        log.on_change("board", || "Session".to_string());
+
+        log.set_enabled(false);
+        log.on_change("board", || panic!("state built while off"));
+        log.set_enabled(true);
+        log.on_change("board", || "Session".to_string());
+
+        assert_eq!(*lines.lock().unwrap(), vec!["[meter] board: Session", "[meter] board: Session"]);
+    }
+
+    #[test]
     fn a_meter_without_a_logger_logs_nothing() {
         let mut log = DecisionLog::default();
-        log.enable();
+        log.set_enabled(true);
 
         log.on_change("board", || panic!("state built without a logger"));
         log.event("focus", || panic!("text built without a logger"));
