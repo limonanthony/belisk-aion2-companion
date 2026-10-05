@@ -5,7 +5,8 @@
 //! Target board stays on that boss, whatever else is hit, until:
 //!
 //! - it dies (the final summary follows);
-//! - another boss is engaged;
+//! - you move to another boss: it takes over only after you have hit only it
+//!   for [`SWITCH_AFTER`] ([`Release::MovedToAnotherBoss`]);
 //! - it was left alone for [`QUIET_RELEASE`] (the provisional summary
 //!   follows: it may only be between phases);
 //! - it is gone from the snapshot, or the user ruled it is not a boss;
@@ -25,6 +26,11 @@ use super::fight::TargetFacts;
 /// without a single hit on the boss lets go of it.
 pub const QUIET_RELEASE: Duration = Duration::from_secs(120);
 
+/// Bosses fought together (two sub-bosses, or a sub-boss beside the main
+/// boss) must not make the board flip: another boss takes over only after the
+/// player has hit only it for this long.
+pub const SWITCH_AFTER: Duration = Duration::from_secs(20);
+
 const REMEMBERED_BOSSES: usize = 50;
 /// Hits are timestamped to the millisecond; this is well above that.
 const NEW_HIT_SECS: f64 = 0.001;
@@ -32,7 +38,7 @@ const NEW_HIT_SECS: f64 = 0.001;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Release {
     Died,
-    DifferentBoss,
+    MovedToAnotherBoss,
     Quiet,
     Gone,
     NoLongerBoss,
@@ -45,7 +51,7 @@ impl Release {
     pub fn describe(self) -> &'static str {
         match self {
             Self::Died => "the boss died",
-            Self::DifferentBoss => "another boss was engaged",
+            Self::MovedToAnotherBoss => "you moved to another boss",
             Self::Quiet => "no hit on the boss for the quiet limit",
             Self::Gone => "the boss left the snapshot",
             Self::NoLongerBoss => "the boss is no longer ruled a boss",
@@ -84,12 +90,15 @@ pub struct Released {
 }
 
 /// What one observation changed.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Change {
     pub released: Option<Released>,
     /// A boss was engaged; `released` may name the one it replaced.
     pub engaged: Option<u32>,
     pub engaged_because: Option<Involvement>,
+    /// Set when the engagement was a move from another boss: how long (s) the
+    /// player had left the old one alone, or the new one had been the target.
+    pub moved_after_secs: Option<f64>,
 }
 
 impl Change {
@@ -104,6 +113,7 @@ struct Focused {
     /// Fight length when the boss was last hit, to notice the next hit.
     duration_secs: f64,
     last_hit_at: Instant,
+    engaged_at: Instant,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -117,6 +127,9 @@ struct Finished {
 pub struct BossFocus {
     focused: Option<Focused>,
     finished: VecDeque<Finished>,
+    /// Before you are identified: the boss that has been the current target
+    /// without interruption since this moment.
+    pending_switch: Option<(u32, Instant)>,
 }
 
 impl BossFocus {
@@ -124,14 +137,18 @@ impl BossFocus {
         self.focused.map(|focused| focused.id)
     }
 
-    /// A new snapshot. `current` is the game's current target; `facts_of`
-    /// describes any target in the snapshot; `involvement_of` says why a boss
-    /// is the local player's fight, or `None` if it is not.
+    /// A new snapshot. `current` is the game's current target; `bosses` are
+    /// the bosses in the snapshot; `facts_of` describes any target;
+    /// `involvement_of` says why a boss is the local player's fight, or `None`
+    /// if it is not; `my_hit_age_of` is the seconds since the local player's
+    /// last hit on a target, `None` if they have not hit it or are unknown.
     pub fn observe(
         &mut self,
         current: Option<u32>,
+        bosses: &[u32],
         facts_of: impl Fn(u32) -> Option<TargetFacts>,
         involvement_of: impl Fn(u32) -> Option<Involvement>,
+        my_hit_age_of: impl Fn(u32) -> Option<f64>,
         now: Instant,
     ) -> Change {
         let mut change = Change::default();
@@ -157,21 +174,48 @@ impl BossFocus {
             }
         }
 
-        let candidate = current
-            .and_then(&facts_of)
-            .filter(|facts| facts.is_boss && !facts.killed() && Some(facts.id) != self.focused())
-            .and_then(|facts| involvement_of(facts.id).map(|why| (facts, why)));
-        if let Some((facts, why)) = candidate.filter(|(facts, _)| self.may_engage(facts)) {
-            if let Some(replaced) = self.focused {
-                self.release(Release::DifferentBoss, replaced.duration_secs, &mut change);
+        let finished = &self.finished;
+        let usable = |id: u32| {
+            let facts = facts_of(id)?;
+            (facts.is_boss && !facts.killed() && may_engage(finished, &facts))
+                .then(|| involvement_of(id).map(|why| (facts, why)))
+                .flatten()
+        };
+
+        match self.focused {
+            Some(focused) => {
+                let switch = switch_target(
+                    focused,
+                    &mut self.pending_switch,
+                    current,
+                    bosses,
+                    &usable,
+                    &my_hit_age_of,
+                    now,
+                );
+                if let Some((facts, why, idle_secs)) = switch {
+                    self.release(Release::MovedToAnotherBoss, focused.duration_secs, &mut change);
+                    self.engage(&facts, why, now, &mut change);
+                    change.moved_after_secs = Some(idle_secs);
+                }
             }
-            self.focused = Some(Focused {
-                id: facts.id,
-                duration_secs: facts.duration_secs,
-                last_hit_at: now,
-            });
-            change.engaged = Some(facts.id);
-            change.engaged_because = Some(why);
+            None => {
+                let current_boss = current.and_then(&usable);
+                let recent_boss = || {
+                    bosses
+                        .iter()
+                        .filter_map(|&id| {
+                            let (facts, why) = usable(id)?;
+                            let age = my_hit_age_of(id).filter(|age| *age < SWITCH_AFTER.as_secs_f64())?;
+                            (why == Involvement::YouHitIt).then_some((facts, why, age))
+                        })
+                        .min_by(|a, b| a.2.total_cmp(&b.2))
+                        .map(|(facts, why, _)| (facts, why))
+                };
+                if let Some((facts, why)) = current_boss.or_else(recent_boss) {
+                    self.engage(&facts, why, now, &mut change);
+                }
+            }
         }
         change
     }
@@ -205,21 +249,14 @@ impl BossFocus {
         change
     }
 
-    fn may_engage(&self, facts: &TargetFacts) -> bool {
-        self.finished
-            .iter()
-            .find(|finished| finished.id == facts.id)
-            .map_or(true, |finished| {
-                !finished.died && facts.duration_secs > finished.duration_secs + NEW_HIT_SECS
-            })
-    }
 
     fn release(&mut self, reason: Release, duration_secs: f64, change: &mut Change) {
         let Some(focused) = self.focused.take() else {
             return;
         };
-        // Not remembered: it was never the player's fight, and may become it.
-        if reason != Release::NotYourFight {
+        // Not remembered: it was never the player's fight, or the player only
+        // walked away from it, and either may become their fight again.
+        if !matches!(reason, Release::NotYourFight | Release::MovedToAnotherBoss) {
             self.finished.retain(|finished| finished.id != focused.id);
             self.finished.push_back(Finished {
                 id: focused.id,
@@ -232,6 +269,89 @@ impl BossFocus {
         }
         change.released = Some(Released { id: focused.id, reason });
     }
+
+    fn engage(&mut self, facts: &TargetFacts, why: Involvement, now: Instant, change: &mut Change) {
+        self.focused = Some(Focused {
+            id: facts.id,
+            duration_secs: facts.duration_secs,
+            last_hit_at: now,
+            engaged_at: now,
+        });
+        self.pending_switch = None;
+        change.engaged = Some(facts.id);
+        change.engaged_because = Some(why);
+    }
+
+}
+
+/// Another boss takes over from `focused` once you have hit only it for
+/// [`SWITCH_AFTER`]. Returns it with how long you had left the focused one
+/// alone.
+fn switch_target(
+    focused: Focused,
+    pending_switch: &mut Option<(u32, Instant)>,
+    current: Option<u32>,
+    bosses: &[u32],
+    usable: &impl Fn(u32) -> Option<(TargetFacts, Involvement)>,
+    my_hit_age_of: &impl Fn(u32) -> Option<f64>,
+    now: Instant,
+) -> Option<(TargetFacts, Involvement, f64)> {
+    let switch_after = SWITCH_AFTER.as_secs_f64();
+    let engaged_for = now.saturating_duration_since(focused.engaged_at).as_secs_f64();
+    let idle_on_focused = my_hit_age_of(focused.id).unwrap_or(f64::INFINITY).min(engaged_for);
+
+    let mut unidentified_candidate = None;
+    let mut best: Option<(TargetFacts, Involvement, f64)> = None;
+    for &id in bosses.iter().filter(|&&id| id != focused.id) {
+        let Some((facts, why)) = usable(id) else {
+            continue;
+        };
+        if why == Involvement::Unidentified {
+            if current == Some(id) {
+                unidentified_candidate = Some((facts, why));
+            }
+            continue;
+        }
+        let Some(age) = my_hit_age_of(id) else {
+            continue;
+        };
+        let leads = age < idle_on_focused && age < switch_after;
+        if leads && idle_on_focused >= switch_after && best.as_ref().map_or(true, |(_, _, seen)| age < *seen) {
+            best = Some((facts, why, age));
+        }
+    }
+    if let Some((facts, why, _)) = best {
+        return Some((facts, why, idle_on_focused));
+    }
+
+    // Nothing is known about your own hits: B must stay the current target,
+    // uninterrupted, for the same time.
+    match unidentified_candidate {
+        Some((facts, why)) => {
+            let since = match *pending_switch {
+                Some((id, since)) if id == facts.id => since,
+                _ => {
+                    *pending_switch = Some((facts.id, now));
+                    now
+                }
+            };
+            let held = now.saturating_duration_since(since);
+            (held >= SWITCH_AFTER).then_some((facts, why, held.as_secs_f64()))
+        }
+        None => {
+            *pending_switch = None;
+            None
+        }
+    }
+}
+
+fn may_engage(finished: &VecDeque<Finished>, facts: &TargetFacts) -> bool {
+    finished
+        .iter()
+        .find(|finished| finished.id == facts.id)
+        .map_or(true, |finished| {
+            !finished.died && facts.duration_secs > finished.duration_secs + NEW_HIT_SECS
+        })
 }
 
 #[cfg(test)]
@@ -245,18 +365,22 @@ mod tests {
     const TRASH: u32 = 1;
 
     #[derive(Default)]
-    struct World(HashMap<u32, TargetFacts>);
+    struct World {
+        facts: HashMap<u32, TargetFacts>,
+        /// Seconds since the local player's last hit on each target.
+        ages: HashMap<u32, f64>,
+    }
 
     impl World {
         fn set(&mut self, id: u32, is_boss: bool, hp: u32, secs: f64) {
-            self.0.insert(
+            self.facts.insert(
                 id,
                 TargetFacts { id, is_boss, current_hp: Some(hp), max_hp: Some(1_000), duration_secs: secs },
             );
         }
 
         fn observe(&self, focus: &mut BossFocus, current: u32, now: Instant) -> Change {
-            focus.observe(Some(current), |id| self.0.get(&id).copied(), |_| Some(Involvement::YouHitIt), now)
+            self.observe_involved(focus, current, Some(Involvement::YouHitIt), now)
         }
 
         fn observe_involved(
@@ -266,7 +390,15 @@ mod tests {
             involved: Option<Involvement>,
             now: Instant,
         ) -> Change {
-            focus.observe(Some(current), |id| self.0.get(&id).copied(), |_| involved, now)
+            let bosses: Vec<u32> = self.facts.values().filter(|f| f.is_boss).map(|f| f.id).collect();
+            focus.observe(
+                Some(current),
+                &bosses,
+                |id| self.facts.get(&id).copied(),
+                |_| involved,
+                |id| self.ages.get(&id).copied(),
+                now,
+            )
         }
     }
 
@@ -372,16 +504,141 @@ mod tests {
         assert!(!world.observe(&mut focus, BOSS, Instant::now()).any());
     }
 
-    #[test]
-    fn a_second_boss_takes_over() {
+    fn two_bosses() -> (BossFocus, World, Instant) {
         let start = Instant::now();
-        let (mut focus, mut world) = engaged_on_boss(start);
-
+        let (focus, mut world) = engaged_on_boss(start);
         world.set(OTHER_BOSS, true, 1_000, 1.0);
-        let change = world.observe(&mut focus, OTHER_BOSS, at(start, 30));
+        (focus, world, start)
+    }
+
+    #[test]
+    fn alternating_hits_between_two_bosses_never_switch() {
+        let (mut focus, mut world, start) = two_bosses();
+
+        for second in 1..=90u64 {
+            let on_boss = second % 2 == 0;
+            world.ages.insert(BOSS, if on_boss { 0.0 } else { 3.0 });
+            world.ages.insert(OTHER_BOSS, if on_boss { 3.0 } else { 0.0 });
+            let current = if on_boss { BOSS } else { OTHER_BOSS };
+            let change = world.observe(&mut focus, current, at(start, second));
+            assert!(!change.any(), "switched at {second}s");
+        }
+
+        assert_eq!(focus.focused(), Some(BOSS));
+    }
+
+    #[test]
+    fn twenty_seconds_of_hitting_only_the_other_boss_moves_the_board() {
+        let (mut focus, mut world, start) = two_bosses();
+        world.ages.insert(BOSS, 19.0);
+        world.ages.insert(OTHER_BOSS, 1.0);
+        assert!(!world.observe(&mut focus, OTHER_BOSS, at(start, 19)).any());
+
+        world.ages.insert(BOSS, 20.0);
+        let change = world.observe(&mut focus, OTHER_BOSS, at(start, 20));
+
+        assert_eq!(change.released, Some(Released { id: BOSS, reason: Release::MovedToAnotherBoss }));
+        assert_eq!(change.engaged, Some(OTHER_BOSS));
+        assert_eq!(change.moved_after_secs, Some(20.0));
+        assert_eq!(focus.focused(), Some(OTHER_BOSS));
+    }
+
+    #[test]
+    fn a_hit_on_the_focused_boss_restarts_the_count() {
+        let (mut focus, mut world, start) = two_bosses();
+        world.ages.insert(BOSS, 19.0);
+        world.ages.insert(OTHER_BOSS, 1.0);
+        world.observe(&mut focus, OTHER_BOSS, at(start, 19));
+
+        // A hit on the first boss at 19 s.
+        world.ages.insert(BOSS, 5.0);
+        world.ages.insert(OTHER_BOSS, 6.0);
+        assert!(!world.observe(&mut focus, BOSS, at(start, 24)).any());
+
+        world.ages.insert(BOSS, 21.0);
+        world.ages.insert(OTHER_BOSS, 1.0);
+        assert_eq!(world.observe(&mut focus, OTHER_BOSS, at(start, 40)).engaged, Some(OTHER_BOSS));
+    }
+
+    #[test]
+    fn a_boss_that_only_hit_you_counts_idle_from_its_engagement() {
+        let (mut focus, mut world, start) = two_bosses();
+        world.ages.insert(OTHER_BOSS, 1.0);
+
+        assert!(!world.observe(&mut focus, OTHER_BOSS, at(start, 10)).any());
+        assert!(world.observe(&mut focus, OTHER_BOSS, at(start, 20)).engaged.is_some());
+    }
+
+    #[test]
+    fn the_boss_dying_hands_over_to_the_other_at_once() {
+        let (mut focus, mut world, start) = two_bosses();
+        world.ages.insert(OTHER_BOSS, 2.0);
+
+        world.set(BOSS, true, 0, 40.0);
+        let change = world.observe(&mut focus, OTHER_BOSS, at(start, 40));
+
+        assert_eq!(change.released, Some(Released { id: BOSS, reason: Release::Died }));
+        assert_eq!(change.engaged, Some(OTHER_BOSS));
+    }
+
+    #[test]
+    fn after_the_death_the_boss_you_hit_last_engages_even_if_the_target_is_trash() {
+        let (mut focus, mut world, start) = two_bosses();
+        world.ages.insert(OTHER_BOSS, 2.0);
+
+        world.set(BOSS, true, 0, 40.0);
+        let change = world.observe(&mut focus, TRASH, at(start, 40));
 
         assert_eq!(change.engaged, Some(OTHER_BOSS));
+    }
+
+    #[test]
+    fn a_boss_walked_away_from_is_not_finished_and_can_be_moved_back_to() {
+        let (mut focus, mut world, start) = two_bosses();
+        world.ages.insert(BOSS, 25.0);
+        world.ages.insert(OTHER_BOSS, 1.0);
+        world.observe(&mut focus, OTHER_BOSS, at(start, 25));
         assert_eq!(focus.focused(), Some(OTHER_BOSS));
+
+        world.ages.insert(BOSS, 1.0);
+        world.ages.insert(OTHER_BOSS, 30.0);
+        let change = world.observe(&mut focus, BOSS, at(start, 60));
+
+        assert_eq!(change.engaged, Some(BOSS));
+        assert_eq!(
+            change.released,
+            Some(Released { id: OTHER_BOSS, reason: Release::MovedToAnotherBoss })
+        );
+    }
+
+    #[test]
+    fn unidentified_the_other_boss_must_stay_the_current_target_for_the_whole_time() {
+        let (mut focus, world, start) = two_bosses();
+        let unidentified = Some(Involvement::Unidentified);
+
+        assert!(!world.observe_involved(&mut focus, OTHER_BOSS, unidentified, at(start, 1)).any());
+        assert!(!world.observe_involved(&mut focus, OTHER_BOSS, unidentified, at(start, 20)).any());
+        // The first boss is the target again: the count starts over.
+        assert!(!world.observe_involved(&mut focus, BOSS, unidentified, at(start, 21)).any());
+        assert!(!world.observe_involved(&mut focus, OTHER_BOSS, unidentified, at(start, 22)).any());
+        assert!(!world.observe_involved(&mut focus, OTHER_BOSS, unidentified, at(start, 41)).any());
+
+        let change = world.observe_involved(&mut focus, OTHER_BOSS, unidentified, at(start, 42));
+        assert_eq!(change.released, Some(Released { id: BOSS, reason: Release::MovedToAnotherBoss }));
+        assert_eq!(change.engaged, Some(OTHER_BOSS));
+        assert_eq!(change.moved_after_secs, Some(20.0));
+    }
+
+    #[test]
+    fn unidentified_a_trash_target_in_between_restarts_the_count() {
+        let (mut focus, mut world, start) = two_bosses();
+        world.set(TRASH, false, 100, 5.0);
+        let unidentified = Some(Involvement::Unidentified);
+
+        world.observe_involved(&mut focus, OTHER_BOSS, unidentified, at(start, 1));
+        world.observe_involved(&mut focus, TRASH, unidentified, at(start, 10));
+
+        assert!(!world.observe_involved(&mut focus, OTHER_BOSS, unidentified, at(start, 25)).any());
     }
 
     #[test]
@@ -389,7 +646,7 @@ mod tests {
         let start = Instant::now();
         let (mut focus, mut world) = engaged_on_boss(start);
 
-        world.0.remove(&BOSS);
+        world.facts.remove(&BOSS);
         let change = world.observe(&mut focus, TRASH, at(start, 5));
 
         assert_eq!(change.released, Some(Released { id: BOSS, reason: Release::Gone }));

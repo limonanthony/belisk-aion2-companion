@@ -45,6 +45,7 @@ pub struct ShownSummary {
     pub kind: SummaryKind,
     duration_secs: f64,
     hide_at: Instant,
+    coexisting: Option<u32>,
 }
 
 pub struct FightTracker {
@@ -68,6 +69,14 @@ impl FightTracker {
         self.shown
     }
 
+    /// The boss that took over from the one whose summary is up was already
+    /// being fought when that one died, so it does not take the summary down.
+    pub fn coexist_with(&mut self, boss: u32) {
+        if let Some(shown) = &mut self.shown {
+            shown.coexisting = Some(boss);
+        }
+    }
+
     /// A new snapshot. Returns whether the summary that is up changed.
     pub fn observe(&mut self, target: Option<TargetFacts>, now: Instant) -> bool {
         let before = self.key();
@@ -83,7 +92,7 @@ impl FightTracker {
             if resumed {
                 self.quiet.forget(target.id);
                 self.shown = None;
-            } else if !same && target.is_boss {
+            } else if !same && target.is_boss && shown.coexisting != Some(target.id) {
                 self.shown = None;
             }
         }
@@ -130,20 +139,18 @@ impl FightTracker {
             return;
         }
         match kind {
-            SummaryKind::Final => {
-                self.defeated.remember(target.id);
-                if self.shown.is_some_and(|shown| shown.target_id == target.id) {
-                    self.shown = None;
-                }
-            }
+            SummaryKind::Final => self.defeated.remember(target.id),
             SummaryKind::Provisional => self.quiet.remember(target.id),
         }
-        if self.shown.is_none() {
+        // The most recent kill is the one to show: a boss dying while the
+        // summary of an earlier kill is up takes its place.
+        if kind == SummaryKind::Final || self.shown.is_none() {
             self.shown = Some(ShownSummary {
                 target_id: target.id,
                 kind,
                 duration_secs: target.duration_secs,
                 hide_at: now + SHOWN_FOR,
+                coexisting: None,
             });
         }
     }
@@ -272,6 +279,18 @@ mod tests {
         assert_eq!(kind(&tracker), Some(SummaryKind::Final));
     }
 
+
+    #[test]
+    fn a_later_kill_replaces_the_summary_of_an_earlier_one() {
+        let now = Instant::now();
+        let mut tracker = FightTracker::new(true);
+        tracker.observe(boss(7, 0, 30.0), now);
+        assert_eq!(tracker.shown().map(|shown| shown.target_id), Some(7));
+
+        tracker.observe(boss(9, 0, 40.0), now);
+
+        assert_eq!(tracker.shown().map(|shown| (shown.target_id, shown.kind)), Some((9, SummaryKind::Final)));
+    }
     #[test]
     fn the_next_boss_or_no_target_takes_the_summary_down() {
         let now = Instant::now();

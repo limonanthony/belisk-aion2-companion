@@ -2,6 +2,7 @@ use crate::capture::parser::utils::{
     find_bytes, read_u32_le as try_read_u32_le, read_varint,
 };
 use crate::capture::processor::StreamProcessor;
+use crate::mobs::catalog::exceeds_possible_boss_hp;
 
 fn parse_u32_le(data: &[u8], offset: usize) -> u32 {
     try_read_u32_le(data, offset).unwrap_or_default()
@@ -246,9 +247,8 @@ impl StreamProcessor {
         }
 
         // Mark as possible boss if HP exceeds threshold
-        const POSSIBLE_BOSS_HP_THRESHOLD: u32 = 10_000_000;
         let show_possible_boss = self.config.read().unwrap().show_possible_boss;
-        if show_possible_boss && target_hp > POSSIBLE_BOSS_HP_THRESHOLD {
+        if show_possible_boss && exceeds_possible_boss_hp(target_hp) {
             if let Some(mob_code) = self.data_storage.get_mob_code(target_id) {
                 self.data_storage.add_possible_boss(mob_code);
             }

@@ -177,11 +177,13 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
   is engaged only once you have engaged it yourself: you hit it, or it hit
   you (before the game has named you, any boss target counts, and it is
   released again if it turns out not to be yours). The Target board then
-  stays on that boss,
-  whatever else is hit, until it dies, another boss is engaged, it goes two
-  minutes without a hit, or the meter is reset. (A zone change would release
-  it too, but the game does not re-send the player's identity on a zone, so
-  in practice the two-minute rule lets go after you leave.) Clicking the
+  stays on that boss, whatever else is hit, until it dies or it goes two
+  minutes without a hit. Another boss takes over only after you have hit only
+  it for 20 s (a hit on the first restarts the count; before the game has
+  named you, it must stay your target for 20 s), and a reset releases it too.
+  (A zone change would release it too, but the game does not re-send the
+  player's identity on a zone, so in practice the two-minute rule lets go
+  after you leave.) Clicking the
   inactive side pins it (pin dot); clicking the active side
   again returns to automatic; a reset or the next boss also clears the pin. A
   pinned Target board follows your current target. Locked, the switch shows

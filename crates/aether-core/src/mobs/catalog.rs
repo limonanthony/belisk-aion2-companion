@@ -16,6 +16,15 @@ use crate::storage::loaders::{load_boss_ids, load_npc_names};
 
 pub const WRITE_INTERVAL: Duration = Duration::from_secs(30);
 
+/// Above this many HP a mob counts as a possible boss, unless the user rules
+/// otherwise. From global-server observations: bosses 3.6-6.8 million HP
+/// (Enhanced Harcon, Ultimate Berk), trash at most about 0.3 million.
+pub const POSSIBLE_BOSS_HP_THRESHOLD: u32 = 1_000_000;
+
+pub fn exceeds_possible_boss_hp(hp: u32) -> bool {
+    hp > POSSIBLE_BOSS_HP_THRESHOLD
+}
+
 pub struct MobStorage {
     pub dir: PathBuf,
     pub logger: Arc<AppLogger>,
@@ -330,6 +339,26 @@ mod tests {
 
     fn bundled_boss() -> u32 {
         *load_boss_ids().iter().min().expect("bundled bosses")
+    }
+
+    #[test]
+    fn the_hp_threshold_catches_global_bosses_and_not_their_trash() {
+        assert!(exceeds_possible_boss_hp(3_600_000), "Enhanced Harcon-sized");
+        assert!(exceeds_possible_boss_hp(6_800_000), "Ultimate Berk-sized");
+        assert!(!exceeds_possible_boss_hp(300_000), "trash seen on global");
+        assert!(!exceeds_possible_boss_hp(POSSIBLE_BOSS_HP_THRESHOLD));
+    }
+
+    #[test]
+    fn a_mob_over_the_threshold_becomes_a_possible_boss_but_a_correction_still_wins() {
+        let catalog = memory_catalog(|c| c.show_possible_boss = true);
+        if exceeds_possible_boss_hp(3_600_000) {
+            catalog.add_possible_boss(UNLISTED);
+        }
+        assert!(catalog.is_boss(UNLISTED));
+
+        catalog.set_boss_correction(UNLISTED, Some(BossCorrection::NotBoss));
+        assert!(!catalog.is_boss(UNLISTED));
     }
 
     fn bundled_named_mob() -> u32 {

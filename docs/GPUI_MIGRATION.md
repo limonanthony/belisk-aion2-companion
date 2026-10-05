@@ -168,7 +168,7 @@ keeps per-target totals; the change is in what the meter shows.
   header names the active view; clicking it pins the other one until the next
   reset or the next boss.
 - **Boss detection, for everyone.** The bundled boss list, the existing
-  "possible boss" HP rule (over 10 million HP), and the user's corrections. A
+  "possible boss" HP rule (over 1 million HP; was 10 million, lowered after global observations), and the user's corrections. A
   mob pinned as a boss or as not a boss is saved and wins over the other two.
   Order: exclusions, then the user's additions, then the bundled list, then the
   HP rule.
@@ -723,7 +723,7 @@ clears it with the rest.
 `mobs/catalog.rs`. `MobCatalog::is_boss(code)` is the only boss decision: the
 snapshot's `TargetInfo.is_boss`, the Boss-only filter and the summon parser all
 ask it. Order: the user's exclusion, the user's addition, the bundled list, then
-the HP rule (HP over 10 million, when `show_possible_boss` is on; the GPUI app
+the HP rule (HP over 1 million, `POSSIBLE_BOSS_HP_THRESHOLD`, from global observations: bosses 3.6–6.8 million, trash at most about 0.3 million; the old 10 million never fired; when `show_possible_boss` is on; the GPUI app
 turns it on in live and replay mode). The HP rule's set now survives a reset: it
 is a fact about the mob. `set_boss_correction(code, Some(Boss | NotBoss) |
 None)` is the API for a correction; the header's "…" menu calls it (see
@@ -796,13 +796,13 @@ target, which once put the board on a world boss in a PvP zone that the player
 never touched. Before identification the meter cannot tell, so any boss target
 engages as before; if one was engaged then and, once identified, you have
 neither hit it nor been hit by it, it is released ("not your fight"). A
-second boss takes over only if it also qualifies. A stranger's boss that dies
+second boss does not replace it (see below). A stranger's boss that dies
 gets no summary. The decision is logged with `--debug-log` (reason "you hit
 it" or "it hit you"). It is let go when:
 
 - the boss **dies** (the final summary follows, then the automatic board is
   Session again; a dead boss is never engaged again);
-- **another boss** is engaged;
+- **you move to another boss**, by the rule below (`Release::MovedToAnotherBoss`);
 - it goes `QUIET_RELEASE` (2 minutes, one constant in `focus.rs`) without a
   single hit on it, which also puts up the provisional "Fight ended" summary
   (it used to appear after 15 s of quiet, while the boss was still around);
@@ -816,6 +816,27 @@ it" or "it hit you"). It is let go when:
   The core parses no despawn or entity-removed packet, so nothing more
   precise is known. (A re-sent identification with the same id is not a zone
   change.)
+
+Bosses fought together (two sub-bosses of an expedition or conquest, a
+sub-boss beside the main boss) used to flip the board, because any other
+qualifying boss that became the current target replaced the focused one. Now
+the focused boss A stays, and another qualifying live boss B takes over only
+after **you have hit only B for `SWITCH_AFTER` = 20 s**: you hit B since your
+last hit on A, and that last hit on A is at least 20 s old (counted from the
+engagement if you never hit A, e.g. it only hit you). Any hit of yours on A
+restarts the count, so alternating between them never switches. "Your last hit
+on a target" is `TargetInfo::target_last_time[you]` (the core's per-player
+last-hit time, summons merged into the owner) against the snapshot's
+`time_now`; no core change was needed. Before identification your hits are
+unknown, so B takes over once it has been the *current target* without a
+break for 20 s; a snapshot whose current target is A (or anything else)
+restarts that. Moving away releases A without a provisional "Fight ended"
+summary and does not record it as finished, so it can come back under the same
+rule. When A dies, its final summary shows as usual and B (the boss you hit
+last, or the current target) engages at once; B does not take A's summary down.
+With no boss focused, the boss you hit within the last 20 s engages even if the
+current target is trash. `--debug-log` records the switch with the reason and
+the timing.
 
 A user pin overrides the board but does not release the boss: unpinning goes
 back to it. Hits are noticed by the boss's fight length growing; the quiet

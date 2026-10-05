@@ -14,7 +14,7 @@ use gpui::{Context, SharedString, Task};
 use super::board::{Board, BoardChoice};
 use super::decisions::DecisionLog;
 use super::fight::{FightTracker, TargetFacts};
-use super::focus::{BossFocus, Change, Involvement, Release, Released};
+use super::focus::{BossFocus, Change, Involvement, Release, Released, SWITCH_AFTER};
 use crate::format;
 use crate::game_data::PlayerClass;
 use super::live::{self, LiveBoard, PaceLine};
@@ -138,6 +138,9 @@ pub struct MeterModel {
     /// Each player's shade of their class colour, kept until a reset.
     shades: ShadeBook,
     focus: BossFocus,
+    /// The boss that took over as the focused one died: it must not take that
+    /// death's summary down.
+    coexist_after_kill: Option<u32>,
     decisions: DecisionLog,
     session: Option<SessionBoard>,
     header: Option<SharedString>,
@@ -156,6 +159,7 @@ impl MeterModel {
             choice: BoardChoice::default(),
             shades: ShadeBook::default(),
             focus: BossFocus::default(),
+            coexist_after_kill: None,
             decisions: DecisionLog::new(meter.as_ref().map(|meter| Arc::clone(meter.logger()))),
             session: None,
             header: None,
@@ -557,6 +561,9 @@ impl MeterModel {
             .as_ref()
             .and_then(|snapshot| tracked.and_then(|id| facts_of(snapshot, id)));
         let summary_changed = self.tracker.observe(facts, now);
+        if let Some(boss) = self.coexist_after_kill.take() {
+            self.tracker.coexist_with(boss);
+        }
         self.rebuild_live();
         if summary_changed {
             self.rebuild_summary();
@@ -570,19 +577,36 @@ impl MeterModel {
     fn settle_focus(&mut self, now: Instant) -> Option<u32> {
         let snapshot = self.snapshot.as_ref()?;
         let current = live::target_of(snapshot).map(|target| target.id);
+        let bosses: Vec<u32> = snapshot
+            .combat_infos
+            .target_infos
+            .values()
+            .filter(|target| target.is_boss)
+            .map(|target| target.id)
+            .collect();
         let change = self.focus.observe(
             current,
+            &bosses,
             |id| facts_of(snapshot, id),
             |id| involvement_of(snapshot, id),
+            |id| my_hit_age(snapshot, id),
             now,
         );
         self.apply_focus_change(change);
         let snapshot = self.snapshot.as_ref()?;
-        let tracked = self
-            .focus
-            .focused()
+        let died = change
+            .released
+            .filter(|released| released.reason == Release::Died)
+            .map(|released| released.id);
+        // A boss that took over the moment the other died must not hide the
+        // death's summary.
+        let tracked = died
+            .or(self.focus.focused())
             .or(change.released.map(|released| released.id))
             .or(current)?;
+        if let (Some(_), Some(engaged)) = (died, change.engaged) {
+            self.coexist_after_kill = Some(engaged);
+        }
         // A stranger's boss dying is not your kill, so no summary for it.
         let strangers = facts_of(snapshot, tracked).is_some_and(|facts| facts.is_boss)
             && involvement_of(snapshot, tracked).is_none();
@@ -612,9 +636,15 @@ impl MeterModel {
         }
         if let Some(id) = change.engaged {
             let why = change.engaged_because.map_or("", Involvement::describe);
+            let timing = change.moved_after_secs.map_or(String::new(), |secs| {
+                format!(
+                    " (moved there: the other boss left alone, or this one the only target, for {secs:.1} s; the switch needs {} s)",
+                    SWITCH_AFTER.as_secs()
+                )
+            });
             self.decisions.event("boss focus", || {
                 format!(
-                    "engaged {:?} ({id}) because {why}; the Target board stays on it until it dies or is let go",
+                    "engaged {:?} ({id}) because {why}{timing}; the Target board stays on it until it dies or is let go",
                     name_of(id)
                 )
             });
@@ -725,6 +755,21 @@ impl MeterModel {
     pub fn seed_personal_best(&mut self, character: &str, mob_code: u32, dps: f64) {
         self.best = Some(BestEntry { character: character.to_string(), mob_code, dps: Some(dps) });
     }
+}
+
+/// Seconds since the local player's last hit on `target`, from the core's
+/// per-player last-hit times (`TargetInfo::target_last_time`, summons merged
+/// into their owner). `None` while unidentified or if they never hit it.
+fn my_hit_age(snapshot: &CombatSnapshot, target: u32) -> Option<f64> {
+    if !live::is_identified(snapshot) {
+        return None;
+    }
+    let rows: Vec<_> = snapshot.by_target_player_stats.get(&target)?.values().collect();
+    let found = live::find_you(snapshot, rows.iter().map(|row| (row.actor_id, row.actor_name.as_str())))?;
+    let last = live::target_info(snapshot, target)?
+        .target_last_time
+        .get(&rows[found.index].actor_id)?;
+    Some((snapshot.combat_infos.time_now - last).max(0.0))
 }
 
 /// Why `boss` is the local player's fight. The core records every hit as
@@ -1402,19 +1447,100 @@ mod tests {
         assert_eq!(model.summary().map(|summary| summary.boss.as_ref()), Some("Boss"));
     }
 
+    /// Sets "now" and how long ago you last hit each given target.
+    fn with_hit_ages(mut snapshot: CombatSnapshot, ages: &[(u32, f64)]) -> CombatSnapshot {
+        snapshot.combat_infos.time_now = 1_000.0;
+        for &(id, age) in ages {
+            if let Some(info) = snapshot.combat_infos.target_infos.get_mut(&id) {
+                info.target_last_time.insert(2, 1_000.0 - age);
+            }
+        }
+        snapshot
+    }
+
+    fn two_bosses() -> [Mob; 2] {
+        [
+            mob(BOSS_ID, true, 800, 40.0, boss_party()),
+            mob(OTHER_BOSS_ID, true, 900, 30.0, vec![player(4, "Puller", 9_000, 90.0), player(2, "You", 500, 5.0)]),
+        ]
+    }
+
     #[test]
-    fn a_second_boss_takes_the_board_over() {
+    fn alternating_between_two_bosses_keeps_the_first_on_the_board() {
         let start = Instant::now();
         let mut model = boss_fight_with_adds(start);
-        let mobs = [
-            mob(BOSS_ID, true, 800, 40.0, boss_party()),
-            mob(OTHER_BOSS_ID, true, 1_000, 2.0, vec![player(4, "Puller", 9_000, 90.0), player(2, "You", 500, 5.0)]),
-        ];
 
-        model.apply(MeterEvent::DpsSnapshot(world(OTHER_BOSS_ID, &mobs, Some((2, "You")))), at(start, 30));
+        for second in 1..=60u64 {
+            let on_first = second % 2 == 0;
+            let ages = [(BOSS_ID, if on_first { 0.0 } else { 3.0 }), (OTHER_BOSS_ID, if on_first { 3.0 } else { 0.0 })];
+            let current = if on_first { BOSS_ID } else { OTHER_BOSS_ID };
+            let snapshot = with_hit_ages(world(current, &two_bosses(), Some((2, "You"))), &ages);
+            model.apply(MeterEvent::DpsSnapshot(snapshot), at(start, second));
+
+            assert_eq!(model.focused_boss(), Some(BOSS_ID), "flipped at {second}s");
+            assert_eq!(model.header_name().map(|name| name.as_ref()), Some("Boss"));
+        }
+    }
+
+    #[test]
+    fn twenty_seconds_on_only_the_other_boss_moves_the_board_without_a_summary() {
+        let start = Instant::now();
+        let mut model = boss_fight_with_adds(start);
+        let ages = [(BOSS_ID, 25.0), (OTHER_BOSS_ID, 1.0)];
+        let snapshot = with_hit_ages(world(OTHER_BOSS_ID, &two_bosses(), Some((2, "You"))), &ages);
+
+        model.apply(MeterEvent::DpsSnapshot(snapshot), at(start, 25));
 
         assert_eq!(model.focused_boss(), Some(OTHER_BOSS_ID));
         assert_eq!(model.live().unwrap().rows[0].name.as_deref(), Some("Puller"));
+        assert!(model.summary().is_none(), "walking away is not a fight that ended");
+        assert!(!model.advance(at(start, 26)));
+        assert!(model.summary().is_none());
+    }
+
+    #[test]
+    fn the_first_boss_dying_gives_its_summary_and_the_other_takes_over_at_once() {
+        let start = Instant::now();
+        let mut model = boss_fight_with_adds(start);
+        let mobs = [
+            mob(BOSS_ID, true, 0, 45.0, boss_party()),
+            mob(OTHER_BOSS_ID, true, 900, 30.0, vec![player(4, "Puller", 9_000, 90.0), player(2, "You", 500, 5.0)]),
+        ];
+        let snapshot = with_hit_ages(world(OTHER_BOSS_ID, &mobs, Some((2, "You"))), &[(OTHER_BOSS_ID, 2.0)]);
+
+        model.apply(MeterEvent::DpsSnapshot(snapshot.clone()), at(start, 45));
+
+        assert_eq!(model.focused_boss(), Some(OTHER_BOSS_ID));
+        let summary = model.summary().expect("the first boss's final summary");
+        assert_eq!(summary.kind, SummaryKind::Final);
+        assert_eq!(summary.rank.as_deref(), Some("1/2"));
+
+        model.apply(MeterEvent::DpsSnapshot(snapshot), at(start, 46));
+        assert!(model.summary().is_some(), "the boss already being fought does not take it down");
+    }
+
+    #[test]
+    fn the_second_boss_dying_while_the_first_summary_is_up_shows_its_own() {
+        let start = Instant::now();
+        let mut model = boss_fight_with_adds(start);
+        let first_dead = [
+            mob(BOSS_ID, true, 0, 45.0, boss_party()),
+            mob(OTHER_BOSS_ID, true, 900, 30.0, vec![player(4, "Puller", 9_000, 90.0), player(2, "You", 500, 5.0)]),
+        ];
+        let snapshot = with_hit_ages(world(OTHER_BOSS_ID, &first_dead, Some((2, "You"))), &[(OTHER_BOSS_ID, 2.0)]);
+        model.apply(MeterEvent::DpsSnapshot(snapshot), at(start, 45));
+        assert_eq!(model.summary().map(|summary| summary.rank.clone()), Some(Some("1/2".into())));
+
+        let both_dead = [
+            mob(BOSS_ID, true, 0, 45.0, boss_party()),
+            mob(OTHER_BOSS_ID, true, 0, 50.0, vec![player(4, "Puller", 9_000, 90.0), player(2, "You", 500, 5.0)]),
+        ];
+        let snapshot = with_hit_ages(world(OTHER_BOSS_ID, &both_dead, Some((2, "You"))), &[(OTHER_BOSS_ID, 1.0)]);
+        model.apply(MeterEvent::DpsSnapshot(snapshot), at(start, 50));
+
+        let summary = model.summary().expect("the second kill's summary");
+        assert_eq!(summary.kind, SummaryKind::Final);
+        assert_eq!(summary.rank.as_deref(), Some("2/2"), "the second boss's board, where you rank second");
     }
 
     #[test]
