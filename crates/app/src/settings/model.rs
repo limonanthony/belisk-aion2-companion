@@ -66,7 +66,7 @@ impl Default for BehaviourSettings {
             count: CountMode::AllTargets,
             detect_possible_bosses: true,
             training_dummy_only: false,
-            hide_unknown_players: false,
+            hide_unknown_players: true,
             end_fight_after_secs: 300,
         }
     }
