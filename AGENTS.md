@@ -40,6 +40,13 @@ cargo xtask dist [--allow-dirty] [--no-source [--source-contact "<text>"]]   # b
 - **User-facing text goes through i18n**: `fl!("area-key", arg = value)` from `crate::i18n`, with the message in both `crates/app/i18n/en/aion_2_dps_meter.ftl` and `fr/…`. No English words in `format!` or string literals that reach a window, a clipboard report or an accessibility label; game names (bosses, dungeons, skills) are data and stay English. The test `i18n/tests.rs` fails when the two files differ in keys or arguments.
 - Moving the project directory requires `cargo clean` — Cargo bakes absolute paths into `target`.
 
+## Project management
+
+- Provider: backlog
+- Backlog directory: backlog
+- Project name: AION 2 DPS Meter
+- Documentation home: provider:docs
+
 ## Layout
 
 |Path|What lives there|
