@@ -4,8 +4,9 @@
 
 use std::time::Duration;
 
-use super::schedule::{next_reminder, Reminder, Zone};
+use super::schedule::{next_reminder, Reminder};
 use super::settings::{ReminderSettings, LEAD_MINUTES_OPTIONS};
+use crate::clock::Zone;
 
 /// The longest sleep between two clock readings. A sleeping PC or a changed
 /// clock is noticed within this long, since the timer cannot be trusted across

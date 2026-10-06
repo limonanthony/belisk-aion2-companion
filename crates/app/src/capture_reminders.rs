@@ -21,10 +21,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::capture::{self, grab_image, MK_LBUTTON, SETTLE};
 use crate::capture_secondary::{pack, pause, post, show_scene, window_handle, window_hwnd};
+use crate::clock::ClockTime;
 use crate::fixtures;
 use crate::meter::{Layout, MeterModel, MeterView};
 use crate::overlay::{self, off_screen};
-use crate::reminders::{ClockTime, EventId, ReminderView, ShowReminder, GAP};
+use crate::reminders::{EventId, ReminderView, ShowReminder, GAP};
 use crate::secondary::{self, Rect, WindowKind};
 use crate::settings;
 
@@ -129,7 +130,7 @@ pub async fn from_fixtures(
     post(card_hwnd, WM_LBUTTONDOWN, MK_LBUTTON, pack(centre));
     post(card_hwnd, WM_LBUTTONUP, 0, pack(centre));
     pause(cx, Duration::from_millis(60)).await;
-    check_never_focused("a click on the card", foreground_before, cx)?;
+    check_never_focused(WindowKind::Reminder, "a click on the card", foreground_before, cx)?;
     pause(cx, Duration::from_millis(500)).await;
     let open = cx.update(|cx| secondary::window_of(WindowKind::Reminder, cx).is_some());
     println!("a click on the card: still open {open}");
@@ -168,17 +169,18 @@ pub fn foreground() -> HWND {
     unsafe { GetForegroundWindow() }
 }
 
-/// The card is non-activating, and neither the foreground window nor the
-/// active or focused window of the UI thread, which owns it.
-pub fn check_never_focused(label: &str, foreground_before: HWND, cx: &mut AsyncApp) -> Result<()> {
-    let card = window_hwnd(WindowKind::Reminder, cx)?;
+/// The overlay window of `kind` is non-activating, and neither the
+/// foreground window nor the active or focused window of the UI thread,
+/// which owns it.
+pub fn check_never_focused(kind: WindowKind, label: &str, foreground_before: HWND, cx: &mut AsyncApp) -> Result<()> {
+    let card = window_hwnd(kind, cx)?;
     let style = overlay::ex_style(card);
     let foreground = foreground();
     let mut thread = GUITHREADINFO { cbSize: std::mem::size_of::<GUITHREADINFO>() as u32, ..Default::default() };
     unsafe { GetGUIThreadInfo(GetCurrentThreadId(), &mut thread) }
         .map_err(|error| format!("GetGUIThreadInfo failed: {error}"))?;
     println!(
-        "{label}: topmost {}, tool window {}, non-activating {}; the card is the foreground window {}, the active window {}, the focus window {}; foreground unchanged {}",
+        "{label}: topmost {}, tool window {}, non-activating {}; the {kind:?} window is the foreground window {}, the active window {}, the focus window {}; foreground unchanged {}",
         style & WS_EX_TOPMOST.0 != 0,
         style & WS_EX_TOOLWINDOW.0 != 0,
         style & WS_EX_NOACTIVATE.0 != 0,
@@ -188,25 +190,25 @@ pub fn check_never_focused(label: &str, foreground_before: HWND, cx: &mut AsyncA
         foreground == foreground_before,
     );
     if style & WS_EX_NOACTIVATE.0 == 0 {
-        return Err(format!("{label}: the reminder window is activatable"));
+        return Err(format!("{label}: the {kind:?} window is activatable"));
     }
     if foreground == card || thread.hwndActive == card || thread.hwndFocus == card {
-        return Err(format!("{label}: the reminder window took the focus"));
+        return Err(format!("{label}: the {kind:?} window took the focus"));
     }
     if foreground != foreground_before {
         return Err(format!(
-            "{label}: the foreground window changed since the check began ({:?} before, {:?} now); if it was not you switching windows during the run, the reminder moved it",
+            "{label}: the foreground window changed since the check began ({:?} before, {:?} now); if it was not you switching windows during the run, the {kind:?} window moved it",
             foreground_before.0, foreground.0
         ));
     }
-    capture::check_click_activation(card, &format!("{label}: a click on the reminder"), MA_NOACTIVATE)
+    capture::check_click_activation(card, &format!("{label}: a click on the {kind:?} window"), MA_NOACTIVATE)
 }
 
 /// Focus, then where the card sits: on the meter's left edge, the gap above
 /// or below it, never over it.
 async fn check_card(label: &str, meter_hwnd: HWND, foreground_before: HWND, cx: &mut AsyncApp) -> Result<Side> {
     pause(cx, TICK * 2).await;
-    check_never_focused(label, foreground_before, cx)?;
+    check_never_focused(WindowKind::Reminder, label, foreground_before, cx)?;
     let card = window_handle::<ReminderView>(WindowKind::Reminder, cx)?;
     let (card_hwnd, dpi) = card.update(cx, |_, window, _| overlay::hwnd(window).map(|hwnd| (hwnd, window.scale_factor()))).map_err(gone)??;
     let content_scale = cx.update(|cx| settings::global(cx).read(cx).get().overlay.scale());

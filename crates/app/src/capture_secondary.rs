@@ -1,15 +1,15 @@
-//! Off-screen captures and checks of the history, player detail and PvP
-//! windows, run by `--capture` after the meter's own. Every window is placed
-//! outside all monitors (`Placement::OffScreen`) and nothing here asks Windows
-//! for the foreground: the typing focus exception is checked on the window
-//! style, and keys and clicks are posted to our own windows only. The data is
-//! invented (`--fixtures`) or a recording's, with names masked.
+//! Off-screen captures and checks of the history, player detail, PvP and
+//! to-do windows, run by `--capture` after the meter's own. Every window is
+//! placed outside all monitors (`Placement::OffScreen`) and nothing here asks
+//! Windows for the foreground: the typing focus exception is checked on the
+//! window style, and keys and clicks are posted to our own windows only. The
+//! data is invented (`--fixtures`) or a recording's, with names masked.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use aether_core::events::MeterEvent;
-use aether_core::models::combat::CombatSnapshot;
+use meter_core::events::MeterEvent;
+use meter_core::models::combat::CombatSnapshot;
 use gpui::{AsyncApp, Entity};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -20,6 +20,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::capture::{self, shoot_hwnd, MK_LBUTTON, ROW_POINT};
 use crate::capture_reminders;
 use crate::capture_settings;
+use crate::capture_todos;
 use crate::detail::{DetailModel, DetailSource, DetailView};
 use crate::fixtures;
 use crate::history::{HistoryModel, HistoryView};
@@ -35,7 +36,7 @@ const TICK: Duration = Duration::from_millis(150);
 const HISTORY_ITEM_POINT: (i32, i32) = (150, 47);
 const PVP_ITEM_POINT: (i32, i32) = (150, 73);
 /// On the title, left of anything else in the header, at 100% scale.
-const TITLE_POINT: (i32, i32) = (60, 20);
+pub(crate) const TITLE_POINT: (i32, i32) = (60, 20);
 /// Only a `WindowControlArea` answers anything but HTCLIENT, and none would
 /// be shorter than a button, so every sixth logical row is enough.
 const HIT_TEST_STEP: f32 = 6.0;
@@ -53,6 +54,7 @@ pub async fn from_fixtures(
     detail_window(model, dir, cx).await?;
     pvp_window(model, dir, cx).await?;
     entry_points(meter, model, cx).await?;
+    capture_todos::from_fixtures(meter, model, dir, cx).await?;
     capture_settings::from_fixtures(meter, model, dir, cx).await?;
     capture_reminders::from_fixtures(meter, model, dir, cx).await
 }
@@ -419,7 +421,7 @@ fn check_client_area(kind: WindowKind, state: &str, cx: &mut AsyncApp) -> Result
 
 /// The whole window is client area, and a drag on the title moves it by the
 /// pointer's delta while a later move without the button does not.
-async fn check_title(kind: WindowKind, state: &str, cx: &mut AsyncApp) -> Result<()> {
+pub(crate) async fn check_title(kind: WindowKind, state: &str, cx: &mut AsyncApp) -> Result<()> {
     check_client_area(kind, state, cx)?;
     let (hwnd, scale, _) = frame(kind, cx)?;
     capture::check_drag(hwnd, scale, TITLE_POINT, &format!("the {kind:?} title"), cx).await
@@ -548,7 +550,7 @@ pub(crate) async fn shoot_window(kind: WindowKind, dir: &Path, name: &str, cx: &
 
 /// The window's style as the capture sees it: topmost, tool window, never
 /// activated, frameless.
-fn report_window(kind: WindowKind, cx: &mut AsyncApp) -> Result<()> {
+pub(crate) fn report_window(kind: WindowKind, cx: &mut AsyncApp) -> Result<()> {
     let hwnd = window_hwnd(kind, cx)?;
     let style = overlay::ex_style(hwnd);
     println!(

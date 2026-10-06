@@ -1,7 +1,7 @@
 //! What the PvP window lists, and the rules for the watch list. Ported from
 //! `overlay/meter_pvp/main.js` of the Tauri app.
 
-use aether_core::models::combat::{
+use meter_core::models::combat::{
     PlayerOverviewStat, PvpCombatStatsRow, PvpDamageOverviewStat, PvpKnownPlayer, PvpWatchInfo, PvpWatchInfoResponse,
 };
 

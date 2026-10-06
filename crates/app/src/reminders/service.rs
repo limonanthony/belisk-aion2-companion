@@ -2,12 +2,12 @@ use std::time::Duration;
 
 use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
 
-use super::clock::{now_ms, LocalZone};
 use super::events::EventId;
 use super::planner::{Planner, Step};
-use super::schedule::{clock_time, ClockTime, Reminder};
+use super::schedule::Reminder;
 use super::settings::ReminderSettings;
 use super::sound;
+use crate::clock::{clock_time, now_ms, ClockTime, LocalZone};
 use crate::settings::Settings;
 
 /// Asks the view to show a reminder window. Sent on the UI thread; the sound

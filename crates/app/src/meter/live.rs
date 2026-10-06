@@ -1,11 +1,12 @@
 //! What the live meter shows, worked out once per snapshot so drawing only
 //! reads prepared strings. Rules ported from `overlay/meter/main.js`.
 
-use aether_core::models::combat::{CombatSnapshot, PlayerOverviewStat, TargetInfo};
+use meter_core::models::combat::{CombatSnapshot, PlayerOverviewStat, TargetInfo};
 use gpui::SharedString;
 
 use crate::format;
 use crate::game_data::{self, PlayerClass};
+use crate::i18n::fl;
 use super::settings::{OverlaySettings, PctMode};
 use super::shades::ShadeBook;
 
@@ -48,7 +49,7 @@ impl PaceLine {
         let figure = format::pace(pace);
         Self {
             ahead: pace >= 0.0,
-            versus_best: format!("{figure} vs PB").into(),
+            versus_best: fl!("meter-pace-versus-best", pace = figure.clone()).into(),
             figure: figure.into(),
         }
     }
@@ -129,7 +130,7 @@ pub fn boss_hp(target: &TargetInfo) -> Option<Gauge> {
 pub fn target_name(target: &TargetInfo) -> String {
     match &target.target_name {
         Some(name) if !name.is_empty() => name.clone(),
-        _ => format!("Target {}", target.id),
+        _ => fl!("common-target-numbered", id = target.id),
     }
 }
 
@@ -345,7 +346,7 @@ pub fn player_row(
 ) -> PlayerRow {
     let raw_bar = player.total_damage as f32 / top_damage;
     let name = if player.actor_name.is_empty() {
-        format!("ID:{}", player.actor_id)
+        format::unnamed_player(player.actor_id, is_you)
     } else {
         settings.display_name(player.actor_name)
     };
@@ -390,14 +391,17 @@ pub fn battle_report(snapshot: &CombatSnapshot, target_id: u32) -> Option<String
         .map(|name| format!("{name} · "))
         .unwrap_or_default();
     let mut report = format!(
-        "{name}Duration {} · Total damage {} · Party DPS {}\n",
-        format::report_duration(secs),
-        format::damage(total),
-        format::grouped(party),
+        "{name}{}\n",
+        fl!(
+            "meter-report-header",
+            duration = format::report_duration(secs),
+            damage = format::damage(total),
+            dps = format::grouped(party)
+        )
     );
     for player in &ranked {
         let who = if player.actor_name.is_empty() {
-            format!("ID:{}", player.actor_id)
+            format::unnamed_player(player.actor_id, snapshot.combat_infos.main_actor_id == Some(player.actor_id))
         } else {
             player.actor_name.clone()
         };

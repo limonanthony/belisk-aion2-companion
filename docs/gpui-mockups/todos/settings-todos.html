@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-dos proposal: Settings, To-dos</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../approved/app.css" />
+    <style>
+      /* Proposal-local, on top of the approved Settings styles. */
+      .sel-wrap {
+        position: relative;
+      }
+
+      .sel.is-hour {
+        min-width: 130px;
+      }
+
+      /* The hour list: 24 hours, eight at a time; it opens scrolled to the
+         chosen hour and scrolls with a 3 px thumb like the rest of the app. */
+      .sel .menu.is-scroll {
+        height: 232px;
+        overflow: hidden;
+      }
+
+      .menu-thumb {
+        position: absolute;
+        top: var(--t, 60px);
+        right: 3px;
+        width: 3px;
+        height: var(--h, 75px);
+        border-radius: 2px;
+        background: rgba(255, 240, 225, 0.28);
+      }
+
+      /* A value the meter works out, not a control. */
+      .ro {
+        color: var(--a-muted);
+        font-family: var(--a-display);
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+
+      .dlg p + p {
+        margin-top: 6px;
+      }
+
+      /* focus-ring: 2 px, 3 px outside the control (tokens.md). */
+      .dlg-actions .btn.is-focus {
+        outline: 2px solid rgba(243, 235, 225, 0.9);
+        outline-offset: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="To-do proposals">
+        <a href="index.html">To-dos overview</a>
+        <a href="e.html">E, struck through when done</a>
+        <a href="settings-todos.html" aria-current="page">Settings, To-dos</a>
+        <a href="d.html">D, you set the counts</a>
+        <a href="a.html">A, tabs</a>
+        <a href="b.html">B, one list per character</a>
+        <a href="c.html">C, all characters</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>Settings, To-dos <small>approved 2026-10-06, kept as drawn for history; the approved version is the To-dos section of <a href="../approved/settings.html?states=todos">approved/settings.html</a></small></h1>
+      <ul class="rationale">
+        <li>A new <b>To-dos</b> section in the sidebar, after Reminders, in the approved <a href="../approved/settings.html">Settings</a> rows, switches, buttons and dialog. Changes apply at once; there is no Save.</li>
+        <li><b>Resets</b>: the daily reset hour, 09:00 by default, with the note "Reported, not confirmed. Check the countdown in game."; the weekly reset is shown, not set: Wednesday at the same hour.</li>
+        <li><b>Membership</b>: Odyle Energy fills up to 840 instead of 560. It left the to-do window with its edit mode.</li>
+        <li><b>Bringing the defaults back</b>, two ways (the user's request): <b>Restore default to-dos</b> brings back every built-in to-do you hid and keeps your own to-dos and all progress; <b>Reset to-dos completely</b> also removes your own to-dos and empties every count and amount, after a confirm dialog. Both apply to all characters.</li>
+        <li>Character names and figures are invented.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Daily reset</b>: a select with every hour, 00:00 to 23:00; it opens scrolled to the chosen hour. The hour moves Today's countdown, the daily recharges' estimates and the weekly reset with it. The countdowns in the to-do window follow at once. "Change" in the window's footer opens this section.</li>
+        <li><b>Weekly reset</b>: not a control. The research says Wednesday; it follows the daily hour ("Wednesday 09:00", "Wednesday 17:00").</li>
+        <li><b>Membership</b>: one switch for every character, off by default. On, Odyle Energy's cap is 840: an amount you typed above 560 is kept, and its "Full in …" estimate uses the new cap. Off again, an amount above 560 is cut to 560.</li>
+        <li><b>Restore default to-dos</b>: on every character, every built-in to-do you hid comes back (Duty Commands too, which start hidden). Your own to-dos, every count and every amount stay. The description says how many are hidden now ("6 hidden, on 2 characters"); with none hidden it says "Nothing is hidden." and the button is disabled. After a click, a good badge "6 to-dos back" shows beside the button and fades after 4 s, as "Shown above the meter" does in Reminders. No dialog: nothing is lost, and anything can be hidden again from the window.</li>
+        <li><b>Reset to-dos completely</b>: opens the dialog. Cancel has the focus, so Enter or Esc changes nothing. "Reset to-dos" does, on every character: your own to-dos are removed, every hidden to-do comes back, every count goes to 0 and every amount you typed goes back to empty ("—"). The reset hour and the membership stay. Afterwards a good badge "To-dos reset" shows beside the button for 4 s; the to-do window, if open, shows the fresh list at once.</li>
+        <li><b>Not here</b>: the per-row hide and show, adding your own and the counts themselves stay in the to-do window. The "+1?" from boss kills (off by default, built later) would get a switch in this section when it is built.</li>
+      </ul>
+      <h2>Values</h2>
+      <ul>
+        <li>Everything is the approved Settings set (<a href="../approved/tokens.md">tokens.md</a>): rows, group titles, Switch, Select, buttons (the reset one in the danger tone, as "Clear cache…"), badge and Dialog. Proposal-local: the hour select at 130 px like "Remind me", its list eight hours high with a 3 px thumb, the weekly value in <code>muted</code> display type, and the sidebar icon, Lucide <code>list-checks</code>.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/app.js"></script>
+    <script>
+      (function () {
+        const { icon, C } = App;
+        const row = C.row;
+        const group = C.group;
+
+        // Lucide list-checks (ISC), the to-do window's own icon.
+        const LIST =
+          '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>';
+
+        // A copy of the approved shell's sidebar (../approved/app.js) with
+        // To-dos after Reminders.
+        const SECTIONS = [
+          ["overlay", icon("sliders")],
+          ["behaviour", icon("activity")],
+          ["shortcuts", icon("keyboard")],
+          ["capture", icon("radio")],
+          ["bests", icon("trophy")],
+          ["reminders", icon("bell")],
+          ["todos", LIST],
+          ["general", icon("languages")],
+          ["about", icon("info")],
+        ];
+
+        function shell(ctx, page, content, overlayHtml) {
+          const t = { ...ctx.t, todos: "To-dos" };
+          const side = `<aside class="side">
+  <div class="side-item">${icon("gauge")}${t.meter}</div>
+  <div class="side-group">${t.settings}</div>
+  ${SECTIONS.map(([id, ic]) => `<div class="side-item${id === page ? " is-on" : ""}">${ic}${t[id]}</div>`).join("")}
+  <div class="side-status"><span class="dot is-good"></span><span>${t.running} · 12:41</span></div>
+</aside>`;
+          return `<div class="win">${ctx.titleBar(ctx)}<div class="shell">${side}<div class="content">${content}</div></div>${overlayHtml}</div>`;
+        }
+
+        const pad = (n) => String(n).padStart(2, "0");
+
+        function hour(open) {
+          if (!open) return C.sel("09:00").replace('class="sel', 'class="sel is-hour');
+          const items = Array.from({ length: 24 }, (_, h) => `${pad(h)}:00`)
+            .map((h) => `<span class="menu-item${h === "10:00" ? " is-hot" : ""}">${h}${h === "09:00" ? icon("tick") : ""}</span>`)
+            .join("");
+          // Scrolled so 06:00 is the first visible hour: 6 rows of 28 px.
+          return `<span class="sel-wrap"><span class="sel is-hour is-open"><span class="val">09:00</span>${icon("chevronDown")}<span class="menu is-scroll"><span style="display:block;margin-top:-168px">${items}</span><span class="menu-thumb"></span></span></span></span>`;
+        }
+
+        function todos(st) {
+          const restored = st === "restored" || st === "reset";
+          const hidden = restored ? "Nothing is hidden." : "6 hidden, on 2 characters.";
+          const restore =
+            (st === "restored" ? C.badge("6 to-dos back", "good", "check") : "") +
+            C.btn("Restore default to-dos", { ic: "reset", kind: restored ? "disabled" : "" });
+          const reset = (st === "reset" ? C.badge("To-dos reset", "good", "check") : "") + C.btn("Reset to-dos completely…", { kind: "danger" });
+          return (
+            `<div class="h1">To-dos</div><p class="lead">The to-do window, opened from the meter's "…" menu.</p>` +
+            group(
+              "Resets",
+              row("Daily reset", "Reported, not confirmed. Check the countdown in game.", hour(st === "hour")) +
+                row("Weekly reset", "This week's to-dos start over on Wednesday, at the daily reset hour.", `<span class="ro">Wednesday 09:00</span>`),
+              true
+            ) +
+            group("Recharges", row("Membership", "Odyle Energy fills up to 840 instead of 560, on every character.", C.sw(false))) +
+            group(
+              "Default to-dos",
+              row("Hidden to-dos", `${hidden} Restoring the defaults keeps your own to-dos and all progress.`, restore) +
+                row("Start over", "Removes your own to-dos, brings back every hidden one and empties every count and amount.", reset)
+            )
+          );
+        }
+
+        const DIALOG = `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-reset"><h3 id="dlg-reset">Reset the to-dos completely?</h3><p>On every character: your own to-dos (3) are removed, every hidden to-do comes back, and every count and amount you entered is emptied.</p><p>The reset hour and the membership stay. This cannot be undone.</p><div class="dlg-actions">${C.btn("Cancel").replace('class="btn', 'class="btn is-focus')}${C.btn("Reset to-dos", { kind: "danger" })}</div></div></div>`;
+
+        function render(state, ctx) {
+          const [, sub] = state.split(":");
+          return shell(ctx, "todos", todos(sub), sub === "confirm" ? DIALOG : "");
+        }
+
+        App.mount({
+          states: [
+            { id: "todos", title: "To-dos", sub: "defaults: daily reset 09:00, membership off, six built-in to-dos hidden" },
+            { id: "todos:hour", title: "Daily reset, open", sub: "every hour, 00:00 to 23:00; opens on the chosen one" },
+            { id: "todos:restored", title: "Default to-dos restored", sub: "the hidden ones are back on every character; own to-dos and progress kept; the badge fades after 4 s" },
+            { id: "todos:confirm", title: "Reset to-dos completely", sub: "the confirm dialog, Cancel focused" },
+            { id: "todos:reset", title: "After the complete reset", sub: "own to-dos gone, nothing hidden, every count and amount empty; the badge fades after 4 s" },
+          ],
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

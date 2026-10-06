@@ -13,12 +13,13 @@ use gpui::{
     FontWeight, Pixels, Render, Role, SharedString, Size, Subscription, Task, Window, WindowHandle,
 };
 
-use super::clock::{now_ms, LocalZone};
 use super::events::{EventId, Rule};
-use super::schedule::{clock_time, next_reminder, ClockTime};
+use super::schedule::next_reminder;
 use super::service::ShowReminder;
 use super::settings::ReminderSettings;
 use crate::assets::Icon;
+use crate::clock::{clock_time, now_ms, ClockTime, LocalZone};
+use crate::i18n::{self, fl, join_and};
 use crate::meter::{board_width, Layout, LockChanged, MeterView, OverlaySettings};
 use crate::overlay;
 use crate::secondary::chrome::{self, Look, Scale, FAINT, GAUGE_EMPTY, MUTED};
@@ -95,30 +96,30 @@ impl Card {
     fn of(request: &ShowReminder, settings: &ReminderSettings) -> Self {
         if request.is_test {
             return Self {
-                when: "Test reminder".into(),
+                when: fl!("reminder-test-title").into(),
                 at: None,
-                events: vec![("Reminders look like this".into(), next_line(settings).into())],
+                events: vec![(fl!("reminder-test-event").into(), next_line(settings).into())],
             };
         }
-        let minutes = request.starts_in().as_millis().div_ceil(60_000);
-        let when = if minutes == 0 { "Starting now".to_string() } else { format!("In {minutes} min") };
+        let minutes = request.starts_in().as_millis().div_ceil(60_000) as i64;
+        let when = if minutes == 0 { fl!("reminder-starting-now") } else { fl!("reminder-in-minutes", minutes = minutes) };
         Self {
             when: when.into(),
             at: Some(request.starts_at.to_string().into()),
             events: rarest_first(&request.events)
                 .into_iter()
-                .map(|id| (id.info().name.into(), detail(id, request.starts_at).into()))
+                .map(|id| (id.name().into(), detail(id, request.starts_at).into()))
                 .collect(),
         }
     }
 
     fn label(&self) -> SharedString {
-        let mut label = format!("Event reminder: {}", self.when);
+        let mut label = fl!("reminder-label", when = self.when.to_string());
         if let Some(at) = &self.at {
             label.push_str(&format!(", {at}"));
         }
         for (name, detail) in &self.events {
-            label.push_str(&format!(". {name}: {detail}"));
+            label.push_str(&format!(". {}", fl!("reminder-label-event", name = name.to_string(), detail = detail.to_string())));
         }
         label.into()
     }
@@ -137,18 +138,18 @@ fn rarest_first(events: &[EventId]) -> Vec<EventId> {
     events
 }
 
-fn detail(id: EventId, starts_at: ClockTime) -> &'static str {
+fn detail(id: EventId, starts_at: ClockTime) -> String {
     match id {
-        EventId::ShugoFestival => "3 min to join",
-        EventId::DimensionalInvasion => "Somewhere in the field \u{b7} 3 min to join",
-        EventId::RiftPortals => "Altgard \u{b7} Verteron \u{b7} Morheim \u{b7} Eltnen",
-        EventId::WatcherKaira => "Field boss \u{b7} Chaotic Lower Reshanta",
-        EventId::ArtifactSiege => "Chaotic Lower Reshanta",
-        EventId::AbyssFieldBosses => "Lower and Middle Reshanta",
-        EventId::GuardianLordNahma => "Lv 65, and the Enraged Lv 80",
-        EventId::ArenaOfTactics if starts_at.hour < 19 => "10 vs 10 queue open until 14:00",
-        EventId::ArenaOfTactics => "10 vs 10 queue open until 21:00",
-        EventId::RewardKeys => "Shugo Festival and Invasion keys",
+        EventId::ShugoFestival => fl!("reminder-detail-shugo-festival"),
+        EventId::DimensionalInvasion => fl!("reminder-detail-dimensional-invasion"),
+        EventId::RiftPortals => fl!("reminder-detail-rift-portals"),
+        EventId::WatcherKaira => fl!("reminder-detail-watcher-kaira"),
+        EventId::ArtifactSiege => fl!("reminder-detail-artifact-siege"),
+        EventId::AbyssFieldBosses => fl!("reminder-detail-abyss-field-bosses"),
+        EventId::GuardianLordNahma => fl!("reminder-detail-guardian-lord-nahma"),
+        EventId::ArenaOfTactics if starts_at.hour < 19 => fl!("reminder-detail-arena-of-tactics-early"),
+        EventId::ArenaOfTactics => fl!("reminder-detail-arena-of-tactics-late"),
+        EventId::RewardKeys => fl!("reminder-detail-reward-keys"),
     }
 }
 
@@ -157,19 +158,11 @@ fn next_line(settings: &ReminderSettings) -> String {
     let scheduled = settings.scheduled_events();
     match next_reminder(&LocalZone, &scheduled, settings.lead_minutes, now_ms()) {
         Some(next) => {
-            let names: Vec<&str> = rarest_first(&next.events).into_iter().map(|id| id.info().name).collect();
-            format!("Next: {} at {}", join_names(&names), clock_time(&LocalZone, next.start_ms))
+            let names: Vec<String> = rarest_first(&next.events).into_iter().map(EventId::name).collect();
+            fl!("reminder-next", names = join_and(&names), time = clock_time(&LocalZone, next.start_ms).to_string())
         }
-        None if !settings.enabled => "Event reminders are off".to_string(),
-        None => "No event is switched on".to_string(),
-    }
-}
-
-fn join_names(names: &[&str]) -> String {
-    match names {
-        [] => String::new(),
-        [only] => (*only).to_string(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+        None if !settings.enabled => fl!("reminder-off"),
+        None => fl!("reminder-none-on"),
     }
 }
 
@@ -213,6 +206,8 @@ impl Appearance {
 
 pub struct ReminderView {
     card: Card,
+    /// What the card was built from, to build it again in another language.
+    request: ShowReminder,
     countdown: Countdown,
     /// Counts the cards shown in this window, so a replacement fades in anew.
     shows: u64,
@@ -253,6 +248,12 @@ impl ReminderView {
                 }));
             }
         }
+        let locale = i18n::locale(cx);
+        subscriptions.push(cx.observe(&locale, |this: &mut Self, _, cx| {
+            let settings = settings::global(cx).read(cx).get().reminders.clone();
+            this.card = Card::of(&this.request, &settings);
+            cx.notify();
+        }));
         let (reminders, overlay) = {
             let settings = store.read(cx).get();
             (settings.reminders.clone(), settings.overlay.clone())
@@ -265,6 +266,7 @@ impl ReminderView {
         });
         let mut view = Self {
             card: Card::of(request, &reminders),
+            request: request.clone(),
             countdown: Countdown::started(cx.background_executor().now()),
             shows: 0,
             leaving: None,
@@ -288,6 +290,7 @@ impl ReminderView {
     pub fn show(&mut self, request: &ShowReminder, cx: &mut Context<Self>) {
         let settings = settings::global(cx).read(cx).get().reminders.clone();
         self.card = Card::of(request, &settings);
+        self.request = request.clone();
         let now = cx.background_executor().now();
         self.countdown = Countdown::started(now);
         if self.pointer_over {
@@ -397,7 +400,7 @@ impl ReminderView {
         let dismiss = (!self.locked).then(|| {
             chrome::tool_button("dismiss", Icon::Close, self.pointer_over, s)
                 .role(Role::Button)
-                .aria_label("Dismiss")
+                .aria_label(fl!("common-dismiss"))
                 .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx)))
         });
         div()
@@ -527,6 +530,7 @@ mod tests {
     use gpui::{AppContext as _, Entity, TestAppContext, VisualTestContext};
 
     use super::*;
+    use crate::reminders::EVENTS;
     use crate::settings::{install, AppSettings, Settings};
 
     fn request(events: Vec<EventId>, hour: u8) -> ShowReminder {
@@ -564,8 +568,8 @@ mod tests {
 
     #[test]
     fn the_arena_line_names_the_queue_window_it_opens() {
-        assert_eq!(detail(EventId::ArenaOfTactics, ClockTime { hour: 11, minute: 0 }), "10 vs 10 queue open until 14:00");
-        assert_eq!(detail(EventId::ArenaOfTactics, ClockTime { hour: 19, minute: 0 }), "10 vs 10 queue open until 21:00");
+        assert_eq!(detail(EventId::ArenaOfTactics, ClockTime { hour: 11, minute: 0 }), fl!("reminder-detail-arena-of-tactics-early"));
+        assert_eq!(detail(EventId::ArenaOfTactics, ClockTime { hour: 19, minute: 0 }), fl!("reminder-detail-arena-of-tactics-late"));
     }
 
     #[test]
@@ -573,7 +577,7 @@ mod tests {
         let mut soon = request(vec![EventId::ShugoFestival], 16);
         soon.start_ms = now_ms() + 61_000;
         let card = Card::of(&soon, &ReminderSettings::default());
-        assert_eq!(card.when.as_ref(), "In 2 min");
+        assert_eq!(card.when.as_ref(), fl!("reminder-in-minutes", minutes = 2));
         assert_eq!(card.at.as_deref(), Some("16:00"));
     }
 
@@ -581,12 +585,19 @@ mod tests {
     fn the_test_card_names_the_next_reminder_or_why_there_is_none() {
         let test = ShowReminder { is_test: true, ..request(vec![EventId::ShugoFestival], 16) };
         let card = Card::of(&test, &ReminderSettings::default());
-        assert_eq!(card.when.as_ref(), "Test reminder");
+        assert_eq!(card.when.as_ref(), fl!("reminder-test-title"));
         assert_eq!(card.at, None);
-        assert!(card.events[0].1.starts_with("Next: "), "{}", card.events[0].1);
+        let (off, none_on) = (fl!("reminder-off"), fl!("reminder-none-on"));
+        assert!(card.events[0].1 != off && card.events[0].1 != none_on, "the next reminder, got {}", card.events[0].1);
 
-        let off = ReminderSettings { enabled: false, ..ReminderSettings::default() };
-        assert_eq!(Card::of(&test, &off).events[0].1.as_ref(), "Event reminders are off");
+        let switched_off = ReminderSettings { enabled: false, ..ReminderSettings::default() };
+        assert_eq!(Card::of(&test, &switched_off).events[0].1.as_ref(), off);
+
+        let mut nothing_on = ReminderSettings::default();
+        for info in EVENTS.iter() {
+            nothing_on.set_event_enabled(info.id, false);
+        }
+        assert_eq!(Card::of(&test, &nothing_on).events[0].1.as_ref(), none_on);
     }
 
     #[gpui::test]

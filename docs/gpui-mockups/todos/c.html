@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-dos proposal C: all characters at once, counters</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="todos.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="To-do proposals">
+        <a href="index.html">To-dos overview</a>
+        <a href="e.html">E, struck through when done</a>
+        <a href="d.html">D, you set the counts</a>
+        <a href="a.html">A, tabs</a>
+        <a href="b.html">B, one list per character</a>
+        <a href="c.html" aria-current="page">C, all characters</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>C, all characters at once, with counters <small>earlier exploration, kept for reference: see D</small></h1>
+      <ul class="rationale">
+        <li>A 520 px overlay window (the player detail's width) for players with alts: one row per to-do, <b>one column per character</b> the meter remembers (up to three shown; the one in game has the cream rim). Daily | Weekly tabs with the countdown beside them.</li>
+        <li><b>Recharges as counters</b>: each cell is the meter's estimate ("8/14"): it adds the refill itself at each reset or 16:00, and you correct it in a small popover after a run. A full cell turns yellow, so an alt that is wasting keys shows at a glance.</li>
+        <li>Account to-dos (Duty Missions) span the characters of one server. Manual ticks only; a dash means that to-do is hidden for that character.</li>
+        <li>Limits are from the reset research; counts, times and names are invented. Clock: Monday 21:48.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Cells.</b> A single to-do is a tick box: one click ticks it. A count or a recharge opens the counter popover (−, +, Used all); the popover is drawn inside the window, which grows while it is open, like the meter's "…" menu. A click elsewhere closes it.</li>
+        <li><b>Counters.</b> The meter adds the refill on its schedule (+2 at the daily reset, +4 keys at 16:00, +15 Odyle Energy every 3 h) and stops at the cap. It cannot see what you spend, so the figure is only as good as your last correction; the popover says when it will be full.</li>
+        <li><b>More than three characters.</b> The three most recently played are shown; edit mode chooses which. The window does not grow sideways.</li>
+        <li>Keyboard and screen readers (for the build): the grid is a table with row and column headers; each cell is a checkbox or a button ("Nightmare, Tavrin, 10 of 14"); arrow keys move between cells. The ring: the approved focus-ring colour, 2 px, 1 px outside the cell.</li>
+      </ul>
+      <h2>Values proposed (not tokens yet)</h2>
+      <ul>
+        <li>Grid: a flexible name column, then 64 px per character, 2 px apart; rows 26 px; cells 22 px with a 5 px radius (the bar's). Column head 34 px: class icon 14 px over the name at 11.5 px / 600, the character in game with the 1 px <code>you-rim</code>.</li>
+        <li>Full cell: <code>warn</code> text on a 0.12 <code>warn</code> fill. Counter popover: <code>popover</code> colours, 212 px, 16 px / 600 figure between two 22 px tool buttons on <code>soft</code>.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="todos.js"></script>
+    <script>
+      (function () {
+        const T = Todo;
+        const { icon, btn } = T;
+        const CH = T.CHARS;
+
+        // Per character: Mirelle, Tavrin, Sefa. null = hidden for that character.
+        const DAILY_EST = {
+          deus: [2, 2, null],
+          shugo: [24, 20, 12],
+          invasion: [6, 7, 3],
+          arkanis: [2, 2, null],
+          balaur: [5, 6, 4],
+          fafnium: [5, 3, 1],
+          conquest: [8, 12, 6],
+          odyle: [180, 420, 95],
+          nightmare: [4, 10, 2],
+        };
+        const WASTE_EST = { ...DAILY_EST, deus: [2, 4, null], shugo: [24, 28, 12], balaur: [5, 7, 4], conquest: [8, 14, 6], odyle: [180, 560, 95] };
+        const WEEK_N = {
+          trial: [2, 3, 0],
+          subj: [3, 1, 0],
+          ludra: [1, 0, null],
+          corroded: [0, null, null],
+          fissure: [9, 14, 4],
+          transc: [17, 6, null],
+          conqk: [35, 12, 8],
+          ordeal: [3, 0, 0],
+          cradle: [4, null, null],
+          dramata: [0, null, null],
+          dutycmd: [12, 4, 0],
+          explore: [0, 0, 0],
+          growth: [0, 1, 0],
+        };
+
+        const short = {
+          "Abandoned Balaur Fortress": "Balaur Fortress",
+          "Corroded Decontamination Facility": "Corroded Decontamination",
+          "Transcendence boss kills": "Transcendence kills",
+          "Conquest boss kills": "Conquest kills",
+        };
+        const label = (name) => T.esc(short[name] || name);
+
+        function head(ctx, { edit = false, offCol = -1 } = {}) {
+          const cols = CH.map((c, i) => {
+            const cls = ["t-gh"];
+            if (c.playing) cls.push("is-you");
+            const off = offCol === i;
+            const lead = edit
+              ? btn(off ? "eyeOff" : "eye", off ? "Show this character" : "Hide this character", " is-sm")
+              : `<img src="${ctx.classIcon(c.cls)}" alt="">`;
+            return `<span class="${cls.join(" ")}" role="columnheader" title="${c.klass} · ${c.server}">${lead}<span${off ? ' style="opacity:0.42"' : ""}>${T.nm(ctx, c.name)}</span></span>`;
+          }).join("");
+          return `<div class="t-grow is-head" role="row"><span class="o-th" style="padding:0" role="columnheader">${edit ? "Show for" : ""}</span>${cols}</div>`;
+        }
+
+        function cellBox(done, o = {}) {
+          const cls = ["t-cell"];
+          if (o.hover) cls.push("is-hover");
+          if (o.focus) cls.push("is-focus");
+          return `<span class="${cls.join(" ")}" role="checkbox" aria-checked="${done}" tabindex="0">${T.box(done ? "done" : "")}</span>`;
+        }
+
+        function cellCount(n, of, o = {}) {
+          if (n === null) return `<span class="t-cell is-na" role="cell" aria-label="Hidden for this character">–</span>`;
+          if (of === 1) return cellBox(n >= 1, o);
+          const done = n >= of;
+          const cls = ["t-cell"];
+          if (done && !o.charge) cls.push("is-done");
+          if (done && o.charge) cls.push("is-warn");
+          if (o.hover) cls.push("is-hover");
+          if (o.focus) cls.push("is-focus");
+          if (o.open) cls.push("is-open");
+          if (done && !o.charge) return `<span class="${cls.join(" ")}" role="checkbox" aria-checked="true" tabindex="0">${T.box("done")}</span>`;
+          return `<span class="${cls.join(" ")}" role="button" tabindex="0" aria-label="${n} of ${of}">${n}<small>/${of}</small></span>`;
+        }
+
+        function cellEdit(on) {
+          return `<span class="t-cell${on ? "" : " is-na"}" role="switch" aria-checked="${on}" tabindex="0" style="color:var(--o-muted)">${icon(on ? "eye" : "eyeOff")}</span>`;
+        }
+
+        function row(ctx, name, fact, cells, o = {}) {
+          const cls = ["t-grow"];
+          if (o.hover) cls.push("is-hover");
+          return `<div class="${cls.join(" ")}" role="row" style="position:relative"><span class="t-gname" role="rowheader">${name}${fact ? `<small>${fact}</small>` : ""}</span>${cells}${o.pop || ""}</div>`;
+        }
+
+        function tabbar(on, d, w) {
+          const t = (id, l, s) => `<span class="o-tab${on === id ? " is-on" : ""}" role="tab" aria-selected="${on === id}">${l}<small${/full/.test(s) ? ' style="color:var(--o-warn)"' : ""}>${s}</small></span>`;
+          const reset = on === "weekly"
+            ? `<div class="t-reset">${icon("clock")}<span>Weekly reset in <b>${T.CLOCK.weekly.left}</b></span><span class="at">${T.CLOCK.weekly.at}</span></div>`
+            : `<div class="t-reset">${icon("clock")}<span>Daily reset in <b>${T.CLOCK.daily.left}</b></span><span class="at">${T.CLOCK.daily.at}</span></div>`;
+          return `<div class="t-tabbar"><div class="o-tabs" role="tablist">${t("daily", "Daily", d)}${t("weekly", "Weekly", w)}</div>${reset}</div>`;
+        }
+
+        const win = (inner) => `<div class="ov o td is-c" role="dialog" aria-label="To-dos">${inner}</div>`;
+
+        function duty(ctx, { done = false, focusSefa = false, edit = false } = {}) {
+          const n = done ? 5 : 3;
+          if (edit) return row(ctx, "Duty Missions", "5 a day", `${cellEdit(true)}${cellEdit(true)}${cellEdit(true)}`);
+          const shared = `<span class="t-cell is-span${n >= 5 ? " is-done" : ""}" role="button" tabindex="0" aria-label="Duty Missions, Ossia, ${n} of 5">${T.pips(n, 5)}<span>${n}<small>/5</small></span><span class="t-acct" style="margin-left:2px">${icon("users")}Ossia</span></span>`;
+          const sefa = `<span class="t-cell is-done${focusSefa ? " is-focus" : ""}" role="checkbox" aria-checked="true" tabindex="0">${T.box("done")}</span>`;
+          return row(ctx, "Duty Missions", "5 a day", shared + sefa);
+        }
+
+        function dailyGrid(ctx, est, o = {}) {
+          let html = head(ctx, { edit: o.edit, offCol: o.offCol });
+          html += duty(ctx, { done: o.done, focusSefa: o.focusSefa, edit: o.edit });
+          html += `<div class="t-sec-label" style="margin-top:4px">Recharges<span class="at">estimated: the meter adds each refill; correct it after a run</span></div>`;
+          for (const r of T.recharges()) {
+            const vals = est[r.id];
+            let cells;
+            if (o.edit) cells = vals.map((v) => cellEdit(v !== null)).join("");
+            else
+              cells = vals
+                .map((v, i) =>
+                  cellCount(v, r.cap, {
+                    charge: true,
+                    hover: o.hover && o.hover[0] === r.id && o.hover[1] === i,
+                    open: o.pop && o.pop[0] === r.id && o.pop[1] === i,
+                  })
+                )
+                .join("");
+            const pop = o.pop && o.pop[0] === r.id ? popover(ctx, r, o.pop[1], vals[o.pop[1]]) : "";
+            html += row(ctx, label(r.name), r.cap >= 100 ? "+15 / 3 h" : "", cells, { hover: o.hover && o.hover[0] === r.id, pop });
+          }
+          return `<div class="t-list" role="table" aria-label="Daily to-dos by character">${html}</div>`;
+        }
+
+        function popover(ctx, r, col, v) {
+          const c = CH[col];
+          const right = (CH.length - 1 - col) * 66 + 2;
+          return `<div class="t-pop" role="dialog" aria-label="${T.esc(r.name)}, ${c.name}" style="top:25px;right:${right}px"><h4><img src="${ctx.classIcon(c.cls)}" alt="">${T.esc(r.name)}<small>${T.nm(ctx, c.name)}</small></h4><div class="t-step">${btn("minus", "One less", " is-soft")}<span class="big">${v}<small> / ${r.cap}</small></span>${btn("plus", "One more", " is-soft")}</div><p>+2 at each daily reset, so full on Wed 09:00. Set it to what the game shows after a run.</p><div class="acts"><span class="o-tbtn t-small" role="button">Used all</span><span class="o-tbtn is-quiet t-small" role="button">Full now</span></div></div>`;
+        }
+
+        // The column heads stay put; only the rows scroll. `skip` shows the
+        // list scrolled down by that many rows.
+        function weeklyGrid(ctx, o = {}) {
+          let html = "";
+          const list = T.weekly().concat(o.extra || []).slice(o.skip || 0);
+          for (const it of list) {
+            if (it.hidden && !o.edit) continue;
+            const vals = o.done ? (WEEK_N[it.id] || [0, 0, 0]).map((v) => (v === null ? null : it.of)) : WEEK_N[it.id] || [0, 0, 0];
+            let cells;
+            if (o.edit) cells = it.custom ? `${cellEdit(true)}${cellEdit(false)}${cellEdit(false)}` : it.hidden ? `${cellEdit(false)}${cellEdit(false)}${cellEdit(false)}` : vals.map((v) => cellEdit(v !== null)).join("");
+            else cells = vals.map((v, i) => cellCount(v, it.of, { focus: o.focus && o.focus[0] === it.id && o.focus[1] === i })).join("");
+            const fact = it.custom ? "Yours" : it.of > 1 ? `${it.of} a week` : "";
+            const del = o.edit && it.custom ? ` <span style="display:inline-flex;vertical-align:middle;margin-left:4px">${btn("trash", "Delete this to-do", " is-sm")}</span>` : "";
+            html += row(ctx, label(it.name), fact + del, cells);
+          }
+          const rows = `<div class="t-list" role="rowgroup">${html}</div>`;
+          const thumb = `<span class="o-thumb" style="--t:${o.thumbT || 2}px;--h:${o.thumbH}px"></span>`;
+          return `<div role="table" aria-label="Weekly to-dos by character">${head(ctx, { edit: o.edit, offCol: o.offCol })}<div class="o-scroll has-thumb" style="max-height:${o.max}px">${rows}${thumb}</div></div>`;
+        }
+
+        function render(state, ctx) {
+          switch (state) {
+            case "daily":
+              return win(`${T.head("To-dos", { count: "3 characters", chip: T.warnChip("1 full") })}${tabbar("daily", "1 full", "21 left")}${dailyGrid(ctx, DAILY_EST)}${T.foot()}`);
+            case "weekly":
+              return win(`${T.head("To-dos", { count: "3 characters", chip: T.warnChip("1 full") })}${tabbar("weekly", "1 full", "21 left")}${weeklyGrid(ctx, { max: 290, thumbH: 220 })}${T.foot()}`);
+            case "waste":
+              return win(`${T.head("To-dos", { count: "3 characters", chip: T.warnChip("6 full") })}${tabbar("daily", "6 full", "21 left")}${dailyGrid(ctx, WASTE_EST)}${T.foot()}`);
+            case "counter":
+              return win(`${T.head("To-dos", { count: "3 characters", chip: T.warnChip("1 full") })}${tabbar("daily", "1 full", "21 left")}${dailyGrid(ctx, DAILY_EST, { pop: ["nightmare", 1] })}${T.foot()}`) + `<div style="height:96px"></div>`;
+            case "done": {
+              const est = { ...DAILY_EST, invasion: [6, 3, 3] };
+              const note = `<div class="o-note is-good t-note">${icon("check")}<span><span class="t-strong">Daily done on all 3 characters.</span> Nothing is full; the next refill is at the reset in 11 h.</span></div>`;
+              return win(`${T.head("To-dos", { count: "3 characters" })}${tabbar("daily", "done", "done")}${note}${dailyGrid(ctx, est, { done: true })}${T.foot()}`);
+            }
+            case "edit": {
+              const custom = { ...T.custom()[0], name: "Weekly Legion quest" };
+              const hint = `<div class="t-hint" style="margin:0 0 6px">Choose what each character does. A hidden to-do shows a dash in that character's column.</div>`;
+              return win(`${T.head("Edit to-dos", { editing: true })}${tabbar("weekly", "", "")}${hint}${weeklyGrid(ctx, { edit: true, extra: [custom], skip: 4, max: 306, thumbH: 200, thumbT: 104 })}${T.addRow({ typed: "Arena of Tactics win", kind: "weekly" })}<div class="t-hint">Columns: the three characters you played last. One more is remembered; hide one here to show it instead.</div>${T.editFoot()}`);
+            }
+            case "focus":
+              return win(`${T.head("To-dos", { count: "3 characters", chip: T.warnChip("1 full") })}${tabbar("daily", "1 full", "21 left")}${dailyGrid(ctx, DAILY_EST, { hover: ["conquest", 0], focusSefa: true })}${T.foot()}`);
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "daily", title: "Daily, three characters", sub: "Duty Missions shared on Ossia; Tavrin's Invasion keys are full" },
+            { id: "weekly", title: "Weekly", sub: "a dash: hidden for that character; the grid scrolls" },
+            { id: "waste", title: "Being wasted", sub: "an alt left alone for days: six full cells on Tavrin" },
+            { id: "counter", title: "Counter popover", sub: "Tavrin's Nightmare: correct the estimate after a run" },
+            { id: "done", title: "Everything done", sub: "daily done everywhere, nothing full" },
+            { id: "edit", title: "Edit mode", sub: "show or hide each to-do per character; add your own" },
+            { id: "focus", title: "Pointer and keyboard", sub: "pointer over Mirelle's Conquest cell; keyboard focus on Sefa's Duty Missions" },
+          ],
+          controls: ["alpha", "scale", "mask"],
+          tileMin: 580,
+          stageMin: 560,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

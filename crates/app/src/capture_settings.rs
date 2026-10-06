@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use aether_core::preflight::{Check, CheckId, Report, Weight};
+use meter_core::preflight::{Check, CheckId, Report, Weight};
 use gpui::{AsyncApp, Bounds, Entity, Pixels, WindowHandle};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -20,6 +20,7 @@ use crate::capture::{self, shoot_hwnd, MK_LBUTTON};
 use crate::capture_reminders;
 use crate::capture_secondary::{close, pack, pause, post, shoot_window, show_scene, window_handle, window_hwnd};
 use crate::fixtures;
+use crate::i18n::fl;
 use crate::meter::{Layout, MeterModel, MeterView, OverlaySettings, PctMode};
 use crate::overlay::{self, off_screen};
 use crate::sample;
@@ -28,9 +29,10 @@ use crate::settings::{
     self, BestRow, CaptureCheck, CaptureStatus, MeterTile, RecordingItem, RecordingProgress, ReplayProgress,
     RuntimeModel, Section, SettingsView, StorageState, StorageSummary,
 };
+use crate::todos;
 
-/// The menu's third entry at 100% scale, in the meter's client area.
-const SETTINGS_ITEM_POINT: (i32, i32) = (150, 99);
+/// The menu's fourth entry at 100% scale, in the meter's client area.
+const SETTINGS_ITEM_POINT: (i32, i32) = (150, 125);
 /// Inside the page's top-left padding, where no control is.
 const BACKGROUND_POINT: (i32, i32) = (216, 44);
 const TICK: Duration = Duration::from_millis(150);
@@ -107,6 +109,8 @@ pub async fn from_fixtures(
     capture_page(&page, dir, cx).await?;
     bests_page(&page, dir, cx).await?;
     reminders_page(&page, dir, cx).await?;
+    todos_page(&page, dir, cx).await?;
+    general_page(&page, dir, cx).await?;
     about_page(&page, dir, cx).await?;
     report_title_bar(&page, cx);
     close(WindowKind::Settings, cx).await?;
@@ -186,7 +190,7 @@ async fn overlay_page(page: &Page, meter: WindowHandle<MeterView>, dir: &Path, c
     page.blur(cx).await;
     shoot_window(WindowKind::Settings, dir, "settings-06-preview-follows", cx).await?;
     shoot_meter(meter, dir, "settings-07-meter-follows", cx).await?;
-    cx.update(|cx| settings::global(cx).update(cx, |settings, cx| settings.reset(cx)));
+    reset_settings(cx);
     Ok(())
 }
 
@@ -222,7 +226,7 @@ async fn overlay_layout(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()
             moved.push(format!("{case}: rows {now:?}, preview {now_preview:?}"));
         }
     }
-    cx.update(|cx| settings::global(cx).update(cx, |settings, cx| settings.reset(cx)));
+    reset_settings(cx);
     if moved.is_empty() {
         Ok(())
     } else {
@@ -278,7 +282,7 @@ async fn behaviour_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()
     page.click(point, cx).await;
     let players = cx.update(|cx| settings::global(cx).read(cx).get().overlay.players_shown);
     println!("pointer: a press at the right end of Players shown: {players}, focused {:?}", page.focused(cx));
-    cx.update(|cx| settings::global(cx).update(cx, |settings, cx| settings.reset(cx)));
+    reset_settings(cx);
     Ok(())
 }
 
@@ -291,6 +295,11 @@ async fn capture_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()> 
     shoot_window(WindowKind::Settings, dir, "settings-11-capture-check-running", cx).await?;
     page.hold(cx, |runtime| runtime.capture_check = CaptureCheck::Done(check_report()));
     shoot_window(WindowKind::Settings, dir, "settings-12-capture-check-done", cx).await?;
+    page.hold(cx, |runtime| runtime.capture_check = CaptureCheck::Done(failed_check_report()));
+    page.tab_to("record-unfamiliar", cx).await?;
+    page.blur(cx).await;
+    shoot_window(WindowKind::Settings, dir, "settings-12b-capture-check-failed", cx).await?;
+    page.hold(cx, |runtime| runtime.capture_check = CaptureCheck::Done(check_report()));
 
     page.hold(cx, |runtime| runtime.recording = Some(RecordingProgress { packets: 2_418, bytes: 1_468_006 }));
     page.tab_to("recording", cx).await?;
@@ -346,7 +355,7 @@ async fn reminders_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()
     if !note || !card {
         return Err("Show a test reminder did not show the card and its note".to_string());
     }
-    capture_reminders::check_never_focused("the test reminder", foreground_before, cx)?;
+    capture_reminders::check_never_focused(WindowKind::Reminder, "the test reminder", foreground_before, cx)?;
     page.blur(cx).await;
     shoot_window(WindowKind::Settings, dir, "settings-23-reminders-test", cx).await?;
     shoot_window(WindowKind::Reminder, dir, "reminder-00-test", cx).await?;
@@ -358,8 +367,86 @@ async fn reminders_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()
     println!("reminders: Space on Event reminders: on {enabled}; Tab then goes to {:?} (the dimmed rows are skipped)", page.focused(cx));
     page.blur(cx).await;
     shoot_window(WindowKind::Settings, dir, "settings-24-reminders-off", cx).await?;
-    cx.update(|cx| settings::global(cx).update(cx, |settings, cx| settings.reset(cx)));
+    reset_settings(cx);
     Ok(())
+}
+
+/// The page with five built-ins hidden on two characters, the reset hour's
+/// list, Restore with its badge, and the complete reset through its dialog.
+async fn todos_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
+    let todos = cx.update(|cx| todos::global(cx));
+    let characters: Vec<_> = cx.update(|cx| todos.read(cx).characters().into_iter().map(|character| character.id).collect());
+    cx.update(|cx| {
+        todos.update(cx, |todos, cx| {
+            for (index, id) in characters.iter().take(2).enumerate() {
+                for row in ["trial", "subj", "deus"].iter().skip(index) {
+                    todos.hide(*id, row, cx);
+                }
+            }
+        })
+    });
+    page.show(Section::Todos, cx).await?;
+    page.blur(cx).await;
+    shoot_window(WindowKind::Settings, dir, "settings-25-todos", cx).await?;
+
+    page.tab_to("reset-hour", cx).await?;
+    page.key(VK_DOWN, cx).await;
+    println!("todos: Down on Daily reset opens it: open {}", page.select_open(cx));
+    shoot_window(WindowKind::Settings, dir, "settings-26-todos-hour-open", cx).await?;
+    page.key(VK_ESCAPE, cx).await;
+
+    page.tab_to("todos-restore", cx).await?;
+    page.key(VK_RETURN, cx).await;
+    let badge = page.view.update(cx, |view, _, _| view.todos_done_text()).ok().flatten();
+    let hidden = cx.update(|cx| todos.read(cx).hidden_summary());
+    println!("todos: Enter on Restore default to-dos: badge {badge:?}, still hidden {}", hidden.hidden);
+    page.blur(cx).await;
+    shoot_window(WindowKind::Settings, dir, "settings-27-todos-restored", cx).await?;
+
+    page.tab_to("todos-reset", cx).await?;
+    page.key(VK_RETURN, cx).await;
+    println!("todos: Enter on Reset to-dos completely: dialog open {}, focused {:?}", page.dialog_open(cx), page.focused(cx));
+    shoot_window(WindowKind::Settings, dir, "settings-28-todos-confirm", cx).await?;
+    page.key(VK_TAB, cx).await;
+    pause(cx, TICK).await;
+    println!("todos: Tab in the dialog goes to {:?}", page.focused(cx));
+    page.key(VK_RETURN, cx).await;
+    pause(cx, TICK).await;
+    let (own, badge) = (
+        cx.update(|cx| todos.read(cx).own_total()),
+        page.view.update(cx, |view, _, _| view.todos_done_text()).ok().flatten(),
+    );
+    println!("todos: Tab then Enter in the dialog: open {}, own to-dos left {own}, badge {badge:?}", page.dialog_open(cx));
+    page.blur(cx).await;
+    shoot_window(WindowKind::Settings, dir, "settings-29-todos-reset", cx).await?;
+    if badge != Some(fl!("settings-todos-reset-done")) || own != 0 {
+        return Err("Reset to-dos completely did not reset the to-dos".to_string());
+    }
+    Ok(())
+}
+
+/// The page, and the language list opened from the keyboard.
+async fn general_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
+    page.show(Section::General, cx).await?;
+    page.blur(cx).await;
+    shoot_window(WindowKind::Settings, dir, "settings-30-general", cx).await?;
+    page.tab_to("language", cx).await?;
+    page.key(VK_DOWN, cx).await;
+    println!("general: Down on Language opens it: open {}", page.select_open(cx));
+    shoot_window(WindowKind::Settings, dir, "settings-31-general-language-open", cx).await?;
+    page.key(VK_ESCAPE, cx).await;
+    Ok(())
+}
+
+/// Settings back to their defaults, in the language the capture draws.
+fn reset_settings(cx: &mut AsyncApp) {
+    cx.update(|cx| {
+        settings::global(cx).update(cx, |settings, cx| {
+            let language = settings.get().general.language;
+            settings.reset(cx);
+            settings.update(cx, |all| all.general.language = language);
+        })
+    });
 }
 
 async fn about_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
@@ -418,15 +505,7 @@ impl Page {
 
     /// The section's sidebar entry, reached with Tab and opened with Enter.
     async fn show(&self, section: Section, cx: &mut AsyncApp) -> Result<()> {
-        let key = match section {
-            Section::Overlay => "nav-overlay",
-            Section::Behaviour => "nav-behaviour",
-            Section::Capture => "nav-capture",
-            Section::Bests => "nav-bests",
-            Section::Reminders => "nav-reminders",
-            Section::About => "nav-about",
-        };
-        self.tab_to(key, cx).await?;
+        self.tab_to(section.key(), cx).await?;
         self.key(VK_RETURN, cx).await;
         pause(cx, TICK).await;
         Ok(())
@@ -505,16 +584,16 @@ fn running_capture() -> CaptureStatus {
 
 fn recordings() -> Vec<RecordingItem> {
     [
-        ("manual-2026-10-03-2142.aetherpc", "Today 21:42", 2_516_582, false),
-        ("auto-2026-10-02-2031.aetherpc", "Yesterday 20:31", 3_250_585, true),
-        ("manual-2026-09-29-2210.aetherpc", "Mon 22:10", 1_887_436, false),
+        ("manual-2026-10-03-2142.aetherpc", 2, 2_516_582, false),
+        ("auto-2026-10-02-2031.aetherpc", 27, 3_250_585, true),
+        ("manual-2026-09-29-2210.aetherpc", 100, 1_887_436, false),
     ]
     .into_iter()
-    .map(|(name, when, bytes, unfamiliar_server)| RecordingItem {
+    .map(|(name, hours_ago, bytes, unfamiliar_server)| RecordingItem {
         path: std::env::temp_dir().join(name),
         name: name.to_string(),
         bytes,
-        when: when.to_string(),
+        when: hours_before_now(hours_ago),
         unfamiliar_server,
     })
     .collect()
@@ -522,22 +601,28 @@ fn recordings() -> Vec<RecordingItem> {
 
 fn bests() -> Vec<BestRow> {
     [
-        ("Veilwarden Orsikh", "Mirelle", 51_740.0, "Sun 21:42"),
-        ("Ashmaw the Hollow", "Mirelle", 47_210.0, "Sat 20:05"),
-        ("Thane Ulmor", "Mirelle", 44_020.0, "21 Sep"),
-        ("Tidecaller Vennis", "Saebrin", 39_810.0, "Today 19:12"),
-        ("Veilwarden Orsikh", "Saebrin", 36_120.0, "Tue 22:31"),
-        ("Sister Calyx", "Saebrin", 33_400.0, "19 Sep"),
+        ("Veilwarden Orsikh", "Mirelle", 51_740.0, 50),
+        ("Ashmaw the Hollow", "Mirelle", 47_210.0, 74),
+        ("Thane Ulmor", "Mirelle", 44_020.0, 400),
+        ("Tidecaller Vennis", "Saebrin", 39_810.0, 3),
+        ("Veilwarden Orsikh", "Saebrin", 36_120.0, 120),
+        ("Sister Calyx", "Saebrin", 33_400.0, 450),
     ]
     .into_iter()
-    .map(|(boss, character, dps, when)| BestRow {
+    .map(|(boss, character, dps, hours_ago)| BestRow {
         boss: boss.to_string(),
         character: character.to_string(),
         dps,
         achieved_at_ms: 0,
-        when: when.to_string(),
+        when: hours_before_now(hours_ago),
     })
     .collect()
+}
+
+/// "Today 21:42", "Mon 22:10" or "21 Sep" in the language drawn.
+fn hours_before_now(hours: u64) -> String {
+    let now = u64::try_from(crate::clock::now_ms()).unwrap_or(0);
+    crate::history::record_time(now.saturating_sub(hours * 3_600_000))
 }
 
 fn storage() -> StorageSummary {
@@ -564,4 +649,16 @@ fn check_report() -> Report {
         ),
     ];
     Report { ready: true, summary: "Ready to capture.".to_string(), checks }
+}
+
+/// Not elevated, Npcap missing and WinDivert refused: the core's own error
+/// lines show under the translated ones.
+fn failed_check_report() -> Report {
+    let check = |id, label, detail: &str, weight| Check { id, label, detail: detail.to_string(), ok: false, weight, fix: None };
+    let checks = vec![
+        check(CheckId::Elevation, "Administrator rights", "The meter is not running as Administrator.", Weight::Required),
+        check(CheckId::Npcap, "Npcap", "Npcap is not installed", Weight::Required),
+        check(CheckId::Windivert, "WinDivert", "Access is denied (os error 5)", Weight::Optional),
+    ];
+    Report { ready: false, summary: "Administrator rights and Npcap have to be sorted out.".to_string(), checks }
 }

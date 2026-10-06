@@ -1,0 +1,1770 @@
+/* Proposal: the daily and weekly to-do window. Preview-local styles on top of
+ * the approved overlay language (../approved/overlay.css, values in
+ * ../approved/tokens.md). Anything here that is not already a token is a
+ * proposal until the user approves a direction. Every effect is a GPUI
+ * primitive: alpha fills, 1px borders, rounded corners, no shadow on the card. */
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Regular.ttf") format("truetype");
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Medium.ttf") format("truetype");
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Bold.ttf") format("truetype");
+  font-weight: 700;
+}
+
+/* The shipped face, so widths match the GPUI build. */
+.ov.o {
+  --o-font: "Meter Barlow", "Barlow Semi Condensed", "Bahnschrift", sans-serif;
+  --t-ring: rgba(243, 235, 225, 0.9);
+  --t-warn-fill: rgba(242, 198, 109, 0.12);
+  --t-good-fill: rgba(134, 227, 168, 0.09);
+  --t-empty: rgba(255, 240, 225, 0.12);
+
+  font-stretch: normal;
+}
+
+.ov.o.td {
+  width: 340px;
+}
+
+.ov.o.td.is-b {
+  width: 370px;
+}
+
+.ov.o.td.is-c {
+  width: 520px;
+}
+
+/* Two windows side by side (meter and its menu, or meter and to-dos). */
+.t-stack {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+/* ---- Header -------------------------------------------------------------- */
+.o-head .o-btn {
+  cursor: pointer;
+}
+
+.o-head .o-chip {
+  height: 18px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.o-head .o-chip .i {
+  width: 11px;
+  height: 11px;
+}
+
+/* ---- Reset line ------------------------------------------------------------ */
+.t-reset {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  margin: 0 0 4px;
+  padding: 0 6px 0 5px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.t-reset .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.t-reset b {
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+.t-reset .at {
+  margin-left: auto;
+  color: var(--o-faint);
+}
+
+/* ---- Items ----------------------------------------------------------------- */
+.t-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.t-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  padding: 0 6px 0 5px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.t-item.is-hover {
+  background: var(--o-soft);
+}
+
+/* Keyboard focus: the approved focus-ring colour, 2 px. It sits 1 px outside
+   the row so it fits the 2 px gap between rows. */
+.t-item.is-focus,
+.t-cell.is-focus,
+.t-sec.is-focus {
+  outline: 2px solid var(--t-ring);
+  outline-offset: 1px;
+}
+
+.t-item.is-waste {
+  background: var(--t-warn-fill);
+}
+
+.t-item.is-suggest {
+  background: var(--t-good-fill);
+}
+
+/* Hidden in edit mode: the row fades, its show/hide button does not. */
+.t-item.is-off > :not(.t-edit) {
+  opacity: 0.42;
+}
+
+.t-box {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid rgba(255, 246, 236, 0.44);
+  border-radius: 4px;
+}
+
+.t-item.is-hover .t-box:not(.is-done),
+.t-cell.is-hover .t-box:not(.is-done) {
+  border-color: rgba(255, 246, 236, 0.75);
+}
+
+/* Ticked by you: the cream "you" badge with an ink check. */
+.t-box.is-done {
+  border: 0;
+  background: rgba(255, 246, 236, 0.9);
+  color: #17120d;
+}
+
+.t-box .i {
+  width: 11px;
+  height: 11px;
+  stroke-width: 3;
+}
+
+/* Suggested by the meter, not counted yet: an empty box on a green edge and
+   tint. Only your click puts a check in it. */
+.t-box.is-suggest {
+  border: 1.5px solid rgba(134, 227, 168, 0.75);
+  background: rgba(134, 227, 168, 0.12);
+}
+
+/* Recharges have no box: an hourglass, or a warning once full. */
+.t-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--o-faint);
+}
+
+.t-glyph .i {
+  width: 13px;
+  height: 13px;
+}
+
+.t-glyph.is-warn {
+  color: var(--o-warn);
+}
+
+.t-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.t-item.is-done .t-name,
+.t-item.is-done .t-fact {
+  color: var(--o-muted);
+}
+
+.t-name small,
+.t-tag {
+  margin-left: 5px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.t-acct {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: 0;
+}
+
+.t-acct .i {
+  width: 11px;
+  height: 11px;
+}
+
+/* Count steps: the meter gauge's segments, squarer ends (2 px on 5 px). */
+.t-pips {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 3px;
+}
+
+.t-pip {
+  width: 9px;
+  height: 5px;
+  border-radius: 2px;
+  background: var(--t-empty);
+}
+
+.t-pip.is-on {
+  background: rgba(255, 246, 236, 0.66);
+}
+
+.t-pip.is-seen {
+  border: 1px solid rgba(134, 227, 168, 0.75);
+  background: rgba(134, 227, 168, 0.22);
+}
+
+.t-fig {
+  flex-shrink: 0;
+  min-width: 30px;
+  color: var(--o-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.t-fig small {
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.t-item.is-done .t-fig {
+  color: var(--o-muted);
+}
+
+/* Level bar for long counts and recharges: 5 px, 2 px radius. */
+.t-bar {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--t-empty);
+}
+
+.t-bar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 2px;
+  background: rgba(255, 246, 236, 0.44);
+}
+
+.t-item.is-done .t-bar i {
+  background: rgba(255, 246, 236, 0.66);
+}
+
+.t-bar.is-warn i {
+  background: rgba(242, 198, 109, 0.8);
+}
+
+/* The recharge's status slot; the pointer swaps it for "Used up". */
+.t-when {
+  flex-shrink: 0;
+  width: 86px;
+  overflow: hidden;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-align: right;
+  text-overflow: ellipsis;
+}
+
+.t-when.is-warn {
+  color: var(--o-warn);
+  font-weight: 600;
+}
+
+.t-slot {
+  display: inline-flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  width: 86px;
+}
+
+.o-tbtn.t-small {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+
+.o-tbtn.t-small .i {
+  width: 11px;
+  height: 11px;
+}
+
+.o-tbtn.is-good {
+  background: rgba(134, 227, 168, 0.16);
+  color: var(--o-good);
+}
+
+.o-tbtn.is-warn {
+  background: rgba(242, 198, 109, 0.16);
+  color: var(--o-warn);
+}
+
+.o-btn.is-sm {
+  width: 20px;
+  height: 20px;
+}
+
+.o-btn.is-sm .i {
+  width: 12px;
+  height: 12px;
+}
+
+.o-btn.is-soft {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.t-edit {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+/* ---- Two-line rows (direction B) ----------------------------------------- */
+.t-item.is-2 {
+  align-items: flex-start;
+  padding: 5px 6px 5px 5px;
+}
+
+.t-item.is-2 .t-box,
+.t-item.is-2 .t-glyph {
+  margin-top: 1px;
+}
+
+.t-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.t-body .t-name {
+  line-height: 17px;
+}
+
+.t-fact {
+  overflow: hidden;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 15px;
+  text-overflow: ellipsis;
+}
+
+.t-fact .i {
+  width: 11px;
+  height: 11px;
+  margin-right: 3px;
+  vertical-align: -1px;
+}
+
+.t-fact.is-good {
+  color: var(--o-good);
+}
+
+.t-fact.is-warn {
+  color: var(--o-warn);
+}
+
+.t-side {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  padding-top: 1px;
+}
+
+.t-side .t-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.t-side .t-when {
+  width: auto;
+}
+
+/* ---- Sections ---------------------------------------------------------------- */
+.t-sec {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin-top: 6px;
+  padding: 0 6px 0 4px;
+  border-radius: 6px;
+  color: var(--o-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.t-sec:first-child {
+  margin-top: 0;
+}
+
+.t-sec > .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.t-sec .n {
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.t-sec .n.is-good {
+  color: var(--o-good);
+}
+
+.t-sec .at {
+  margin-left: auto;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.t-sec .at b {
+  color: var(--o-muted);
+  font-weight: 600;
+}
+
+.t-sec .o-chip {
+  height: 18px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.t-sec .o-chip .i {
+  width: 11px;
+  height: 11px;
+}
+
+.t-sec-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  margin-top: 6px;
+  padding: 0 6px 0 5px;
+  color: var(--o-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.t-sec-label .at {
+  margin-left: auto;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ---- Character select (direction B) ------------------------------------- */
+.t-char {
+  position: relative;
+  margin: 2px 0 6px;
+}
+
+.t-char .o-input {
+  gap: 6px;
+  height: 28px;
+  padding: 0 7px 0 6px;
+  cursor: pointer;
+}
+
+.t-char .o-input.is-focus {
+  border-color: rgba(255, 246, 236, 0.55);
+}
+
+.t-char img,
+.t-who img {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.t-char .nm {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.t-char .meta {
+  overflow: hidden;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+}
+
+.t-char .o-input > .i {
+  color: var(--o-muted);
+}
+
+.t-live {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--o-good);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.t-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+.t-char .o-menu {
+  top: 32px;
+  left: 0;
+  right: 0;
+}
+
+.t-who {
+  height: 30px;
+}
+
+.t-who b {
+  font-weight: 600;
+}
+
+.t-who .srv {
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.t-who .left {
+  margin-left: auto;
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.t-who .left.is-warn {
+  color: var(--o-warn);
+  font-weight: 600;
+}
+
+.t-menu-note {
+  padding: 4px 8px 4px;
+  color: var(--o-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.o-menu-sep {
+  height: 1px;
+  margin: 4px;
+  background: rgba(255, 240, 225, 0.18);
+}
+
+/* ---- Edit mode --------------------------------------------------------------- */
+.t-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.t-add .o-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.t-seg {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.t-seg span,
+.t-seg button {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.t-seg span.is-on,
+.t-seg button.is-on {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+.t-hint {
+  margin: 4px 0 0;
+  padding: 0 5px;
+  color: var(--o-faint);
+  font-size: 11px;
+  white-space: normal;
+}
+
+/* ---- Notes and empty -------------------------------------------------------- */
+.o-note.t-note {
+  margin: 0 0 6px;
+}
+
+.o-note .t-strong {
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+.o-note.is-good .t-strong {
+  color: var(--o-good);
+}
+
+/* ---- Tooltip, inside the window ------------------------------------------- */
+.t-tip {
+  position: absolute;
+  z-index: 6;
+  max-width: 230px;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 236, 214, 0.14);
+  border-radius: 8px;
+  background: rgba(30, 26, 22, 0.98);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.t-tip b {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--o-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ---- Character grid (direction C) ---------------------------------------- */
+.t-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 6px;
+}
+
+.t-tabbar .o-tabs {
+  width: 210px;
+  margin: 0;
+}
+
+.t-tabbar .t-reset {
+  flex: 1;
+  margin: 0;
+  padding-right: 4px;
+}
+
+.t-grow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 64px);
+  column-gap: 2px;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 2px 0 6px;
+  border-radius: 6px;
+}
+
+.t-grow.is-hover {
+  background: var(--o-soft);
+}
+
+.t-grow.is-head {
+  min-height: 36px;
+  margin-bottom: 2px;
+  cursor: default;
+}
+
+.t-gname {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.t-gname small {
+  margin-left: 5px;
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.t-gh {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 34px;
+  min-width: 0;
+  border-radius: 6px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.t-gh span {
+  max-width: 58px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.t-gh img {
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
+}
+
+/* The character you are playing: the "you" rim. */
+.t-gh.is-you {
+  outline: 1px solid rgba(255, 246, 236, 0.45);
+  outline-offset: -1px;
+  color: var(--o-text);
+}
+
+.t-gh.is-off {
+  opacity: 0.42;
+}
+
+.t-gh .o-btn {
+  margin-top: -2px;
+}
+
+.t-gh.has-edit {
+  flex-direction: row;
+  gap: 2px;
+}
+
+.t-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 22px;
+  min-width: 0;
+  border-radius: 5px;
+  color: var(--o-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.t-cell small {
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.t-cell.is-done {
+  color: var(--o-muted);
+}
+
+.t-cell.is-warn {
+  background: var(--t-warn-fill);
+  color: var(--o-warn);
+}
+
+.t-cell.is-warn small {
+  color: rgba(242, 198, 109, 0.7);
+}
+
+.t-cell.is-hover {
+  background: var(--o-soft);
+}
+
+.t-cell.is-open {
+  background: var(--o-hot);
+}
+
+.t-cell.is-na {
+  color: var(--o-faint);
+  font-weight: 500;
+  cursor: default;
+}
+
+.t-cell.is-span {
+  grid-column: span 2;
+  gap: 6px;
+}
+
+.t-cell .t-pip {
+  width: 7px;
+}
+
+/* Counter popover (direction C). */
+.t-pop {
+  position: absolute;
+  z-index: 6;
+  width: 212px;
+  padding: 8px 10px 9px;
+  border: 1px solid rgba(255, 236, 214, 0.14);
+  border-radius: 9px;
+  background: rgba(30, 26, 22, 0.98);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  white-space: normal;
+}
+
+.t-pop h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.t-pop h4 img {
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
+}
+
+.t-pop h4 small {
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.t-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.t-step .big {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.t-step .big small {
+  color: var(--o-faint);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.t-pop p {
+  margin: 7px 0 0;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.t-pop .acts {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* ---- The meter, for the opening state ------------------------------------ */
+/* A copy of the approved meter's look with overlay.css rows, kept only so the
+   "…" menu can be judged in place. Values: ../approved/tokens.md. */
+.ov.o.t-meter {
+  width: 310px;
+  padding: 8px 8px 6px;
+}
+
+.t-mhead {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  margin-bottom: 0;
+  padding: 0 0 0 4px;
+}
+
+.t-mhead .tgt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--o-muted);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.t-meter .o-rows {
+  margin-top: 0;
+}
+
+.t-meter .o-name small {
+  color: rgba(255, 246, 236, 0.82);
+}
+
+.t-mfoot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  margin-top: 5px;
+  padding-left: 4px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.t-mfoot .lbl {
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.t-mfoot .val {
+  color: var(--o-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.t-mfoot .ping {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  color: var(--o-good);
+}
+
+.t-mfoot .ping .i {
+  width: 12px;
+  height: 12px;
+}
+
+.t-seg2 {
+  display: inline-flex;
+  width: 100px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 2px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.t-seg2 span {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--o-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.t-seg2 span.is-on {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+.t-meter .o-menu {
+  top: 30px;
+  right: 8px;
+  width: 240px;
+}
+
+.t-meter .o-menu-item {
+  font-weight: 500;
+}
+
+.t-meter .o-menu-item .lead {
+  display: inline-flex;
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.t-meter .o-menu-item .lead .i {
+  width: 12px;
+  height: 12px;
+}
+
+.t-meter .o-menu-item.is-new {
+  font-weight: 600;
+}
+
+/* ==== Direction D: the chosen model ========================================
+   One list per character (B) with one line per to-do (A); every figure is
+   set by the player. Real buttons and a real field so the "Try it" window
+   works; values not in ../approved/tokens.md are proposals. */
+.ov.o.td.is-d {
+  --d-press: rgba(255, 240, 225, 0.2);
+
+  width: 370px;
+}
+
+:where(.td.is-d) button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+:where(.td.is-d) button:disabled {
+  cursor: default;
+}
+
+/* Keyboard focus: the approved focus-ring colour, 2 px, 1 px outside. */
+.td.is-d :focus {
+  outline: none;
+}
+
+.td.is-d :focus-visible,
+.td.is-d .d-count.is-focus,
+.td.is-d .o-btn.is-focus {
+  outline: 2px solid var(--t-ring);
+  outline-offset: 1px;
+}
+
+.td.is-d input:focus-visible {
+  outline: none;
+}
+
+/* ---- Rows ------------------------------------------------------------------ */
+.d-row {
+  padding: 0 3px 0 5px;
+  cursor: default;
+}
+
+.d-row.is-tick,
+.d-row.is-group {
+  padding-right: 6px;
+  cursor: pointer;
+}
+
+/* A group's rows start under its name. */
+.d-row.is-sub {
+  padding-left: 29px;
+}
+
+.d-row.is-tick:hover,
+.d-row.is-group:hover {
+  background: var(--o-soft);
+}
+
+.d-row.is-waste:hover {
+  background: var(--t-warn-fill);
+}
+
+/* An amount nobody typed: quiet, and left out of every count and warning. */
+.d-row.is-empty .t-name {
+  color: var(--o-muted);
+}
+
+.d-row.is-done .t-name small {
+  color: rgba(255, 246, 236, 0.36);
+}
+
+.td.is-d .t-sec:hover {
+  color: var(--o-text);
+}
+
+/* ---- Arrows and the figure ---------------------------------------------- */
+.d-step {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1px;
+}
+
+.d-step .o-btn.is-sm {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--o-muted);
+}
+
+.d-step .o-btn .i {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.25;
+}
+
+.d-row:hover .d-arrow:not(:disabled),
+.d-row.is-hover .d-arrow:not(:disabled) {
+  color: var(--o-text);
+}
+
+.d-step .o-btn:hover:not(:disabled),
+.d-step .o-btn.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.d-step .o-btn:active:not(:disabled),
+.d-step .o-btn.is-press {
+  background: var(--d-press);
+  color: var(--o-text);
+}
+
+.d-step .o-btn:disabled {
+  color: var(--o-faint);
+  opacity: 0.45;
+}
+
+.d-gap {
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.d-count {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 46px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--o-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.d-count small {
+  margin-left: 1px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.d-count:hover,
+.d-count.is-hover {
+  background: var(--o-soft);
+}
+
+.d-count:active,
+.d-count.is-press {
+  background: var(--d-press);
+}
+
+.d-row.is-done .d-count {
+  color: var(--o-muted);
+}
+
+.d-row.is-waste .d-count {
+  color: var(--o-warn);
+}
+
+.d-row.is-waste .d-count small {
+  color: rgba(242, 198, 109, 0.7);
+}
+
+/* An amount's figure reads as a field: a click types, it does not add one. */
+.d-count.is-amt {
+  cursor: text;
+}
+
+.d-count.is-amt:hover,
+.d-count.is-amt.is-hover {
+  background: var(--o-track);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 225, 0.12);
+}
+
+.d-count.is-blank {
+  color: var(--o-faint);
+  font-weight: 500;
+}
+
+.d-count.is-fixed {
+  width: 26px;
+  cursor: default;
+}
+
+.d-count.is-fixed:hover {
+  background: none;
+}
+
+.d-when {
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.d-when.is-warn {
+  color: var(--o-warn);
+  font-weight: 600;
+}
+
+/* Typing an amount: the field takes the arrows' place. */
+.d-field {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  width: 112px;
+  height: 22px;
+  padding: 0 1px 0 7px;
+  border: 1px solid rgba(255, 246, 236, 0.55);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.34);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.d-field .val,
+.d-field input {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+}
+
+.d-field input {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--o-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.d-field input::placeholder {
+  color: var(--o-faint);
+  font-weight: 500;
+}
+
+.d-field .o-caret {
+  margin-left: -3px;
+}
+
+.d-cap {
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.d-field .o-btn.is-sm {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+.d-field .o-btn:hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+/* ---- Groups and suggestions --------------------------------------------- */
+.d-sum {
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.d-sum.is-good {
+  color: var(--o-good);
+}
+
+.d-sug {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1px;
+}
+
+.d-sug .o-tbtn.t-small {
+  gap: 3px;
+  padding: 0 7px 0 6px;
+}
+
+.d-tip {
+  width: 230px;
+}
+
+/* ---- Scrolling ------------------------------------------------------------- */
+/* 3 px of room around the rows so the focus ring is not clipped. */
+.d-scrollwrap {
+  position: relative;
+  margin: -3px;
+}
+
+.d-scroll {
+  position: relative;
+  padding: 3px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.d-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.d-scrollwrap.is-over .d-scroll {
+  padding-right: 11px;
+}
+
+.d-thumb {
+  display: none;
+  right: 4px;
+}
+
+.d-scrollwrap.is-over .d-thumb {
+  display: block;
+}
+
+/* ---- Footer ---------------------------------------------------------------- */
+.d-foot {
+  gap: 5px;
+}
+
+.d-foot > .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.d-foot b {
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+.d-link {
+  color: var(--o-muted);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 246, 236, 0.25);
+  text-underline-offset: 3px;
+}
+
+.d-link:hover {
+  color: var(--o-text);
+}
+
+/* ---- Edit mode: add your own -------------------------------------------- */
+.d-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.d-add .o-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--o-text);
+  font: inherit;
+  font-weight: 500;
+}
+
+.d-add .o-input input::placeholder {
+  color: var(--o-faint);
+}
+
+.d-add .o-input:focus-within {
+  border-color: rgba(255, 246, 236, 0.55);
+}
+
+.d-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.d-of {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--o-faint);
+  font-size: 11.5px;
+}
+
+.d-add .o-tbtn.is-disabled {
+  cursor: default;
+}
+
+/* ==== Direction E: no boxes, no edit mode =================================
+   D's model and window. A done to-do is struck through and muted where it
+   stands; a tick row is one big button; a hover × hides; "+ Add a to-do"
+   ends the list. Loaded on top of D's rules (the window is .is-d.is-e);
+   values not in ../approved/tokens.md are proposals. */
+
+/* Rows: a 12 px gutter (a group's chevron, a full amount's warning, else
+   empty) so names start under the section labels, 22 px in. */
+.d-row.e-row {
+  gap: 6px;
+  padding: 0 3px 0 4px;
+}
+
+.d-row.e-row.is-sub {
+  padding-left: 22px;
+}
+
+/* Only rows a click acts on light up; on the others the pointer just brings
+   the × (and D's brighter arrows). */
+.d-row.e-row.is-hover:not(.is-tick, .is-group, .is-waste) {
+  background: none;
+}
+
+.e-gut {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 16px;
+  color: var(--o-faint);
+}
+
+.e-gut .i {
+  width: 12px;
+  height: 12px;
+}
+
+.e-gut.is-warn {
+  color: var(--o-warn);
+}
+
+/* The row's own button: everything but the ×. */
+.e-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  align-self: stretch;
+  gap: 6px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.td.is-e .e-main:focus-visible {
+  outline: none;
+}
+
+/* Keyboard focus on a row's button rings the whole row. */
+.td.is-e .e-row:has(> .e-main:focus-visible) {
+  outline: 2px solid var(--t-ring);
+  outline-offset: 1px;
+}
+
+/* Done: struck through and muted, in place. GPUI: StrikethroughStyle,
+   1 px, the text's own colour. */
+.e-row.is-done > .t-name,
+.e-row.is-done > .e-main > .t-name {
+  color: var(--o-muted);
+  text-decoration: line-through 1px;
+}
+
+/* Alternative drawn once: a line over the name instead of through it. The
+   name's box clips at its top, so it gets 3 px of room above. */
+.td.is-alt-over .e-row.is-done > .t-name,
+.td.is-alt-over .e-row.is-done > .e-main > .t-name {
+  margin-top: -3px;
+  padding-top: 3px;
+  text-decoration: overline 1px;
+}
+
+/* "Yours" is a tag, not part of the name: never struck. */
+.t-name small.e-tag {
+  display: inline-block;
+}
+
+/* The check (undo on a done row): a 20 px icon button at the end of a tick
+   row, shown with the × while the pointer is on the row or the row has
+   keyboard focus. It does what a click on the row does; "Mark done" /
+   "Undo" are its tooltip and accessible name. */
+.o-btn.e-cue {
+  flex-shrink: 0;
+  border-radius: 5px;
+  background: var(--o-soft);
+  color: var(--o-text);
+  visibility: hidden;
+}
+
+.e-cue .i {
+  stroke-width: 2.5;
+}
+
+.o-btn.e-cue.is-undo {
+  background: none;
+  color: var(--o-muted);
+}
+
+.e-cue.is-undo .i {
+  stroke-width: 2.25;
+}
+
+.e-row:hover .e-cue,
+.e-row.is-hover .e-cue,
+.e-row.is-focus .e-cue,
+.e-row:focus-within .e-cue {
+  visibility: visible;
+}
+
+/* The pointer on the check itself. */
+.o-btn.e-cue:hover,
+.o-btn.e-cue.is-hover {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+.o-btn.e-cue.is-undo:hover,
+.o-btn.e-cue.is-undo.is-hover {
+  background: var(--o-soft);
+}
+
+/* A control's name: one line, under the control. */
+.t-tip.e-tip {
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--o-text);
+  white-space: nowrap;
+}
+
+/* The × slot: 20 px on every row, empty until the pointer enters the row,
+   gone when it leaves (enter and leave only, never on moves inside). */
+.e-x {
+  width: 20px;
+  justify-content: center;
+}
+
+.e-x .o-btn.is-sm {
+  border-radius: 5px;
+  color: var(--o-muted);
+  visibility: hidden;
+}
+
+.e-row:hover .e-x .o-btn,
+.e-row.is-hover .e-x .o-btn,
+.e-row.is-focus .e-x .o-btn,
+.e-row:focus-within .e-x .o-btn,
+.e-x.is-on .o-btn {
+  visibility: visible;
+}
+
+.e-x .o-btn:hover,
+.e-x .o-btn.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+/* Just after a hide, the row that slid under the pointer keeps its × (and
+   cue) back until the pointer moves: a double click hides one row. */
+.td.is-still .e-row:hover .e-x:not(.is-on) .o-btn,
+.td.is-still .e-row:hover .e-cue {
+  visibility: hidden;
+}
+
+/* A hidden row listed by "Show": faded, only its put-back button bright. */
+.e-row.is-off {
+  cursor: default;
+}
+
+.e-row.is-off .e-main {
+  cursor: default;
+}
+
+.e-ghost .d-count {
+  color: var(--o-muted);
+  cursor: default;
+}
+
+.e-ghost .d-count:hover {
+  background: none;
+}
+
+/* "2 hidden · Show" ends the section, under the names. */
+.e-hid {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 6px 0 22px;
+  color: var(--o-faint);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.e-hid.is-sub {
+  padding-left: 40px;
+}
+
+.e-hid .d-link.is-hover {
+  color: var(--o-text);
+}
+
+/* "+ Add a to-do": the list's last line, plus in the gutter. */
+.td.is-e .e-addline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  margin-top: 6px;
+  padding: 0 6px 0 4px;
+  border-radius: 6px;
+  color: var(--o-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.e-addline .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.td.is-e .e-addline:hover,
+.td.is-e .e-addline.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.e-addline:hover .i {
+  color: var(--o-muted);
+}
+
+/* The form, in the add line's place: the expanded-row plate. */
+.e-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px;
+  border-radius: 6px;
+  background: rgba(255, 240, 225, 0.05);
+}
+
+.e-add-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.e-add-top .o-input {
+  flex: 1;
+  min-width: 0;
+  margin-right: 2px;
+}
+
+.e-add-top .o-tbtn {
+  height: 22px;
+}
+
+.e-add .o-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--o-text);
+  font: inherit;
+  font-weight: 500;
+}
+
+.e-add .o-input input::placeholder {
+  color: var(--o-faint);
+}
+
+.e-add .o-input:focus-within {
+  border-color: rgba(255, 246, 236, 0.55);
+}
+
+.e-add .o-input .o-caret + .ph {
+  margin-left: -6px;
+}
+
+.e-add .o-tbtn.is-disabled {
+  cursor: default;
+}
+
+.e-add-top > .o-btn:hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+/* "Removed Legion check-in. Undo" for four seconds. */
+.o-note.e-note {
+  align-items: center;
+}
+
+.e-note .d-link {
+  margin-left: auto;
+  font-size: 11.5px;
+}
+
+/* What a screen reader hears after a change; not drawn. */
+.e-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

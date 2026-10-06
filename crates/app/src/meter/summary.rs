@@ -2,12 +2,13 @@
 //! damage, and how it stands against your best. Ported from `showSummary` in
 //! `overlay/meter/main.js`.
 
-use aether_core::models::combat::{CombatSnapshot, PlayerOverviewStat, TargetInfo};
+use meter_core::models::combat::{CombatSnapshot, PlayerOverviewStat, TargetInfo};
 use gpui::SharedString;
 
 use super::fight::SummaryKind;
 use crate::format;
 use crate::game_data::{self, PlayerClass};
+use crate::i18n::fl;
 use super::live::{self, pace_against, Gauge, TargetView, YouMatch};
 use super::settings::OverlaySettings;
 
@@ -244,40 +245,38 @@ struct YouFacts<'a> {
 
 /// For party chat or Discord.
 fn copy_text(facts: &CopyFacts) -> String {
-    let outcome = match facts.kind {
-        SummaryKind::Final => "defeated",
-        SummaryKind::Provisional => "fight ended",
-    };
     let place = facts.place.map(|place| format!(" ({place})")).unwrap_or_default();
-    let mut lines = vec![format!(
-        "{}{place} · {outcome} in {}",
-        facts.boss,
-        format::duration(facts.secs)
-    )];
+    let duration = format::duration(facts.secs);
+    let mut lines = vec![match facts.kind {
+        SummaryKind::Final => fl!("meter-copy-defeated", boss = facts.boss, place = place, duration = duration),
+        SummaryKind::Provisional => fl!("meter-copy-ended", boss = facts.boss, place = place, duration = duration),
+    }];
 
     match &facts.you {
         Some(you) => {
-            let name = if you.player.actor_name.is_empty() { "?" } else { &you.player.actor_name };
+            let name = if you.player.actor_name.is_empty() { fl!("common-you") } else { you.player.actor_name.clone() };
             let mut line = vec![
                 format!("{name} {}/s", format::grouped(you.player.dps)),
-                format!("#{} of {}", you.rank, facts.ranked.len()),
+                fl!("meter-copy-rank", rank = you.rank, total = facts.ranked.len()),
                 you.share.to_string(),
             ];
             if let Some(crit) = you.crit {
-                line.push(format!("crit {}", format::whole_percent(crit)));
+                line.push(fl!("meter-copy-crit", percent = format::whole_percent(crit)));
             }
             match you.best {
-                Some(BestLine::First) => line.push("First record".to_string()),
-                Some(BestLine::New { pace }) => line.push(format!("New PB {pace}")),
-                Some(BestLine::Behind { best, pace }) => line.push(format!("PB {best}/s {pace}")),
+                Some(BestLine::First) => line.push(fl!("meter-copy-first-record")),
+                Some(BestLine::New { pace }) => line.push(fl!("meter-copy-new-best", pace = pace.to_string())),
+                Some(BestLine::Behind { best, pace }) => {
+                    line.push(fl!("meter-copy-best-behind", best = best.to_string(), pace = pace.to_string()))
+                }
                 None => {}
             }
             lines.push(line.join(" · "));
         }
-        None => lines.push(format!(
-            "Party {}/s · {} damage",
-            format::grouped(facts.party_dps),
-            format::damage(facts.party_damage)
+        None => lines.push(fl!(
+            "meter-copy-party",
+            dps = format::grouped(facts.party_dps),
+            damage = format::damage(facts.party_damage)
         )),
     }
 
@@ -287,7 +286,7 @@ fn copy_text(facts: &CopyFacts) -> String {
             .iter()
             .map(|skill| format!("{} {}", skill.name, format::whole_percent(skill.share)))
             .collect();
-        lines.push(format!("Top: {}", top.join(", ")));
+        lines.push(fl!("meter-copy-top", skills = top.join(", ")));
     }
     if facts.ranked.len() > 1 {
         let party: Vec<String> = facts
@@ -296,14 +295,14 @@ fn copy_text(facts: &CopyFacts) -> String {
             .enumerate()
             .map(|(index, player)| {
                 let name = if player.actor_name.is_empty() {
-                    format!("ID:{}", player.actor_id)
+                    format::unnamed_player(player.actor_id, facts.you.as_ref().is_some_and(|you| you.rank == index + 1))
                 } else {
                     player.actor_name.clone()
                 };
                 format!("{}. {name} {}", index + 1, format::grouped(player.dps))
             })
             .collect();
-        lines.push(format!("Party: {}", party.join(" · ")));
+        lines.push(fl!("meter-copy-party-list", players = party.join(" · ")));
     }
     lines.push("— AION 2 DPS Meter".to_string());
     lines.join("\n")

@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 
-use aether_core::models::combat::{CombatInfos, CombatSnapshot, PlayerOverviewStat, SkillStats, TargetInfo};
-use aether_core::models::session::{SessionPlayerStat, SessionSummary};
+use meter_core::models::combat::{CombatInfos, CombatSnapshot, PlayerOverviewStat, SkillStats, TargetInfo};
+use meter_core::models::session::{SessionPlayerStat, SessionSummary};
 
 pub const YOU: &str = "Mirelle";
 /// A real boss id from dungeons.json, so the summary names its dungeon.

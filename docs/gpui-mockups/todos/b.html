@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-dos proposal B: one list per character, with suggestions</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="todos.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="To-do proposals">
+        <a href="index.html">To-dos overview</a>
+        <a href="e.html">E, struck through when done</a>
+        <a href="d.html">D, you set the counts</a>
+        <a href="a.html">A, tabs</a>
+        <a href="b.html" aria-current="page">B, one list per character</a>
+        <a href="c.html">C, all characters</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>B, one list per character, with suggestions <small>earlier exploration, kept for reference: see D</small></h1>
+      <ul class="rationale">
+        <li>A 370 px overlay window (History's width). Under the title, the <b>character</b> the list belongs to: the one you are playing, picked by the meter from the characters it remembers; click to look at another.</li>
+        <li><b>One list in three sections</b>: Today, Recharges, This week. Each section label carries its own countdown and folds away with a click. Two lines per row: the name, then one line of fact ("3 a week · solo").</li>
+        <li><b>Suggested ticks</b>: when the meter sees a known dungeon's last boss fall, the row turns green and asks "Cleared at 21:32?". Nothing is counted until you click Count it; a count that came from the meter keeps a small mark.</li>
+        <li>Recharges as in A: Used up, then "Full in …" from the estimate; yellow once full. Duty Missions are shared by the characters of one account on one server, so their row says "Account". Limits are from the reset research; counts, times and names are invented. Clock: Monday 21:48.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Character.</b> The list follows the character you play, as the meter knows it (name, server, class). Clicking the selector shows the others with what they have left; picking one shows its list without changing anything in the game. Before the game has named you, the selector says "You" and the list is the last character's.</li>
+        <li><b>Account to-dos.</b> Duty Missions are per account and server (research): ticking them on Mirelle ticks them on Tavrin (same server), not on Sefa (Lyss). Everything else is per character [inference from the research, to check in game].</li>
+        <li><b>Suggestions.</b> Only for weekly to-dos the meter can see end: Ascension Trial, Subjugation, the Sanctuary raids and the boss-kill counts. The suggestion stays until you answer or the week resets; × dismisses it. It never counts by itself, because a kill does not prove the reward was taken.</li>
+        <li><b>Sections.</b> A folded section keeps its label, count and countdown, so a done section can stay folded. Folding is remembered.</li>
+        <li>Ticking, Used up, edit mode, keyboard roles and the focus ring: as in A. In edit mode hidden to-dos are per character (an alt may skip a raid).</li>
+      </ul>
+      <h2>Values proposed (not tokens yet)</h2>
+      <ul>
+        <li>Two-line rows: 5 px padding, name 13 px / 500 on a 17 px line, fact 11.5 px / 500 <code>muted</code> on a 15 px line. Section label 24 px with a 12 px chevron.</li>
+        <li>Suggested: the row on a <code>good</code> 0.09 fill; the tick box stays empty, on a <code>good</code> 0.12 fill with a 1.5 px <code>good</code> 0.75 edge (only your click puts the cream box with an ink check there); the segment it would fill is outlined in green; the question in <code>good</code> with Lucide <code>activity</code>.</li>
+        <li>Character selector: the 26 px input language at 28 px, class icon 16 px, a <code>good</code> "Playing" mark for the character in game.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="todos.js"></script>
+    <script>
+      (function () {
+        const T = Todo;
+        const { icon, btn } = T;
+
+        function charSelect(ctx, { open = false, focus = false } = {}) {
+          const me = T.CHARS[0];
+          const box = `<span class="o-input${open || focus ? " is-focus" : ""}" role="combobox" aria-expanded="${open}" aria-label="Character" tabindex="0"><img src="${ctx.classIcon(me.cls)}" alt=""><span class="nm">${T.nm(ctx, me.name)}</span><span class="meta">${me.klass} · ${me.server}</span><span class="t-live">Playing</span>${icon(open ? "chevronUp" : "chevronDown")}</span>`;
+          let menu = "";
+          if (open) {
+            const left = { mirelle: ["3 left", ""], tavrin: ["2 full", "is-warn"], sefa: ["5 left", ""] };
+            menu = `<div class="o-menu" role="listbox">${T.CHARS.map(
+              (c, i) => `<div class="o-menu-item t-who${i === 1 ? " is-hot" : ""}" role="option" aria-selected="${i === 0}"><img src="${ctx.classIcon(c.cls)}" alt=""><b>${T.nm(ctx, c.name)}</b><span class="srv">${c.klass} · ${c.server}</span><span class="left ${left[c.id][1]}">${left[c.id][0]}</span></div>`
+            ).join("")}<div class="o-menu-sep"></div><div class="t-menu-note">Characters the meter has seen. Duty Missions are shared by your characters on one server.</div></div>`;
+          }
+          return `<div class="t-char">${box}${menu}</div>`;
+        }
+
+        function sec(title, { n = "", nGood = false, at = "", open = true, chip = "", focus = false } = {}) {
+          return `<div class="t-sec${focus ? " is-focus" : ""}" role="button" tabindex="0" aria-expanded="${open}">${icon(open ? "chevronDown" : "chevronRight")}<span>${title}</span>${n ? `<span class="n${nGood ? " is-good" : ""}">${n}</span>` : ""}${chip}<span class="at">${at}</span></div>`;
+        }
+
+        function item(ctx, it, o = {}) {
+          const done = it.n >= it.of;
+          const cls = ["t-item", "is-2"];
+          if (done) cls.push("is-done");
+          if (o.hover) cls.push("is-hover");
+          if (o.focus) cls.push("is-focus");
+          if (o.suggest) cls.push("is-suggest");
+          if (o.edit && it.hidden) cls.push("is-off");
+          const acct = it.account ? `<span class="t-acct">${icon("users")}Account</span>` : "";
+          let fact = `<span class="t-fact">${T.esc(it.fact)}${it.account ? " · shared with Tavrin (Ossia)" : ""}</span>`;
+          if (o.suggest) fact = `<span class="t-fact is-good">${icon("activity")}Cleared at ${o.suggest}? Seen by the meter</span>`;
+          else if (o.fromMeter) fact = `<span class="t-fact">${T.esc(it.fact)} · <span class="faint">${icon("activity")}${o.fromMeter}</span></span>`;
+          let side = T.progress(it, { seen: !!o.suggest });
+          if (o.hover && it.n > 0 && it.of > 1 && !done) side = btn("minus", "Take one back", " is-sm") + side;
+          let sideHtml = `<span class="t-side"><span class="t-row">${side}</span>${
+            o.suggest ? `<span class="t-row"><span class="o-tbtn t-small is-good" role="button">${icon("check")}Count it</span>${btn("close", "Not this time", " is-sm")}</span>` : ""
+          }</span>`;
+          if (o.edit) {
+            sideHtml = `<span class="t-edit">${
+              it.custom ? btn("trash", "Delete this to-do", " is-sm") : btn(it.hidden ? "eyeOff" : "eye", it.hidden ? "Show" : "Hide", " is-sm")
+            }</span>`;
+          }
+          const boxKind = done ? "done" : o.suggest ? "suggest" : "";
+          return `<div class="${cls.join(" ")}" ${T.ariaFor(it)}>${T.box(boxKind)}<span class="t-body"><span class="t-name">${T.esc(it.name)}${acct}${it.custom ? "<small>Yours</small>" : ""}</span>${fact}</span>${sideHtml}</div>`;
+        }
+
+        function charge(ctx, r, o = {}) {
+          const full = r.est >= r.cap;
+          const cls = ["t-item", "is-2"];
+          if (full) cls.push("is-waste");
+          if (o.hover) cls.push("is-hover");
+          if (o.focus) cls.push("is-focus");
+          const glyph = `<span class="t-glyph${full ? " is-warn" : ""}">${icon(full ? "alert" : "hourglass")}</span>`;
+          const fact = full
+            ? `<span class="t-fact is-warn">${r.since}. New charges are lost</span>`
+            : `<span class="t-fact">${T.esc(r.fact)}</span>`;
+          const status = full
+            ? `<span class="o-tbtn t-small is-warn" role="button">Used up</span>`
+            : o.hover
+              ? `<span class="o-tbtn t-small" role="button">Used up</span>`
+              : `<span class="t-when">${r.when}</span>`;
+          const side = `<span class="t-side"><span class="t-row">${T.bar(r.est / r.cap, { warn: full, width: 40 })}<span class="t-slot" style="width:${full || o.hover ? "auto" : "86px"}">${status}</span></span></span>`;
+          const tip = o.tip ? `<div class="t-tip" style="top:42px;right:0"><b>Used up</b>Counts from empty again: full ${o.tip}. Click after you have spent them.</div>` : "";
+          return `<div class="${cls.join(" ")}" role="button" tabindex="0" aria-label="${T.esc(r.name)}. Mark used up">${glyph}<span class="t-body"><span class="t-name">${T.esc(r.name)}</span>${fact}</span>${side}${tip}</div>`;
+        }
+
+        const leftOf = (list) => list.filter((it) => !it.hidden && it.n < it.of).length;
+        const C = T.CLOCK;
+
+        function scroll(inner, { max = 404, thumbH = 0, thumbT = 2 } = {}) {
+          const thumb = thumbH ? `<span class="o-thumb" style="--t:${thumbT}px;--h:${thumbH}px"></span>` : "";
+          return `<div class="o-scroll${thumbH ? " has-thumb" : ""}" style="max-height:${max}px">${inner}${thumb}</div>`;
+        }
+
+        const win = (inner) => `<div class="ov o td is-b" role="dialog" aria-label="To-dos">${inner}</div>`;
+
+        function todaySec(ctx, today, { open = true, focus = "", hover = "" } = {}) {
+          const left = leftOf(today);
+          const head = sec("Today", { n: left ? `${left} left` : "done", nGood: !left, at: `resets in <b>${C.daily.left}</b>`, open });
+          return head + (open ? `<div class="t-list">${today.map((it) => item(ctx, it, { focus: focus === it.id, hover: hover === it.id })).join("")}</div>` : "");
+        }
+
+        function chargeSec(ctx, charges, { open = true, hover = "", tip = "" } = {}) {
+          const full = charges.filter((r) => r.est >= r.cap).length;
+          const head = sec("Recharges", {
+            n: full ? "" : "estimated",
+            chip: full ? T.warnChip(`${full} full`) : "",
+            at: full ? "" : `next full in <b>11 h</b>`,
+            open,
+          });
+          return head + (open ? `<div class="t-list">${charges.map((r) => charge(ctx, r, { hover: hover === r.id, tip: hover === r.id ? tip : "" })).join("")}</div>` : "");
+        }
+
+        // `skip` draws the section scrolled down that many rows (its label
+        // is then out of view).
+        function weekSec(ctx, weekly, { open = true, suggest = false, edit = false, extra = [], skip = 0 } = {}) {
+          const list = weekly.concat(extra).filter((it) => edit || !it.hidden);
+          const left = leftOf(list);
+          const head = skip ? "" : sec("This week", { n: left ? `${left} left` : "done", nGood: !left, at: `${C.weekly.at} · in <b>${C.weekly.left}</b>`, open });
+          if (!open) return head;
+          const rows = list
+            .slice(skip)
+            .map((it) => {
+              if (edit) return item(ctx, it, { edit: true });
+              if (it.id === "trial" && suggest) return item(ctx, it, { suggest: "21:32" });
+              if (it.id === "trial") return item(ctx, { ...it, n: 3 }, { fromMeter: "1 from the meter" });
+              if (it.id === "transc") return item(ctx, it, { fromMeter: "4 from the meter" });
+              return item(ctx, it);
+            })
+            .join("");
+          return head + `<div class="t-list">${rows}</div>`;
+        }
+
+        function render(state, ctx) {
+          const today = T.today();
+          const charges = T.recharges();
+          const weekly = T.weekly();
+          const count = (n) => `${n} left`;
+          switch (state) {
+            case "daily":
+              return win(`${T.head("To-dos", { count: count(1 + leftOf(weekly)) })}${charSelect(ctx)}${scroll(todaySec(ctx, today) + chargeSec(ctx, charges) + weekSec(ctx, weekly, { open: false }), { thumbH: 300 })}${T.foot()}`);
+            case "weekly":
+              return win(`${T.head("To-dos", { count: count(leftOf(weekly)) })}${charSelect(ctx)}${scroll(todaySec(ctx, today, { open: false }) + chargeSec(ctx, charges, { open: false }) + weekSec(ctx, weekly), { thumbH: 210, thumbT: 2 })}${T.foot()}`);
+            case "suggest":
+              return win(`${T.head("To-dos", { count: count(leftOf(weekly)) })}${charSelect(ctx)}${scroll(todaySec(ctx, today, { open: false }) + chargeSec(ctx, charges, { open: false }) + weekSec(ctx, weekly, { suggest: true }), { thumbH: 200 })}${T.foot()}`);
+            case "switch":
+              return win(`${T.head("To-dos", { count: count(1 + leftOf(weekly)) })}${charSelect(ctx, { open: true })}${scroll(todaySec(ctx, today) + chargeSec(ctx, charges) + weekSec(ctx, weekly, { open: false }), { thumbH: 300 })}${T.foot()}`);
+            case "waste": {
+              const d = charges.find((r) => r.id === "deus");
+              d.est = 4;
+              d.since = "Full since 09:00";
+              const v = charges.find((r) => r.id === "invasion");
+              v.est = 7;
+              v.since = "Full since 16:00";
+              return win(`${T.head("To-dos", { count: count(1 + leftOf(weekly)), chip: T.warnChip("2 full") })}${charSelect(ctx)}${scroll(todaySec(ctx, today, { open: false }) + chargeSec(ctx, charges) + weekSec(ctx, weekly, { open: false }), { thumbH: 330 })}${T.foot()}`);
+            }
+            case "done": {
+              today[0].n = 5;
+              weekly.forEach((it) => (it.n = it.of));
+              const note = `<div class="o-note is-good t-note">${icon("check")}<span><span class="t-strong">Everything is done on Mirelle.</span> Recharges keep filling; the earliest is full in 11 h.</span></div>`;
+              return win(`${T.head("To-dos", { count: "0 left" })}${charSelect(ctx)}${note}${scroll(todaySec(ctx, today, { open: false }) + chargeSec(ctx, charges) + weekSec(ctx, weekly, { open: false }), { max: 360, thumbH: 270 })}${T.foot()}`);
+            }
+            case "edit": {
+              const custom = { ...T.custom()[0], name: "Weekly Legion quest", fact: "Weekly · single tick" };
+              const hint = `<div class="t-hint" style="margin:0 0 6px">Hide what Mirelle doesn't do. Each character keeps its own list; hidden to-dos stay here, faded.</div>`;
+              weekly.find((it) => it.id === "explore").hidden = true;
+              return win(`${T.head("Edit to-dos", { editing: true })}${charSelect(ctx)}${hint}${scroll(weekSec(ctx, weekly, { edit: true, extra: [custom], skip: 8 }), { max: 330, thumbH: 130, thumbT: 198 })}${T.addRow({ typed: "Arena of Tactics win", kind: "weekly" })}${T.editFoot()}`);
+            }
+            case "focus":
+              return win(`${T.head("To-dos", { count: count(1 + leftOf(weekly)) })}${charSelect(ctx)}${scroll(todaySec(ctx, today, { focus: "duty" }) + chargeSec(ctx, charges, { hover: "shugo", tip: "next Mon 16:00, in 6 d 18 h" }) + weekSec(ctx, weekly, { open: false }), { thumbH: 300 })}${T.foot()}`);
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "daily", title: "Today and recharges", sub: "Mirelle, the character in game; This week folded" },
+            { id: "weekly", title: "This week", sub: "Today and Recharges folded; Ascension Trial and Transcendence carry counts confirmed from the meter" },
+            { id: "suggest", title: "Suggested tick", sub: "the meter saw the Ascension Trial's last boss fall at 21:32: Count it, or × to dismiss" },
+            { id: "switch", title: "Character selector", sub: "the characters the meter remembers, with what each has left; Tavrin has 2 full" },
+            { id: "waste", title: "Being wasted", sub: "two recharges full: yellow rows with Used up shown, \"2 full\" on the section and the title" },
+            { id: "done", title: "Everything done", sub: "one note; Today and This week folded as done; recharges still listed" },
+            { id: "edit", title: "Edit mode", sub: "per character; hide, show, add your own" },
+            { id: "focus", title: "Pointer and keyboard", sub: "pointer over Shugo Festival keys (Used up, tooltip); keyboard focus on Duty Missions" },
+          ],
+          controls: ["alpha", "scale", "mask"],
+          tileMin: 430,
+          stageMin: 600,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

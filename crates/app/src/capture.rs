@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use aether_core::events::MeterEvent;
-use aether_core::models::diagnostics::MemorySnapshot;
+use meter_core::events::MeterEvent;
+use meter_core::models::diagnostics::MemorySnapshot;
 use gpui::{App, AsyncApp, Context, Entity, WindowHandle};
 use windows::Win32::Foundation::{FILETIME, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{

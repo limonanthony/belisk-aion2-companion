@@ -1,8 +1,8 @@
 //! The session board: everyone's damage across every mob since the last reset,
 //! prepared for drawing like the target board in `live`.
 
-use aether_core::models::combat::CombatSnapshot;
-use aether_core::models::session::SessionPlayerStat;
+use meter_core::models::combat::CombatSnapshot;
+use meter_core::models::session::SessionPlayerStat;
 use gpui::SharedString;
 
 use crate::format;

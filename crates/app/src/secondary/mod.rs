@@ -1,11 +1,11 @@
-//! The windows besides the meter: fight history, player detail, PvP,
-//! Settings and the event reminder.
+//! The windows besides the meter: fight history, player detail, PvP, the
+//! to-dos, Settings and the event reminder.
 //!
 //! Each kind has at most one window. Opening one that is already open brings
 //! it forward, and the player detail window is pointed at the new player
 //! instead; a newer reminder takes the place of the one up. A window closes
 //! with its own × or when the app quits.
-//! Like the meter's, the history, detail, PvP and reminder windows are
+//! Like the meter's, the history, detail, PvP, to-do and reminder windows are
 //! frameless, topmost, out of the taskbar and non-activating, and are exactly
 //! as large as their card; they are placed beside the meter the first time
 //! they open, and the reminder keeps to the meter while it is up.
@@ -34,7 +34,8 @@ use crate::meter::{self, MeterModel, MeterView};
 use crate::overlay::{self, Placement};
 use crate::pvp::{PvpModel, PvpView};
 use crate::reminders::{self, MeterLink, ReminderView, ShowReminder};
-use crate::settings::{self, DetailPlacement, RuntimeModel, SettingsView};
+use crate::settings::{self, DetailPlacement, RuntimeModel, Section, SettingsView};
+use crate::todos::TodoView;
 use placement::{Anchor, Side};
 pub use placement::Rect;
 pub use registry::WindowKind;
@@ -43,6 +44,9 @@ use registry::{Opened, Registry};
 const HISTORY_SIZE: (f32, f32) = (370.0, 420.0);
 const DETAIL_SIZE: (f32, f32) = (520.0, 420.0);
 const PVP_SIZE: (f32, f32) = (340.0, 420.0);
+/// The tallest the to-do window gets at 100%; it fits its card from the
+/// first frame on.
+const TODOS_SIZE: (f32, f32) = (370.0, 558.0);
 
 #[derive(Clone)]
 struct Open {
@@ -85,7 +89,7 @@ pub fn open_history(meter_model: &Entity<MeterModel>, cx: &mut App) {
     let registry = registry(cx);
     let meter = meter_model.read(cx).meter().cloned();
     let opened = registry.borrow_mut().open(WindowKind::History, || {
-        let model = cx.new(|_| HistoryModel::new(meter));
+        let model = cx.new(|cx| HistoryModel::new(meter, cx));
         let meter_model = meter_model.clone();
         let view_model = model.clone();
         let window = create_window(
@@ -128,6 +132,23 @@ pub fn open_pvp(meter_model: &Entity<MeterModel>, cx: &mut App) {
     finish(WindowKind::Pvp, opened, cx);
 }
 
+pub fn open_todos(meter_model: &Entity<MeterModel>, cx: &mut App) {
+    let registry = registry(cx);
+    let opened = registry.borrow_mut().open(WindowKind::Todos, || {
+        let meter_model = meter_model.clone();
+        let window = create_window(
+            WindowKind::Todos,
+            TODOS_SIZE,
+            Anchor::Beside(Side::Right),
+            move |window, cx| cx.new(|cx| TodoView::new(meter_model, window, cx)),
+            |_| {},
+            cx,
+        )?;
+        Ok(Open { window, model: None })
+    });
+    finish(WindowKind::Todos, opened, cx);
+}
+
 /// Opens the player detail window on `source`, or points the open one at it.
 pub fn open_detail(meter_model: &Entity<MeterModel>, source: DetailSource, cx: &mut App) {
     let registry = registry(cx);
@@ -162,10 +183,16 @@ pub fn open_detail(meter_model: &Entity<MeterModel>, source: DetailSource, cx: &
 /// meter's window is still busy with the menu click that asked for Settings.
 pub fn open_settings(meter_model: &Entity<MeterModel>, cx: &mut App) {
     let meter_model = meter_model.clone();
-    cx.defer(move |cx| open_settings_now(&meter_model, cx));
+    cx.defer(move |cx| open_settings_now(&meter_model, None, cx));
 }
 
-fn open_settings_now(meter_model: &Entity<MeterModel>, cx: &mut App) {
+/// [`open_settings`] on `section`, also when the window was already open.
+pub fn open_settings_at(meter_model: &Entity<MeterModel>, section: Section, cx: &mut App) {
+    let meter_model = meter_model.clone();
+    cx.defer(move |cx| open_settings_now(&meter_model, Some(section), cx));
+}
+
+fn open_settings_now(meter_model: &Entity<MeterModel>, section: Option<Section>, cx: &mut App) {
     let registry = registry(cx);
     let placement = cx.global::<Secondary>().placement;
     let opened = registry.borrow_mut().open(WindowKind::Settings, || {
@@ -185,6 +212,12 @@ fn open_settings_now(meter_model: &Entity<MeterModel>, cx: &mut App) {
         .detach();
         Ok(Open { window: handle.into(), model: Some(runtime.into()) })
     });
+    if let (Some(section), Ok(_)) = (section, &opened) {
+        let window = registry.borrow().get(WindowKind::Settings).and_then(|open| open.window.downcast::<SettingsView>());
+        if let Some(window) = window {
+            let _ = window.update(cx, |view, _, cx| view.show_section(section, cx));
+        }
+    }
     finish(WindowKind::Settings, opened, cx);
 }
 

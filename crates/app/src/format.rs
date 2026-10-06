@@ -1,6 +1,8 @@
 //! How the meter writes its figures. Ported from the Tauri overlay
 //! (`overlay/meter/main.js`) and the approved mockup's formatting.
 
+use crate::i18n::fl;
+
 pub fn grouped(value: f64) -> String {
     let digits = format!("{:.0}", value.max(0.0));
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
@@ -68,6 +70,16 @@ pub fn pace(pace: f64) -> String {
     format!("{sign}{:.1}%", (pace * 100.0).abs())
 }
 
+/// The label of a player the game has not named: "You" on the local player's
+/// own row, whose actor id the meter knows without a name, else the actor id.
+pub fn unnamed_player(actor_id: u32, is_you: bool) -> String {
+    if is_you {
+        fl!("common-you")
+    } else {
+        format!("ID:{actor_id}")
+    }
+}
+
 /// Keeps the first and last character: "Mirelle" becomes "M*****e".
 pub fn mask(name: &str) -> String {
     let chars: Vec<char> = name.trim().chars().collect();
@@ -84,9 +96,9 @@ pub fn memory(megabytes: f64) -> Option<String> {
         return None;
     }
     Some(if megabytes >= 1024.0 {
-        format!("{:.1} GB", megabytes / 1024.0)
+        fl!("unit-gigabytes", value = format!("{:.1}", megabytes / 1024.0))
     } else {
-        format!("{megabytes:.0} MB")
+        fl!("unit-megabytes", value = format!("{megabytes:.0}"))
     })
 }
 
@@ -101,13 +113,13 @@ pub fn file_size(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     let size = bytes as f64;
     if size < KB {
-        format!("{bytes} B")
+        fl!("unit-bytes", value = bytes.to_string())
     } else if size < KB * KB {
-        format!("{:.0} KB", size / KB)
+        fl!("unit-kilobytes", value = format!("{:.0}", size / KB))
     } else if size < KB * KB * KB {
-        format!("{:.1} MB", size / (KB * KB))
+        fl!("unit-megabytes", value = format!("{:.1}", size / (KB * KB)))
     } else {
-        format!("{:.1} GB", size / (KB * KB * KB))
+        fl!("unit-gigabytes", value = format!("{:.1}", size / (KB * KB * KB)))
     }
 }
 
@@ -172,6 +184,12 @@ mod tests {
     }
 
     #[test]
+    fn an_unnamed_player_is_you_only_on_your_own_row() {
+        assert_eq!(unnamed_player(7, true), "You");
+        assert_eq!(unnamed_player(7, false), "ID:7");
+    }
+
+    #[test]
     fn memory_switches_to_gigabytes() {
         assert_eq!(memory(800.0).as_deref(), Some("800 MB"));
         assert_eq!(memory(11_468.8).as_deref(), Some("11.2 GB"));
@@ -184,5 +202,17 @@ mod tests {
         assert_eq!(file_size(6_144), "6 KB");
         assert_eq!(file_size(2_200_000), "2.1 MB");
         assert_eq!(file_size(3 * 1024 * 1024 * 1024), "3.0 GB");
+    }
+
+    #[test]
+    fn words_and_units_follow_the_language_and_figures_do_not() {
+        crate::i18n::set_language(crate::i18n::Language::French);
+        assert_eq!(unnamed_player(7, true), "Vous");
+        assert_eq!(file_size(0), "0 o");
+        assert_eq!(file_size(6_144), "6 Ko");
+        assert_eq!(file_size(2_200_000), "2.1 Mo");
+        assert_eq!(memory(11_468.8).as_deref(), Some("11.2 Go"));
+        assert_eq!(compact(48_100_000.0), "48.10M");
+        assert_eq!(grouped(9_840.0), "9,840");
     }
 }

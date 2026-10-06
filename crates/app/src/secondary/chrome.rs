@@ -284,7 +284,7 @@ pub fn tabs(s: Scale) -> Div {
         .bg(rgba(TABS_TRACK))
 }
 
-pub fn tab(id: impl Into<ElementId>, label: &'static str, count: Option<usize>, on: bool, s: Scale) -> Stateful<Div> {
+pub fn tab(id: impl Into<ElementId>, label: impl Into<SharedString>, count: Option<usize>, on: bool, s: Scale) -> Stateful<Div> {
     div()
         .id(id)
         .flex_1()
@@ -299,7 +299,7 @@ pub fn tab(id: impl Into<ElementId>, label: &'static str, count: Option<usize>, 
         .text_color(rgba(if on { TEXT } else { MUTED }))
         .when(on, |tab| tab.bg(rgba(HOT)))
         .when(!on, |tab| tab.cursor_pointer().hover(|tab| tab.bg(rgba(SOFT)).text_color(rgba(TEXT))))
-        .child(label)
+        .child(label.into())
         .children(count.map(|count| {
             div().text_size(s.px(11.)).font_weight(FontWeight::MEDIUM).text_color(rgba(FAINT)).child(count.to_string())
         }))
@@ -419,7 +419,7 @@ pub fn input_box(focused: bool, s: Scale) -> Div {
 }
 
 /// A dropdown: its label above, the chosen value and a chevron in the box.
-pub fn select(id: impl Into<ElementId>, label: &'static str, value: SharedString, open: bool, s: Scale) -> Stateful<Div> {
+pub fn select(id: impl Into<ElementId>, label: impl Into<SharedString>, value: SharedString, open: bool, s: Scale) -> Stateful<Div> {
     div()
         .id(id)
         .flex_1()
@@ -427,7 +427,7 @@ pub fn select(id: impl Into<ElementId>, label: &'static str, value: SharedString
         .flex()
         .flex_col()
         .gap(s.px(3.))
-        .child(div().pl(s.px(2.)).text_size(s.px(11.)).text_color(rgba(FAINT)).child(label))
+        .child(div().pl(s.px(2.)).text_size(s.px(11.)).text_color(rgba(FAINT)).child(label.into()))
         .child(
             input_box(open, s)
                 .pr(s.px(6.))
@@ -468,7 +468,7 @@ pub fn menu_item(id: impl Into<ElementId>, hot: bool, s: Scale) -> Stateful<Div>
 }
 
 /// A 14 px title and one sentence saying what will fill the space.
-pub fn empty(title: Option<&'static str>, line: impl Into<SharedString>, s: Scale) -> Div {
+pub fn empty(title: Option<SharedString>, line: impl Into<SharedString>, s: Scale) -> Div {
     div()
         .flex_none()
         .pt(s.px(14.))

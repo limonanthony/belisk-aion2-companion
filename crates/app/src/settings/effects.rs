@@ -1,16 +1,18 @@
-//! Carries a settings change to what it affects, at once: the overlay model
-//! (every window reads its look from there), the decision log, and the core's
-//! running config. Runs on the UI thread; nothing here touches the meter's own
-//! threads except `apply_config`, which only swaps a lock-protected struct.
+//! Carries a settings change to what it affects, at once: the app's language,
+//! the overlay model (every window reads its look from there), the decision
+//! log, and the core's running config. Runs on the UI thread; nothing here
+//! touches the meter's own threads except `apply_config`, which only swaps a
+//! lock-protected struct.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use aether_core::config::DpsMeterConfig;
-use aether_core::engine::meter::DpsMeter;
+use meter_core::config::DpsMeterConfig;
+use meter_core::engine::meter::DpsMeter;
 use gpui::{App, Entity, Task};
 
 use super::model::{AppSettings, Settings};
+use crate::i18n;
 use crate::meter::MeterModel;
 
 /// The core logs every config it applies, so a run of changes (a slider drag)
@@ -18,16 +20,27 @@ use crate::meter::MeterModel;
 const CORE_APPLY_AFTER: Duration = Duration::from_millis(150);
 
 /// Starts applying changes of `settings`. What the settings were when this is
-/// called is taken as already applied, except the decision log, which is
-/// switched on here.
+/// called is taken as already applied, except the language and the decision
+/// log, which are switched on here.
 pub fn connect(settings: &Entity<Settings>, model: &Entity<MeterModel>, meter: Option<Arc<DpsMeter>>, cx: &mut App) {
     let mut applied = settings.read(cx).get().clone();
+    if let Some(meter) = &meter {
+        meter.set_known_characters(applied.known_characters.clone());
+    }
+    i18n::apply(applied.general.language, cx);
     model.update(cx, |model, _| model.set_decision_log(applied.capture.decision_log));
 
     let model = model.clone();
     let mut core_apply: Option<Task<()>> = None;
     cx.observe(settings, move |settings, cx| {
         let next = settings.read(cx).get().clone();
+        if next.general.language != applied.general.language {
+            i18n::apply(next.general.language, cx);
+            model.update(cx, |model, cx| {
+                model.refresh_words();
+                cx.notify();
+            });
+        }
         if next.overlay != applied.overlay {
             model.update(cx, |model, cx| {
                 model.set_overlay_settings(next.overlay.clone());
@@ -36,6 +49,11 @@ pub fn connect(settings: &Entity<Settings>, model: &Entity<MeterModel>, meter: O
         }
         if next.capture.decision_log != applied.capture.decision_log {
             model.update(cx, |model, _| model.set_decision_log(next.capture.decision_log));
+        }
+        if next.known_characters != applied.known_characters {
+            if let Some(meter) = &meter {
+                meter.set_known_characters(next.known_characters.clone());
+            }
         }
         if let Some(meter) = meter.clone().filter(|meter| core_update(&applied, &next, meter.current_config()).is_some()) {
             let apply = cx.spawn(async move |cx| {
@@ -69,7 +87,7 @@ fn core_update(before: &AppSettings, after: &AppSettings, running: DpsMeterConfi
 mod tests {
     use super::*;
     use crate::settings::model::DetailPlacement;
-    use aether_core::config::CaptureBackendPriority;
+    use meter_core::config::CaptureBackendPriority;
 
     fn running() -> DpsMeterConfig {
         DpsMeterConfig { pvp_mode_on: true, dps_snapshot_interval_ms: 200, ..DpsMeterConfig::default() }
@@ -100,5 +118,29 @@ mod tests {
         after.capture.backend_priority = CaptureBackendPriority::WinDivertFirst;
 
         assert!(core_update(&before, &after, running()).is_none());
+    }
+
+    #[gpui::test]
+    fn choosing_a_language_switches_every_message_at_once_and_back(cx: &mut gpui::TestAppContext) {
+        use gpui::AppContext as _;
+
+        use crate::i18n::{self, Language, LanguageChoice};
+        use crate::meter::OverlaySettings;
+        use crate::settings::model::GeneralSettings;
+
+        let english = AppSettings { general: GeneralSettings { language: LanguageChoice::English }, ..AppSettings::default() };
+        let settings = cx.new(|_| Settings::in_memory(english));
+        let model = cx.new(|_| MeterModel::new(OverlaySettings::default(), None));
+        cx.update(|cx| connect(&settings, &model, None, cx));
+        assert_eq!(crate::format::unnamed_player(1, true), "You");
+
+        let choose = |cx: &mut gpui::TestAppContext, language| {
+            cx.update(|cx| settings.update(cx, |settings, cx| settings.update(cx, |all| all.general.language = language)));
+        };
+        choose(cx, LanguageChoice::French);
+        assert_eq!((i18n::language(), crate::format::unnamed_player(1, true)), (Language::French, "Vous".to_string()));
+
+        choose(cx, LanguageChoice::English);
+        assert_eq!((i18n::language(), crate::format::unnamed_player(1, true)), (Language::English, "You".to_string()));
     }
 }

@@ -1,0 +1,28 @@
+[package]
+name = "meter-core"
+version = "2.4.0"
+license = "GPL-3.0-only"
+description = "Packet capture, parsing and DPS engine behind Aether, with no UI dependency"
+authors = ["Helveticxa"]
+edition = "2021"
+
+[lib]
+name = "meter_core"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.33"
+libloading = "0.8"
+lz4_flex = "0.11"
+crc32fast = "1"
+
+[target.'cfg(windows)'.dependencies]
+windivert-sys = { version = "0.10", features = ["vendored"] }
+windows-048 = { package = "windows", version = "0.48", features = ["Win32_Foundation"] }
+windows = { version = "0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Services",
+    "Win32_System_Threading",
+] }

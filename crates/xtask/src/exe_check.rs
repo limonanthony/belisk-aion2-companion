@@ -16,6 +16,7 @@ const C_RUNTIME_DLL_PREFIXES: [&str; 7] = [
     "api-ms-win-crt-",
     "msvcr",
 ];
+const WINDIVERT_DLL: &str = "WinDivert.dll";
 
 pub fn verify_shipping_exe(bytes: &[u8]) -> Result<()> {
     let exe = PeFile64::parse(bytes).map_err(|error| format!("the exe is not a 64-bit PE file: {error}"))?;
@@ -36,6 +37,10 @@ pub fn verify_shipping_exe(bytes: &[u8]) -> Result<()> {
         .into());
     }
     println!("check: no VC++ runtime or Universal CRT imports (static CRT)");
+
+    let delay_loaded = delay_loaded_dlls(&exe)?;
+    verify_windivert_is_delay_loaded(&imports, &delay_loaded)?;
+    println!("check: {WINDIVERT_DLL} is delay-loaded, not a load-time import (delay-loads: {})", delay_loaded.join(", "));
 
     let subsystem = exe.nt_headers().optional_header().subsystem();
     if subsystem != IMAGE_SUBSYSTEM_WINDOWS_GUI {
@@ -62,6 +67,34 @@ fn imported_dlls(exe: &PeFile64) -> Result<Vec<String>> {
         names.push(String::from_utf8_lossy(table.name(descriptor.name.get(LE))?).into_owned());
     }
     Ok(names)
+}
+
+fn delay_loaded_dlls(exe: &PeFile64) -> Result<Vec<String>> {
+    let sections = exe.section_table();
+    let Some(table) = exe.data_directories().delay_load_import_table(exe.data(), &sections)? else {
+        return Ok(Vec::new());
+    };
+    let mut names = Vec::new();
+    let mut descriptors = table.descriptors()?;
+    while let Some(descriptor) = descriptors.next()? {
+        names.push(String::from_utf8_lossy(table.name(descriptor.dll_name_rva.get(LE))?).into_owned());
+    }
+    Ok(names)
+}
+
+fn verify_windivert_is_delay_loaded(imports: &[String], delay_loaded: &[String]) -> Result<()> {
+    let named = |names: &[String]| names.iter().any(|name| name.eq_ignore_ascii_case(WINDIVERT_DLL));
+    if named(imports) {
+        return Err(format!(
+            "the exe imports {WINDIVERT_DLL} at load time, so Windows refuses to start it without the DLL even \
+             when Npcap works; link it with /DELAYLOAD:{WINDIVERT_DLL}"
+        )
+        .into());
+    }
+    if !named(delay_loaded) {
+        return Err(format!("the exe does not delay-load {WINDIVERT_DLL}; the WinDivert fallback cannot work").into());
+    }
+    Ok(())
 }
 
 fn manifest(exe: &PeFile64) -> Result<String> {
@@ -97,5 +130,32 @@ fn first_data_entry(
     match entry.data(resources)? {
         ResourceDirectoryEntryData::Table(inner) => first_data_entry(resources, inner),
         ResourceDirectoryEntryData::Data(data) => Ok(*data),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn windivert_must_be_delay_loaded() {
+        assert!(verify_windivert_is_delay_loaded(&names(&["KERNEL32.dll"]), &names(&["WinDivert.dll"])).is_ok());
+    }
+
+    #[test]
+    fn a_load_time_windivert_import_is_refused_even_when_also_delay_loaded() {
+        let error = verify_windivert_is_delay_loaded(&names(&["windivert.dll"]), &names(&["WinDivert.dll"]))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("/DELAYLOAD"), "{error}");
+    }
+
+    #[test]
+    fn an_exe_without_the_windivert_delay_load_is_refused() {
+        assert!(verify_windivert_is_delay_loaded(&names(&["KERNEL32.dll"]), &[]).is_err());
     }
 }

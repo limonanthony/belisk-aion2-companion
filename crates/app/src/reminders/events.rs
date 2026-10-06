@@ -4,6 +4,8 @@
 //! Berlin time, which is the clock of an EU player's PC, so the rules are read
 //! on the PC's local clock.
 
+use crate::i18n::fl;
+
 /// Day of the week, Monday first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Weekday {
@@ -60,62 +62,48 @@ pub enum EventId {
 
 pub struct EventInfo {
     pub id: EventId,
-    pub name: &'static str,
     pub rule: Rule,
 }
 
 /// Every event, in the order Settings lists them.
 pub const EVENTS: [EventInfo; 9] = [
-    EventInfo {
-        id: EventId::ShugoFestival,
-        name: "Shugo Festival",
-        rule: Rule::Hourly { minute: 0 },
-    },
-    EventInfo {
-        id: EventId::DimensionalInvasion,
-        name: "Dimensional Invasion",
-        rule: Rule::Hourly { minute: 30 },
-    },
-    EventInfo {
-        id: EventId::RiftPortals,
-        name: "Rift portals",
-        rule: Rule::EveryHours { hours: 3, from_hour: 2 },
-    },
-    EventInfo {
-        id: EventId::WatcherKaira,
-        name: "Watcher Kaira",
-        rule: Rule::EveryHours { hours: 3, from_hour: 1 },
-    },
+    EventInfo { id: EventId::ShugoFestival, rule: Rule::Hourly { minute: 0 } },
+    EventInfo { id: EventId::DimensionalInvasion, rule: Rule::Hourly { minute: 30 } },
+    EventInfo { id: EventId::RiftPortals, rule: Rule::EveryHours { hours: 3, from_hour: 2 } },
+    EventInfo { id: EventId::WatcherKaira, rule: Rule::EveryHours { hours: 3, from_hour: 1 } },
     EventInfo {
         id: EventId::ArtifactSiege,
-        name: "Artifact Siege",
         rule: Rule::Weekly { days: &[Weekday::Mon, Weekday::Thu, Weekday::Sat], hour: 21, minute: 0 },
     },
     EventInfo {
         id: EventId::AbyssFieldBosses,
-        name: "Abyss field bosses",
         rule: Rule::Weekly { days: &[Weekday::Mon, Weekday::Thu, Weekday::Sat], hour: 21, minute: 30 },
     },
     EventInfo {
         id: EventId::GuardianLordNahma,
-        name: "Guardian Lord Nahma",
         rule: Rule::Weekly { days: &[Weekday::Fri, Weekday::Sun], hour: 21, minute: 0 },
     },
-    EventInfo {
-        id: EventId::ArenaOfTactics,
-        name: "Arena of Tactics",
-        rule: Rule::Daily { times: &[(11, 0), (19, 0)] },
-    },
-    EventInfo {
-        id: EventId::RewardKeys,
-        name: "Reward keys refill",
-        rule: Rule::Daily { times: &[(16, 0)] },
-    },
+    EventInfo { id: EventId::ArenaOfTactics, rule: Rule::Daily { times: &[(11, 0), (19, 0)] } },
+    EventInfo { id: EventId::RewardKeys, rule: Rule::Daily { times: &[(16, 0)] } },
 ];
 
 impl EventId {
     pub fn info(self) -> &'static EventInfo {
         &EVENTS[self as usize]
+    }
+
+    pub fn name(self) -> String {
+        match self {
+            Self::ShugoFestival => fl!("reminder-event-shugo-festival"),
+            Self::DimensionalInvasion => fl!("reminder-event-dimensional-invasion"),
+            Self::RiftPortals => fl!("reminder-event-rift-portals"),
+            Self::WatcherKaira => fl!("reminder-event-watcher-kaira"),
+            Self::ArtifactSiege => fl!("reminder-event-artifact-siege"),
+            Self::AbyssFieldBosses => fl!("reminder-event-abyss-field-bosses"),
+            Self::GuardianLordNahma => fl!("reminder-event-guardian-lord-nahma"),
+            Self::ArenaOfTactics => fl!("reminder-event-arena-of-tactics"),
+            Self::RewardKeys => fl!("reminder-event-reward-keys"),
+        }
     }
 }
 
@@ -179,7 +167,7 @@ mod tests {
     fn the_catalogue_lists_every_event_once_and_finds_it_by_id() {
         for (index, info) in EVENTS.iter().enumerate() {
             assert_eq!(info.id as usize, index, "EVENTS is in EventId declaration order");
-            assert_eq!(info.id.info().name, info.name);
+            assert!(!info.id.name().is_empty());
             assert_eq!(EVENTS.iter().filter(|other| other.id == info.id).count(), 1, "row {index}");
         }
     }

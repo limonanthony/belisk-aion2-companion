@@ -120,6 +120,7 @@
         <a href="detail.html">Player detail</a>
         <a href="history.html">Fight history</a>
         <a href="reminders.html">Reminder card</a>
+        <a href="todos.html">To-do window</a>
       </nav>
       <h1>Approved screens <small>reference for the GPUI implementation</small></h1>
       <ul class="rationale">
@@ -154,11 +155,12 @@
       <section class="screen is-wide">
         <div>
           <h2><a href="settings.html">Settings</a></h2>
-          <p>Validated in round 3. Overlay (with the live preview), Meter behaviour, Shortcuts (recorder, conflict), Capture (status, backend, recording, replay, log folder), Personal bests (reset confirm, empty), Reminders (added 2026-10-05: master switch, lead time, sound, test, one switch per event; rows dim when reminders are off), General (language), About (licence, credits, storage, clear-cache dialog).</p>
+          <p>Validated in round 3. Overlay (with the live preview), Meter behaviour, Shortcuts (recorder, conflict), Capture (status, backend, recording, replay, log folder), Personal bests (reset confirm, empty), Reminders (added 2026-10-05: master switch, lead time, sound, test, one switch per event; rows dim when reminders are off), To-dos (added 2026-10-06: daily reset hour, membership, restore the default to-dos, reset them completely with a confirm dialog), General (language), About (licence, credits, storage, clear-cache dialog).</p>
         </div>
         <div class="frames">
           <iframe title="Settings, overlay" src="settings.html?embed&amp;states=overlay" height="680"></iframe>
           <iframe title="Settings, reminders" src="settings.html?embed&amp;states=reminders" height="680"></iframe>
+          <iframe title="Settings, to-dos" src="settings.html?embed&amp;states=todos" height="680"></iframe>
         </div>
       </section>
 
@@ -218,6 +220,18 @@
         </div>
       </section>
 
+      <section class="screen">
+        <div>
+          <h2><a href="todos.html">To-do window</a></h2>
+          <p>Validated 2026-10-06 (direction E). Its own 370 px overlay window, opened from "To-dos" in the meter's "…" menu: one list per character, in folding sections Today, Recharges and This week, each with its countdown. Everything is set by hand: ticks, counts with one-less and one-more arrows (a click on the figure adds one), and optional amounts that stay empty until typed, then refill on schedule and turn yellow when full.</p>
+          <p>A done to-do is struck through and muted where it stands. A click anywhere on a tick row marks it done, with a check ("Mark done", "Undo") at its end under the pointer; counts are done at N. A × under the pointer hides a row, "N hidden · Show" brings rows back, "+ Add a to-do" ends the list. States: fresh week, under way, pointer on a to-do and a done one, a count at its limit, pressing, an amount entered, typing, full, hidden, after Show, adding, removing your own, everything done, keyboard focus, character selector, opening it, try it.</p>
+        </div>
+        <div class="frames">
+          <iframe title="To-do window, under way" src="todos.html?embed&amp;scenes=dark&amp;states=progress" height="620"></iframe>
+          <iframe title="To-do window, pointer on a to-do" src="todos.html?embed&amp;scenes=bright&amp;states=hover" height="620"></iframe>
+        </div>
+      </section>
+
       <section class="tokens" aria-labelledby="tokens-title">
         <h2 id="tokens-title">Design tokens in short</h2>
         <ul>
@@ -230,6 +244,7 @@
           <li>Overlay window parts: segmented tabs, 26 px inputs and selects, popovers on <code>rgba(30, 26, 22, 0.98)</code>, a "Delete?" danger fill with Cancel for confirmations, rows that open to a four-column figure block.</li>
           <li>Main window: opaque canvas <code>#141210</code>, sidebar and title bar <code>#0e0c0b</code>, groups <code>#1b1815</code> with 10 px radius; one cream primary button (<code>#f3ebe1</code> on <code>#17120d</code>) per view; cream switches and sliders.</li>
           <li>Reminder card: the meter's card at the meter's width (220 px over the capsule), 6 px above it; bell header, 13 px event names, 11.5 px facts, a 2 px time-left line; 150 ms fades, 30 s, paused under the pointer.</li>
+          <li>To-do window: the overlay card at 370 px; 26 px rows 2 px apart with a 12 px gutter so names line up under the section labels; done is a 1 px line through the name in <code>muted</code>; a 20 px check and × at the row's end under the pointer only; counts as a 46 px figure between two 20 px arrows; a full amount's row on <code>rgba(242, 198, 109, 0.12)</code>.</li>
         </ul>
       </section>
 

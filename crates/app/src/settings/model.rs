@@ -2,13 +2,16 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use aether_core::config::{CaptureBackendPriority, DpsMeterConfig};
+use meter_core::config::{CaptureBackendPriority, DpsMeterConfig};
+use meter_core::identity::KnownCharacter;
 use gpui::{App, Context, Entity, Global, Task};
 use serde::{Deserialize, Serialize};
 
-use super::store;
+use super::{characters, store};
+use crate::i18n::{fl, LanguageChoice};
 use crate::meter::OverlaySettings;
 use crate::reminders::ReminderSettings;
+use crate::todos::TodoSettings;
 
 /// A change is written to disk once nothing has changed for this long, so a
 /// slider drag causes one write.
@@ -16,18 +19,23 @@ const SAVE_AFTER: Duration = Duration::from_millis(400);
 
 /// "End a fight after": the choices the page offers, in seconds, with 0 for
 /// never. Any stored value from 60 s to an hour is kept as it is.
-pub const END_FIGHT_AFTER_OPTIONS: [(u64, &str); 6] =
-    [(60, "1 min"), (120, "2 min"), (300, "5 min"), (600, "10 min"), (1800, "30 min"), (0, "Never")];
+pub const END_FIGHT_AFTER_OPTIONS: [u64; 6] = [60, 120, 300, 600, 1800, 0];
 const END_FIGHT_AFTER_RANGE: std::ops::RangeInclusive<u64> = 60..=3600;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppSettings {
+    pub general: GeneralSettings,
     pub overlay: OverlaySettings,
     pub behaviour: BehaviourSettings,
     pub capture: CaptureSettings,
     pub windows: WindowSettings,
     pub reminders: ReminderSettings,
+    pub todos: TodoSettings,
+    /// Characters the game named as the player, most recent first; not a
+    /// setting the page shows, and kept when the settings are reset.
+    #[serde(deserialize_with = "characters::deserialize_lenient")]
+    pub known_characters: Vec<KnownCharacter>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,11 +113,19 @@ pub struct WindowSettings {
     pub detail_opens: DetailPlacement,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GeneralSettings {
+    pub language: LanguageChoice,
+}
+
 impl AppSettings {
     /// The values a control or a stored file may have set, pulled into range.
     pub fn clamped(mut self) -> Self {
         self.overlay = self.overlay.clamped();
         self.reminders = self.reminders.clamped();
+        self.todos = self.todos.clamped();
+        self.known_characters = characters::truncated(self.known_characters);
         if self.behaviour.end_fight_after_secs != 0 {
             self.behaviour.end_fight_after_secs =
                 self.behaviour.end_fight_after_secs.clamp(*END_FIGHT_AFTER_RANGE.start(), *END_FIGHT_AFTER_RANGE.end());
@@ -131,6 +147,19 @@ impl AppSettings {
         base.auto_record_unknown_server = self.capture.record_unfamiliar_servers;
         base.collect_mobs = self.capture.collect_mob_data;
         base
+    }
+}
+
+/// A choice of "End a fight after" as the page words it: "5 min", "Never".
+/// A stored value outside the offered choices reads as its minutes.
+pub fn end_fight_after_label(secs: u64) -> String {
+    match secs {
+        0 => fl!("settings-end-fight-never"),
+        secs if secs % 60 == 0 => {
+            let minutes = (secs / 60) as i64;
+            fl!("duration-minutes", minutes = minutes)
+        }
+        secs => fl!("duration-minutes", minutes = format!("{:.1}", secs as f64 / 60.)),
     }
 }
 
@@ -231,7 +260,10 @@ impl Settings {
 
     /// Everything back to its default (Settings → About → Reset settings).
     pub fn reset(&mut self, cx: &mut Context<Self>) {
-        self.update(cx, |settings| *settings = AppSettings::default());
+        let known_characters = self.value.known_characters.clone();
+        self.update(cx, |settings| {
+            *settings = AppSettings { known_characters, ..AppSettings::default() };
+        });
     }
 
     /// Writes any change not yet on disk now, on this thread; used when the
@@ -303,6 +335,18 @@ pub fn install(settings: &Entity<Settings>, cx: &mut App) {
 
 pub fn global(cx: &App) -> Entity<Settings> {
     cx.global::<SettingsHandle>().0.clone()
+}
+
+/// The game named the player's character: remember it, unless it is already
+/// remembered as it is.
+pub fn remember_characters(cx: &mut App, seen: Vec<KnownCharacter>) {
+    global(cx).update(cx, |settings, cx| {
+        settings.update(cx, |settings| {
+            for character in seen {
+                characters::remember(&mut settings.known_characters, character);
+            }
+        });
+    });
 }
 
 /// The meter's capsule button.

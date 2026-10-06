@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-dos: daily and weekly window proposals</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <style>
+      .td {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 0 32px 48px;
+      }
+
+      .td h2 {
+        margin: 30px 0 4px;
+        font-size: 18px;
+        font-weight: 650;
+      }
+
+      .td h2 a {
+        color: var(--page-text);
+      }
+
+      .td .lede {
+        max-width: 92ch;
+        margin: 0 0 12px;
+        color: var(--page-muted);
+      }
+
+      .td b {
+        color: var(--page-text);
+        font-weight: 600;
+      }
+
+      .td ul {
+        max-width: 104ch;
+        margin: 0;
+        padding-left: 18px;
+        color: var(--page-muted);
+      }
+
+      .td li + li {
+        margin-top: 4px;
+      }
+
+      .tag {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: rgba(134, 227, 168, 0.14);
+        color: #86e3a8;
+        font-size: 12px;
+        font-weight: 600;
+        vertical-align: 2px;
+      }
+
+      .frames {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(var(--min, 400px), 1fr));
+        gap: 14px;
+        margin-top: 12px;
+      }
+
+      .shot {
+        margin: 0;
+      }
+
+      .shot figcaption {
+        margin-bottom: 6px;
+        color: var(--page-faint);
+        font-size: 12px;
+      }
+
+      .shot iframe {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-radius: 10px;
+        background: var(--page-surface);
+      }
+
+      table.cmp {
+        width: 100%;
+        max-width: 1200px;
+        margin-top: 10px;
+        border-collapse: collapse;
+        color: var(--page-muted);
+        font-size: 13px;
+      }
+
+      table.cmp th,
+      table.cmp td {
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--page-border);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      table.cmp th {
+        color: var(--page-text);
+        font-weight: 600;
+      }
+
+      table.cmp td:first-child {
+        color: var(--page-text);
+        white-space: nowrap;
+      }
+
+      @media (max-width: 700px) {
+        .td {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+
+        table.cmp {
+          display: block;
+          overflow-x: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="To-do proposals">
+        <a href="index.html" aria-current="page">To-dos overview</a>
+        <a href="e.html">E, struck through when done</a>
+        <a href="settings-todos.html">Settings, To-dos</a>
+        <a href="d.html">D, you set the counts</a>
+        <a href="a.html">A, tabs</a>
+        <a href="b.html">B, one list per character</a>
+        <a href="c.html">C, all characters</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>Daily and weekly to-dos <small>approved 2026-10-06: E with its Settings section, now in <a href="../approved/todos.html">approved/todos.html</a> and the To-dos section of <a href="../approved/settings.html?states=todos">approved/settings.html</a>; this page is kept as history (D is E's base; A, B and C were earlier explorations)</small></h1>
+      <ul class="rationale">
+        <li>A new overlay window for what resets and is lost if not done: Duty Missions every day, dungeon and raid allowances every Wednesday, and the <b>recharges</b> that bank up to a cap (keys, Odyle Energy, dungeon entries), which are lost once full.</li>
+        <li>The packet research found that the meter <b>cannot read any of these counts</b> from the game, so the chosen model is manual: ticks, counts with up and down arrows, and optional amounts that stay empty and ignored unless you type them. D draws that model; E is D with done to-dos struck through instead of checkboxes, a check button under the pointer, a hover × to hide, and "+ Add a to-do" instead of edit mode. The reset hour, the membership and bringing the defaults back go to a new Settings section.</li>
+        <li>Same card, opacity, content scale and Barlow face as History, PvP and Detail; drag by the title, × closes; opened from the meter's "…" menu. It never takes focus from the game, except while you type in a field.</li>
+        <li>Limits and refill times come from the reset research (MetaBot's tables for the Global client; Game8 for Duty Missions and Duty Commands). The reset hour is a setting (09:00 reported by a fan site, 17:00 also seen), never printed as fact. Counts, times and character names are invented.</li>
+      </ul>
+    </header>
+
+    <div class="td">
+      <h2><a href="e.html">E, struck through when done</a> <span class="tag">current proposal</span></h2>
+      <p class="lede">D's window and model with no checkboxes and no edit mode. A done to-do is struck through and muted where it stands; a click anywhere on a tick row marks it done, and under the pointer a small check button ("Mark done"; an undo arrow, "Undo", on a done row) appears at its end: the user's choice. Counts reaching their limit get the same look. A small × appears at the end of the row under the pointer to hide it; each section ends with "2 hidden · Show"; "+ Add a to-do" ends the list; your own to-dos stay. The last state on <a href="e.html">e.html</a> is a working window.</p>
+      <div class="frames" style="--min: 420px">
+        <figure class="shot"><figcaption>Under way: done to-dos struck through</figcaption><iframe title="E, under way" src="e.html?embed&amp;scenes=dark&amp;states=progress" height="620"></iframe></figure>
+        <figure class="shot"><figcaption>Pointer on a to-do: the check ("Mark done") and ×</figcaption><iframe title="E, pointer on a to-do" src="e.html?embed&amp;scenes=dark&amp;states=hover" height="620"></iframe></figure>
+        <figure class="shot"><figcaption>Pointer on a done to-do: "Undo"</figcaption><iframe title="E, pointer on a done to-do" src="e.html?embed&amp;scenes=dark&amp;states=hoverDone" height="620"></iframe></figure>
+        <figure class="shot"><figcaption>Hidden rows: "4 hidden · Show"</figcaption><iframe title="E, hidden rows" src="e.html?embed&amp;scenes=dark&amp;states=hidden" height="620"></iframe></figure>
+        <figure class="shot"><figcaption>Adding a to-do at the end of the list</figcaption><iframe title="E, adding a to-do" src="e.html?embed&amp;scenes=dark&amp;states=adding" height="620"></iframe></figure>
+        <figure class="shot"><figcaption>Opening it: To-dos in the meter's "…" menu</figcaption><iframe title="E, opening it" src="e.html?embed&amp;scenes=dark&amp;states=menu" height="420"></iframe></figure>
+        <figure class="shot"><figcaption>Try it: a working window (nothing is saved)</figcaption><iframe title="E, try it" src="e.html?embed&amp;scenes=dark&amp;states=try" height="620"></iframe></figure>
+      </div>
+
+      <h2><a href="settings-todos.html">Settings, To-dos</a> <span class="tag">E's settings</span></h2>
+      <p class="lede">A new section after Reminders on the approved Settings page: the daily reset hour (09:00, "Reported, not confirmed. Check the countdown in game."; the weekly reset follows on Wednesday), the membership switch (Odyle Energy up to 840 instead of 560), and two ways to bring the defaults back: <b>Restore default to-dos</b> (hidden built-ins come back; your own to-dos and all progress stay) and <b>Reset to-dos completely</b> (also removes your own and empties every count and amount, after a confirm dialog). Both apply to all characters.</p>
+      <div class="frames" style="--min: 1000px">
+        <figure class="shot"><figcaption>To-dos, defaults</figcaption><iframe title="Settings, To-dos" src="settings-todos.html?embed&amp;states=todos" height="690"></iframe></figure>
+        <figure class="shot"><figcaption>Reset to-dos completely: the confirm dialog</figcaption><iframe title="Settings, To-dos, confirm dialog" src="settings-todos.html?embed&amp;states=todos:confirm" height="690"></iframe></figure>
+      </div>
+
+      <h2>Decided in E (2026-10-06)</h2>
+      <ul>
+        <li><b>Done control</b>: the check button at the row's end under the pointer, with the whole row as the target (user: "I like the alternative with just the v to check"). The "Done" / "Undo" word button is dropped.</li>
+        <li><b>Your own to-dos</b> are kept, and Settings can bring the defaults back, either keeping your own to-dos and progress or resetting completely (user). The two buttons, both for all characters, are Main's default, to be confirmed.</li>
+        <li><b>Membership</b> lives in Settings, To-dos.</li>
+      </ul>
+
+      <h2>Still open in E, with a recommendation each</h2>
+      <ul>
+        <li><b>The line</b>: through the name (recommended, the usual "done" mark; GPUI draws it natively). A line over the name is drawn once to compare: it reads as a divider and GPUI would have to draw it by hand.</li>
+        <li><b>Counts have no check</b>: reaching the limit with the arrows or the figure is what makes them done (recommended). A check that jumps straight to the limit would add a third control to busy rows.</li>
+        <li><b>× on your own to-dos removes them</b>, with "Removed … Undo" for four seconds (recommended); the defaults are hidden, never deleted.</li>
+        <li><b>"Show" lists the hidden rows in place, faded, each with a put-back button</b> (recommended: you can bring back one dungeon). Settings' "Restore default to-dos" puts them all back at once, on every character.</li>
+        <li><b>The check and the × are not tab stops</b>; from the keyboard, Space or Enter on the row marks it done and Delete hides it (recommended: one tab stop per row).</li>
+        <li><b>After a hide, the row that slides under the pointer keeps its × back until the pointer moves</b>, so a double click hides one row, not two (recommended).</li>
+        <li><b>Restore default to-dos needs no confirmation</b>, only a "6 to-dos back" badge; nothing is lost (recommended). Reset to-dos completely asks first, Cancel focused.</li>
+        <li><b>The reset hour is chosen by whole hours</b> (recommended: both candidates, 09:00 and 17:00, are on the hour).</li>
+        <li><b>Membership is one switch for every character</b> (recommended: a membership belongs to the account). Turned off again, an amount above 560 is cut to 560.</li>
+        <li><b>To-dos sits after Reminders</b> in the Settings sidebar (recommended: the two in-game timing features side by side).</li>
+      </ul>
+
+      <h2><a href="d.html">D, you set the counts</a> <span class="tag">E's base</span></h2>
+      <p class="lede">B's window (one list per character, folding Today, Recharges and This week, each with its countdown) with A's one-line rows. Counts are "9/14" with one-less and one-more arrows, and a click on the figure adds one; amounts stay a quiet dash until you type what you have, then the meter adds the refill and says when it is full. The last state on <a href="d.html">d.html</a> is a working window.</p>
+      <div class="frames" style="--min: 420px">
+        <figure class="shot"><figcaption>Fresh week: every count at 0, amounts empty</figcaption><iframe title="D, fresh week" src="d.html?embed&amp;scenes=dark&amp;states=fresh" height="620"></iframe></figure>
+        <figure class="shot"><figcaption>Under way: counts, ticks, Sanctuary open</figcaption><iframe title="D, under way" src="d.html?embed&amp;scenes=dark&amp;states=progress" height="620"></iframe></figure>
+        <figure class="shot"><figcaption>Amounts: full, being wasted</figcaption><iframe title="D, being wasted" src="d.html?embed&amp;scenes=dark&amp;states=waste" height="620"></iframe></figure>
+        <figure class="shot"><figcaption>Typing an amount, and how to clear it</figcaption><iframe title="D, typing an amount" src="d.html?embed&amp;scenes=dark&amp;states=typing" height="620"></iframe></figure>
+        <figure class="shot"><figcaption>Edit mode: hide, show, add your own</figcaption><iframe title="D, edit mode" src="d.html?embed&amp;scenes=dark&amp;states=edit" height="620"></iframe></figure>
+        <figure class="shot"><figcaption>Try it: a working window (nothing is saved)</figcaption><iframe title="D, try it" src="d.html?embed&amp;scenes=dark&amp;states=try" height="620"></iframe></figure>
+      </div>
+
+      <h2>Open choices in D, with a recommendation each</h2>
+      <ul>
+        <li><b>A click on a count's figure adds one</b>: keep it. It is the largest target for the usual "did one more"; the arrows correct a slip. On an amount the same click opens the field instead, and the figure looks like a field under the pointer, so the two are told apart.</li>
+        <li><b>Unknown Fissure's name</b>: "Daily Dungeon · Unknown Fissure" under This week, the game's own word plus where it is; the tooltip says it resets on Wednesday.</li>
+        <li><b>Default reset hour</b>: 09:00 as a setting with "Change" in the footer, until you check the in-game countdown (17:00 is the other candidate).</li>
+        <li><b>Recharges the game counts per dungeon</b>: one "Conquest dungeons" row (the one you farm), separate rows for Deus Research Base, Shattered Arkanis, Abandoned Balaur Fortress and Fafnium Laboratory, as drawn. One row per Conquest dungeon would add six rows that are empty for most players.</li>
+        <li><b>Sanctuary and Exploration as folding groups</b>: yes; they keep This week at ten rows. The alternative is one row each (16 more rows).</li>
+        <li><b>Odyle Energy's arrows</b>: 10 at a time (everything else 1); typing is the quick way after a big spend.</li>
+        <li><b>Membership</b>: one box in edit mode that raises Odyle Energy to 840. Shugo keys' membership cap is not offered: the sources disagree (28, 32 or 56).</li>
+        <li><b>Suggested +1 from boss kills</b>: off by default, built later; it needs a boss-to-to-do table that does not exist yet.</li>
+        <li><b>Default list</b>: as drawn; Duty Commands (Game8's figure only) start hidden; Growth dungeons (hours, not counts) left out.</li>
+        <li><b>Typing an amount takes the keyboard</b> from the game until Enter, Esc or a click outside, like the PvP name field. The alternative, arrows only, makes Odyle Energy slow to set.</li>
+        <li><b>Opening</b>: still the "To-dos" item in the meter's "…" menu (drawn in <a href="a.html">A</a>), with "1 full" beside it while a typed amount is full.</li>
+      </ul>
+
+      <h2>Earlier explorations: A, B and C</h2>
+      <p class="lede">Drawn before the packet research showed the meter cannot read the counts; kept for reference. Their recharges use "Used up" with an estimate (A, B) or counters the meter fills (C). Their Deus Research Base and Shattered Arkanis cap (4) was wrong: it is 14.</p>
+      <table class="cmp">
+        <thead>
+          <tr><th></th><th>A, tabs</th><th>B, one list per character <span class="tag">recommended base</span></th><th>C, all characters</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Width</td><td>340 px</td><td>370 px</td><td>520 px</td></tr>
+          <tr><td>Layout</td><td>Daily | Weekly tabs, one line per to-do</td><td>One list: Today, Recharges, This week; sections fold; two lines per to-do</td><td>Daily | Weekly tabs; a grid, one column per character</td></tr>
+          <tr><td>Countdowns</td><td>One line under the tabs</td><td>On each section label</td><td>Beside the tabs</td></tr>
+          <tr><td>Recharges</td><td>Click "Used up"; the meter estimates "Full in 2 d 16 h"</td><td>Same as A</td><td>Counters ("8/14") the meter refills; you correct them in a popover</td></tr>
+          <tr><td>Ticks</td><td>Manual</td><td>Manual, plus <b>suggested</b> ticks from boss kills, confirmed by a click</td><td>Manual</td></tr>
+          <tr><td>Characters</td><td>None: one list</td><td>Selector; the list follows the character in game; account to-dos marked</td><td>All at once (three most recent); account to-dos span the server's characters</td></tr>
+          <tr><td>Edit</td><td>Show/hide, add your own</td><td>Same, per character</td><td>Show/hide per character per to-do, hide whole characters</td></tr>
+        </tbody>
+      </table>
+
+      <h2><a href="a.html">A, tabs, compact checklist</a></h2>
+      <p class="lede">The simplest window. Daily holds Duty Missions (the one hard daily) and the recharges; Weekly holds the Wednesday allowances. A yellow row means a recharge is full and new charges are being lost.</p>
+      <div class="frames" style="--min: 390px">
+        <figure class="shot"><figcaption>Opening it: the meter's "…" menu</figcaption><iframe title="A, opening" src="a.html?embed&amp;scenes=dark&amp;states=open" height="330"></iframe></figure>
+        <figure class="shot"><figcaption>Daily</figcaption><iframe title="A, daily" src="a.html?embed&amp;scenes=dark&amp;states=daily" height="500"></iframe></figure>
+        <figure class="shot"><figcaption>Being wasted</figcaption><iframe title="A, being wasted" src="a.html?embed&amp;scenes=dark&amp;states=waste" height="500"></iframe></figure>
+        <figure class="shot"><figcaption>Edit mode</figcaption><iframe title="A, edit" src="a.html?embed&amp;scenes=dark&amp;states=edit" height="540"></iframe></figure>
+      </div>
+
+      <h2><a href="b.html">B, one list per character, with suggestions</a></h2>
+      <p class="lede">The list belongs to the character you are playing (the meter remembers name, server and class). The meter proposes a tick when it sees a weekly dungeon's last boss fall; it never counts on its own.</p>
+      <div class="frames" style="--min: 420px">
+        <figure class="shot"><figcaption>Today and recharges</figcaption><iframe title="B, daily" src="b.html?embed&amp;scenes=dark&amp;states=daily" height="580"></iframe></figure>
+        <figure class="shot"><figcaption>Suggested tick</figcaption><iframe title="B, suggested tick" src="b.html?embed&amp;scenes=dark&amp;states=suggest" height="580"></iframe></figure>
+        <figure class="shot"><figcaption>Character selector</figcaption><iframe title="B, character selector" src="b.html?embed&amp;scenes=dark&amp;states=switch" height="580"></iframe></figure>
+        <figure class="shot"><figcaption>Pointer and keyboard focus</figcaption><iframe title="B, pointer and focus" src="b.html?embed&amp;scenes=dark&amp;states=focus" height="580"></iframe></figure>
+      </div>
+
+      <h2><a href="c.html">C, all characters at once, with counters</a></h2>
+      <p class="lede">For players with alts: the grid shows which character is wasting what. Recharges are counters the meter fills on schedule; a run is corrected in a popover.</p>
+      <div class="frames" style="--min: 570px">
+        <figure class="shot"><figcaption>Being wasted: an alt left alone</figcaption><iframe title="C, being wasted" src="c.html?embed&amp;scenes=dark&amp;states=waste" height="520"></iframe></figure>
+        <figure class="shot"><figcaption>Counter popover</figcaption><iframe title="C, counter popover" src="c.html?embed&amp;scenes=dark&amp;states=counter" height="620"></iframe></figure>
+      </div>
+
+      <h2>Recommendations at the time (answered by the D model)</h2>
+      <ul>
+        <li><b>Layout</b>: <b>B's one list with folding sections, but with A's one-line rows</b> (the fact line moves to a tooltip). Daily has only one hard to-do (Duty Missions); the rest of "daily" is recharges with their own clocks (16:00 keys, every 3 h energy), so each section carrying its own countdown says more than one line under tabs, and folding a done section keeps the window short. Two-line rows make the list scroll too soon on a game screen.</li>
+        <li><b>Recharges</b>: <b>"Used up" with an estimate (A, B)</b>. One click, no numbers to type, and it answers the real question, "when is it full?". Its weak spot: after a partial spend, Used up assumes empty, so the warning comes late. The counters (C) are closer to the truth but need a correction after every run.</li>
+        <li><b>Suggested ticks</b>: <b>yes, with a confirm click (B)</b>, only for weekly to-dos that end on a boss the meter already knows (Ascension Trial, Subjugation, Sanctuary raids, boss-kill counts). A kill does not prove the reward was taken, so the meter never counts by itself. This needs a boss → to-do table in the bundled data, which does not exist yet.</li>
+        <li><b>Per character or account</b>: <b>per character with the selector (B)</b>, following the character in game; Duty Missions marked "Account" and shared by the characters of one server. C's grid could later become a wider "All characters" view of the same data.</li>
+        <li><b>Editing</b>: a show/hide eye on every row and "Add a to-do" (a single tick, daily or weekly); hidden rows stay listed, faded. Per character in B and C. Typing in the add field is the one moment the window takes the keyboard, as the PvP name field does.</li>
+        <li><b>Opening</b>: <b>a "To-dos" item in the meter's "…" menu</b>, between PvP meter and Settings, with "1 full" beside it while a recharge is wasting. Alternatives for later: a reminder card when something becomes full (the approved reminder card), the tray menu (phase 5), a shortcut.</li>
+      </ul>
+
+      <h2>Decided in A, B and C (D keeps the first two)</h2>
+      <ul>
+        <li>Rows never move when ticked (done rows only dim), so nothing jumps under the pointer.</li>
+        <li>Your tick: the cream box with an ink check (the "you" badge). Suggested: an empty box on a green edge. Full recharge: a yellow filled row with the warning glyph and words ("Full since 09:00"), never colour alone.</li>
+        <li>Counts up to 7 as segments (squarer than the gauge: 2 px radius on 5 px), longer counts as a 5 px bar with a 2 px radius and a figure.</li>
+        <li>The footer says "Reset at 09:00 is reported, not confirmed" until you confirm the hour; a Settings row would change it.</li>
+      </ul>
+    </div>
+  </body>
+</html>

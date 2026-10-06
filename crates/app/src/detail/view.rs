@@ -19,6 +19,7 @@ use super::model::DetailModel;
 use crate::assets::{Icon, COMBAT_POWER};
 use crate::format;
 use crate::history;
+use crate::i18n::fl;
 use crate::meter::{MeterModel, OverlaySettings};
 use crate::overlay::WindowDrag;
 use crate::secondary::chrome::{self, Look, Scale, Tone, CREAM, FAINT, GOOD, MUTED, SOFT};
@@ -98,16 +99,12 @@ impl Render for DetailView {
         let s = look.s;
         let Some(data) = model.data() else {
             let header = chrome::header(
-                div().text_size(s.px(14.5)).font_weight(FontWeight::SEMIBOLD).text_color(rgba(FAINT)).child("No player selected"),
+                div().text_size(s.px(14.5)).font_weight(FontWeight::SEMIBOLD).text_color(rgba(FAINT)).child(fl!("detail-no-player")),
                 Vec::new(),
                 &self.drag,
                 s,
             );
-            let empty = chrome::empty(
-                Some("Pick a player"),
-                "Click a player in the meter, a row in the PvP window or a player inside a history record to see their skills and buffs here.",
-                s,
-            );
+            let empty = chrome::empty(Some(fl!("detail-pick-title").into()), fl!("detail-pick-line"), s);
             return chrome::root(look).child(chrome::card(WIDTH, look).child(header).child(empty));
         };
         let (colours, saved_at) = match model.source() {
@@ -123,7 +120,7 @@ impl Render for DetailView {
             .child(figures(&data.summary, none, s));
         card = if none {
             card.child(
-                chrome::empty(Some("No skill data"), no_skills_line(data.mode), s)
+                chrome::empty(Some(fl!("detail-no-skills-title").into()), no_skills_line(data.mode), s)
                     .pt(s.px(14.))
                     .pb(s.px(8.)),
             )
@@ -147,7 +144,7 @@ impl DetailView {
         let max = SKILLS_SHOWN as f32 * SKILL_ROW + (SKILLS_SHOWN - 1) as f32 * ROW_GAP + extra;
         let content = rows as f32 * SKILL_ROW + rows.saturating_sub(1) as f32 * ROW_GAP + extra;
         let overflows = content > max;
-        let column = |text: &'static str, width: f32| chrome::figure(text, Some(width), s);
+        let column = |text: String, width: f32| chrome::figure(text, Some(width), s);
         let head = chrome::table_head(s)
             .mt(s.px(8.))
             .pl(s.px(30.))
@@ -157,12 +154,12 @@ impl DetailView {
                     .flex_1()
                     .flex()
                     .gap(s.px(6.))
-                    .child("Skill")
+                    .child(fl!("detail-skill"))
                     .child(div().text_color(rgba(FAINT)).child(rows.to_string())),
             )
-            .child(column("Hits", 40.))
-            .child(column("Crit", 46.))
-            .child(column("Total", 92.))
+            .child(column(fl!("detail-hits"), 40.))
+            .child(column(fl!("detail-crit"), 46.))
+            .child(column(fl!("detail-total"), 92.))
             .child(div().flex_none().w(s.px(14.)));
         let list = div().flex().flex_col().gap(s.px(ROW_GAP)).children(data.skills.iter().map(|skill| {
             let open = expanded == Some(skill.code);
@@ -222,16 +219,14 @@ impl DetailView {
     }
 
     fn buff_panel(&self, panel: Panel, buffs: &[BuffRow], colours: &Colours, s: Scale, cx: &Context<Self>) -> Div {
-        let (open, title, scroll, id) = match panel {
-            Panel::Player => (self.player_buffs_open, "Player buffs", &self.player_buffs_scroll, "player-buffs"),
-            Panel::Target => (self.target_buffs_open, "", &self.target_buffs_scroll, "target-buffs"),
+        let (open, scroll, id) = match panel {
+            Panel::Player => (self.player_buffs_open, &self.player_buffs_scroll, "player-buffs"),
+            Panel::Target => (self.target_buffs_open, &self.target_buffs_scroll, "target-buffs"),
         };
         let title = match panel {
-            Panel::Player => title.to_string(),
-            Panel::Target => {
-                let boss = self.model.read(cx).data().is_some_and(|data| data.target_is_boss);
-                if boss { "Boss buffs" } else { "Target buffs" }.to_string()
-            }
+            Panel::Player => fl!("detail-player-buffs"),
+            Panel::Target if self.model.read(cx).data().is_some_and(|data| data.target_is_boss) => fl!("detail-boss-buffs"),
+            Panel::Target => fl!("detail-target-buffs"),
         };
         let up = buffs.iter().filter(|buff| buff.active).count();
         let head = div()
@@ -256,7 +251,7 @@ impl DetailView {
             .child(title)
             .child(chrome::count(buffs.len().to_string(), s))
             .child(div().flex_1())
-            .child(chrome::count(format!("{up} up now"), s));
+            .child(chrome::count(fl!("detail-buffs-up-now", count = up), s));
         let body = (open && !buffs.is_empty()).then(|| {
             let rows = buffs.len();
             let max = BUFFS_SHOWN as f32 * BUFF_ROW + (BUFFS_SHOWN - 1) as f32 * BUFF_GAP;
@@ -317,8 +312,8 @@ fn header(data: &DetailData, settings: &OverlaySettings, drag: &WindowDrag, s: S
             .child(format::grouped(power as f64))
     });
     let chip = match data.mode {
-        DetailMode::History => chrome::chip(Some(Icon::History), "History", Tone::Warn, s),
-        DetailMode::Live | DetailMode::Session => chrome::chip(None, "Live", Tone::Good, s),
+        DetailMode::History => chrome::chip(Some(Icon::History), fl!("detail-chip-history"), Tone::Warn, s),
+        DetailMode::Live | DetailMode::Session => chrome::chip(None, fl!("detail-chip-live"), Tone::Good, s),
     };
     chrome::header(
         div().min_w_0().flex().items_center().gap(s.px(8.)).child(who).children(power),
@@ -330,14 +325,14 @@ fn header(data: &DetailData, settings: &OverlaySettings, drag: &WindowDrag, s: S
 
 fn sub_line(data: &DetailData, saved_at: Option<u64>, s: Scale) -> Div {
     let (glyph, place, when): (Icon, String, String) = match data.mode {
-        DetailMode::Live => (Icon::Target, data.target_name.clone().unwrap_or_else(|| "No target".to_string()), "current target".to_string()),
-        DetailMode::Session => (Icon::Target, "Session".to_string(), "every target since the last reset".to_string()),
+        DetailMode::Live => (Icon::Target, data.target_name.clone().unwrap_or_else(|| fl!("detail-no-target")), fl!("detail-current-target")),
+        DetailMode::Session => (Icon::Target, fl!("common-session"), fl!("detail-every-target")),
         DetailMode::History => (
             Icon::Clock,
-            data.target_name.clone().unwrap_or_else(|| "Unknown target".to_string()),
+            data.target_name.clone().unwrap_or_else(|| fl!("detail-unknown-target")),
             match saved_at {
-                Some(at) => format!("{}, saved record", history::record_time(at)),
-                None => "saved record".to_string(),
+                Some(at) => fl!("detail-saved-record-at", time = history::record_time(at)),
+                None => fl!("detail-saved-record"),
             },
         ),
     };
@@ -359,7 +354,7 @@ fn sub_line(data: &DetailData, saved_at: Option<u64>, s: Scale) -> Div {
 /// Damage, DPS, fight time and hits on one plate; the hit types on a smaller
 /// one below. Without skill data none of them is known.
 fn figures(summary: &Summary, none: bool, s: Scale) -> Div {
-    let figure = |label: &'static str, value: String, size: f32| {
+    let figure = |label: String, value: String, size: f32| {
         div()
             .flex_1()
             .min_w_0()
@@ -383,18 +378,18 @@ fn figures(summary: &Summary, none: bool, s: Scale) -> Div {
     let known = |value: String| if none { "--".to_string() } else { value };
     let fight = if summary.fight_secs > 0.0 && !none { format::duration(summary.fight_secs) } else { "--".to_string() };
     let key = plate(6., 7.)
-        .child(figure("Damage", known(format::grouped(summary.damage as f64)), 16.))
-        .child(figure("DPS", known(format::grouped(summary.dps)), 16.))
-        .child(figure("Fight", fight, 16.))
-        .child(figure("Hits", known(format::grouped(f64::from(summary.hits))), 16.));
+        .child(figure(fl!("common-damage"), known(format::grouped(summary.damage as f64)), 16.))
+        .child(figure(fl!("common-dps"), known(format::grouped(summary.dps)), 16.))
+        .child(figure(fl!("detail-fight"), fight, 16.))
+        .child(figure(fl!("detail-hits"), known(format::grouped(f64::from(summary.hits))), 16.));
     let rates = [
-        ("Critical", summary.critical),
-        ("Back", summary.back),
-        ("Front", summary.front),
-        ("Double", summary.double),
-        ("Perfect", summary.perfect),
-        ("Parry", summary.parry),
-        ("Multi", summary.multi),
+        (fl!("detail-critical"), summary.critical),
+        (fl!("detail-back"), summary.back),
+        (fl!("detail-front"), summary.front),
+        (fl!("detail-double"), summary.double),
+        (fl!("detail-perfect"), summary.perfect),
+        (fl!("detail-parry"), summary.parry),
+        (fl!("detail-multi"), summary.multi),
     ];
     let hits = rates
         .into_iter()
@@ -404,7 +399,7 @@ fn figures(summary: &Summary, none: bool, s: Scale) -> Div {
 
 /// The twelve figures a skill row opens to, four to a line.
 fn more(skill: &SkillRow, s: Scale) -> impl IntoElement {
-    let cell = |label: &'static str, value: AnyElement| {
+    let cell = |label: String, value: AnyElement| {
         div()
             .w(relative(0.25))
             .flex()
@@ -427,7 +422,7 @@ fn more(skill: &SkillRow, s: Scale) -> impl IntoElement {
     let breakdown: Vec<String> = skill
         .multi_breakdown
         .iter()
-        .map(|multi| format!("{} hits: {} ({})", multi.hits, multi.count, format::percent(multi.share)))
+        .map(|multi| fl!("detail-multi-hits", hits = multi.hits, count = multi.count, share = format::percent(multi.share)))
         .collect();
     let multi = div()
         .id(("multi", u64::from(skill.code)))
@@ -447,18 +442,18 @@ fn more(skill: &SkillRow, s: Scale) -> impl IntoElement {
         .flex()
         .flex_wrap()
         .gap_y(s.px(8.))
-        .child(cell("Perfect", value(rate(skill.perfect))))
-        .child(cell("Double", value(rate(skill.double))))
-        .child(cell("Front", value(rate(skill.front))))
-        .child(cell("Back", value(rate(skill.back))))
-        .child(cell("Parry", value(rate(skill.parry))))
-        .child(cell("Multi", value(rate(skill.multi))))
-        .child(cell("Multi dmg", multi))
-        .child(cell("Spec", spec))
-        .child(cell("Min", value(format::grouped(skill.min as f64))))
-        .child(cell("Max", value(format::grouped(skill.max as f64))))
-        .child(cell("Average", value(format::grouped(average))))
-        .child(cell("Total", value(format::grouped(skill.total as f64))))
+        .child(cell(fl!("detail-perfect"), value(rate(skill.perfect))))
+        .child(cell(fl!("detail-double"), value(rate(skill.double))))
+        .child(cell(fl!("detail-front"), value(rate(skill.front))))
+        .child(cell(fl!("detail-back"), value(rate(skill.back))))
+        .child(cell(fl!("detail-parry"), value(rate(skill.parry))))
+        .child(cell(fl!("detail-multi"), value(rate(skill.multi))))
+        .child(cell(fl!("detail-multi-damage"), multi))
+        .child(cell(fl!("detail-spec"), spec))
+        .child(cell(fl!("detail-min"), value(format::grouped(skill.min as f64))))
+        .child(cell(fl!("detail-max"), value(format::grouped(skill.max as f64))))
+        .child(cell(fl!("detail-average"), value(format::grouped(average))))
+        .child(cell(fl!("detail-total"), value(format::grouped(skill.total as f64))))
 }
 
 fn buff_row(buff: &BuffRow, colour: Option<u32>, s: Scale) -> impl IntoElement {
@@ -476,7 +471,7 @@ fn buff_row(buff: &BuffRow, colour: Option<u32>, s: Scale) -> impl IntoElement {
         .text_size(s.px(10.5))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(if buff.active { rgb(GOOD) } else { rgba(FAINT) })
-        .child(if buff.active { "Up now" } else { "Ended" });
+        .child(if buff.active { fl!("detail-buff-up-now") } else { fl!("detail-buff-ended") });
     let line = div()
         .flex()
         .items_center()
@@ -524,11 +519,11 @@ fn skill_icon(path: Option<&str>, size: f32, radius: f32, s: Scale) -> AnyElemen
     }
 }
 
-fn no_skills_line(mode: DetailMode) -> &'static str {
+fn no_skills_line(mode: DetailMode) -> String {
     match mode {
-        DetailMode::Live => "This player has not damaged the current target. Buffs they cast still show below.",
-        DetailMode::Session => "This player has not damaged anything since the last reset. Buffs they cast still show below.",
-        DetailMode::History => "This player did not damage the target of this record. Buffs they cast still show below.",
+        DetailMode::Live => fl!("detail-no-skills-live"),
+        DetailMode::Session => fl!("detail-no-skills-session"),
+        DetailMode::History => fl!("detail-no-skills-history"),
     }
 }
 

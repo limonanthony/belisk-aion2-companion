@@ -27,7 +27,7 @@ Four AION2 meters were evaluated before forking:
 The deciding factor for a global-server target: NOIA2 **does not hardcode a server
 address**. It scans every network interface for the heartbeat magic
 `[0x0E, 0x00, 0x36]` and infers the device and port from whichever interface
-answers (`crates/aether-core/src/capture/capturer.rs`, `inspect_device_for_magic`).
+answers (`crates/core/src/capture/capturer.rs`, `inspect_device_for_magic`).
 The Kotlin project, by contrast, pins the Korean server (`206.127.156.0/24:13328`)
 in a properties file. Auto-discovery should carry to the global servers unchanged.
 
@@ -59,6 +59,9 @@ For the record, the vendored binaries are **byte-identical** to the official
 signature is upstream WinDivert's own signer, not something this fork's ancestor
 introduced.
 
+The native build delay-loads `WinDivert.dll`, so the exe starts and captures with
+Npcap when the two files are absent; they still ship in the zip for the fallback.
+
 The full hashes, which `cargo xtask dist` checks before packaging:
 
 |File|sha256|
@@ -69,7 +72,7 @@ The full hashes, which `cargo xtask dist` checks before packaging:
 The licence text (LGPL-3.0 or GPL-2.0, your choice) is `crates/app/windivert/LICENSE`,
 from the same upstream release.
 
-`crates/aether-core/src/preflight.rs` replaces `check_capture_runtime_status`
+`crates/core/src/preflight.rs` replaces `check_capture_runtime_status`
 with a weighed report:
 
 - **Required vs optional is computed, not fixed.** Capture needs one backend, so
@@ -146,7 +149,7 @@ server field sits inside a player-info packet. On any service whose ids fall
 outside Taiwan's range, `find_server_id` returns `None` and **no player is ever
 named**: a silent, total failure with no error to go on.
 
-`crates/aether-core/src/region.rs` replaces it with per-region profiles:
+`crates/core/src/region.rs` replaces it with per-region profiles:
 
 | Profile | Server-id rule |
 |---|---|
@@ -296,7 +299,7 @@ in game for every parser attempt is the slow part.
 
 ### Packet recording and replay
 
-`crates/aether-core/src/capture/recorder.rs` writes raw packets to
+`crates/core/src/capture/recorder.rs` writes raw packets to
 `%APPDATA%/<app>/recordings/*.aetherpc`, tapped in the dispatcher **before**
 reassembly, so a recording holds exactly what capture produced.
 
@@ -315,7 +318,7 @@ full, and a silently lossy replay would be worse than a slow one.
 
 ### Opcode census
 
-`crates/aether-core/src/capture/census.rs` counts every dispatched packet by
+`crates/core/src/capture/census.rs` counts every dispatched packet by
 opcode, recording payload size ranges and whether a parser claims it.
 
 This answers the question that decides everything else on day one: are the
@@ -401,7 +404,7 @@ you are in the game, and a new window takes the keyboard by default.
 
 ## Boss fights (2.3.0)
 
-**English names.** `crates/aether-core/data/npc_names_en.json` (mob code -> name, about
+**English names.** `crates/core/data/npc_names_en.json` (mob code -> name, about
 8,000) replaces upstream's Traditional Chinese catalogue, in the backend and in
 History alike. It is built by `scripts/build-npc-names.mjs` from
 Kuroukihime/AIon2-Dps-Meter's `mobs.json` (GPL-3.0), with NOIA2's partial
@@ -412,7 +415,7 @@ the same project. The snapshot builder used to clone the whole name map five
 times a second; it now looks names up one at a time
 (`DataStorage::mob_name`).
 
-**Personal bests** (`crates/aether-core/src/personal_best.rs`, tested) keep your best DPS
+**Personal bests** (`crates/core/src/personal_best.rs`, tested) keep your best DPS
 per character and boss in `history/personal_bests.json`, apart from the
 history so deleting it keeps them. They learn from every record the history
 saves, and are seeded from the history on disk on first run. A fight counts
@@ -688,7 +691,7 @@ The fork inherited a fair amount of scaffolding and dead weight. Removed:
 
 - **~1.7 MB of unreferenced JSON at the repository root** (`mobs.json`,
   `npc_names.json`, `npc_data.json`, `abnormal_ids_full.json`). The copies the
-  build actually uses live under `src/games/aion2/data/` and `crates/aether-core/data/`.
+  build actually uses live under `src/games/aion2/data/` and `crates/core/data/`.
 - **`.agents/skills/`** and `skills-lock.json` — vendored third-party agent
   documentation for shadcn and Tauri, unrelated to this project.
 - **Path of Exile 2 scaffolding.** `POE2_GAME` was never in `ALL_GAMES`, its
@@ -762,6 +765,6 @@ beside the exe; `icon.ico` to `crates/app/windows/`, embedded as the exe icon
 by the `.rc` files.
 
 Merging `upstream/main` from here: changes to the deleted paths are resolved by
-keeping them deleted. Core changes land in `crates/aether-core` following the
-phase 1 renames (`src-tauri/src/dps_meter/**` to `crates/aether-core/src/**`,
-`src-tauri/data/*.json` to `crates/aether-core/data/`).
+keeping them deleted. Core changes land in `crates/core` following the
+phase 1 renames (`src-tauri/src/dps_meter/**` to `crates/aether-core/src/**`, then to `crates/core/src/**`;
+`src-tauri/data/*.json` to `crates/core/data/`), so upstream's `src-tauri/src/dps_meter/**` now maps to `crates/core/src/**`.

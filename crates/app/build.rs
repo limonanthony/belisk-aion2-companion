@@ -4,8 +4,8 @@
 //!
 //! Capture needs Administrator, so the shipped binary asks for it; a build with
 //! the `probes` feature asks for nothing, so the development checks run from an
-//! ordinary terminal. The binary imports WinDivert.dll at load time, so the DLL
-//! (and the driver it installs) must sit in the same folder as the exe.
+//! ordinary terminal. The binary delay-loads WinDivert.dll: with Npcap the meter
+//! starts without the DLL and the driver beside it, which only the fallback needs.
 
 use std::path::{Path, PathBuf};
 
@@ -18,6 +18,15 @@ fn main() {
     }
     embed_manifest_and_icon();
     copy_windivert_beside_the_binary();
+    delay_load_windivert();
+}
+
+/// WinDivert.dll only matters when Npcap cannot capture, so the exe must start
+/// without it. The guard in meter-core's `windivert_capturer` checks the DLL
+/// loads before the first WinDivert call.
+fn delay_load_windivert() {
+    println!("cargo:rustc-link-arg-bins=/DELAYLOAD:WinDivert.dll");
+    println!("cargo:rustc-link-arg-bins=delayimp.lib");
 }
 
 /// Writes `skill_icons.rs` into OUT_DIR: one `("skills/<file>", bytes)` entry

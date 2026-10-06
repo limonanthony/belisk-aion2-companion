@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use aether_core::models::combat::PvpCombatStatsRow;
+use meter_core::models::combat::PvpCombatStatsRow;
 use gpui::{
     div, prelude::*, rgb, rgba, Animation, AnimationExt as _, AnyElement, Context, Div, Entity, Focusable as _,
     FontWeight, IntoElement, Render, ScrollHandle, SharedString, Subscription, Task, Window,
@@ -22,6 +22,7 @@ use crate::assets::Icon;
 use crate::detail::DetailSource;
 use crate::format;
 use crate::game_data;
+use crate::i18n::{self, fl};
 use crate::meter::{MeterModel, OverlaySettings};
 use crate::overlay;
 use crate::secondary::chrome::{self, Anchor, ButtonKind, Look, Scale, FAINT, MUTED, TEXT};
@@ -41,7 +42,6 @@ const DAMAGE_MAX: f32 = 300.0;
 const TAG_FILL: u32 = 0xe8735f2e;
 const TAG_TEXT: u32 = 0xf6b4a6;
 const MENU_FADE: Duration = Duration::from_millis(100);
-const PASSIVE_NOTE: &str = "Capture is passive: players out of range are not counted, and damage settles when the target dies.";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -71,11 +71,15 @@ pub struct PvpView {
 
 impl PvpView {
     pub fn new(model: Entity<PvpModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| TextInput::new("Add a player to watch", cx));
+        let input = cx.new(|cx| TextInput::new(fl!("pvp-add-placeholder"), cx));
         let focus = input.read(cx).focus_handle(cx);
+        let locale = i18n::locale(cx);
         let subscriptions = vec![
             cx.observe(&model, |_, _, cx| cx.notify()),
             cx.observe(&input, |_, _, cx| cx.notify()),
+            cx.observe(&locale, |this, _, cx| {
+                this.input.update(cx, |input, cx| input.set_placeholder(fl!("pvp-add-placeholder"), cx))
+            }),
             cx.subscribe_in(&input, window, |this, _, event: &TextInputEvent, window, cx| match event {
                 TextInputEvent::Submitted(typed) => this.submit(typed, window, cx),
                 TextInputEvent::Cancelled => this.stop_editing(window, cx),
@@ -236,13 +240,13 @@ impl Render for PvpView {
                 cx.notify();
             }))
             .into_any_element();
-        let header = chrome::header(chrome::title(Icon::Swords, "PvP", None, s), vec![info], &self.drag, s);
+        let header = chrome::header(chrome::title(Icon::Swords, fl!("pvp-title"), None, s), vec![info], &self.drag, s);
 
         let watching = model.watch().len();
         let watch_head = chrome::section(s)
             .mt_0()
             .child(chrome::icon(Icon::Heart, 13., rgba(MUTED), s))
-            .child("Watching")
+            .child(fl!("pvp-watching"))
             .when(watching > 0, |head| head.child(chrome::count(watching.to_string(), s).text_size(s.px(11.))))
             .child(div().flex_1())
             .when(!self.edit.is_editing(), |head| {
@@ -252,7 +256,7 @@ impl Render for PvpView {
                 )
             });
         let watch_rows: AnyElement = if model.watch().is_empty() {
-            chrome::empty(None, "No one watched yet. Add a name, or get hit: your last attacker appears here on its own.", s)
+            chrome::empty(None, fl!("pvp-watch-empty"), s)
                 .pt(s.px(4.))
                 .into_any_element()
         } else {
@@ -268,20 +272,20 @@ impl Render for PvpView {
         let tabs = chrome::tabs(s)
             .mt(s.px(10.))
             .child(
-                chrome::tab("tab-kills", "Kill stats", Some(model.stats().len()), self.tab == Tab::Kills, s)
+                chrome::tab("tab-kills", fl!("pvp-tab-kills"), Some(model.stats().len()), self.tab == Tab::Kills, s)
                     .on_click(cx.listener(|this, _, _, cx| this.select_tab(Tab::Kills, cx))),
             )
             .child(
                 chrome::tab(
                     "tab-damage",
-                    "Damage",
+                    fl!("common-damage"),
                     Some(model.dealt().len() + model.received().len()),
                     self.tab == Tab::Damage,
                     s,
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.select_tab(Tab::Damage, cx))),
             );
-        let note = note_shown.then(|| chrome::note(Icon::Info, PASSIVE_NOTE, false, s).mb(s.px(6.)));
+        let note = note_shown.then(|| chrome::note(Icon::Info, fl!("pvp-passive-note"), false, s).mb(s.px(6.)));
         let body: AnyElement = match self.tab {
             Tab::Kills => self.kills(model.stats(), model.sort(), model.main_actor_name(), &settings, s, cx).into_any_element(),
             Tab::Damage => self.damage(meter, &settings, s, cx).into_any_element(),
@@ -324,7 +328,7 @@ impl PvpView {
                 .id("add-placeholder")
                 .cursor_pointer()
                 .on_click(cx.listener(|this, _, window, cx| this.start_editing(window, cx)))
-                .child(div().flex_1().min_w_0().truncate().text_color(rgba(FAINT)).child("Add a player to watch"))
+                .child(div().flex_1().min_w_0().truncate().text_color(rgba(FAINT)).child(fl!("pvp-add-placeholder")))
                 .child(add)
                 .into_any_element()
         };
@@ -350,7 +354,7 @@ impl PvpView {
                 }))
                 .child(chrome::icon(Icon::User, 13., rgba(MUTED), s))
                 .child(suggestion_name(&suggestion, &typed, settings, s))
-                .child(div().flex_none().text_size(s.px(11.)).text_color(rgba(FAINT)).child("seen this session"))
+                .child(div().flex_none().text_size(s.px(11.)).text_color(rgba(FAINT)).child(fl!("pvp-seen-this-session")))
         });
         Some(
             chrome::popover(s)
@@ -376,7 +380,7 @@ impl PvpView {
         };
         if !row.in_range() {
             let content = chrome::bar_content(true, s)
-                .child(chrome::name(name, Some("Not in range".into()), FontWeight::MEDIUM, s))
+                .child(chrome::name(name, Some(fl!("pvp-not-in-range").into()), FontWeight::MEDIUM, s))
                 .child(chrome::figure("--", None, s));
             return chrome::row(s).opacity(0.55).child(track(class_fill(None), 0., ROW, s).child(content)).child(action);
         }
@@ -403,7 +407,7 @@ impl PvpView {
                         .text_color(rgb(TAG_TEXT))
                         .text_size(s.px(10.5))
                         .font_weight(FontWeight::SEMIBOLD)
-                        .child("Last attacker"),
+                        .child(fl!("pvp-last-attacker")),
                 )
             })
             .child(div().flex_none().text_size(s.px(11.5)).text_color(rgba(MUTED)).child(hp))
@@ -425,12 +429,12 @@ impl PvpView {
         s: Scale,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let clear = chrome::text_button("clear", Some(Icon::Trash), "Clear", ButtonKind::Quiet, 22., s)
+        let clear = chrome::text_button("clear", Some(Icon::Trash), fl!("pvp-clear"), ButtonKind::Quiet, 22., s)
             .on_click(cx.listener(|this, _, _, cx| this.model.update(cx, |model, cx| model.clear_stats(cx))));
         let head = chrome::section(s)
             .mt_0()
-            .child("Players")
-            .child(chrome::count("this session", s).text_size(s.px(11.)))
+            .child(fl!("common-players"))
+            .child(chrome::count(fl!("pvp-this-session"), s).text_size(s.px(11.)))
             .child(div().flex_1())
             .child(clear);
         if stats.is_empty() {
@@ -438,10 +442,10 @@ impl PvpView {
                 .flex()
                 .flex_col()
                 .child(head)
-                .child(chrome::empty(Some("No kill stats yet"), "Kills, assists and deaths appear as fights settle.", s));
+                .child(chrome::empty(Some(fl!("pvp-kills-empty-title").into()), fl!("pvp-kills-empty-line"), s));
         }
         let overflows = stats.len() > KILLS_SHOWN;
-        let sortable = |column: StatsSort, label: &'static str, width: f32, id: &'static str| {
+        let sortable = |column: StatsSort, label: String, width: f32, id: &'static str| {
             let active = sort == column;
             div()
                 .id(id)
@@ -455,7 +459,7 @@ impl PvpView {
                     cell.text_color(rgba(TEXT))
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(chrome::icon(Icon::ArrowDown, 10., rgba(TEXT), s))
-                        .child(label)
+                        .child(label.clone())
                 })
                 .when(!active, |cell| {
                     cell.cursor_pointer()
@@ -466,11 +470,11 @@ impl PvpView {
         let table_head = chrome::table_head(s)
             .pl(s.px(8.))
             .pr(s.px(if overflows { 17. } else { 9. }))
-            .child(div().flex_1().child("Player"))
-            .child(sortable(StatsSort::Damage, "Damage", 50., "sort-damage"))
-            .child(sortable(StatsSort::Kills, "Kills", 38., "sort-kills"))
-            .child(chrome::figure("Assists", Some(38.), s))
-            .child(chrome::figure("Deaths", Some(38.), s));
+            .child(div().flex_1().child(fl!("common-player")))
+            .child(sortable(StatsSort::Damage, fl!("common-damage"), 50., "sort-damage"))
+            .child(sortable(StatsSort::Kills, fl!("pvp-kills"), 38., "sort-kills"))
+            .child(chrome::figure(fl!("pvp-assists"), Some(38.), s))
+            .child(chrome::figure(fl!("pvp-deaths"), Some(38.), s));
         let top = stats.iter().map(|row| row.damage).max().unwrap_or(0).max(1);
         let rows = div().flex().flex_col().gap(s.px(ROW_GAP)).children(stats.iter().map(|row| {
             let is_you = you == Some(row.actor_name.as_str());
@@ -505,8 +509,8 @@ impl PvpView {
         let model = self.model.read(cx);
         let main_actor_id = model.main_actor_id();
         let dealt = self.damage_section(
-            "Damage dealt",
-            "No damage dealt yet.",
+            fl!("pvp-damage-dealt"),
+            fl!("pvp-dealt-empty"),
             "dealt",
             model.dealt(),
             meter,
@@ -516,8 +520,8 @@ impl PvpView {
             move |row| main_actor_id.map(|actor| (actor, Some(row.actor_id))),
         );
         let taken = self.damage_section(
-            "Damage taken",
-            "No damage taken yet.",
+            fl!("pvp-damage-taken"),
+            fl!("pvp-taken-empty"),
             "taken",
             model.received(),
             meter,
@@ -535,8 +539,8 @@ impl PvpView {
     #[allow(clippy::too_many_arguments)]
     fn damage_section(
         &self,
-        title: &'static str,
-        empty: &'static str,
+        title: String,
+        empty: String,
         prefix: &'static str,
         rows: &[DamageRow],
         meter: &MeterModel,
@@ -549,8 +553,7 @@ impl PvpView {
             .mt(s.px(if prefix == "dealt" { 0. } else { 6. }))
             .child(title)
             .when(!rows.is_empty(), |head| {
-                let noun = if rows.len() == 1 { "player" } else { "players" };
-                head.child(chrome::count(format!("{} {noun}", rows.len()), s).text_size(s.px(11.)))
+                head.child(chrome::count(fl!("common-players-count", count = rows.len()), s).text_size(s.px(11.)))
             });
         if rows.is_empty() {
             return div().flex().flex_col().child(head).child(chrome::empty(None, empty, s).pt(s.px(4.)));

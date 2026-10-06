@@ -5,6 +5,7 @@ pub enum WindowKind {
     History,
     Detail,
     Pvp,
+    Todos,
     Settings,
     Reminder,
 }

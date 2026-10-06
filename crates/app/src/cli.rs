@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+#[cfg(feature = "probes")]
+use crate::i18n::LanguageChoice;
+
 pub struct Args {
     pub replay: Option<PathBuf>,
     pub speed: f64,
@@ -11,6 +14,9 @@ pub struct Args {
     pub capture: Option<PathBuf>,
     #[cfg(feature = "probes")]
     pub fixtures: bool,
+    /// The language `--capture` draws in; Windows' own when not given.
+    #[cfg(feature = "probes")]
+    pub language: Option<LanguageChoice>,
 }
 
 #[cfg(feature = "probes")]
@@ -27,7 +33,7 @@ pub const USAGE: &str = "usage: aion-2-dps-meter [--replay <file.aetherpc> [--sp
 pub const USAGE: &str = "usage: aion-2-dps-meter [--replay <file.aetherpc> [--speed <factor>] [--exit-after-replay]]\n\
        aion-2-dps-meter --overlay-probe [--replay <file.aetherpc>]\n\
        aion-2-dps-meter --font-probe [--capture <dir>]\n\
-       aion-2-dps-meter --capture <dir> (--fixtures | --replay <file.aetherpc> [--speed <factor>])";
+       aion-2-dps-meter --capture <dir> (--fixtures | --replay <file.aetherpc> [--speed <factor>]) [--language <english|french>]";
 
 impl Args {
     /// Without a recording, and not one of the development checks, the app
@@ -51,6 +57,8 @@ impl Args {
             capture: None,
             #[cfg(feature = "probes")]
             fixtures: false,
+            #[cfg(feature = "probes")]
+            language: None,
         };
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
@@ -77,6 +85,15 @@ impl Args {
                 }
                 #[cfg(feature = "probes")]
                 "--fixtures" => parsed.fixtures = true,
+                #[cfg(feature = "probes")]
+                "--language" => {
+                    let value = args.next().ok_or("--language needs english or french")?;
+                    parsed.language = Some(match value.as_str() {
+                        "english" => LanguageChoice::English,
+                        "french" => LanguageChoice::French,
+                        other => return Err(format!("--language expects english or french, got {other:?}")),
+                    });
+                }
                 other => return Err(format!("unknown argument {other:?}")),
             }
         }
@@ -86,6 +103,9 @@ impl Args {
         #[cfg(feature = "probes")]
         {
             let font_specimen = parsed.probe == Some(Probe::Font);
+            if parsed.language.is_some() && parsed.capture.is_none() {
+                return Err("--language needs --capture".to_string());
+            }
             match (parsed.capture.is_some(), parsed.fixtures, parsed.replay.is_some()) {
                 (false, true, _) => return Err("--fixtures needs --capture".to_string()),
                 (true, false, false) if !font_specimen => {

@@ -1,12 +1,15 @@
 use std::time::{Duration, Instant};
 
-use aether_core::events::{EventSink, MeterEvent};
+use meter_core::events::{EventSink, MeterEvent};
+use meter_core::identity::KnownCharacter;
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use futures::StreamExt;
 use gpui::{App, Entity, Task};
 
 use crate::meter::{MeterModel, ReplayState};
 use crate::secondary;
+use crate::settings;
+use crate::todos;
 
 /// After a replay ends the pipeline still holds packets; the app may exit once
 /// no event has arrived for this long.
@@ -44,6 +47,14 @@ pub fn spawn_pump(
                 batch.push(event);
             }
             let saved_a_fight = batch.iter().any(|event| matches!(event, MeterEvent::HistoryUpdated));
+            let characters_seen: Vec<KnownCharacter> = batch
+                .iter()
+                .filter_map(|event| match event {
+                    MeterEvent::CharacterSeen(character) => Some(character.clone()),
+                    _ => None,
+                })
+                .collect();
+            let players: Vec<todos::Identified> = batch.iter().filter_map(todos::identified_by).collect();
 
             let (changed, replay_just_ended, replay_over) = cx.update(|cx| {
                 model.update(cx, |model, cx| {
@@ -61,6 +72,12 @@ pub fn spawn_pump(
                     (changed, replay_over && !replay_was_over, replay_over)
                 })
             });
+            if !characters_seen.is_empty() {
+                cx.update(|cx| settings::remember_characters(cx, characters_seen));
+            }
+            if !players.is_empty() {
+                cx.update(|cx| todos::follow_player(cx, players));
+            }
             if saved_a_fight {
                 cx.update(secondary::history_updated);
             }

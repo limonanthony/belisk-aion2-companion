@@ -25,8 +25,8 @@ STARTING
 --------
 1. Unzip the whole folder somewhere (not inside the zip), for example
    C:\Tools\aion-2-dps-meter.
-2. Keep WinDivert.dll and WinDivert64.sys next to the exe. The meter does
-   not start without WinDivert.dll.
+2. Keep WinDivert.dll and WinDivert64.sys next to the exe. They are only used
+   when Npcap cannot capture; with Npcap installed the meter runs without them.
 3. Double-click aion-2-dps-meter.exe and accept the Administrator prompt.
 4. Start the meter BEFORE you log in to your character, or go back to the
    character select screen and log in again. That is how it learns which

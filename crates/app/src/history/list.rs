@@ -2,16 +2,23 @@
 //! target and by main player. Rules ported from `overlay/history/main.js` of
 //! the Tauri app.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use aether_core::history::HistoryRecord;
+use meter_core::history::HistoryRecord;
 
 use super::when;
+use crate::format;
 use crate::game_data::PlayerClass;
+use crate::i18n::fl;
 use crate::meter::{target_name, ShadeBook};
 
-const UNKNOWN_MAIN_PLAYER: &str = "Unknown";
+/// The label of a record whose main player is not known; it is also what the
+/// player filter lists them under.
+pub fn unknown_player() -> String {
+    fl!("history-unknown-player")
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RecordRow {
@@ -31,8 +38,11 @@ pub struct RecordRow {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlayerLine {
     pub actor_id: u32,
-    /// `ID:<n>` for a player the game never named.
+    /// `You` for the record's own player and `ID:<n>` for anyone else the game
+    /// never named.
     pub name: String,
+    /// Whether `name` is a name the game gave, so a mask applies to it.
+    pub named: bool,
     pub class: Option<PlayerClass>,
     /// The player's shade of their class colour within this record.
     pub colour: Option<u32>,
@@ -73,6 +83,18 @@ impl HistoryList {
             .collect();
         entries.sort_by(|a, b| b.row.created_at.cmp(&a.row.created_at));
         self.entries = entries;
+        self.drop_filters_without_records();
+    }
+
+    /// Writes every row again from its record, after the language changed.
+    pub fn rebuild_words(&mut self) {
+        for entry in &mut self.entries {
+            entry.row = RecordRow::from_record(&entry.record);
+        }
+        self.drop_filters_without_records();
+    }
+
+    fn drop_filters_without_records(&mut self) {
         if !self.target_options().iter().any(|option| Some(&option.value) == self.target_filter.as_ref()) {
             self.target_filter = None;
         }
@@ -126,11 +148,10 @@ impl HistoryList {
     /// "14 records", or "6 / 14 records" while a filter hides some.
     pub fn count_label(&self) -> String {
         let (shown, total) = (self.visible().len(), self.total());
-        let noun = if total == 1 { "record" } else { "records" };
         if shown == total {
-            format!("{shown} {noun}")
+            fl!("history-records", count = total)
         } else {
-            format!("{shown} / {total} {noun}")
+            fl!("history-records-filtered", shown = shown, total = total)
         }
     }
 
@@ -146,10 +167,11 @@ impl HistoryList {
             .map(|stat| PlayerLine {
                 actor_id: stat.actor_id,
                 name: if stat.actor_name.trim().is_empty() {
-                    format!("ID:{}", stat.actor_id)
+                    format::unnamed_player(stat.actor_id, record.combat_infos.main_actor_id == Some(stat.actor_id))
                 } else {
                     stat.actor_name.clone()
                 },
+                named: !stat.actor_name.trim().is_empty(),
                 class: PlayerClass::parse(&stat.actor_class),
                 colour: colours.get(&stat.actor_id).copied(),
                 you: record.combat_infos.main_actor_id == Some(stat.actor_id),
@@ -179,14 +201,15 @@ pub fn record_colours(record: &HistoryRecord) -> HashMap<u32, u32> {
         .collect()
 }
 
-fn main_player_label(row: &RecordRow) -> &str {
-    row.main_player.as_deref().unwrap_or(UNKNOWN_MAIN_PLAYER)
+fn main_player_label(row: &RecordRow) -> Cow<'_, str> {
+    row.main_player.as_deref().map_or_else(|| Cow::Owned(unknown_player()), Cow::Borrowed)
 }
 
 /// Each distinct value with its record count, most frequent first.
-fn options<'a>(values: impl Iterator<Item = &'a str>) -> Vec<FilterOption> {
+fn options<S: AsRef<str>>(values: impl Iterator<Item = S>) -> Vec<FilterOption> {
     let mut counts: Vec<FilterOption> = Vec::new();
-    for value in values.filter(|value| !value.is_empty()) {
+    for value in values.filter(|value| !value.as_ref().is_empty()) {
+        let value = value.as_ref();
         match counts.iter_mut().find(|option| option.value == value) {
             Some(option) => option.count += 1,
             None => counts.push(FilterOption { value: value.to_string(), count: 1 }),
@@ -203,7 +226,7 @@ impl RecordRow {
             .target_info
             .as_ref()
             .or_else(|| record.combat_infos.target_infos.get(&record.target_id))
-            .map_or_else(|| format!("Target {}", record.target_id), target_name);
+            .map_or_else(|| fl!("common-target-numbered", id = record.target_id), target_name);
         let mut named_players: Vec<_> = record.player_stats.values().filter(|stat| named(&stat.actor_name).is_some()).collect();
         named_players.sort_by(|a, b| b.total_damage.cmp(&a.total_damage));
         let main_player = record
@@ -214,6 +237,10 @@ impl RecordRow {
             .or_else(|| {
                 let main = record.combat_infos.main_actor_id?;
                 named(&record.player_stats.get(&main)?.actor_name)
+            })
+            .or_else(|| {
+                let main = record.combat_infos.main_actor_id?;
+                record.player_stats.contains_key(&main).then(|| format::unnamed_player(main, true))
             })
             .or_else(|| named(&named_players.first()?.actor_name));
         Self {
@@ -246,7 +273,7 @@ fn duration_secs(record: &HistoryRecord) -> f64 {
 mod tests {
     use std::collections::HashMap;
 
-    use aether_core::models::combat::{CombatInfos, PlayerOverviewStat, TargetInfo};
+    use meter_core::models::combat::{CombatInfos, PlayerOverviewStat, TargetInfo};
 
     use super::*;
 
@@ -417,6 +444,20 @@ mod tests {
         assert_eq!(players.iter().map(|player| player.name.as_str()).collect::<Vec<_>>(), vec!["Mirelle", "ID:2"]);
         assert_eq!(players[0].class, Some(PlayerClass::Ranger));
         assert!(list.players("missing").is_empty());
+    }
+
+    #[test]
+    fn your_own_unnamed_player_is_you_in_the_record_and_its_list() {
+        let mut own = record("own", 50, "Boss", None, &[(1, "Mirelle", 500), (2, "", 300)]);
+        own.combat_infos.main_actor_id = Some(2);
+        let mut list = HistoryList::default();
+        list.set_records(vec![own]);
+
+        let players = list.players("own");
+
+        assert_eq!(players.iter().map(|player| player.name.as_str()).collect::<Vec<_>>(), vec!["Mirelle", "You"]);
+        assert!(players[1].you && !players[1].named);
+        assert_eq!(list.visible()[0].main_player.as_deref(), Some("You"));
     }
 
     #[test]

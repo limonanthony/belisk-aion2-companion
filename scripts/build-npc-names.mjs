@@ -1,4 +1,4 @@
-// Build the English NPC name catalogue, crates/aether-core/data/npc_names_en.json.
+// Build the English NPC name catalogue, crates/core/data/npc_names_en.json.
 //
 //   node scripts/build-npc-names.mjs <kuroukihime mobs.json> [noia2 npc_names.json]
 //
@@ -41,6 +41,6 @@ const sorted = [...names.entries()].sort((a, b) => Number(a[0]) - Number(b[0]));
 const body = sorted.map(([code, name]) => `  ${JSON.stringify(code)}: ${JSON.stringify(name)}`);
 const out = `{\n${body.join(",\n")}\n}\n`;
 
-const target = new URL("../crates/aether-core/data/npc_names_en.json", import.meta.url);
+const target = new URL("../crates/core/data/npc_names_en.json", import.meta.url);
 fs.writeFileSync(target, out);
 console.log(`wrote ${sorted.length} names to ${target.pathname}`);

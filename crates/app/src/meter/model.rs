@@ -2,13 +2,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use aether_core::engine::meter::DpsMeter;
-use aether_core::events::MeterEvent;
-use aether_core::mobs::catalog::MobCatalog;
-use aether_core::mobs::store::BossCorrection;
-use aether_core::models::combat::CombatSnapshot;
-use aether_core::models::diagnostics::MemorySnapshot;
-use aether_core::storage::data_storage::MainActorDetectedPayload;
+use meter_core::engine::meter::DpsMeter;
+use meter_core::events::MeterEvent;
+use meter_core::identity::IdentityDecision;
+use meter_core::mobs::catalog::MobCatalog;
+use meter_core::mobs::store::BossCorrection;
+use meter_core::models::combat::CombatSnapshot;
+use meter_core::models::diagnostics::MemorySnapshot;
+use meter_core::storage::data_storage::MainActorDetectedPayload;
 use gpui::{Context, SharedString, Task};
 
 use super::board::{Board, BoardChoice};
@@ -209,6 +210,13 @@ impl MeterModel {
         }
     }
 
+    /// Words prepared in the old language ("You", the copied report) are
+    /// prepared again.
+    pub fn refresh_words(&mut self) {
+        self.rebuild_live();
+        self.rebuild_summary();
+    }
+
     /// The Target board: the engaged boss, else the current target. `None`
     /// until someone has hit something.
     pub fn live(&self) -> Option<&LiveBoard> {
@@ -357,7 +365,12 @@ impl MeterModel {
                 false
             }
             MeterEvent::MainActorDetected(actor) => self.accept_main_actor(actor),
-            MeterEvent::DpsMeterStatus(_)
+            MeterEvent::OwnIdentity(decision) => {
+                self.decisions.event("identity", || describe_identity(&decision));
+                false
+            }
+            MeterEvent::CharacterSeen(_)
+            | MeterEvent::DpsMeterStatus(_)
             | MeterEvent::DpsIdleHidden(_)
             | MeterEvent::HistoryUpdated => false,
         }
@@ -502,7 +515,7 @@ impl MeterModel {
     #[cfg(any(test, feature = "probes"))]
     pub fn use_memory_mobs(&mut self) {
         let config = std::sync::Arc::new(std::sync::RwLock::new(
-            aether_core::config::DpsMeterConfig::default(),
+            meter_core::config::DpsMeterConfig::default(),
         ));
         self.mobs = Some(Arc::new(MobCatalog::open(config, None)));
     }
@@ -514,11 +527,19 @@ impl MeterModel {
         }) {
             return false;
         }
+        let named_in_place = previous.as_ref().is_some_and(|known| known.actor_id == actor.actor_id);
         let zone_change = previous
             .as_ref()
             .is_some_and(|known| known.actor_name == actor.actor_name && known.actor_id != actor.actor_id);
         self.decisions.event("identification", || match &previous {
+            None if actor.actor_name.is_empty() => {
+                format!("local player is actor {}, not named yet", actor.actor_id)
+            }
             None => format!("local player is {:?} (actor {})", actor.actor_name, actor.actor_id),
+            Some(known) if named_in_place => format!(
+                "actor {} changed from {:?} to {:?}",
+                actor.actor_id, known.actor_name, actor.actor_name
+            ),
             Some(known) if zone_change => format!(
                 "zone change: {:?} moved from actor {} to {}",
                 actor.actor_name, known.actor_id, actor.actor_id
@@ -533,7 +554,7 @@ impl MeterModel {
             snapshot.combat_infos.main_actor_name = Some(actor.actor_name.clone());
         }
         self.main_actor = Some(actor);
-        if previous.is_some() {
+        if previous.is_some() && !named_in_place {
             let change = self.focus.release_all(Release::ZoneChange);
             self.apply_focus_change(change);
         }
@@ -816,6 +837,26 @@ fn facts_of(snapshot: &CombatSnapshot, id: u32) -> Option<TargetFacts> {
     })
 }
 
+fn describe_identity(decision: &IdentityDecision) -> String {
+    match decision {
+        IdentityDecision::SignatureBound { actor_id } => {
+            format!("actor {actor_id} is you (remain-HP signature); shown as You until a name is known")
+        }
+        IdentityDecision::RememberedApplied { actor_id, name, class } => {
+            format!("actor {actor_id} named {name:?} from the remembered characters: its skills show {class}")
+        }
+        IdentityDecision::RememberedRejected { actor_id, class, remembered } => format!(
+            "actor {actor_id} stays You: none of the {remembered} remembered characters is {class}, the class its skills show"
+        ),
+        IdentityDecision::GameOverrode { actor_id, previous_actor_id, previous_name } => format!(
+            "the game's name packet names actor {actor_id}, replacing actor {previous_actor_id:?} named {previous_name:?}"
+        ),
+        IdentityDecision::CarriedRejected { actor_id, name, carried_class, class } => format!(
+            "actor {actor_id} no longer carries the name {name:?}: its skills show {class}, the carried character was {carried_class:?}"
+        ),
+    }
+}
+
 /// The best DPS for a character on a boss, asked of the meter once per pair.
 fn personal_best(
     cache: &mut Option<BestEntry>,
@@ -837,11 +878,12 @@ fn personal_best(
 mod tests {
     use std::collections::HashMap;
 
-    use aether_core::models::combat::{CombatInfos, PlayerOverviewStat, TargetInfo};
-    use aether_core::models::session::{SessionPlayerStat, SessionSummary};
+    use meter_core::models::combat::{CombatInfos, PlayerOverviewStat, TargetInfo};
+    use meter_core::models::session::{SessionPlayerStat, SessionSummary};
 
     use super::*;
     use crate::game_data::PlayerClass;
+    use crate::i18n::fl;
     use crate::meter::live::Lead;
     use crate::meter::fight::SummaryKind;
 
@@ -961,7 +1003,8 @@ mod tests {
         assert_eq!(asked, Some(("You".to_string(), 9)));
         let pace = live.pace.unwrap();
         assert!(pace.ahead);
-        assert_eq!(pace.versus_best.as_ref(), "+25.0% vs PB");
+        assert_eq!(pace.figure.as_ref(), "+25.0%");
+        assert_eq!(pace.versus_best.as_ref(), fl!("meter-pace-versus-best", pace = "+25.0%"));
 
         let unknown = LiveBoard::build(&snapshot(500, Some(9), 12.0), 7, &settings, &mut ShadeBook::default(), |_, _| None).unwrap();
         assert!(unknown.pace.is_none());
@@ -1260,7 +1303,8 @@ mod tests {
         let Some(Footer::TargetPace(pace)) = model.footer() else {
             panic!("expected a pace line, got {:?}", model.footer());
         };
-        assert_eq!(pace.versus_best.as_ref(), "+25.0% vs PB");
+        assert_eq!(pace.figure.as_ref(), "+25.0%");
+        assert_eq!(pace.versus_best.as_ref(), fl!("meter-pace-versus-best", pace = "+25.0%"));
 
         let mut early = open_world(8, true);
         early.last_target_info.as_mut().unwrap().target_last_time = HashMap::from([(1, 105.0)]);
@@ -1340,6 +1384,26 @@ mod tests {
         assert!(matches!(model.session().unwrap().lead, Lead::You { .. }));
     }
 
+    #[test]
+    fn your_row_reads_you_while_the_game_has_not_named_you() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let mut unnamed = open_world(7, false);
+        unnamed.combat_infos.main_actor_id = Some(2);
+        unnamed.combat_infos.main_actor_name = None;
+        for player in &mut unnamed.session.players {
+            if player.actor_id == 2 {
+                player.actor_name.clear();
+            }
+        }
+        show(&mut model, unnamed);
+
+        assert!(model.identified());
+        let session = model.session().unwrap();
+        let you = session.rows.iter().find(|row| row.is_you).expect("your row is marked");
+        assert_eq!(you.name.as_deref(), Some("You"));
+        assert!(matches!(session.lead, Lead::You { .. }));
+    }
+
     // ---- Boss focus, summary subject and your row ----
 
     const BOSS_ID: u32 = 100;
@@ -1411,6 +1475,38 @@ mod tests {
         ];
         model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &mobs, Some((2, "You")))), start);
         model
+    }
+
+    #[test]
+    fn naming_your_actor_in_place_keeps_the_boss_and_the_kill_summary_is_about_you() {
+        let start = Instant::now();
+        let detected = |name: &str| {
+            MeterEvent::MainActorDetected(MainActorDetectedPayload {
+                actor_id: 2,
+                actor_name: name.to_string(),
+                sid: None,
+            })
+        };
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        model.apply(detected(""), start);
+        let unnamed_party = vec![player(2, "", 4_000, 80.0), player(3, "Healer", 1_000, 20.0)];
+        let alive = [mob(BOSS_ID, true, 800, 40.0, unnamed_party)];
+        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &alive, Some((2, "")))), at(start, 1));
+        assert_eq!(model.focused_boss(), Some(BOSS_ID));
+
+        model.apply(detected("Mirelle"), at(start, 2));
+
+        assert_eq!(model.focused_boss(), Some(BOSS_ID), "a name arriving for your own actor is not a zone change");
+        let named_party = vec![player(2, "Mirelle", 4_000, 80.0), player(3, "Healer", 1_000, 20.0)];
+        let dead = [mob(BOSS_ID, true, 0, 45.0, named_party)];
+        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &dead, Some((2, "Mirelle")))), at(start, 45));
+        let summary = model.summary().expect("final summary");
+        assert_eq!(summary.kind, SummaryKind::Final);
+        assert!(summary.personal);
+        assert_eq!(
+            summary.subject,
+            Subject::Player { name: "Mirelle".to_string(), by: crate::meter::live::YouMatch::Name }
+        );
     }
 
     #[test]

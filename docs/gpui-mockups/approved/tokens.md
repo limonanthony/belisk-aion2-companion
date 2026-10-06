@@ -7,10 +7,11 @@ and Target boards), [pvp.html](pvp.html),
 [detail.html](detail.html) and [history.html](history.html) (round 2), and
 [gate.html](gate.html), [home.html](home.html) and
 [settings.html](settings.html) (round 3), [reminders.html](reminders.html)
-and the Reminders section of settings.html (2026-10-05). The shared overlay
-classes live in [overlay.css](overlay.css), the main-window components in
-[app.css](app.css). Later rounds extend this file only with values the user
-has approved.
+and the Reminders section of settings.html (2026-10-05), and
+[todos.html](todos.html) and the To-dos section of settings.html
+(2026-10-06). The shared overlay classes live in [overlay.css](overlay.css),
+the main-window components in [app.css](app.css). Later rounds extend this
+file only with values the user has approved.
 
 Colours are sRGB. `a` is the user's background opacity (0–255 in Settings,
 default 150, so `a = 150/255 ≈ 0.59`).
@@ -71,6 +72,8 @@ default 150, so `a = 150/255 ≈ 0.59`).
 | `popover` | `rgba(30, 26, 22, 0.98)`, border `rgba(255, 236, 214, 0.14)`, shadow `0 10 24 rgba(0, 0, 0, 0.5)` | Menus, dropdowns, suggestions, the meter's tooltip over the Session \| Target switch (drawn inside the card, so its shadow is not clipped) |
 | `input` | `rgba(0, 0, 0, 0.34)` bg, border `rgba(255, 240, 225, 0.12)`; focus border `rgba(255, 246, 236, 0.55)` | Text fields and selects |
 | `scroll-thumb` | `rgba(255, 240, 225, 0.28)`, 3 px wide | Scrolling lists |
+| `full-fill` | `rgba(242, 198, 109, 0.12)` (`warn` at 0.12) | A to-do amount at its cap, being wasted: the whole row, also under the pointer |
+| `press` | `rgba(255, 240, 225, 0.20)` | A to-do count's arrow or figure while pressed |
 
 Class colours are the only strong hues. Bars use them, and so do the capsule
 badge, skill rows (the player's class) and buff coverage (the caster's
@@ -230,6 +233,8 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
   time-out and on dismissal alike; no slide, no scale. Its time-left line
   needs about one frame per pixel (10 per second at 100%), only while the
   card is up.
+- The to-do window's check and × appear and go at once, with no fade, on the
+  row's pointer enter and leave only; nothing in that window animates.
 - Frames are drawn only on a snapshot or while a tween runs.
 
 ## Reminder card
@@ -266,6 +271,46 @@ meter's content scale.
   styles); the game keeps keyboard and mouse focus. No Windows notification.
 - Not built yet, decided with those features: where the card goes while the
   meter is hidden between fights, and whether Alt+E also dismisses it.
+
+## To-do window
+
+An overlay window of its own for what resets and is lost if not done
+([todos.html](todos.html)), approved on 2026-10-06 (direction E). It uses the
+overlay values above: `card` at the user's opacity, `card-border`, no shadow,
+Barlow Semi Condensed, the meter's content scale, the window header and
+footer.
+
+| Element | Value |
+|---|---|
+| Window | 370 px wide; card padding 6 px top, 8 px sides and bottom. Height hugs the content; the list scrolls past 452 px, so the window is at most 558 px (590 while a 4 s note shows). All times the content scale |
+| Header | The 28 px window header: Lucide `list-checks` 13 px in `muted`, "To-dos" 13.5 px / 600, then "9 left" (or "all done") 11.5 px / 500 `faint`; while an amount is full, a `chip-warn` "1 full" 18 px tall, 11 px text, Lucide `triangle-alert` 11 px; the close tool button (22 px) flush right |
+| Character selector | 2 px above, 6 px below; the 26 px input at 28 px; 16 px class icon; name 13 px / 600; "Ranger · Ossia" 11.5 px `muted`; "Playing" 11 px / 600 `good` after a 6 px dot, pushed right; Lucide `chevron-down` 13 px `muted`. Open: a popover over the full width, 30 px items, the count left at 11 px `faint` (`warn` / 600 for "1 full"), a 1 px divider at 0.18 and an 11 px `muted` note |
+| Section label | 24 px, 6 px above (none above the first), 4 px left and 6 px right inset, 6 px radius, 6 px gaps; Lucide `chevron-down` / `chevron-right` 12 px `faint`; title 12 px / 600 `muted` (pointer over: `text`); count 11 px / 500 `faint` ("done" in `good`); the countdown pushed right, 11 px / 500 `faint` with the time in `muted` / 600 |
+| Row | At least 26 px, 2 px apart, 6 px radius; 4 px left and 3 px right inset; a 12 px gutter (a group's chevron, a full amount's `triangle-alert` 12 px in `warn`, else empty), 6 px gaps, so names start 22 px in, under the section label's text. A group's rows: 22 px left inset (names 40 px in) |
+| Name | 13 px / 500 `text`, cut off with an ellipsis; its second part ("final boss", "Unknown Fissure") 11 px / 500 `faint`, 5 px after; "Account" 11 px / 500 `faint` with Lucide `users` 11 px, 6 px after; "Yours" as the second part |
+| Pointer on a row | Tick and group rows (a click acts on the whole row): `soft` fill. Count and amount rows: no fill; their arrows go from `muted` to `text` |
+| Done | The name in `muted` with a line through it: 1 px, the text's own colour (GPUI `StrikethroughStyle`); its second part at `rgba(255, 246, 236, 0.36)`, struck too; "Yours" is not struck. A count's figure turns `muted`. Rows never move; no icon, no other colour. A group whose rows are all done is struck through and its "6 of 6 done" turns `good` |
+| Check button | Tick rows only: 20 × 20 px, 5 px radius, Lucide `check` 12 px at stroke 2.5 in `text` on `soft`; pointer on it: `hot`. On a done row, Lucide `undo-2` 12 px at stroke 2.25 in `muted`, no fill; pointer on it: `soft`, `text`. 6 px before the × slot. Tooltip under it: "Mark done" / "Undo", one line, 11.5 px / 500 `text`, 4 × 8 px padding, 6 px radius, `popover` colours |
+| × slot | 20 px on every row, kept when empty so nothing shifts. The button: 20 × 20 px, 5 px radius, Lucide `x` 12 px in `muted`; pointer on it: `soft`, `text`. On a hidden row listed by Show: Lucide `eye`, always shown |
+| Hover × rule | Check and × are shown while the pointer is in the row (enter shows, leave hides; moves inside change nothing) or while the row has keyboard focus. After a hide or removal, the row now under the pointer keeps them hidden until the pointer moves |
+| Count | Lucide `chevron-down`, the figure, Lucide `chevron-up`, 1 px apart. Arrows 20 × 20 px, 5 px radius, 12 px at stroke 2.25, `muted`; pointer on one: `soft`, `text`; pressed: `press`; at 0 or N the arrow is `faint` at 0.45. Figure 46 × 20 px, 5 px radius, centred, "9" 12.5 px / 600 `text` and "/14" 11 px / 500 `faint` 1 px after; pointer on it: `soft`; pressed: `press` |
+| Amount | Empty: "—" 12.5 px / 500 `faint` in the figure's place, 20 px gaps for the arrows, the name `muted`. Tracked: "Full in 2 d 16 h" 11.5 px / 500 `muted` before the count's controls; the figure reads as a field under the pointer (`track` fill, 1 px inset `rgba(255, 240, 225, 0.12)`). Full: the row on `full-fill`, the warning glyph in the gutter, "Full, being wasted" / "Full, spend by Tue 16:00" in `warn` / 600, the figure `warn` with "/560" at `warn` 0.7 |
+| Amount field | Replaces the arrows and figure: 112 × 22 px, 6 px radius, `track` fill, 1 px `rgba(255, 246, 236, 0.55)` border, 7 px left padding; the typed figure right-aligned, 12.5 px / 600; "/28" 11 px `faint`; an 18 × 18 px clear button (4 px radius, Lucide `x`) |
+| Group row | Chevron in the gutter, the name, then "2 of 6 done" 11.5 px / 500 `muted` (`good` when all done) at the row's end, before the × slot |
+| Hidden line | Ends each section (and an open group) with hidden rows: 20 px, 11.5 px / 500 `faint`, 22 px in (40 in a group): "2 hidden · Show". Show / Hide again: `muted` / 600, underlined at `rgba(255, 246, 236, 0.25)`, 3 px offset; pointer over: `text`. Hidden rows listed by Show: everything but the put-back button at 0.42 opacity |
+| Add line | The list's last line, 6 px above: 26 px, 6 px radius, Lucide `plus` 12 px `faint` in the gutter, "Add a to-do" 12.5 px / 500 `muted`; pointer over: `soft` fill, `text` |
+| Add form | In the add line's place: `rgba(255, 240, 225, 0.05)` plate, 6 px radius, 6 px padding, 6 px between its two lines. Line 1: the 26 px input ("Name" placeholder), the small text button "Add" (22 px, Lucide `plus` 11 px; 0.4 opacity while the name is empty), Cancel as a 20 px × button. Line 2: segmented Tick \| Count, "of" with a count stepper (figure 26 px wide), then Daily \| Weekly pushed right. Segmented: track `rgba(0, 0, 0, 0.30)`, 7 px radius, 2 px inset and gap; options 20 px, 5 px radius, 11.5 px / 600 `muted`, selected `hot` with `text` |
+| Notes | The overlay note, 6 px under the character selector, for 4 s: "Removed Legion check-in." with an Undo link at its end (Lucide `trash`), or a `good` note "Added Arena of Tactics wins to This week." (Lucide `check`) |
+| Footer | The 26 px window footer, 5 px gaps: Lucide `clock` 12 px `faint`, "Daily reset" with "09:00" in `text` / 600, a `faint` "·", "Change" as a link (as Show), then "Weekly on Wednesday" in `faint` pushed right |
+| Scrolling | The list scrolls inside the window with the 3 px `scroll-thumb`, 4 px from the right; 11 px right padding while it overflows. 3 px of room around the rows so a focus ring is never clipped |
+| Focus ring | `focus-ring`, 2 px, 1 px outside the focused control (the row for tick and group rows, the figure on counts and amounts, a button), so a row's ring fits the 2 px gap between rows. Text fields show focus with their brighter border, no ring |
+| Meter "…" menu | "To-dos" between "PvP meter" and "Settings"; while an amount is full, "1 full" 11 px `faint` at the item's end |
+
+- **One list per character**; Duty Missions are counted per account and
+  server (shared by your characters there). The selector follows the
+  character in game.
+- **Focus**: the window never activates, except while a field takes the
+  keyboard (an amount, the new to-do's name), as the PvP name field does.
 
 ## Main window (GPUI Kit)
 
@@ -309,7 +354,7 @@ Text, `good`, `warn` and `bad` are the overlay values.
 |---|---|---|
 | Window | borderless window | 960 × 620 (gate 600 × 470, not resizable), 9 px radius, 1 px `rgba(255, 236, 214, 0.12)` border |
 | Title bar | `TitleBar` | 36 px; 20 px cream logo square (6 px radius) + "AION 2 DPS Meter"; minimise, maximise, close 46 × 36 (gate: close only) |
-| Sidebar | `Sidebar` | 208 px; Meter, then a "Settings" label and eight sections (Reminders after Personal bests); items 32 px, 7 px radius; the meter's status line (dot + "Running · 12:41") at the bottom |
+| Sidebar | `Sidebar` | 208 px; Meter, then a "Settings" label and nine sections (Reminders after Personal bests, To-dos after Reminders); items 32 px, 7 px radius; the meter's status line (dot + "Running · 12:41") at the bottom |
 | Settings group | styled div | title above; 10 px radius, `win-surface`, 1 px `win-line`; rows ≥ 54 px, 11 × 16 px padding, 1 px dividers |
 | Settings row | styled div | label and one-sentence description on the left (≤ 58ch), control on a stable right edge |
 | Settings row, dimmed | styled div | While the section's master switch is off (Reminders): label and description at 0.5 opacity, the control at 0.4 and inert; every control keeps its own value |
@@ -340,6 +385,21 @@ Text, `good`, `warn` and `bad` are the overlay values.
 | Events | One switch per event in groups by how often it comes: Every hour (Shugo Festival, Dimensional Invasion), Every 3 hours (Rift portals, Watcher Kaira), Weekly (Artifact Siege, Abyss field bosses, Guardian Lord Nahma), Daily (Arena of Tactics opens, Reward keys refill). On by default: Shugo Festival, Dimensional Invasion, Rift portals |
 | Master switch off | Every row under it dimmed (Settings row, dimmed); no card and no sound |
 | Test shown | A good badge "Shown above the meter" with a check, 2 px before the button, for 4 s (Settings may cover the meter) |
+
+### Settings → To-dos
+
+Approved on 2026-10-06 with the to-do window.
+
+| Part | Value |
+|---|---|
+| Place | Sidebar item after Reminders, Lucide `list-checks`; no preview column |
+| Lead | "The to-do window, opened from the meter's "…" menu." |
+| Resets | Daily reset (Select, 130 px minimum: every whole hour 00:00 to 23:00, 09:00 by default; the list shows eight 28 px items at a time, opens scrolled to the chosen hour, 3 px thumb); Weekly reset (not a control: "Wednesday 09:00" in display type 13.5 px / 600 `muted`, following the daily hour) |
+| Recharges | Membership (Switch, off; one for every character) |
+| Default to-dos | Hidden to-dos: secondary button "Restore default to-dos" with Lucide `rotate-ccw`, disabled while nothing is hidden. Start over: danger button "Reset to-dos completely…" |
+| Restored | A good badge "6 to-dos back" with a check, 2 px before the button, for 4 s; no dialog |
+| Confirm dialog | The Dialog: "Reset the to-dos completely?", two paragraphs 6 px apart, Cancel (focused, the focus ring drawn) then the danger "Reset to-dos" |
+| After the reset | A good badge "To-dos reset" with a check before the button, for 4 s |
 
 ### Custom work beyond GPUI Kit
 
@@ -382,3 +442,8 @@ pinned version before planning.
   to the card and placed from the meter window's bounds in device pixels. The
   fade is the card's opacity inside the window; the window appears at full
   size, transparent.
+- The to-do window is a third overlay window with the meter's styles
+  (transparent, no-activate, tool window), sized to its content up to the
+  list's maximum height. A done name is drawn with `StrikethroughStyle`; the
+  check and × are drawn on every row and their visibility changes on the
+  row's hover enter and leave (`on_hover`), never on mouse move.

@@ -17,18 +17,8 @@
 //! - Two events landing on one instant make one reminder, so a changeover
 //!   never produces a burst.
 
-use std::fmt;
-
 use super::events::{EventId, Rule};
-
-const MINUTE_MS: i64 = 60_000;
-const DAY_MS: i64 = 86_400_000;
-
-/// The PC's time zone.
-pub trait Zone {
-    /// Local time minus UTC, in minutes, at `unix_ms`.
-    fn utc_offset_minutes(&self, unix_ms: i64) -> i32;
-}
+use crate::clock::{instant_of_wall_minute, wall_minute, Zone, MINUTE_MS};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reminder {
@@ -38,25 +28,6 @@ pub struct Reminder {
     pub notify_ms: i64,
     /// The events starting at `start_ms`, in catalogue order.
     pub events: Vec<EventId>,
-}
-
-/// A time of day on the local clock.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ClockTime {
-    pub hour: u8,
-    pub minute: u8,
-}
-
-impl fmt::Display for ClockTime {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:02}:{:02}", self.hour, self.minute)
-    }
-}
-
-/// The local clock reading at `unix_ms`.
-pub fn clock_time(zone: &impl Zone, unix_ms: i64) -> ClockTime {
-    let minute_of_day = wall_minute(zone, unix_ms).rem_euclid(1440);
-    ClockTime { hour: (minute_of_day / 60) as u8, minute: (minute_of_day % 60) as u8 }
 }
 
 /// The first start of any of `events` strictly after `after_ms`, with the
@@ -105,61 +76,12 @@ fn next_wall_start(zone: &impl Zone, rule: Rule, after_ms: i64) -> i64 {
     }
 }
 
-/// Minutes on the local wall clock since 1970-01-01 00:00.
-fn wall_minute(zone: &impl Zone, unix_ms: i64) -> i64 {
-    unix_ms.div_euclid(MINUTE_MS) + i64::from(zone.utc_offset_minutes(unix_ms))
-}
-
-/// The instant a wall-clock minute happens: its first occurrence when the
-/// clock repeats it, the end of the gap when the clock skips it.
-fn instant_of_wall_minute(zone: &impl Zone, wall: i64) -> i64 {
-    let wall_ms = wall * MINUTE_MS;
-    let from_offset = |offset: i32| wall_ms - i64::from(offset) * MINUTE_MS;
-    let before = from_offset(zone.utc_offset_minutes(wall_ms - DAY_MS));
-    let after = from_offset(zone.utc_offset_minutes(wall_ms + DAY_MS));
-    let reads_as_wall = |at: i64| wall_minute(zone, at) == wall;
-    match (reads_as_wall(before), reads_as_wall(after)) {
-        (true, true) => before.min(after),
-        (true, false) => before,
-        (false, true) => after,
-        (false, false) => before,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clock::clock_time;
+    use crate::clock::testing::{berlin, utc, TestZone};
     use crate::reminders::events::EventId::*;
-
-    /// A zone with a base offset and the instants it changes at.
-    struct TestZone {
-        base: i32,
-        changes: Vec<(i64, i32)>,
-    }
-
-    impl Zone for TestZone {
-        fn utc_offset_minutes(&self, unix_ms: i64) -> i32 {
-            self.changes.iter().rev().find(|&&(from, _)| unix_ms >= from).map_or(self.base, |&(_, offset)| offset)
-        }
-    }
-
-    fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-        let year = year - i64::from(month <= 2);
-        let era = year.div_euclid(400);
-        let year_of_era = year - era * 400;
-        let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
-        let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-        era * 146_097 + day_of_era - 719_468
-    }
-
-    fn utc(year: i64, month: i64, day: i64, hour: i64, minute: i64) -> i64 {
-        (days_from_civil(year, month, day) * 1440 + hour * 60 + minute) * MINUTE_MS
-    }
-
-    /// Berlin in 2026: UTC+1, +2 from 2026-03-29 01:00 UTC, +1 from 2026-10-25 01:00 UTC.
-    fn berlin() -> TestZone {
-        TestZone { base: 60, changes: vec![(utc(2026, 3, 29, 1, 0), 120), (utc(2026, 10, 25, 1, 0), 60)] }
-    }
 
     fn fixed_summer_zone() -> TestZone {
         TestZone { base: 120, changes: Vec::new() }

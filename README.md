@@ -42,7 +42,7 @@ third-party tool is its call.
 - **Administrator**: packet capture requires it, and the exe asks for it.
 - [Npcap](https://npcap.com/#download) is recommended. Without it the meter falls
   back to the bundled WinDivert driver (`WinDivert.dll` and `WinDivert64.sys`
-  must stay beside the exe).
+  must stay beside the exe); with Npcap they are not needed.
 - Start the meter before you log in to the game, so it can find your character.
 
 ## Run it

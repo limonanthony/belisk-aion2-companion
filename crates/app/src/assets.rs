@@ -55,6 +55,10 @@ pub enum Icon {
     Stop,
     TriangleAlert,
     Trophy,
+    ListChecks,
+    Undo,
+    Users,
+    Languages,
 }
 
 impl Icon {
@@ -106,6 +110,10 @@ impl Icon {
             Self::Stop => "icons/square.svg",
             Self::TriangleAlert => "icons/triangle-alert.svg",
             Self::Trophy => "icons/trophy.svg",
+            Self::ListChecks => "icons/list-checks.svg",
+            Self::Undo => "icons/undo-2.svg",
+            Self::Users => "icons/users.svg",
+            Self::Languages => "icons/languages.svg",
         }
     }
 }
@@ -166,6 +174,10 @@ static ASSETS: &[(&str, &[u8])] = embedded! {
     "icons/square.svg" => "../assets/icons/square.svg",
     "icons/triangle-alert.svg" => "../assets/icons/triangle-alert.svg",
     "icons/trophy.svg" => "../assets/icons/trophy.svg",
+    "icons/list-checks.svg" => "../assets/icons/list-checks.svg",
+    "icons/undo-2.svg" => "../assets/icons/undo-2.svg",
+    "icons/users.svg" => "../assets/icons/users.svg",
+    "icons/languages.svg" => "../assets/icons/languages.svg",
     "class/assassin.png" => "../assets/game/class/assassin.png",
     "class/chanter.png" => "../assets/game/class/chanter.png",
     "class/cleric.png" => "../assets/game/class/cleric.png",
@@ -263,6 +275,10 @@ mod tests {
             Icon::Stop,
             Icon::TriangleAlert,
             Icon::Trophy,
+            Icon::ListChecks,
+            Icon::Undo,
+            Icon::Users,
+            Icon::Languages,
         ];
         for icon in icons {
             assert!(Assets.load(icon.path()).unwrap().is_some_and(|bytes| !bytes.is_empty()), "{icon:?}");

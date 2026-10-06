@@ -60,6 +60,8 @@ pub const DISPLAY_FONT: &str = OVERLAY_FAMILY;
 
 const RING_GAP: f32 = 3.0;
 const SPIN: std::time::Duration = std::time::Duration::from_millis(900);
+/// A select list's option.
+pub const OPTION_HEIGHT: f32 = 28.;
 
 pub type Handler<T> = Rc<dyn Fn(T, &mut Window, &mut App)>;
 
@@ -107,7 +109,7 @@ fn ring(radius: f32) -> Div {
 }
 
 /// Scrolls the page by what the control sticks out of it, plus a margin.
-fn reveal_marker(reveal: Reveal) -> impl IntoElement {
+pub fn reveal_marker(reveal: Reveal) -> impl IntoElement {
     canvas(
         move |bounds, window, _| {
             if !reveal.pending.replace(false) {
@@ -136,7 +138,8 @@ fn reveal_marker(reveal: Reveal) -> impl IntoElement {
 
 // ---- Page structure ----
 
-pub fn page_head(title: &'static str, lead: Option<&'static str>) -> Div {
+pub fn page_head(title: impl Into<SharedString>, lead: Option<SharedString>) -> Div {
+    let title = title.into();
     div()
         .flex_none()
         .flex()
@@ -147,7 +150,7 @@ pub fn page_head(title: &'static str, lead: Option<&'static str>) -> Div {
                 .id("page-title")
                 .role(Role::Heading)
                 .aria_level(1)
-                .aria_label(title)
+                .aria_label(title.clone())
                 .font_family(DISPLAY_FONT)
                 .text_size(px(21.))
                 .font_weight(FontWeight::SEMIBOLD)
@@ -158,7 +161,7 @@ pub fn page_head(title: &'static str, lead: Option<&'static str>) -> Div {
 }
 
 /// A group's title, 18 px below the page head for the first one.
-pub fn group_title(text: &'static str, first: bool) -> Div {
+pub fn group_title(text: impl Into<SharedString>, first: bool) -> Div {
     div()
         .flex_none()
         .flex()
@@ -169,7 +172,7 @@ pub fn group_title(text: &'static str, first: bool) -> Div {
         .text_size(px(12.5))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgba(MUTED))
-        .child(text)
+        .child(text.into())
 }
 
 /// Rows in a rounded surface, divided by hairlines.
@@ -306,7 +309,7 @@ impl Tone {
 }
 
 /// A connection tile: tinted icon square, label, value and a quieter line.
-pub fn tile(glyph: Icon, label: &'static str, value: impl Into<SharedString>, detail: Option<SharedString>, tone: Tone) -> Div {
+pub fn tile(glyph: Icon, label: impl Into<SharedString>, value: impl Into<SharedString>, detail: Option<SharedString>, tone: Tone) -> Div {
     div()
         .flex_1()
         .min_w_0()
@@ -336,13 +339,13 @@ pub fn tile(glyph: Icon, label: &'static str, value: impl Into<SharedString>, de
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .child(div().text_size(px(11.5)).text_color(rgba(FAINT)).child(label))
+                .child(div().text_size(px(11.5)).text_color(rgba(FAINT)).child(label.into()))
                 .child(div().truncate().text_size(px(13.5)).font_weight(FontWeight::SEMIBOLD).child(value.into()))
                 .children(detail.map(|detail| div().text_size(px(11.5)).text_color(rgba(MUTED)).child(detail))),
         )
 }
 
-pub fn badge(glyph: Option<AnyElement>, label: &'static str, tone: Tone) -> Div {
+pub fn badge(glyph: Option<AnyElement>, label: impl Into<SharedString>, tone: Tone) -> Div {
     div()
         .flex_none()
         .h(px(22.))
@@ -356,11 +359,11 @@ pub fn badge(glyph: Option<AnyElement>, label: &'static str, tone: Tone) -> Div 
         .text_size(px(12.))
         .font_weight(FontWeight::SEMIBOLD)
         .children(glyph)
-        .child(label)
+        .child(label.into())
 }
 
 /// A tinted note at the top of a page: what failed and what was done.
-pub fn alert(title: &'static str, text: impl Into<SharedString>, tone: Tone) -> Div {
+pub fn alert(title: impl Into<SharedString>, text: impl Into<SharedString>, tone: Tone) -> Div {
     div()
         .flex_none()
         .mt(px(14.))
@@ -379,7 +382,7 @@ pub fn alert(title: &'static str, text: impl Into<SharedString>, tone: Tone) -> 
             div()
                 .flex_1()
                 .min_w_0()
-                .child(div().font_weight(FontWeight::SEMIBOLD).text_color(tone.colour()).child(title))
+                .child(div().font_weight(FontWeight::SEMIBOLD).text_color(tone.colour()).child(title.into()))
                 .child(text.into()),
         )
 }
@@ -505,7 +508,7 @@ pub fn button(
 /// knob. Space and Enter switch it, as a click does.
 pub fn switch(
     id: &'static str,
-    label: &'static str,
+    label: impl Into<SharedString>,
     on: bool,
     focus: &Focus,
     on_toggle: Option<Handler<bool>>,
@@ -514,7 +517,7 @@ pub fn switch(
         .id(id)
         .debug_selector(|| id.to_string())
         .role(Role::Switch)
-        .aria_label(label)
+        .aria_label(label.into())
         .aria_toggled(if on { Toggled::True } else { Toggled::False })
         .flex_none()
         .w(px(36.))
@@ -662,7 +665,7 @@ impl SliderSpec {
 #[allow(clippy::too_many_arguments)]
 pub fn slider(
     id: &'static str,
-    label: &'static str,
+    label: impl Into<SharedString>,
     spec: SliderSpec,
     text: SharedString,
     width: f32,
@@ -680,7 +683,7 @@ pub fn slider(
         .id(id)
         .debug_selector(|| id.to_string())
         .role(Role::Slider)
-        .aria_label(label)
+        .aria_label(label.into())
         .aria_numeric_value(spec.value)
         .aria_min_numeric_value(spec.min)
         .aria_max_numeric_value(spec.max)
@@ -779,8 +782,8 @@ pub fn fraction_at(bounds: Bounds<Pixels>, x: Pixels) -> f32 {
 /// the choice, as in a radio group.
 pub fn segmented(
     id: &'static str,
-    label: &'static str,
-    options: &[&'static str],
+    label: impl Into<SharedString>,
+    options: &[SharedString],
     selected: usize,
     focus: &Focus,
     on_pick: Handler<usize>,
@@ -791,8 +794,8 @@ pub fn segmented(
         .id(id)
         .debug_selector(|| id.to_string())
         .role(Role::RadioGroup)
-        .aria_label(label)
-        .aria_value(options[selected])
+        .aria_label(label.into())
+        .aria_value(options[selected].clone())
         .flex_none()
         .flex()
         .gap(px(2.))
@@ -821,7 +824,7 @@ pub fn segmented(
             div()
                 .id(index)
                 .role(Role::RadioButton)
-                .aria_label(*option)
+                .aria_label(option.clone())
                 .aria_toggled(if on { Toggled::True } else { Toggled::False })
                 .h(px(26.))
                 .px(px(11.))
@@ -840,7 +843,7 @@ pub fn segmented(
                         on_pick(index, window, cx);
                     }
                 })
-                .child(*option)
+                .child(option.clone())
         }));
     focusable(element, focus, 8.)
 }
@@ -849,7 +852,7 @@ pub fn segmented(
 /// wide. The view owns the open state, the keys and the menu.
 pub fn select_trigger(
     id: &'static str,
-    label: &'static str,
+    label: impl Into<SharedString>,
     value: SharedString,
     open: bool,
     min_width: f32,
@@ -865,16 +868,16 @@ pub fn select_trigger(
 
 /// [`select_trigger`] that cannot be opened now: dimmed, out of the tab
 /// order and announced as unavailable.
-pub fn disabled_select(id: &'static str, label: &'static str, value: SharedString, min_width: f32) -> AnyElement {
+pub fn disabled_select(id: &'static str, label: impl Into<SharedString>, value: SharedString, min_width: f32) -> AnyElement {
     Disabled(select_box(id, label, value, false, min_width).opacity(0.45)).into_any_element()
 }
 
-fn select_box(id: &'static str, label: &'static str, value: SharedString, open: bool, min_width: f32) -> Stateful<Div> {
+fn select_box(id: &'static str, label: impl Into<SharedString>, value: SharedString, open: bool, min_width: f32) -> Stateful<Div> {
     div()
         .id(id)
         .debug_selector(|| id.to_string())
         .role(Role::ComboBox)
-        .aria_label(label)
+        .aria_label(label.into())
         .aria_value(value.clone())
         .aria_expanded(open)
         .flex_none()
@@ -894,63 +897,79 @@ fn select_box(id: &'static str, label: &'static str, value: SharedString, open: 
 }
 
 /// The select's list, hung below the trigger at `below` in window
-/// coordinates; it swallows the presses that land on it.
+/// coordinates; it swallows the presses that land on it. With `scroll`, a
+/// list longer than `shown` options scrolls, with the thin thumb.
 #[allow(clippy::too_many_arguments)]
 pub fn select_menu(
     below: Bounds<Pixels>,
-    label: &'static str,
+    label: impl Into<SharedString>,
     options: &[SharedString],
     current: Option<usize>,
     highlighted: usize,
     on_pick: Handler<usize>,
     on_hover: Handler<usize>,
     animate: bool,
+    scroll: Option<(&ScrollHandle, usize)>,
 ) -> AnyElement {
+    let items = options.iter().enumerate().map(|(index, option)| {
+        let on_pick = on_pick.clone();
+        let on_hover = on_hover.clone();
+        let is_current = current == Some(index);
+        div()
+            .id(("option", index))
+            .debug_selector(move || format!("option-{index}"))
+            .role(Role::ListBoxOption)
+            .aria_label(option.clone())
+            .aria_selected(is_current)
+            .flex_none()
+            .h(px(OPTION_HEIGHT))
+            .px(px(8.))
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .rounded(px(6.))
+            .cursor_pointer()
+            .when(index == highlighted, |item| item.bg(rgba(SELECTED)))
+            .on_hover(move |hovered, window, cx| {
+                if *hovered {
+                    on_hover(index, window, cx);
+                }
+            })
+            .on_click(move |_, window, cx| on_pick(index, window, cx))
+            .child(div().flex_1().child(option.clone()))
+            .when(is_current, |item| item.child(icon(Icon::Check, 14., rgba(TEXT))))
+    });
     let menu = div()
         .id("select-menu")
         .debug_selector(|| "select-menu".to_string())
         .role(Role::ListBox)
-        .aria_label(label)
+        .aria_label(label.into())
         .absolute()
         .left(below.left())
         .top(below.bottom() + px(4.))
         .w(below.size.width)
         .occlude()
-        .p(px(4.))
-        .flex()
-        .flex_col()
         .rounded(px(9.))
         .border_1()
         .border_color(rgba(POPOVER_BORDER))
         .bg(rgb(RAISED))
-        .shadow(popover_shadow())
-        .children(options.iter().enumerate().map(|(index, option)| {
-            let on_pick = on_pick.clone();
-            let on_hover = on_hover.clone();
-            let is_current = current == Some(index);
+        .shadow(popover_shadow());
+    let menu = match scroll.filter(|(_, shown)| options.len() > *shown) {
+        Some((handle, shown)) => menu.relative().child(
             div()
-                .id(("option", index))
-                .debug_selector(move || format!("option-{index}"))
-                .role(Role::ListBoxOption)
-                .aria_label(option.clone())
-                .aria_selected(is_current)
-                .h(px(28.))
-                .px(px(8.))
+                .id("select-options")
+                .max_h(px(shown as f32 * OPTION_HEIGHT + 8.))
+                .overflow_y_scroll()
+                .track_scroll(handle)
+                .p(px(4.))
+                .pr(px(10.))
                 .flex()
-                .items_center()
-                .gap(px(8.))
-                .rounded(px(6.))
-                .cursor_pointer()
-                .when(index == highlighted, |item| item.bg(rgba(SELECTED)))
-                .on_hover(move |hovered, window, cx| {
-                    if *hovered {
-                        on_hover(index, window, cx);
-                    }
-                })
-                .on_click(move |_, window, cx| on_pick(index, window, cx))
-                .child(div().flex_1().child(option.clone()))
-                .when(is_current, |item| item.child(icon(Icon::Check, 14., rgba(TEXT))))
-        }));
+                .flex_col()
+                .children(items),
+        )
+        .child(menu_thumb(handle.clone())),
+        None => menu.p(px(4.)).flex().flex_col().children(items),
+    };
     if animate {
         menu.with_animation("select-menu-fade", Animation::new(std::time::Duration::from_millis(100)), |menu, t| {
             menu.opacity(t)
@@ -961,14 +980,36 @@ pub fn select_menu(
     }
 }
 
+/// The 3 px thumb of a scrolling select list.
+fn menu_thumb(handle: ScrollHandle) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let max = handle.max_offset().y;
+            let viewport = handle.bounds().size.height;
+            if max <= Pixels::ZERO || viewport <= Pixels::ZERO {
+                return;
+            }
+            let length = (viewport * (viewport / (viewport + max))).max(px(16.));
+            let travel = viewport - px(8.) - length;
+            let progress = (-handle.offset().y / max).clamp(0., 1.);
+            let origin = point(bounds.right() - px(6.), bounds.top() + px(4.) + travel * progress);
+            window.paint_quad(fill(Bounds::new(origin, size(px(3.), length)), rgba(SCROLL_THUMB)).corner_radii(px(2.)));
+        },
+    )
+    .absolute()
+    .inset_0()
+}
+
 /// A sidebar entry: 32 px, icon and name; the open section is lit.
-pub fn side_item(id: &'static str, glyph: Icon, label: &'static str, selected: bool, focus: &Focus) -> Stateful<Div> {
+pub fn side_item(id: &'static str, glyph: Icon, label: impl Into<SharedString>, selected: bool, focus: &Focus) -> Stateful<Div> {
+    let label = label.into();
     let colour: Hsla = rgba(if selected { TEXT } else { MUTED }).into();
     let element = div()
         .id(id)
         .debug_selector(|| id.to_string())
         .role(Role::Tab)
-        .aria_label(label)
+        .aria_label(label.clone())
         .aria_selected(selected)
         .flex_none()
         .h(px(32.))
@@ -988,12 +1029,13 @@ pub fn side_item(id: &'static str, glyph: Icon, label: &'static str, selected: b
 }
 
 /// A main-window tooltip, for `.tooltip(...)`.
-pub fn tooltip(text: &'static str) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
-    move |_, cx| cx.new(|_| Tip { text }).into()
+pub fn tooltip(text: impl Into<SharedString>) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    let text = text.into();
+    move |_, cx| cx.new(|_| Tip { text: text.clone() }).into()
 }
 
 struct Tip {
-    text: &'static str,
+    text: SharedString,
 }
 
 impl Render for Tip {
@@ -1011,7 +1053,7 @@ impl Render for Tip {
             .text_size(px(12.))
             .line_height(relative(1.4))
             .text_color(rgba(TEXT))
-            .child(self.text)
+            .child(self.text.clone())
     }
 }
 

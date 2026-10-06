@@ -16,9 +16,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use aether_core::config::CaptureBackendPriority;
-use aether_core::events::MeterEvent;
-use aether_core::preflight::{self, Weight};
+use meter_core::config::CaptureBackendPriority;
+use meter_core::events::MeterEvent;
+use meter_core::preflight::Weight;
 use gpui::{
     div, point, prelude::*, px, relative, rgb, rgba, size, Animation, AnimationExt as _, AnyElement, App, Bounds,
     Context, Div, Entity, FocusHandle, FontFeatures, FontWeight, KeyDownEvent, MouseButton, MouseMoveEvent, Pixels,
@@ -29,24 +29,30 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{IsIconic, SetForegroundWindow, ShowWindow, SW_RESTORE};
 
 use super::files::{self, Document, Folder};
-use super::model::{global, AppSettings, CountMode, DetailPlacement, Settings, END_FIGHT_AFTER_OPTIONS};
+use super::model::{
+    end_fight_after_label, global, AppSettings, CountMode, DetailPlacement, Settings, END_FIGHT_AFTER_OPTIONS,
+};
 use super::runtime::{CaptureCheck, MeterTile, ReplayProgress, RuntimeModel, StorageState};
 use super::widgets::{
     self, alert, backdrop, badge, button, description, dimmed_row, disabled_select, group, group_title, icon, list_row,
     note, page_head, row, scroll_thumb, segmented, select_menu, select_trigger, side_item, slider, spinner, switch, tile,
     ButtonKind, Focus, Handler, Reveal, SliderSpec, Tone, BODY_FONT, CANVAS, DISPLAY_FONT, FAINT, LINE, MUTED,
-    POPOVER_BORDER, RAISED, SCRIM, SIDE, TEXT,
+    OPTION_HEIGHT, POPOVER_BORDER, RAISED, SCRIM, SIDE, TEXT,
 };
 use crate::assets::Icon;
 use crate::format;
+use crate::i18n::{self, fl, LanguageChoice};
 use crate::meter::{board_width, Layout, LockChanged, MeterModel, MeterView, OverlaySettings, PctMode, PLAYERS_SHOWN_RANGE};
 use crate::overlay::Placement;
 use crate::reminders::{self, EventId, Rule, EVENTS, LEAD_MINUTES_OPTIONS};
 use crate::sample;
 use crate::secondary::chrome::Anchor;
+use crate::todos::{self, HiddenSummary};
+
+mod capture_check;
+mod todos_page;
 
 const WINDOW_SIZE: (f32, f32) = (960., 620.);
-const WINDOW_TITLE: &str = "AION 2 DPS Meter Settings";
 const SIDEBAR_WIDTH: f32 = 208.;
 const PREVIEW_CARD: f32 = 236.;
 const PREVIEW_STAGE_PADDING: f32 = 12.;
@@ -56,17 +62,14 @@ const PREVIEW_STAGE_PADDING: f32 = 12.;
 const PREVIEW_WIDTH: f32 = 262.;
 const OVERLAY_SLIDER_WIDTH: f32 = 120.;
 const SLIDER_WIDTH: f32 = 170.;
-const OPTION_HEIGHT: f32 = 28.;
+/// The reset hour's list shows this many hours at a time and scrolls.
+const HOURS_SHOWN: usize = 8;
 const CONFIRM_FOR: Duration = Duration::from_secs(4);
 /// How long "Shown above the meter" stays after a test reminder.
 const TEST_SHOWN_FOR: Duration = Duration::from_secs(4);
 const DIALOG_FADE: Duration = Duration::from_millis(150);
 const CHIP_FADE: Duration = Duration::from_millis(150);
 const ALPHA_PER_PERCENT: f64 = 2.55;
-
-const COUNT_TIP: &str = "With Boss only on and no boss in front of you, every hit is ignored and the overlay stays empty.";
-const RESET_TITLE: &str = "Reset settings?";
-const RESET_BODY: &str = "Settings go back to their defaults, including the Capture switches. Fight history, personal bests, recordings and boss corrections are kept.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Section {
@@ -75,20 +78,33 @@ pub enum Section {
     Capture,
     Bests,
     Reminders,
+    Todos,
+    General,
     About,
 }
 
 impl Section {
-    const ALL: [Self; 6] = [Self::Overlay, Self::Behaviour, Self::Capture, Self::Bests, Self::Reminders, Self::About];
+    const ALL: [Self; 8] = [
+        Self::Overlay,
+        Self::Behaviour,
+        Self::Capture,
+        Self::Bests,
+        Self::Reminders,
+        Self::Todos,
+        Self::General,
+        Self::About,
+    ];
 
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            Self::Overlay => "Overlay",
-            Self::Behaviour => "Meter behaviour",
-            Self::Capture => "Capture",
-            Self::Bests => "Personal bests",
-            Self::Reminders => "Reminders",
-            Self::About => "About",
+            Self::Overlay => fl!("settings-section-overlay"),
+            Self::Behaviour => fl!("settings-section-behaviour"),
+            Self::Capture => fl!("settings-section-capture"),
+            Self::Bests => fl!("settings-section-bests"),
+            Self::Reminders => fl!("settings-section-reminders"),
+            Self::Todos => fl!("settings-section-todos"),
+            Self::General => fl!("settings-section-general"),
+            Self::About => fl!("settings-section-about"),
         }
     }
 
@@ -99,17 +115,21 @@ impl Section {
             Self::Capture => Icon::Radio,
             Self::Bests => Icon::Trophy,
             Self::Reminders => Icon::Bell,
+            Self::Todos => Icon::ListChecks,
+            Self::General => Icon::Languages,
             Self::About => Icon::Info,
         }
     }
 
-    fn key(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             Self::Overlay => "nav-overlay",
             Self::Behaviour => "nav-behaviour",
             Self::Capture => "nav-capture",
             Self::Bests => "nav-bests",
             Self::Reminders => "nav-reminders",
+            Self::Todos => "nav-todos",
+            Self::General => "nav-general",
             Self::About => "nav-about",
         }
     }
@@ -120,6 +140,8 @@ impl Section {
 enum Select {
     EndFight,
     LeadTime,
+    ResetHour,
+    Language,
 }
 
 impl Select {
@@ -127,27 +149,42 @@ impl Select {
         match self {
             Self::EndFight => "end-fight",
             Self::LeadTime => "lead-time",
+            Self::ResetHour => "reset-hour",
+            Self::Language => "language",
         }
     }
 
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            Self::EndFight => "End a fight after",
-            Self::LeadTime => "Remind me",
+            Self::EndFight => fl!("settings-behaviour-end-fight"),
+            Self::LeadTime => fl!("settings-reminders-lead-time"),
+            Self::ResetHour => fl!("todos-window-daily-reset"),
+            Self::Language => fl!("settings-language"),
         }
     }
 
     fn min_width(self) -> f32 {
         match self {
             Self::EndFight => 150.,
-            Self::LeadTime => 130.,
+            Self::LeadTime | Self::ResetHour => 130.,
+            Self::Language => 170.,
         }
     }
 
     fn options(self) -> Vec<SharedString> {
         match self {
-            Self::EndFight => END_FIGHT_AFTER_OPTIONS.iter().map(|(_, label)| SharedString::new_static(label)).collect(),
+            Self::EndFight => END_FIGHT_AFTER_OPTIONS.iter().map(|&secs| end_fight_after_label(secs).into()).collect(),
             Self::LeadTime => LEAD_MINUTES_OPTIONS.iter().map(|&minutes| lead_label(minutes)).collect(),
+            Self::ResetHour => (0..24u8).map(hour_label).collect(),
+            Self::Language => LanguageChoice::ALL.into_iter().map(language_label).collect(),
+        }
+    }
+
+    /// How many options the open list shows before it scrolls.
+    fn shown(self) -> usize {
+        match self {
+            Self::ResetHour => HOURS_SHOWN,
+            Self::EndFight | Self::LeadTime | Self::Language => usize::MAX,
         }
     }
 
@@ -155,23 +192,37 @@ impl Select {
     fn current(self, settings: &AppSettings) -> Option<usize> {
         match self {
             Self::EndFight => {
-                END_FIGHT_AFTER_OPTIONS.iter().position(|(secs, _)| *secs == settings.behaviour.end_fight_after_secs)
+                END_FIGHT_AFTER_OPTIONS.iter().position(|&secs| secs == settings.behaviour.end_fight_after_secs)
             }
             Self::LeadTime => LEAD_MINUTES_OPTIONS.iter().position(|&minutes| minutes == settings.reminders.lead_minutes),
+            Self::ResetHour => Some(usize::from(settings.todos.reset_hour.min(23))),
+            Self::Language => LanguageChoice::ALL.iter().position(|&choice| choice == settings.general.language),
         }
     }
 
     fn value(self, settings: &AppSettings) -> SharedString {
         match self {
-            Self::EndFight => end_fight_label(settings.behaviour.end_fight_after_secs),
+            Self::EndFight => end_fight_after_label(settings.behaviour.end_fight_after_secs).into(),
             Self::LeadTime => lead_label(settings.reminders.lead_minutes),
+            Self::ResetHour => hour_label(settings.todos.reset_hour),
+            Self::Language => language_label(settings.general.language),
         }
     }
 
-    fn apply(self, settings: &mut AppSettings, index: usize) {
+    /// Keeps the option picked. The reset hour goes through the to-do
+    /// tracker, which moves its countdowns at once.
+    fn apply(self, index: usize, store: &Entity<Settings>, cx: &mut App) {
         match self {
-            Self::EndFight => settings.behaviour.end_fight_after_secs = END_FIGHT_AFTER_OPTIONS[index].0,
-            Self::LeadTime => settings.reminders.lead_minutes = LEAD_MINUTES_OPTIONS[index],
+            Self::EndFight => store.update(cx, |settings, cx| {
+                settings.update(cx, |all| all.behaviour.end_fight_after_secs = END_FIGHT_AFTER_OPTIONS[index])
+            }),
+            Self::LeadTime => {
+                store.update(cx, |settings, cx| settings.update(cx, |all| all.reminders.lead_minutes = LEAD_MINUTES_OPTIONS[index]))
+            }
+            Self::ResetHour => todos::global(cx).update(cx, |todos, cx| todos.set_reset_hour(index.min(23) as u8, cx)),
+            Self::Language => {
+                store.update(cx, |settings, cx| settings.update(cx, |all| all.general.language = LanguageChoice::ALL[index]))
+            }
         }
     }
 }
@@ -238,6 +289,45 @@ impl SliderKind {
     }
 }
 
+/// The confirm dialogs, each opened by one button.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Dialog {
+    ResetSettings,
+    ResetTodos,
+}
+
+impl Dialog {
+    /// The button that opened it, which takes the focus back.
+    fn opener(self) -> &'static str {
+        match self {
+            Self::ResetSettings => "reset-settings",
+            Self::ResetTodos => "todos-reset",
+        }
+    }
+}
+
+/// What Settings → To-dos just did, said for 4 s.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TodosDone {
+    Restored(usize),
+    Reset,
+}
+
+/// What the To-dos page shows of the to-dos: hidden built-ins, your own
+/// to-dos for the dialog, and a failed save.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TodosSeen {
+    hidden: HiddenSummary,
+    own_total: usize,
+    save_error: Option<String>,
+}
+
+impl TodosSeen {
+    fn of(todos: &todos::Todos) -> Self {
+        Self { hidden: todos.hidden_summary(), own_total: todos.own_total(), save_error: todos.save_error().map(str::to_string) }
+    }
+}
+
 pub struct SettingsView {
     store: Entity<Settings>,
     runtime: Entity<RuntimeModel>,
@@ -256,17 +346,23 @@ pub struct SettingsView {
     /// This select's list is open, with this option lit.
     select_open: Option<(Select, usize)>,
     select_anchor: Anchor,
+    select_scroll: ScrollHandle,
     tracks: HashMap<SliderKind, Anchor>,
     /// Where the Overlay page's rows and preview sit, for the dev capture's
     /// check that no setting moves the rows.
     #[cfg(feature = "probes")]
     layout_marks: HashMap<&'static str, Anchor>,
     dragging: Option<SliderKind>,
-    reset_dialog_open: bool,
+    dialog: Option<Dialog>,
     /// "Reset all" asked for its second click; the task takes the question back.
     confirm_bests: Option<Task<()>>,
     /// A test reminder was just shown; the task takes the note away.
     test_shown: Option<Task<()>>,
+    /// What a To-dos button just did; the task takes the badge away.
+    todos_done: Option<(TodosDone, Task<()>)>,
+    /// What the To-dos page shows of the to-dos, to redraw only when it
+    /// changes.
+    todos_seen: TodosSeen,
     /// What an action handed to Windows could not do, under its control.
     action_error: Option<(&'static str, String)>,
     figures: FontFeatures,
@@ -285,6 +381,7 @@ impl SettingsView {
         let preview_model = cx.new(|_| sample_meter(preview_settings(overlay)));
         let preview = cx.new(|cx| MeterView::preview(preview_model.clone(), preview_zoom(), cx));
 
+        let locale = i18n::locale(cx);
         let mut subscriptions = vec![
             cx.observe(&store, |this, store, cx| {
                 let overlay = preview_settings(store.read(cx).get().overlay.clone());
@@ -297,10 +394,24 @@ impl SettingsView {
                 cx.notify();
             }),
             cx.observe(&runtime, |_, _, cx| cx.notify()),
+            cx.observe(&todos::global(cx), |this, todos, cx| {
+                let seen = TodosSeen::of(todos.read(cx));
+                if seen != this.todos_seen {
+                    this.todos_seen = seen;
+                    cx.notify();
+                }
+            }),
             // A focused control that goes away (a Cancel replay button once
             // the replay ends) leaves the focus with the window, as a page
             // gives it back to its body, so Tab keeps working.
             cx.on_focus_lost(window, |this, window, cx| window.focus(&this.root_focus, cx)),
+            cx.observe_in(&locale, window, |this, _, window, cx| {
+                window.set_window_title(&fl!("settings-window-title"));
+                this.preview_model.update(cx, |model, cx| {
+                    model.refresh_words();
+                    cx.notify();
+                });
+            }),
         ];
         let (mut locked, mut can_unlock) = (false, false);
         if let Some(meter_window) = meter_window {
@@ -315,6 +426,7 @@ impl SettingsView {
             }
         }
 
+        let todos_seen = TodosSeen::of(todos::global(cx).read(cx));
         let root_focus = cx.focus_handle();
         window.focus(&root_focus, cx);
         Self {
@@ -332,13 +444,16 @@ impl SettingsView {
             reveal: Rc::new(Cell::new(false)),
             select_open: None,
             select_anchor: Anchor::default(),
+            select_scroll: ScrollHandle::new(),
             tracks: HashMap::new(),
             #[cfg(feature = "probes")]
             layout_marks: HashMap::new(),
             dragging: None,
-            reset_dialog_open: false,
+            dialog: None,
             confirm_bests: None,
             test_shown: None,
+            todos_done: None,
+            todos_seen,
             action_error: None,
             figures: FontFeatures(Arc::new(vec![("tnum".into(), 1)])),
             _subscriptions: subscriptions,
@@ -354,6 +469,7 @@ impl SettingsView {
         self.dragging = None;
         self.confirm_bests = None;
         self.test_shown = None;
+        self.todos_done = None;
         self.action_error = None;
         self.scroll.set_offset(point(px(0.), px(0.)));
         if section == Section::About {
@@ -400,7 +516,12 @@ impl SettingsView {
 
     #[cfg(any(test, feature = "probes"))]
     pub fn reset_dialog_is_open(&self) -> bool {
-        self.reset_dialog_open
+        self.dialog.is_some()
+    }
+
+    #[cfg(feature = "probes")]
+    pub fn section(&self) -> Section {
+        self.section
     }
 
     /// Where a slider's track, the select, the Overlay page's rows or its
@@ -428,7 +549,7 @@ impl SettingsView {
         match event.keystroke.key.as_str() {
             "tab" if !modifiers.control && !modifiers.alt && !modifiers.platform => {
                 cx.stop_propagation();
-                if self.reset_dialog_open {
+                if self.dialog.is_some() {
                     let next = if self.handle("dialog-cancel", cx).is_focused(window) { "dialog-reset" } else { "dialog-cancel" };
                     self.focus_control(next, window, cx);
                 } else {
@@ -449,9 +570,9 @@ impl SettingsView {
                 }
                 cx.notify();
             }
-            "escape" if self.reset_dialog_open => {
+            "escape" if self.dialog.is_some() => {
                 cx.stop_propagation();
-                self.close_reset_dialog(window, cx);
+                self.close_dialog(window, cx);
             }
             _ => {}
         }
@@ -498,10 +619,10 @@ impl SettingsView {
         let lit = self.select_open.filter(|(open, _)| *open == select).map(|(_, lit)| lit);
         match (lit, key) {
             (None, "down" | "up" | "enter" | "space") => self.open_select(select, cx),
-            (Some(lit), "down") => self.select_open = Some((select, (lit + 1).min(last))),
-            (Some(lit), "up") => self.select_open = Some((select, lit.saturating_sub(1))),
-            (Some(_), "home") => self.select_open = Some((select, 0)),
-            (Some(_), "end") => self.select_open = Some((select, last)),
+            (Some(lit), "down") => self.light(select, (lit + 1).min(last)),
+            (Some(lit), "up") => self.light(select, lit.saturating_sub(1)),
+            (Some(_), "home") => self.light(select, 0),
+            (Some(_), "end") => self.light(select, last),
             (Some(lit), "enter" | "space") => self.pick(select, lit, window, cx),
             (Some(_), "escape") => self.select_open = None,
             _ => return,
@@ -511,13 +632,41 @@ impl SettingsView {
         cx.notify();
     }
 
+    /// Lights an option of the open list, scrolling a long list so it shows.
+    fn light(&mut self, select: Select, index: usize) {
+        self.select_open = Some((select, index));
+        let shown = select.shown();
+        if select.options().len() <= shown {
+            return;
+        }
+        let top = (-self.select_scroll.offset().y / px(OPTION_HEIGHT)).round().max(0.) as usize;
+        let top = if index < top {
+            index
+        } else if index >= top + shown {
+            index + 1 - shown
+        } else {
+            return;
+        };
+        self.scroll_select_to(top);
+    }
+
+    fn scroll_select_to(&self, top: usize) {
+        self.select_scroll.set_offset(point(px(0.), -px(top as f32 * OPTION_HEIGHT)));
+    }
+
+    /// Opens the list on the stored value; a long list opens scrolled so it
+    /// shows a few options above it.
     fn open_select(&mut self, select: Select, cx: &App) {
-        let current = select.current(self.store.read(cx).get());
-        self.select_open = Some((select, current.unwrap_or(0)));
+        let current = select.current(self.store.read(cx).get()).unwrap_or(0);
+        self.select_open = Some((select, current));
+        let (count, shown) = (select.options().len(), select.shown());
+        if count > shown {
+            self.scroll_select_to(current.saturating_sub(3).min(count - shown));
+        }
     }
 
     fn pick(&mut self, select: Select, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        self.store.update(cx, |settings, cx| settings.update(cx, |all| select.apply(all, index)));
+        select.apply(index, &self.store, cx);
         self.select_open = None;
         self.focus_control(select.key(), window, cx);
         cx.notify();
@@ -548,36 +697,47 @@ impl SettingsView {
             .into_any_element()
     }
 
-    fn open_reset_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.reset_dialog_open = true;
+    fn open_dialog(&mut self, dialog: Dialog, window: &mut Window, cx: &mut Context<Self>) {
+        self.dialog = Some(dialog);
         self.focus_control("dialog-cancel", window, cx);
         cx.notify();
     }
 
-    fn close_reset_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.reset_dialog_open = false;
-        self.focus_control("reset-settings", window, cx);
+    fn close_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(dialog) = self.dialog.take() {
+            self.focus_control(dialog.opener(), window, cx);
+        }
         cx.notify();
     }
 
-    fn reset_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.store.update(cx, |settings, cx| settings.reset(cx));
-        self.runtime.update(cx, |runtime, cx| runtime.load_storage(cx));
-        self.close_reset_dialog(window, cx);
+    fn confirm_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.dialog {
+            Some(Dialog::ResetSettings) => {
+                self.store.update(cx, |settings, cx| settings.reset(cx));
+                self.runtime.update(cx, |runtime, cx| runtime.load_storage(cx));
+            }
+            Some(Dialog::ResetTodos) => {
+                todos::global(cx).update(cx, |todos, cx| todos.reset_completely(cx));
+                self.say_todos_done(TodosDone::Reset, cx);
+            }
+            None => return,
+        }
+        self.close_dialog(window, cx);
     }
 
     fn switch_row(
         &mut self,
         key: &'static str,
-        label: &'static str,
-        text: Option<&'static str>,
+        label: String,
+        text: Option<String>,
         on: bool,
         apply: fn(&mut AppSettings, bool),
         window: &Window,
         cx: &mut App,
     ) -> Div {
         let focus = self.focus_of(key, true, window, cx);
-        row(label, text.map(description), switch(key, label, on, &focus, Some(self.set(apply))))
+        let control = switch(key, label.clone(), on, &focus, Some(self.set(apply)));
+        row(label, text.map(description), control)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -585,23 +745,23 @@ impl SettingsView {
         &mut self,
         key: &'static str,
         label: impl IntoElement,
-        name: &'static str,
+        name: String,
         text: Option<AnyElement>,
-        options: &[&'static str],
+        options: [SharedString; 2],
         selected: usize,
         apply: fn(&mut AppSettings, usize),
         window: &Window,
         cx: &mut App,
     ) -> Div {
         let focus = self.focus_of(key, true, window, cx);
-        row(label, text, segmented(key, name, options, selected, &focus, self.set(apply)))
+        row(label, text, segmented(key, name, &options, selected, &focus, self.set(apply)))
     }
 
     fn slider_row(
         &mut self,
         kind: SliderKind,
-        label: &'static str,
-        text: &'static str,
+        label: String,
+        text: String,
         width: f32,
         settings: &AppSettings,
         window: &Window,
@@ -615,11 +775,8 @@ impl SettingsView {
         let on_press: Handler<Point<Pixels>> = Rc::new(move |position, _, cx| {
             let _ = view.update(cx, |view, cx| view.press_slider(kind, position, cx));
         });
-        row(
-            label,
-            Some(description(text)),
-            slider(kind.key(), label, spec, kind.text(spec.value), width, &focus, &track, on_change, on_press),
-        )
+        let control = slider(kind.key(), label.clone(), spec, kind.text(spec.value), width, &focus, &track, on_change, on_press);
+        row(label, Some(description(text)), control)
     }
 
     fn button_handler(&self, cx: &Context<Self>, act: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static) -> Handler<()> {
@@ -648,20 +805,28 @@ impl SettingsView {
         let look = group(vec![
             self.slider_row(
                 SliderKind::Opacity,
-                "Background opacity",
-                "Lower is more see-through. The text keeps its own plates.",
+                fl!("settings-overlay-opacity"),
+                fl!("settings-overlay-opacity-text"),
                 OVERLAY_SLIDER_WIDTH,
                 settings,
                 window,
                 cx,
             ),
-            self.slider_row(SliderKind::Scale, "Content scale", "70 to 150%.", OVERLAY_SLIDER_WIDTH, settings, window, cx),
+            self.slider_row(
+                SliderKind::Scale,
+                fl!("settings-overlay-scale"),
+                fl!("settings-overlay-scale-text"),
+                OVERLAY_SLIDER_WIDTH,
+                settings,
+                window,
+                cx,
+            ),
             self.segmented_row(
                 "layout",
-                "Layout",
-                "Layout",
-                Some(description("Capsule is one line: your DPS, place and time. It opens on pointer over.")),
-                &["Full", "Capsule"],
+                fl!("settings-overlay-layout"),
+                fl!("settings-overlay-layout"),
+                Some(description(fl!("settings-overlay-layout-text"))),
+                [fl!("settings-overlay-layout-full").into(), fl!("settings-overlay-layout-capsule").into()],
                 usize::from(overlay.layout == Layout::Capsule),
                 |all, index| all.overlay.layout = if index == 0 { Layout::Full } else { Layout::Capsule },
                 window,
@@ -669,10 +834,10 @@ impl SettingsView {
             ),
             self.segmented_row(
                 "percentage",
-                "Percentage",
-                "Percentage",
-                Some(description("Contribution is based on the visible list; share on the whole fight.")),
-                &["Contribution", "Share"],
+                fl!("settings-overlay-percentage"),
+                fl!("settings-overlay-percentage"),
+                Some(description(fl!("settings-overlay-percentage-text"))),
+                [fl!("settings-overlay-contribution").into(), fl!("settings-overlay-share").into()],
                 usize::from(overlay.pct_mode == PctMode::Share),
                 |all, index| all.overlay.pct_mode = if index == 0 { PctMode::Contribution } else { PctMode::Share },
                 window,
@@ -680,11 +845,19 @@ impl SettingsView {
             ),
         ]);
         let shown = group(vec![
-            self.switch_row("boss-hp", "Boss HP gauge", None, overlay.show_boss_hp, |all, on| all.overlay.show_boss_hp = on, window, cx),
+            self.switch_row(
+                "boss-hp",
+                fl!("settings-overlay-boss-hp"),
+                None,
+                overlay.show_boss_hp,
+                |all, on| all.overlay.show_boss_hp = on,
+                window,
+                cx,
+            ),
             self.switch_row(
                 "player-name",
-                "Player name",
-                Some("Off hides names; icons and figures stay."),
+                fl!("settings-overlay-player-name"),
+                Some(fl!("settings-overlay-player-name-text")),
                 overlay.show_player_name,
                 |all, on| all.overlay.show_player_name = on,
                 window,
@@ -692,31 +865,39 @@ impl SettingsView {
             ),
             self.switch_row(
                 "mask-nicknames",
-                "Mask nicknames",
-                Some("Shows Mi****e instead of the name, for streams and screenshots."),
+                fl!("settings-overlay-mask"),
+                Some(fl!("settings-overlay-mask-text")),
                 overlay.mask_nicknames,
                 |all, on| all.overlay.mask_nicknames = on,
                 window,
                 cx,
             ),
-            self.switch_row("server", "Server", None, overlay.show_server, |all, on| all.overlay.show_server = on, window, cx),
+            self.switch_row("server", fl!("common-server"), None, overlay.show_server, |all, on| all.overlay.show_server = on, window, cx),
             self.switch_row(
                 "combat-power",
-                "Combat power",
-                Some("Beside the name, where the game reported it."),
+                fl!("settings-overlay-combat-power"),
+                Some(fl!("settings-overlay-combat-power-text")),
                 overlay.show_combat_power,
                 |all, on| all.overlay.show_combat_power = on,
                 window,
                 cx,
             ),
-            self.switch_row("total-damage", "Total damage", None, overlay.show_damage, |all, on| all.overlay.show_damage = on, window, cx),
-            self.switch_row("dps", "DPS", None, overlay.show_dps, |all, on| all.overlay.show_dps = on, window, cx),
+            self.switch_row(
+                "total-damage",
+                fl!("settings-overlay-total-damage"),
+                None,
+                overlay.show_damage,
+                |all, on| all.overlay.show_damage = on,
+                window,
+                cx,
+            ),
+            self.switch_row("dps", fl!("common-dps"), None, overlay.show_dps, |all, on| all.overlay.show_dps = on, window, cx),
         ]);
         let fights = group(vec![
             self.switch_row(
                 "fight-summary",
-                "Fight summary",
-                Some("When a boss dies: your DPS and place, top skills and personal best. One click copies it."),
+                fl!("settings-overlay-fight-summary"),
+                Some(fl!("settings-overlay-fight-summary-text")),
                 overlay.show_fight_summary,
                 |all, on| all.overlay.show_fight_summary = on,
                 window,
@@ -724,8 +905,8 @@ impl SettingsView {
             ),
             self.switch_row(
                 "pace",
-                "Pace against your personal best",
-                Some("After 10 s of a boss fight, ahead or behind your best on that boss."),
+                fl!("settings-overlay-pace"),
+                Some(fl!("settings-overlay-pace-text")),
                 overlay.show_personal_best,
                 |all, on| all.overlay.show_personal_best = on,
                 window,
@@ -735,10 +916,10 @@ impl SettingsView {
         let lock = self.lock_row(window, cx);
         let detail = self.segmented_row(
             "detail-opens",
-            "Player detail opens",
-            "Player detail opens",
-            Some(description("Beside the overlay, or in the middle of the screen.")),
-            &["Beside", "Centred"],
+            fl!("settings-overlay-detail-opens"),
+            fl!("settings-overlay-detail-opens"),
+            Some(description(fl!("settings-overlay-detail-opens-text"))),
+            [fl!("settings-overlay-beside").into(), fl!("settings-overlay-centred").into()],
             usize::from(settings.windows.detail_opens == DetailPlacement::Centred),
             |all, index| {
                 all.windows.detail_opens = if index == 0 { DetailPlacement::Beside } else { DetailPlacement::Centred }
@@ -752,13 +933,13 @@ impl SettingsView {
             .min_w_0()
             .flex()
             .flex_col()
-            .child(group_title("Look", true))
+            .child(group_title(fl!("settings-overlay-look"), true))
             .child(look)
-            .child(group_title("Shown on each row", false))
+            .child(group_title(fl!("settings-overlay-shown"), false))
             .child(shown)
-            .child(group_title("Boss fights", false))
+            .child(group_title(fl!("settings-overlay-boss-fights"), false))
             .child(fights)
-            .child(group_title("Window", false))
+            .child(group_title(fl!("settings-overlay-window"), false))
             .child(group(vec![lock, detail]));
         #[cfg(feature = "probes")]
         let rows = rows.relative().child(self.layout_marks.entry("overlay-rows").or_default().marker());
@@ -766,7 +947,7 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .child(page_head("Overlay", Some("How the meter overlay looks. Changes show in the overlay at once.")))
+            .child(page_head(fl!("settings-section-overlay"), Some(fl!("settings-overlay-lead").into())))
             .child(div().flex().items_start().gap(px(24.)).child(rows).child(preview))
     }
 
@@ -780,15 +961,17 @@ impl SettingsView {
             }) as Handler<bool>
         });
         let reason = (self.meter_window.is_some() && !self.can_unlock).then(|| {
-            note(Icon::Info, "Alt+CapsLock could not be registered, so nothing could unlock the overlay.", rgba(FAINT))
+            note(Icon::Info, fl!("settings-overlay-lock-unavailable"), rgba(FAINT))
         });
         let text = div()
             .flex()
             .flex_col()
-            .child(description("Clicks pass through to the game and the controls hide. Alt+CapsLock switches it."))
+            .child(description(fl!("settings-overlay-lock-text")))
             .children(reason)
             .into_any_element();
-        row("Lock overlay", Some(text), switch("lock", "Lock overlay", self.locked, &focus, on_toggle))
+        let label = fl!("settings-overlay-lock");
+        let control = switch("lock", label.clone(), self.locked, &focus, on_toggle);
+        row(label, Some(text), control)
     }
 
     fn preview_column(&mut self, cx: &Context<Self>) -> Div {
@@ -817,31 +1000,31 @@ impl SettingsView {
             .w(px(PREVIEW_WIDTH))
             .flex()
             .flex_col()
-            .child(group_title("Preview", true))
+            .child(group_title(fl!("settings-preview"), true))
             .child(stage)
             .child(
                 div()
                     .mt(px(8.))
                     .text_size(px(11.5))
                     .text_color(rgba(FAINT))
-                    .child("Sample data. Follows every change on this page."),
+                    .child(fl!("settings-preview-note")),
             )
     }
 
     fn behaviour_page(&mut self, settings: &AppSettings, window: &Window, cx: &mut Context<Self>) -> Div {
         let behaviour = &settings.behaviour;
-        let count_label = div().flex().items_center().gap(px(6.)).child("Count").child(
+        let count_label = div().flex().items_center().gap(px(6.)).child(fl!("settings-behaviour-count")).child(
             div()
                 .id("count-info")
                 .child(icon(Icon::Info, 14., rgba(FAINT)))
-                .tooltip(widgets::tooltip(COUNT_TIP)),
+                .tooltip(widgets::tooltip(fl!("settings-behaviour-count-tip"))),
         );
         let count = self.segmented_row(
             "count",
             count_label,
-            "Count",
-            Some(description("All targets records every mob you hit; Boss only ignores everything that is not a boss.")),
-            &["All targets", "Boss only"],
+            fl!("settings-behaviour-count"),
+            Some(description(fl!("settings-behaviour-count-text"))),
+            [fl!("settings-behaviour-all-targets").into(), fl!("settings-behaviour-boss-only").into()],
             usize::from(behaviour.count == CountMode::BossOnly),
             |all, index| all.behaviour.count = if index == 0 { CountMode::AllTargets } else { CountMode::BossOnly },
             window,
@@ -851,8 +1034,8 @@ impl SettingsView {
             count,
             self.switch_row(
                 "possible-bosses",
-                "Detect possible bosses",
-                Some("Treats very high-HP monsters missing from the boss table as bosses. Useful in new dungeons."),
+                fl!("settings-behaviour-possible-bosses"),
+                Some(fl!("settings-behaviour-possible-bosses-text")),
                 behaviour.detect_possible_bosses,
                 |all, on| all.behaviour.detect_possible_bosses = on,
                 window,
@@ -860,8 +1043,8 @@ impl SettingsView {
             ),
             self.switch_row(
                 "training-dummy",
-                "Training dummy only",
-                Some("Counts only damage on your own training dummy."),
+                fl!("settings-behaviour-dummy"),
+                Some(fl!("settings-behaviour-dummy-text")),
                 behaviour.training_dummy_only,
                 |all, on| all.behaviour.training_dummy_only = on,
                 window,
@@ -869,30 +1052,38 @@ impl SettingsView {
             ),
             self.switch_row(
                 "hide-unknown",
-                "Hide unknown players",
-                Some("Leaves out players the meter could not name."),
+                fl!("settings-behaviour-hide-unknown"),
+                Some(fl!("settings-behaviour-hide-unknown-text")),
                 behaviour.hide_unknown_players,
                 |all, on| all.behaviour.hide_unknown_players = on,
                 window,
                 cx,
             ),
-            self.slider_row(SliderKind::Players, "Players shown", "5 to 20.", SLIDER_WIDTH, settings, window, cx),
+            self.slider_row(
+                SliderKind::Players,
+                fl!("settings-behaviour-players-shown"),
+                fl!("settings-behaviour-players-shown-text"),
+                SLIDER_WIDTH,
+                settings,
+                window,
+                cx,
+            ),
         ]);
 
         let trigger = self.select_control(Select::EndFight, settings, true, window, cx);
         let between = group(vec![row(
-            "End a fight after",
-            Some(description("With no hit of yours for this long, the fight is saved to history and the meter clears.")),
+            fl!("settings-behaviour-end-fight"),
+            Some(description(fl!("settings-behaviour-end-fight-text"))),
             trigger,
         )]);
 
         div()
             .flex()
             .flex_col()
-            .child(page_head("Meter behaviour", Some("What the meter counts, and what it does between fights.")))
-            .child(group_title("What is counted", true))
+            .child(page_head(fl!("settings-section-behaviour"), Some(fl!("settings-behaviour-lead").into())))
+            .child(group_title(fl!("settings-behaviour-counted"), true))
             .child(counted)
-            .child(group_title("Between fights", false))
+            .child(group_title(fl!("settings-behaviour-between"), false))
             .child(between)
     }
 
@@ -908,23 +1099,32 @@ impl SettingsView {
         let can_replay = runtime.can_replay();
         let animate = !cx.reduce_motion();
 
+        let meter_label = fl!("settings-capture-meter");
         let meter_tile = match &status.meter {
-            MeterTile::Running { via } => tile(Icon::Activity, "Meter", "Running", via.map(|via| format!("via {via}").into()), Tone::Good),
-            MeterTile::Stopped => tile(Icon::Activity, "Meter", "Stopped", None, Tone::Neutral),
-            MeterTile::Unavailable(reason) => tile(Icon::Activity, "Meter", "Not running", Some(reason.clone().into()), Tone::Bad),
+            MeterTile::Running { via } => tile(
+                Icon::Activity,
+                meter_label,
+                fl!("settings-status-running"),
+                via.map(|via| fl!("settings-capture-via", backend = via).into()),
+                Tone::Good,
+            ),
+            MeterTile::Stopped => tile(Icon::Activity, meter_label, fl!("settings-status-stopped"), None, Tone::Neutral),
+            MeterTile::Unavailable(reason) => {
+                tile(Icon::Activity, meter_label, fl!("settings-status-not-running"), Some(reason.clone().into()), Tone::Bad)
+            }
         };
         let game_tile = if status.game_found {
-            tile(Icon::Radio, "Game connection", "Found", status.game_address.clone().map(Into::into), Tone::Good)
+            tile(Icon::Radio, fl!("settings-capture-game"), fl!("settings-capture-found"), status.game_address.clone().map(Into::into), Tone::Good)
         } else {
-            tile(Icon::Radio, "Game connection", "Waiting for the game", None, Tone::Warn)
+            tile(Icon::Radio, fl!("settings-capture-game"), fl!("settings-capture-waiting-game"), None, Tone::Warn)
         };
         let character_tile = match &status.character {
-            Some(name) => tile(Icon::User, "Character", settings.overlay.display_name(name), None, Tone::Good),
+            Some(name) => tile(Icon::User, fl!("common-character"), settings.overlay.display_name(name), None, Tone::Good),
             None => tile(
                 Icon::User,
-                "Character",
-                "Not identified yet",
-                Some("Start before login, or relog via character select".into()),
+                fl!("common-character"),
+                fl!("settings-capture-not-identified"),
+                Some(fl!("meter-unidentified-hint").into()),
                 Tone::Warn,
             ),
         };
@@ -936,7 +1136,7 @@ impl SettingsView {
             (None, true) => "\u{2014}".to_string(),
         };
         let server_tone = if status.region.is_some() || !status.servers.is_empty() { Tone::Good } else { Tone::Neutral };
-        let server_tile = tile(Icon::Server, "Server", server_text, None, server_tone);
+        let server_tile = tile(Icon::Server, fl!("common-server"), server_text, None, server_tone);
         let tiles = div()
             .flex()
             .flex_col()
@@ -946,19 +1146,17 @@ impl SettingsView {
 
         let backend = self.segmented_row(
             "backend",
-            "Backend priority",
-            "Backend priority",
+            fl!("settings-capture-backend"),
+            fl!("settings-capture-backend"),
             Some(
                 div()
                     .flex()
                     .flex_col()
-                    .child(description(
-                        "Which capture method is tried first; the other is the fallback. Npcap first: some anti-cheats dislike a loaded WinDivert driver.",
-                    ))
-                    .child(note(Icon::Info, "Applies at next start.", rgba(FAINT)))
+                    .child(description(fl!("settings-capture-backend-text")))
+                    .child(note(Icon::Info, fl!("settings-capture-next-start"), rgba(FAINT)))
                     .into_any_element(),
             ),
-            &["Npcap first", "WinDivert first"],
+            [fl!("settings-capture-npcap-first").into(), fl!("settings-capture-windivert-first").into()],
             usize::from(settings.capture.backend_priority == CaptureBackendPriority::WinDivertFirst),
             |all, index| {
                 all.capture.backend_priority =
@@ -986,15 +1184,16 @@ impl SettingsView {
                         .font_family(DISPLAY_FONT)
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(icon(Icon::Record, 10., rgb(widgets::BAD)))
-                        .child(format!(
-                            "{} packets \u{b7} {}",
-                            format::grouped(progress.packets as f64),
-                            format::file_size(progress.bytes)
+                        .child(fl!(
+                            "settings-capture-recording-progress",
+                            count = progress.packets,
+                            packets = format::grouped(progress.packets as f64),
+                            size = format::file_size(progress.bytes)
                         )),
                 )
                 .child(button(
                     "recording",
-                    "Stop recording",
+                    fl!("settings-capture-stop-recording"),
                     Some(Icon::Stop),
                     ButtonKind::Danger,
                     false,
@@ -1003,7 +1202,7 @@ impl SettingsView {
                 )),
             None => div().child(button(
                 "recording",
-                "Start recording",
+                fl!("settings-capture-start-recording"),
                 Some(Icon::Record),
                 ButtonKind::Secondary,
                 false,
@@ -1016,20 +1215,20 @@ impl SettingsView {
         let recording_text = div()
             .flex()
             .flex_col()
-            .child(description("Writes this session's raw packets to a file, for protocol work."))
+            .child(description(fl!("settings-capture-packet-recording-text")))
             .children(recording_error.map(|error| note(Icon::TriangleAlert, error, rgb(widgets::BAD))))
             .into_any_element();
         let recording_group = group(vec![
             self.switch_row(
                 "record-unfamiliar",
-                "Record unfamiliar servers",
-                Some("The first two minutes on a server no profile matches. The newest five are kept and never leave this PC."),
+                fl!("settings-capture-record-unfamiliar"),
+                Some(fl!("settings-capture-record-unfamiliar-text")),
                 settings.capture.record_unfamiliar_servers,
                 |all, on| all.capture.record_unfamiliar_servers = on,
                 window,
                 cx,
             ),
-            row("Packet recording", Some(recording_text), recording_control),
+            row(fl!("settings-capture-packet-recording"), Some(recording_text), recording_control),
         ]);
 
         let mut recording_rows: Vec<Div> = Vec::new();
@@ -1037,7 +1236,7 @@ impl SettingsView {
             let replaying = matches!(&replay, ReplayProgress::Running { name } if *name == item.name);
             let mut line = format!("{} \u{b7} {}", item.when, format::file_size(item.bytes));
             if item.unfamiliar_server {
-                line.push_str(" \u{b7} unfamiliar server");
+                line.push_str(&format!(" \u{b7} {}", fl!("settings-capture-unfamiliar-server")));
             }
             let runtime_entity = self.runtime.clone();
             let actions = if replaying {
@@ -1046,10 +1245,14 @@ impl SettingsView {
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(badge(Some(spinner(("replaying", index), 12., rgb(widgets::WARN), animate)), "Replaying", Tone::Warn))
+                    .child(badge(
+                        Some(spinner(("replaying", index), 12., rgb(widgets::WARN), animate)),
+                        fl!("settings-capture-replaying"),
+                        Tone::Warn,
+                    ))
                     .child(button(
                         "cancel-replay",
-                        "Cancel replay",
+                        fl!("settings-capture-cancel-replay"),
                         None,
                         ButtonKind::Secondary,
                         true,
@@ -1062,7 +1265,7 @@ impl SettingsView {
                 let item = item.clone();
                 div().child(button(
                     key,
-                    "Replay",
+                    fl!("settings-capture-replay"),
                     Some(Icon::Play),
                     ButtonKind::Secondary,
                     true,
@@ -1075,22 +1278,31 @@ impl SettingsView {
             recording_rows.push(list_row(Some(Icon::FileText), item.name.clone(), line).child(actions));
         }
         if recording_rows.is_empty() {
-            recording_rows.push(list_row(Some(Icon::FileText), "No recordings yet", "Start one above, or let an unfamiliar server start one."));
+            recording_rows.push(list_row(
+                Some(Icon::FileText),
+                fl!("settings-capture-no-recordings"),
+                fl!("settings-capture-no-recordings-line"),
+            ));
         }
         let replay_note = match &replay {
-            ReplayProgress::Failed(error) => Some(note(Icon::TriangleAlert, format!("The replay failed: {error}"), rgb(widgets::BAD))),
-            ReplayProgress::Finished { packets } => Some(note(
-                Icon::CircleCheck,
-                format!("Replayed {} packets.", format::grouped(*packets as f64)),
-                rgb(widgets::GOOD),
-            )),
+            ReplayProgress::Failed(error) => {
+                Some(note(Icon::TriangleAlert, fl!("settings-capture-replay-failed", error = error.as_str()), rgb(widgets::BAD)))
+            }
+            ReplayProgress::Finished { packets } => {
+                let count = *packets;
+                Some(note(
+                    Icon::CircleCheck,
+                    fl!("settings-capture-replayed", count = count, packets = format::grouped(count as f64)),
+                    rgb(widgets::GOOD),
+                ))
+            }
             ReplayProgress::Idle | ReplayProgress::Running { .. } => None,
         };
 
         let mobs = group(vec![self.switch_row(
             "collect-mobs",
-            "Collect mob data",
-            Some("Records every mob you fight (code, HP, counts) into mobs.json, to help name the ones the bundled list misses. No player data. Boss corrections are saved either way."),
+            fl!("settings-capture-collect-mobs"),
+            Some(fl!("settings-capture-collect-mobs-text")),
             settings.capture.collect_mob_data,
             |all, on| all.capture.collect_mob_data = on,
             window,
@@ -1102,52 +1314,57 @@ impl SettingsView {
         let log_text = div()
             .flex()
             .flex_col()
-            .child(description("For when something does not look right."))
+            .child(description(fl!("settings-capture-meter-log-text")))
             .children(self.error_under("log-folder"))
             .into_any_element();
         let log = group(vec![
             self.switch_row(
                 "decision-log",
-                "Decision log",
-                Some("Writes the meter's decisions (which board, which boss, who you are) to the log file. Lines may include player names; the file stays on this PC."),
+                fl!("settings-capture-decision-log"),
+                Some(fl!("settings-capture-decision-log-text")),
                 settings.capture.decision_log,
                 |all, on| all.capture.decision_log = on,
                 window,
                 cx,
             ),
             row(
-                "Meter log",
+                fl!("settings-capture-meter-log"),
                 Some(log_text),
-                button("log-folder", "Open log folder", Some(Icon::FolderOpen), ButtonKind::Secondary, false, &folder_focus, Some(open_logs)),
+                button(
+                    "log-folder",
+                    fl!("settings-capture-open-log-folder"),
+                    Some(Icon::FolderOpen),
+                    ButtonKind::Secondary,
+                    false,
+                    &folder_focus,
+                    Some(open_logs),
+                ),
             ),
         ]);
 
         div()
             .flex()
             .flex_col()
-            .child(page_head(
-                "Capture",
-                Some("How the meter sees the game's traffic. Everything here is detected; there is nothing to enter."),
-            ))
-            .child(group_title("Connection", true))
+            .child(page_head(fl!("settings-section-capture"), Some(fl!("settings-capture-lead").into())))
+            .child(group_title(fl!("settings-capture-connection"), true))
             .child(tiles)
-            .child(group_title("Capture", false))
+            .child(group_title(fl!("settings-section-capture"), false))
             .child(capture)
-            .child(group_title("Recording", false))
+            .child(group_title(fl!("settings-capture-recording"), false))
             .child(recording_group)
             .child(
-                group_title("Recordings", false).child(
+                group_title(fl!("settings-capture-recordings"), false).child(
                     div()
                         .font_weight(FontWeight::NORMAL)
                         .text_color(rgba(FAINT))
-                        .child("Replay runs one through the live meter, which has to be running."),
+                        .child(fl!("settings-capture-recordings-note")),
                 ),
             )
             .child(group(recording_rows))
             .children(replay_note)
-            .child(group_title("Mob data", false))
+            .child(group_title(fl!("settings-capture-mob-data"), false))
             .child(mobs)
-            .child(group_title("Log", false))
+            .child(group_title(fl!("settings-capture-log"), false))
             .child(log)
     }
 
@@ -1158,7 +1375,7 @@ impl SettingsView {
         let rerun: Option<Handler<()>> = (!running).then(|| -> Handler<()> {
             Rc::new(move |(), _, cx| runtime.update(cx, |runtime, cx| runtime.run_capture_check(cx)))
         });
-        let mut text = div().flex().flex_col().child(description("Administrator rights, Npcap and WinDivert, as at start-up."));
+        let mut text = div().flex().flex_col().child(description(fl!("settings-capture-check-text")));
         match check {
             CaptureCheck::NotRun => {}
             CaptureCheck::Running => {
@@ -1171,37 +1388,36 @@ impl SettingsView {
                         .text_size(px(12.))
                         .text_color(rgba(MUTED))
                         .child(spinner("checking", 13., rgba(MUTED), animate))
-                        .child("Checking\u{2026}"),
+                        .child(fl!("settings-capture-checking")),
                 );
             }
             CaptureCheck::Done(report) => {
                 let summary_tone = if report.ready { rgb(widgets::GOOD) } else { rgb(widgets::BAD) };
                 let summary_icon = if report.ready { Icon::CircleCheck } else { Icon::TriangleAlert };
-                text = text.child(note(summary_icon, report.summary.clone(), summary_tone)).children(report.checks.iter().map(
-                    |check: &preflight::Check| {
+                text = text.child(note(summary_icon, capture_check::summary(report), summary_tone)).children(report.checks.iter().map(
+                    |check| {
                         let (glyph, colour) = match (check.ok, check.weight) {
                             (true, _) => (Icon::CircleCheck, rgb(widgets::GOOD)),
                             (false, Weight::Required) => (Icon::TriangleAlert, rgb(widgets::BAD)),
                             (false, Weight::Optional) => (Icon::TriangleAlert, rgb(widgets::WARN)),
                         };
-                        note(glyph, format!("{}: {}", check.label, check.detail), colour)
+                        let line = capture_check::line(check, report);
+                        let raw_detail = line.raw_detail.map(|detail| div().pl(px(19.)).child(description(detail)));
+                        div().flex().flex_col().child(note(glyph, line.text, colour)).children(raw_detail)
                     },
                 ));
             }
         }
         row(
-            "Capture check",
+            fl!("settings-capture-check"),
             Some(text.into_any_element()),
-            button("capture-check", "Re-run", Some(Icon::ShieldCheck), ButtonKind::Secondary, false, &focus, rerun),
+            button("capture-check", fl!("settings-capture-rerun"), Some(Icon::ShieldCheck), ButtonKind::Secondary, false, &focus, rerun),
         )
     }
 
     fn bests_page(&mut self, settings: &AppSettings, window: &Window, cx: &mut Context<Self>) -> Div {
         let bests = self.runtime.read(cx).bests.clone();
-        let head = page_head(
-            "Personal bests",
-            Some("Your best DPS per boss and character. Boss fights of 15 s or more count. Kept when history is deleted."),
-        );
+        let head = page_head(fl!("settings-section-bests"), Some(fl!("settings-bests-lead").into()));
         if bests.is_empty() {
             let empty = div()
                 .flex()
@@ -1215,12 +1431,12 @@ impl SettingsView {
                         .flex()
                         .flex_col()
                         .gap(px(3.))
-                        .child(div().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).child("None yet"))
+                        .child(div().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).child(fl!("settings-bests-none")))
                         .child(
                             div()
                                 .text_size(px(12.5))
                                 .text_color(rgba(MUTED))
-                                .child("Beat a boss for 15 s or more and your best appears here, per character."),
+                                .child(fl!("settings-bests-none-line")),
                         ),
                 );
             return div().flex().flex_col().child(head).child(div().mt(px(18.)).child(group(vec![empty])));
@@ -1228,11 +1444,7 @@ impl SettingsView {
 
         let bosses = distinct(bests.iter().map(|best| best.boss.as_str()));
         let characters = distinct(bests.iter().map(|best| best.character.as_str()));
-        let count_text = format!(
-            "{bosses} {}, {characters} {}",
-            if bosses == 1 { "boss" } else { "bosses" },
-            if characters == 1 { "character" } else { "characters" }
-        );
+        let count_text = fl!("settings-bests-count", bosses = bosses, characters = characters);
         let confirming = self.confirm_bests.is_some();
         let reset_focus = self.focus_of("bests-reset", true, window, cx);
         let reset = if confirming {
@@ -1255,7 +1467,7 @@ impl SettingsView {
         };
         let mut actions = div().flex().items_center().gap(px(8.)).child(button(
             "bests-reset",
-            if confirming { "Click again to reset" } else { "Reset all" },
+            if confirming { fl!("settings-bests-confirm") } else { fl!("settings-bests-reset-all") },
             Some(Icon::Trash),
             if confirming { ButtonKind::Danger } else { ButtonKind::Secondary },
             false,
@@ -1269,10 +1481,10 @@ impl SettingsView {
                 this.focus_control("bests-reset", window, cx);
                 cx.notify();
             });
-            actions = actions.child(button("bests-cancel", "Cancel", None, ButtonKind::Ghost, false, &cancel_focus, Some(cancel)));
+            actions = actions.child(button("bests-cancel", fl!("common-cancel"), None, ButtonKind::Ghost, false, &cancel_focus, Some(cancel)));
         }
 
-        let header = |text: &'static str, width: Option<f32>, right: bool| {
+        let header = |text: String, width: Option<f32>, right: bool| {
             div()
                 .when_some(width, |cell, width| cell.w(px(width)).flex_none())
                 .when(width.is_none(), |cell| cell.flex_1().min_w_0())
@@ -1288,17 +1500,23 @@ impl SettingsView {
             .gap(px(16.))
             .text_size(px(12.))
             .text_color(rgba(FAINT))
-            .child(header("Boss", None, false))
-            .child(header("Character", Some(150.), false))
-            .child(header("Best DPS", Some(100.), true))
-            .child(header("Date", Some(120.), true));
+            .child(header(fl!("settings-bests-boss"), None, false))
+            .child(header(fl!("common-character"), Some(150.), false))
+            .child(header(fl!("settings-bests-best-dps"), Some(100.), true))
+            .child(header(fl!("settings-bests-date"), Some(120.), true));
         let rows = bests.iter().enumerate().map(|(index, best)| {
             let character = settings.overlay.display_name(&best.character);
             let dps = format::compact(best.dps);
             div()
                 .id(("best", index))
                 .role(Role::Row)
-                .aria_label(SharedString::from(format!("{}, {character}, {dps} per second, {}", best.boss, best.when)))
+                .aria_label(SharedString::from(fl!(
+                    "settings-bests-row",
+                    boss = best.boss.as_str(),
+                    character = character.as_str(),
+                    dps = dps.as_str(),
+                    when = best.when.as_str()
+                )))
                 .h(px(40.))
                 .px(px(16.))
                 .flex()
@@ -1323,7 +1541,7 @@ impl SettingsView {
         let table = div()
             .id("bests-table")
             .role(Role::Table)
-            .aria_label("Personal bests")
+            .aria_label(fl!("settings-section-bests"))
             .flex()
             .flex_col()
             .child(table_head)
@@ -1356,8 +1574,8 @@ impl SettingsView {
         let on = reminders.enabled;
         let master = self.switch_row(
             "reminders",
-            "Event reminders",
-            Some("A small card above the meter before each event switched on below. It goes by itself after 30 s; a click dismisses it."),
+            fl!("settings-reminders-master"),
+            Some(fl!("settings-reminders-master-text")),
             on,
             |all, on| all.reminders.enabled = on,
             window,
@@ -1366,32 +1584,36 @@ impl SettingsView {
         let lead = self.select_control(Select::LeadTime, settings, on, window, cx);
         let sound_focus = self.focus_of("reminder-sound", true, window, cx);
         let sound_toggle = on.then(|| self.set(|all: &mut AppSettings, on| all.reminders.sound = on));
-        let sound = switch("reminder-sound", "Sound", reminders.sound, &sound_focus, sound_toggle);
+        let sound = switch("reminder-sound", fl!("settings-reminders-sound"), reminders.sound, &sound_focus, sound_toggle);
         let test = self.test_reminder_control(on, window, cx);
         let how = group(vec![
             master,
-            reminder_row(on, "Remind me", "How long before the event starts.", lead),
-            reminder_row(on, "Sound", "Windows' Chimes sound, once per reminder.", sound),
-            reminder_row(on, "Test reminder", "Shows a reminder above the meter now, with its sound.", test),
+            reminder_row(on, fl!("settings-reminders-lead-time"), fl!("settings-reminders-lead-time-text"), lead),
+            reminder_row(on, fl!("settings-reminders-sound"), fl!("settings-reminders-sound-text"), sound),
+            reminder_row(on, fl!("reminder-test-title"), fl!("settings-reminders-test-text"), test),
         ]);
 
         let mut page = div()
             .flex()
             .flex_col()
-            .child(page_head(
-                "Reminders",
-                Some("A reminder before timed events, so you can get there in time. Times follow this PC's clock and are set for the European servers, which run on Berlin time."),
-            ))
-            .child(group_title("How you are reminded", true))
+            .child(page_head(fl!("settings-section-reminders"), Some(fl!("settings-reminders-lead").into())))
+            .child(group_title(fl!("settings-reminders-how"), true))
             .child(how);
-        for (group_index, title) in ["Every hour", "Every 3 hours", "Weekly", "Daily"].into_iter().enumerate() {
+        let titles = [
+            fl!("settings-reminders-every-hour"),
+            fl!("settings-reminders-every-3-hours"),
+            fl!("settings-reminders-weekly"),
+            fl!("settings-reminders-daily"),
+        ];
+        for (group_index, title) in titles.into_iter().enumerate() {
             let mut rows = Vec::new();
             for info in EVENTS.iter().filter(|info| how_often(info.rule) == group_index) {
                 let id = info.id;
                 let (key, label, text) = event_row(id);
                 let focus = self.focus_of(key, true, window, cx);
                 let toggle = on.then(|| self.set(move |all: &mut AppSettings, on| all.reminders.set_event_enabled(id, on)));
-                rows.push(reminder_row(on, label, text, switch(key, label, reminders.event_enabled(id), &focus, toggle)));
+                let control = switch(key, label.clone(), reminders.event_enabled(id), &focus, toggle);
+                rows.push(reminder_row(on, label, text, control));
             }
             page = page.child(group_title(title, false)).child(group(rows));
         }
@@ -1406,11 +1628,12 @@ impl SettingsView {
         let focus = self.focus_of("test-reminder", true, window, cx);
         let press = enabled.then(|| self.button_handler(cx, |this, _, cx| this.show_test_reminder(cx)));
         let shown = self.test_shown.is_some().then(|| {
-            let note = badge(Some(icon(Icon::Check, 12., rgb(widgets::GOOD)).into_any_element()), "Shown above the meter", Tone::Good)
+            let text = fl!("settings-reminders-test-shown");
+            let note = badge(Some(icon(Icon::Check, 12., rgb(widgets::GOOD)).into_any_element()), text.clone(), Tone::Good)
                 .id("test-shown")
                 .debug_selector(|| "test-shown".to_string())
                 .role(Role::Status)
-                .aria_label("Shown above the meter");
+                .aria_label(text);
             let note = if cx.reduce_motion() {
                 note.into_any_element()
             } else {
@@ -1420,7 +1643,7 @@ impl SettingsView {
         });
         div().relative().flex().items_center().children(shown).child(button(
             "test-reminder",
-            "Show a test reminder",
+            fl!("settings-reminders-show-test"),
             Some(Icon::Play),
             ButtonKind::Secondary,
             false,
@@ -1446,18 +1669,26 @@ impl SettingsView {
         self.test_shown.is_some()
     }
 
+    fn general_page(&mut self, settings: &AppSettings, window: &Window, cx: &mut Context<Self>) -> Div {
+        let language = self.select_control(Select::Language, settings, true, window, cx);
+        div()
+            .flex()
+            .flex_col()
+            .child(page_head(fl!("settings-section-general"), None))
+            .child(group_title(fl!("settings-general-app"), true))
+            .child(group(vec![row(fl!("settings-language"), Some(description(fl!("settings-language-text"))), language)]))
+    }
+
     fn about_page(&mut self, window: &Window, cx: &mut Context<Self>) -> Div {
         let storage = match &self.runtime.read(cx).storage {
-            StorageState::NotLoaded | StorageState::Loading => "Counting\u{2026}".to_string(),
-            StorageState::Loaded(summary) => format!(
-                "Settings {} \u{b7} Fight history {} {}, {} \u{b7} Recordings {} {}, {}",
-                format::file_size(summary.settings_bytes),
-                summary.history_records,
-                if summary.history_records == 1 { "record" } else { "records" },
-                format::file_size(summary.history_bytes),
-                summary.recordings,
-                if summary.recordings == 1 { "file" } else { "files" },
-                format::file_size(summary.recordings_bytes),
+            StorageState::NotLoaded | StorageState::Loading => fl!("settings-about-counting"),
+            StorageState::Loaded(summary) => fl!(
+                "settings-about-storage-line",
+                settings = format::file_size(summary.settings_bytes),
+                records = summary.history_records,
+                history = format::file_size(summary.history_bytes),
+                files = summary.recordings,
+                recordings = format::file_size(summary.recordings_bytes)
             ),
         };
 
@@ -1484,29 +1715,43 @@ impl SettingsView {
                     div()
                         .flex()
                         .flex_col()
-                        .child(description("A real-time DPS meter for AION 2, built for the global servers."))
+                        .child(description(fl!("settings-about-description")))
                         .children(self.error_under("readme"))
                         .into_any_element(),
                 ),
-                button("readme", "Source and notice", Some(Icon::External), ButtonKind::Secondary, false, &readme_focus, Some(open_readme)),
+                button(
+                    "readme",
+                    fl!("settings-about-source"),
+                    Some(Icon::External),
+                    ButtonKind::Secondary,
+                    false,
+                    &readme_focus,
+                    Some(open_readme),
+                ),
             ),
             row(
-                "Licence: GPL-3.0-only",
+                fl!("settings-about-licence"),
                 Some(
                     div()
                         .flex()
                         .flex_col()
-                        .child(description(
-                            "Free software: you may share and change it under the GNU General Public License, version 3.",
-                        ))
+                        .child(description(fl!("settings-about-licence-text")))
                         .children(self.error_under("licence"))
                         .into_any_element(),
                 ),
-                button("licence", "Read the licence", Some(Icon::Scale), ButtonKind::Secondary, false, &licence_focus, Some(open_licence)),
+                button(
+                    "licence",
+                    fl!("settings-about-read-licence"),
+                    Some(Icon::Scale),
+                    ButtonKind::Secondary,
+                    false,
+                    &licence_focus,
+                    Some(open_licence),
+                ),
             ),
         ]);
 
-        let credit = |title: &'static str, tag: Option<&'static str>, text: &'static str| {
+        let credit = |title: String, tag: Option<String>, text: String| {
             div()
                 .flex()
                 .flex_col()
@@ -1533,40 +1778,28 @@ impl SettingsView {
         };
         let credits = group(vec![
             credit(
-                "Helveticxa/Aether-Aion2-DPS-meter-Global",
-                Some("Forked from"),
-                "This meter is a fork of Aether, by Helveticxa. GPL-3.0-only.",
+                "Helveticxa/Aether-Aion2-DPS-meter-Global".to_string(),
+                Some(fl!("settings-about-forked-from")),
+                fl!("settings-about-aether"),
             ),
+            credit("ZDYoung0519/NOIA2".to_string(), Some(fl!("settings-about-upstream")), fl!("settings-about-noia2")),
+            credit("Kuroukihime/AIon2-Dps-Meter".to_string(), None, fl!("settings-about-kuroukihime")),
             credit(
-                "ZDYoung0519/NOIA2",
-                Some("Upstream"),
-                "By zdyoung. Aether, which this meter is forked from, is itself a fork of NOIA2: the capture pipeline, packet parsers, overlay and game-data catalogues come from it. GPL-3.0-only.",
-            ),
-            credit(
-                "Kuroukihime/AIon2-Dps-Meter",
+                fl!("settings-about-references"),
                 None,
-                "English monster and boss names, the Fighter's skill names, and the server codes. GPL-3.0.",
+                "TK-open-public/Aion2-Dps-Meter \u{b7} taengu/Aion2-Dps-Meter \u{b7} p62003/aletheia_AION2_DPS_Meter".to_string(),
             ),
-            credit(
-                "References",
-                None,
-                "TK-open-public/Aion2-Dps-Meter \u{b7} taengu/Aion2-Dps-Meter \u{b7} p62003/aletheia_AION2_DPS_Meter",
-            ),
-            credit(
-                "Built with",
-                None,
-                "GPUI (Apache-2.0) \u{b7} Lucide icons (ISC) \u{b7} Barlow Semi Condensed (SIL OFL 1.1) \u{b7} WinDivert, the bundled fallback capture driver",
-            ),
-            credit("Npcap", None, "Not bundled with the meter: you install it from npcap.com, under its own licence."),
+            credit(fl!("settings-about-built-with"), None, fl!("settings-about-built-with-text")),
+            credit("Npcap".to_string(), None, fl!("settings-about-npcap")),
         ]);
 
         let folder_focus = self.focus_of("data-folder", true, window, cx);
         let open_data = self.button_handler(cx, |this, _, cx| this.hand_over("data-folder", files::open_folder(Folder::Data), cx));
         let reset_focus = self.focus_of("reset-settings", true, window, cx);
-        let reset = self.button_handler(cx, |this, window, cx| this.open_reset_dialog(window, cx));
+        let reset = self.button_handler(cx, |this, window, cx| this.open_dialog(Dialog::ResetSettings, window, cx));
         let storage_group = group(vec![
             row(
-                "Stored on this PC",
+                fl!("settings-about-stored"),
                 Some(
                     div()
                         .flex()
@@ -1575,24 +1808,32 @@ impl SettingsView {
                         .children(self.error_under("data-folder"))
                         .into_any_element(),
                 ),
-                button("data-folder", "Open folder", Some(Icon::FolderOpen), ButtonKind::Secondary, false, &folder_focus, Some(open_data)),
+                button(
+                    "data-folder",
+                    fl!("settings-about-open-folder"),
+                    Some(Icon::FolderOpen),
+                    ButtonKind::Secondary,
+                    false,
+                    &folder_focus,
+                    Some(open_data),
+                ),
             ),
             row(
-                "Reset settings",
-                Some(description("Settings go back to their defaults.")),
-                button("reset-settings", "Reset settings\u{2026}", None, ButtonKind::Danger, false, &reset_focus, Some(reset)),
+                fl!("settings-about-reset"),
+                Some(description(fl!("settings-about-reset-text"))),
+                button("reset-settings", fl!("settings-about-reset-button"), None, ButtonKind::Danger, false, &reset_focus, Some(reset)),
             ),
         ]);
 
         div()
             .flex()
             .flex_col()
-            .child(page_head("About", None))
+            .child(page_head(fl!("settings-section-about"), None))
             .child(group_title("AION 2 DPS Meter", true))
             .child(meter)
-            .child(group_title("Credits", false))
+            .child(group_title(fl!("settings-about-credits"), false))
             .child(credits)
-            .child(group_title("Storage", false))
+            .child(group_title(fl!("settings-about-storage"), false))
             .child(storage_group)
     }
 
@@ -1665,10 +1906,10 @@ impl SettingsView {
                     })),
             );
         }
-        let (dot, status): (gpui::Hsla, &str) = match &self.runtime.read(cx).capture.meter {
-            MeterTile::Running { .. } => (rgb(widgets::GOOD).into(), "Running"),
-            MeterTile::Stopped => (rgba(FAINT).into(), "Stopped"),
-            MeterTile::Unavailable(_) => (rgb(widgets::BAD).into(), "Not running"),
+        let (dot, status): (gpui::Hsla, String) = match &self.runtime.read(cx).capture.meter {
+            MeterTile::Running { .. } => (rgb(widgets::GOOD).into(), fl!("settings-status-running")),
+            MeterTile::Stopped => (rgba(FAINT).into(), fl!("settings-status-stopped")),
+            MeterTile::Unavailable(_) => (rgb(widgets::BAD).into(), fl!("settings-status-not-running")),
         };
         div()
             .flex_none()
@@ -1683,7 +1924,7 @@ impl SettingsView {
                 div()
                     .id("sections")
                     .role(Role::TabList)
-                    .aria_label("Settings sections")
+                    .aria_label(fl!("settings-sections"))
                     .flex()
                     .flex_col()
                     .child(
@@ -1694,7 +1935,7 @@ impl SettingsView {
                             .text_size(px(11.5))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgba(FAINT))
-                            .child("Settings"),
+                            .child(fl!("settings-sidebar-title")),
                     )
                     .children(items),
             )
@@ -1703,7 +1944,7 @@ impl SettingsView {
                 div()
                     .id("meter-status")
                     .role(Role::Status)
-                    .aria_label(SharedString::from(format!("Meter: {status}")))
+                    .aria_label(fl!("settings-meter-status", status = status.as_str()))
                     .flex()
                     .items_center()
                     .gap(px(8.))
@@ -1721,24 +1962,35 @@ impl SettingsView {
         let store = self.store.read(cx);
         let mut notices = Vec::new();
         if let Some(notice) = store.load_notice() {
-            notices.push(alert("The stored settings were set aside", notice.to_string(), Tone::Warn));
+            notices.push(alert(fl!("settings-set-aside"), notice.to_string(), Tone::Warn));
         }
         if let Some(error) = store.save_error() {
-            notices.push(alert("Settings could not be saved", error.to_string(), Tone::Bad));
+            notices.push(alert(fl!("settings-not-saved"), error.to_string(), Tone::Bad));
         }
         notices
     }
 
-    fn reset_dialog(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    fn dialog_layer(&mut self, dialog: Dialog, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let cancel_focus = self.focus_of("dialog-cancel", false, window, cx);
         let reset_focus = self.focus_of("dialog-reset", false, window, cx);
-        let cancel = self.button_handler(cx, |this, window, cx| this.close_reset_dialog(window, cx));
-        let reset = self.button_handler(cx, |this, window, cx| this.reset_settings(window, cx));
+        let cancel = self.button_handler(cx, |this, window, cx| this.close_dialog(window, cx));
+        let reset = self.button_handler(cx, |this, window, cx| this.confirm_dialog(window, cx));
+        let (title, paragraphs, confirm): (SharedString, Vec<SharedString>, String) = match dialog {
+            Dialog::ResetSettings => {
+                (fl!("settings-reset-title").into(), vec![fl!("settings-reset-body").into()], fl!("settings-about-reset"))
+            }
+            Dialog::ResetTodos => (
+                fl!("settings-todos-reset-title").into(),
+                vec![todos::copy::reset_dialog_body(self.todos_seen.own_total).into(), todos::copy::reset_dialog_keeps().into()],
+                fl!("settings-todos-reset-confirm"),
+            ),
+        };
         let panel = div()
             .id("reset-dialog")
+            .debug_selector(|| "reset-dialog".to_string())
             .role(Role::AlertDialog)
-            .aria_label(RESET_TITLE)
-            .aria_description(RESET_BODY)
+            .aria_label(title.clone())
+            .aria_description(SharedString::from(paragraphs.iter().map(SharedString::as_ref).collect::<Vec<&str>>().join(" ")))
             .w(px(400.))
             .pt(px(20.))
             .px(px(20.))
@@ -1749,16 +2001,18 @@ impl SettingsView {
             .border_color(rgba(POPOVER_BORDER))
             .bg(rgb(RAISED))
             .shadow(widgets::dialog_shadow())
-            .child(div().font_family(DISPLAY_FONT).text_size(px(17.)).font_weight(FontWeight::SEMIBOLD).child(RESET_TITLE))
-            .child(div().mt(px(8.)).text_color(rgba(MUTED)).child(RESET_BODY))
+            .child(div().font_family(DISPLAY_FONT).text_size(px(17.)).font_weight(FontWeight::SEMIBOLD).child(title))
+            .children(paragraphs.into_iter().enumerate().map(|(index, paragraph)| {
+                div().mt(px(if index == 0 { 8. } else { 6. })).text_color(rgba(MUTED)).child(paragraph)
+            }))
             .child(
                 div()
                     .mt(px(18.))
                     .flex()
                     .justify_end()
                     .gap(px(8.))
-                    .child(button("dialog-cancel", "Cancel", None, ButtonKind::Secondary, false, &cancel_focus, Some(cancel)))
-                    .child(button("dialog-reset", "Reset settings", None, ButtonKind::Danger, false, &reset_focus, Some(reset))),
+                    .child(button("dialog-cancel", fl!("common-cancel"), None, ButtonKind::Secondary, false, &cancel_focus, Some(cancel)))
+                    .child(button("dialog-reset", confirm, None, ButtonKind::Danger, false, &reset_focus, Some(reset))),
             );
         let scrim = div()
             .id("dialog-scrim")
@@ -1770,7 +2024,7 @@ impl SettingsView {
             .items_center()
             .justify_center()
             .bg(rgba(SCRIM))
-            .on_any_mouse_down(cx.listener(|this, _, window, cx| this.close_reset_dialog(window, cx)))
+            .on_any_mouse_down(cx.listener(|this, _, window, cx| this.close_dialog(window, cx)))
             .child(panel);
         if cx.reduce_motion() {
             scrim.into_any_element()
@@ -1785,7 +2039,7 @@ impl SettingsView {
         let (select, lit) = self.select_open?;
         let trigger = self.select_anchor.bounds()?;
         let options = select.options();
-        let height = px(options.len() as f32 * OPTION_HEIGHT + 10.);
+        let height = px(options.len().min(select.shown()) as f32 * OPTION_HEIGHT + 10.);
         let room_below = window.viewport_size().height - trigger.bottom() - px(12.);
         let below = if height <= room_below {
             trigger
@@ -1815,7 +2069,17 @@ impl SettingsView {
             .on_any_mouse_down(cx.listener(|this, _, window, cx| this.blur(window, cx)))
             .into_any_element();
         let current = select.current(self.store.read(cx).get());
-        let menu = select_menu(below, select.label(), &options, current, lit, pick, hover, !cx.reduce_motion());
+        let menu = select_menu(
+            below,
+            select.label(),
+            &options,
+            current,
+            lit,
+            pick,
+            hover,
+            !cx.reduce_motion(),
+            Some((&self.select_scroll, select.shown())),
+        );
         Some(vec![scrim, menu])
     }
 }
@@ -1829,10 +2093,12 @@ impl Render for SettingsView {
             Section::Capture => self.capture_page(&settings, window, cx),
             Section::Bests => self.bests_page(&settings, window, cx),
             Section::Reminders => self.reminders_page(&settings, window, cx),
+            Section::Todos => self.todos_page(&settings, window, cx),
+            Section::General => self.general_page(&settings, window, cx),
             Section::About => self.about_page(window, cx),
         };
         let sidebar = self.sidebar(window, cx);
-        let dialog = self.reset_dialog_open.then(|| self.reset_dialog(window, cx));
+        let dialog = self.dialog.map(|dialog| self.dialog_layer(dialog, window, cx));
         let select = self.select_layer(window, cx);
         let notices = self.notices(cx);
         let section = self.section;
@@ -1840,7 +2106,7 @@ impl Render for SettingsView {
         div()
             .id("settings")
             .role(Role::Window)
-            .aria_label(WINDOW_TITLE)
+            .aria_label(fl!("settings-window-title"))
             .track_focus(&self.root_focus)
             .size_full()
             .relative()
@@ -1894,7 +2160,19 @@ impl Render for SettingsView {
 }
 
 fn lead_label(minutes: u8) -> SharedString {
-    format!("{minutes} min before").into()
+    fl!("settings-reminders-minutes-before", minutes = minutes).into()
+}
+
+fn language_label(choice: LanguageChoice) -> SharedString {
+    let language = choice.resolve().autonym();
+    match choice {
+        LanguageChoice::System => fl!("settings-language-system", language = language).into(),
+        LanguageChoice::English | LanguageChoice::French => language.into(),
+    }
+}
+
+fn hour_label(hour: u8) -> SharedString {
+    format!("{hour:02}:00").into()
 }
 
 /// Which of the page's event groups a rule belongs to: every hour, every 3
@@ -1910,61 +2188,25 @@ fn how_often(rule: Rule) -> usize {
 
 /// An event's switch: its key, label and the sentence giving its times and
 /// place.
-fn event_row(id: EventId) -> (&'static str, &'static str, &'static str) {
+fn event_row(id: EventId) -> (&'static str, String, String) {
     match id {
-        EventId::ShugoFestival => (
-            "event-shugo",
-            "Shugo Festival",
-            "At :00. The minigames, with 3 min to join; which games are open shows only in the game.",
-        ),
-        EventId::DimensionalInvasion => {
-            ("event-invasion", "Dimensional Invasion", "At :30. Somewhere in the field, with 3 min to join.")
-        }
-        EventId::RiftPortals => (
-            "event-rifts",
-            "Rift portals",
-            "02:00, 05:00, 08:00, 11:00, 14:00, 17:00, 20:00 and 23:00. Altgard, Verteron, Morheim and Eltnen.",
-        ),
-        EventId::WatcherKaira => (
-            "event-kaira",
-            "Watcher Kaira",
-            "01:00, 04:00, 07:00, 10:00, 13:00, 16:00, 19:00 and 22:00. Field boss in Chaotic Lower Reshanta.",
-        ),
-        EventId::ArtifactSiege => {
-            ("event-siege", "Artifact Siege", "Monday, Thursday and Saturday at 21:00. Chaotic Lower Reshanta.")
-        }
-        EventId::AbyssFieldBosses => (
-            "event-abyss",
-            "Abyss field bosses",
-            "Monday, Thursday and Saturday at 21:30. Three Executors in Lower Reshanta, three more bosses in Middle Reshanta.",
-        ),
-        EventId::GuardianLordNahma => {
-            ("event-nahma", "Guardian Lord Nahma", "Friday and Sunday at 21:00. Lv 65, and the Enraged Lv 80.")
-        }
-        EventId::ArenaOfTactics => (
-            "event-arena",
-            "Arena of Tactics opens",
-            "11:00 and 19:00, when the 10 vs 10 queue opens (until 14:00 and 21:00).",
-        ),
-        EventId::RewardKeys => ("event-keys", "Reward keys refill", "16:00. Shugo Festival and Dimensional Invasion keys."),
+        EventId::ShugoFestival => ("event-shugo", id.name(), fl!("settings-event-shugo-text")),
+        EventId::DimensionalInvasion => ("event-invasion", id.name(), fl!("settings-event-invasion-text")),
+        EventId::RiftPortals => ("event-rifts", id.name(), fl!("settings-event-rifts-text")),
+        EventId::WatcherKaira => ("event-kaira", id.name(), fl!("settings-event-kaira-text")),
+        EventId::ArtifactSiege => ("event-siege", id.name(), fl!("settings-event-siege-text")),
+        EventId::AbyssFieldBosses => ("event-abyss", id.name(), fl!("settings-event-abyss-text")),
+        EventId::GuardianLordNahma => ("event-nahma", id.name(), fl!("settings-event-nahma-text")),
+        EventId::ArenaOfTactics => ("event-arena", fl!("settings-event-arena-opens"), fl!("settings-event-arena-text")),
+        EventId::RewardKeys => ("event-keys", id.name(), fl!("settings-event-keys-text")),
     }
 }
 
-fn reminder_row(enabled: bool, label: &'static str, text: &'static str, control: impl IntoElement) -> Div {
+fn reminder_row(enabled: bool, label: String, text: String, control: impl IntoElement) -> Div {
     if enabled {
         row(label, Some(description(text)), control)
     } else {
         dimmed_row(label, Some(description(text)), control)
-    }
-}
-
-/// The open select's label for a stored value: an option's, or the minutes
-/// of a value set outside the page.
-fn end_fight_label(secs: u64) -> SharedString {
-    match END_FIGHT_AFTER_OPTIONS.iter().find(|(option, _)| *option == secs) {
-        Some((_, label)) => SharedString::new_static(label),
-        None if secs % 60 == 0 => format!("{} min", secs / 60).into(),
-        None => format!("{:.1} min", secs as f64 / 60.).into(),
     }
 }
 
@@ -2023,7 +2265,7 @@ pub fn open_window(
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(width), px(height)), cx))),
         titlebar: Some(TitlebarOptions {
-            title: Some(WINDOW_TITLE.into()),
+            title: Some(fl!("settings-window-title").into()),
             appears_transparent: true,
             traffic_light_position: None,
         }),
@@ -2070,6 +2312,7 @@ mod tests {
     use gpui::{KeyUpEvent, Keystroke, Modifiers, TestAppContext, VisualTestContext};
 
     use super::*;
+    use crate::i18n::Language;
     use crate::settings::{connect, install};
 
     struct Opened<'a> {
@@ -2079,16 +2322,22 @@ mod tests {
         cx: &'a mut VisualTestContext,
     }
 
-    /// The real view in GPUI's test platform, on settings in memory or in
-    /// `data_dir`, connected to an overlay model as the app connects it.
+    /// The real view in GPUI's test platform, on settings in memory (in
+    /// English, whatever Windows' language) or in `data_dir`, connected to an
+    /// overlay model as the app connects it.
     fn open<'a>(cx: &'a mut TestAppContext, data_dir: Option<&Path>) -> Opened<'a> {
         let (store, meter, runtime) = cx.update(|cx| {
             let store = cx.new(|_| match data_dir {
                 Some(dir) => Settings::load(Some(dir)),
-                None => Settings::in_memory(AppSettings::default()),
+                None => {
+                    let mut english = AppSettings::default();
+                    english.general.language = LanguageChoice::English;
+                    Settings::in_memory(english)
+                }
             });
             install(&store, cx);
             reminders::install(&store, false, cx);
+            todos::install(&store, false, cx);
             let overlay = store.read(cx).get().overlay.clone();
             let meter = cx.new(|_| MeterModel::new(overlay, None));
             connect(&store, &meter, None, cx);
@@ -2174,6 +2423,8 @@ mod tests {
             "nav-capture",
             "nav-bests",
             "nav-reminders",
+            "nav-todos",
+            "nav-general",
             "nav-about",
             "opacity",
             "scale",
@@ -2478,6 +2729,108 @@ mod tests {
         assert!(window.settings().reminders.enabled);
         window.press("tab");
         assert_eq!(window.focused().as_deref(), Some("lead-time"), "back in the tab order");
+    }
+
+    #[gpui::test]
+    fn the_todos_page_sets_the_hour_restores_and_resets_through_its_dialog(cx: &mut TestAppContext) {
+        let mut window = open(cx, None);
+        let store = window.store.clone();
+        window.cx.update(|_, cx| {
+            store.update(cx, |settings, cx| {
+                settings.update(cx, |all| {
+                    all.known_characters = vec![meter_core::identity::KnownCharacter {
+                        name: "Alder".to_string(),
+                        server_id: 1001,
+                        class: "RANGER".to_string(),
+                        key: None,
+                    }]
+                })
+            })
+        });
+        window.show(Section::Todos);
+        window.tab_to("reset-hour");
+        window.press("down");
+        assert!(window.select_open());
+        window.press("up");
+        window.press("enter");
+        assert_eq!(window.settings().todos.reset_hour, 8, "the hour before 09:00");
+        let todos = window.cx.update(|_, cx| todos::global(cx));
+        assert_eq!(window.cx.update(|_, cx| todos.read(cx).reset_hour()), 8, "the tracker follows at once");
+
+        window.tab_to("membership");
+        window.press("space");
+        assert!(window.settings().todos.membership);
+
+        window.press("tab");
+        assert_eq!(window.focused().as_deref(), Some("todos-restore"), "Duty Commands start hidden, so Restore can act");
+        window.cx.update(|_, cx| {
+            todos.update(cx, |todos, cx| {
+                let id = todos.selected().expect("a character");
+                todos.hide(id, "trial", cx);
+                todos.add_own(id, todos::NewOwnTodo { name: "Mine".into(), kind: todos::OwnKind::Tick, cadence: todos::Cadence::Daily }, cx).expect("added");
+            })
+        });
+        window.tab_to("todos-restore");
+        window.press("enter");
+        let view = window.view.clone();
+        assert_eq!(window.cx.update(|_, cx| view.read(cx).todos_done_text()), Some(todos::copy::to_dos_back(2)));
+        assert_eq!(window.cx.update(|_, cx| todos.read(cx).hidden_summary().hidden), 0);
+
+        window.tab_to("todos-reset");
+        window.press("enter");
+        assert!(window.dialog_open());
+        assert_eq!(window.focused().as_deref(), Some("dialog-cancel"));
+        window.press("escape");
+        assert!(!window.dialog_open());
+        assert_eq!(window.focused().as_deref(), Some("todos-reset"));
+        assert_eq!(window.cx.update(|_, cx| todos.read(cx).own_total()), 1, "Escape resets nothing");
+        window.press("enter");
+        window.press("tab");
+        window.press("enter");
+        assert!(!window.dialog_open());
+        assert_eq!(window.cx.update(|_, cx| todos.read(cx).own_total()), 0);
+        assert_eq!(window.cx.update(|_, cx| view.read(cx).todos_done_text()), Some(fl!("settings-todos-reset-done")));
+        assert!(window.settings().todos.membership, "the membership stays");
+    }
+
+    #[gpui::test]
+    fn choosing_french_by_keyboard_switches_the_settings_and_the_meter_and_back(cx: &mut TestAppContext) {
+        let mut window = open(cx, None);
+        let mut fight = sample::boss_fight(60.0, 500);
+        if let Some(target) = fight.last_target_info.as_mut() {
+            target.target_name = None;
+        }
+        let meter = window.meter.clone();
+        window.cx.update(|_, cx| {
+            meter.update(cx, |model, cx| {
+                model.apply(MeterEvent::DpsSnapshot(sample::indexed(fight)), Instant::now());
+                cx.notify();
+            })
+        });
+        let header = |window: &mut Opened| {
+            let meter = window.meter.clone();
+            window.cx.update(|_, cx| meter.read(cx).header_name().map(|name| name.to_string()))
+        };
+        assert_eq!(header(&mut window).as_deref(), Some("Target 90001"));
+
+        window.show(Section::General);
+        window.tab_to("language");
+        window.press("down");
+        assert!(window.select_open(), "the list opens on English");
+        window.press("down");
+        window.press("enter");
+        assert_eq!(window.settings().general.language, LanguageChoice::French);
+        assert_eq!(i18n::language(), Language::French);
+        assert_eq!(header(&mut window).as_deref(), Some("Cible 90001"), "the meter's prepared words follow");
+        assert_eq!(Section::General.label(), "Général");
+        assert_eq!(window.focused().as_deref(), Some("language"));
+
+        window.press("down");
+        window.press("up");
+        window.press("enter");
+        assert_eq!(window.settings().general.language, LanguageChoice::English);
+        assert_eq!(i18n::language(), Language::English);
+        assert_eq!(header(&mut window).as_deref(), Some("Target 90001"));
     }
 
     fn temp_dir(name: &str) -> PathBuf {

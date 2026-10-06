@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-dos proposal E: struck through when done</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="todos.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="To-do proposals">
+        <a href="index.html">To-dos overview</a>
+        <a href="e.html" aria-current="page">E, struck through when done</a>
+        <a href="settings-todos.html">Settings, To-dos</a>
+        <a href="d.html">D, you set the counts</a>
+        <a href="a.html">A, tabs</a>
+        <a href="b.html">B, one list per character</a>
+        <a href="c.html">C, all characters</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>E, struck through when done <small>approved 2026-10-06, kept as drawn for history; the approved version is <a href="../approved/todos.html">approved/todos.html</a></small></h1>
+      <ul class="rationale">
+        <li><b>No checkboxes.</b> A done to-do is <b>struck through and muted</b> where it stands; rows never move. The names move left into the box's place and start under the section labels.</li>
+        <li><b>Marking one done</b> (the user's choice, "just the v to check"): a click anywhere on the row. Under the pointer, or with keyboard focus, a small <b>check</b> button appears at the row's end (on a done row, an <b>undo</b> arrow); its tooltip and name are "Mark done" and "Undo". Space or Enter does the same on a focused row.</li>
+        <li><b>Counts</b> keep D's arrows and the click on the figure; at the limit ("5/5") they get the same struck-through look. <b>Amounts</b> are unchanged from D: empty "—" until you type what you have, then the refill estimate, yellow when full.</li>
+        <li><b>No edit mode, no pencil.</b> A small <b>×</b> appears at the end of the row under the pointer and hides it; each section ends with a faint <b>"2 hidden · Show"</b>. <b>"+ Add a to-do"</b> ends the list: a name, Tick or Count (of how many), Daily or Weekly. Your own to-dos stay. The reset hour, the membership and bringing the defaults back are in <a href="settings-todos.html">Settings, To-dos</a>.</li>
+        <li><b>Try it</b> (last tile): clicking rows or the check, the arrows, the figures, hiding, Show and Put back, adding and removing your own, typing an amount, the keyboard (Tab, Space, Enter, Delete, Up and Down) all work. Nothing is saved. Limits are from the reset research; counts, times and names are invented. Clock: Monday 21:48 (the fresh week: Wednesday 09:12).</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour (what changes from D)</h2>
+      <ul>
+        <li><b>Done.</b> The name, and its small grey part ("final boss"), get a line through them and turn <code>muted</code>; a count's figure turns <code>muted</code> too. Nothing else changes: no colour, no icon, no reordering. Sections and the title count only what is not done, as in D. A group whose rows are all done is struck through too, and its "6 of 6 done" turns <code>good</code>.</li>
+        <li><b>Tick rows</b> (Abyssal Forge's final boss, your own to-dos): the whole row is one button. Pointer on the row: the row lights (<code>soft</code>) and a check button appears at its end, before the ×; the pointer on the check shows the tooltip "Mark done". A click on the check, or anywhere else on the row, marks it done. On a done row the check becomes an undo arrow ("Undo") and the same click takes it back. No double-check and no confirmation: a slip is one more click.</li>
+        <li><b>Count rows</b> work as in D (arrows, a click on the figure adds one, Up and Down on the focused figure). They have no check: reaching the limit is what makes them done, and the down arrow undoes it.</li>
+        <li><b>Hiding.</b> The × at the end of a row shows only while the pointer is on that row: it appears when the pointer enters the row and goes when it leaves, never on movement inside it, so it cannot flash. Its 20 px slot is kept on every row, so nothing shifts when it appears. A click hides the row; it stops counting anywhere. On your own to-dos the × removes the to-do instead, with "Removed Legion check-in. Undo" for four seconds.</li>
+        <li><b>Getting them back.</b> Each section (and an open group) ends with "2 hidden · Show" in <code>faint</code>. Show lists the hidden rows in place, faded (0.42), each with a put-back button in the × slot; the line then says "Hide again". Duty Commands start hidden, as in D.</li>
+        <li><b>Adding.</b> "+ Add a to-do" ends the list. A click turns it into a small form in place: the name field (focused), Add and Cancel on its line; Tick or Count (with "of 3" and arrows) and Daily or Weekly below. Enter adds, Esc or Cancel closes, a click elsewhere closes it while the name is empty. The new to-do goes to the end of Today or This week (unfolding it), marked "Yours", and a note says where it went. Typing takes the keyboard from the game, as the PvP name field does; Enter, Esc or a click outside gives it back.</li>
+        <li><b>Settings, To-dos</b> (<a href="settings-todos.html">drawn</a>): the daily reset hour (09:00, reported, not confirmed; the weekly reset is Wednesday at that hour), the membership switch (Odyle Energy up to 840 instead of 560), "Restore default to-dos" (brings back every hidden built-in to-do, keeps your own and all progress) and "Reset to-dos completely" (removes your own, brings everything back, empties every count and amount, after a confirm dialog). Both apply to all characters. "Change" beside the reset hour in the window's footer opens that section.</li>
+        <li><b>Opening</b>: "To-dos" in the meter's "…" menu, between PvP meter and Settings, with "1 full" beside it while an amount you typed is full (as in A).</li>
+        <li><b>Keyboard and screen readers</b> (GPUI AccessKit): a tick row is a button named with its state, "Legion check-in, not done", and after Space or Enter the window says "Legion check-in: done" (a polite announcement); a count's figure is a spin button, "Duty Missions, 4 of 5", then "5 of 5, done". The check and the × are pointer shortcuts and not tab stops; screen readers still find them by name ("Mark done: Legion check-in", "Remove Legion check-in"). The ×'s key: <b>Delete</b> on a focused row hides it (removes your own); focus moves to the next row. The check and the × also show while a row has keyboard focus. Tab goes through rows in reading order. The ring: <code>focus-ring</code>, 2 px, 1 px outside the row.</li>
+        <li><b>Unchanged from D</b>: the window (370 px, character selector, folding Today, Recharges and This week with countdowns), the groups, typing an amount (Enter keeps, Esc cancels, empty or × stops tracking), "Full, being wasted", the optional "+1?" from boss kills (off by default).</li>
+      </ul>
+      <h2>Values proposed (not tokens yet)</h2>
+      <ul>
+        <li>Rows 26 px, 2 px apart; 4 px left inset, a 12 px gutter (a group's <code>chevron-right</code>/<code>chevron-down</code>, a full amount's warning glyph in <code>warn</code>, otherwise empty), 6 px gaps, so names start 22 px in, under the section labels. Group rows' rows start at 40 px. Right inset 3 px, then the 20 px × slot.</li>
+        <li>Done: the name in <code>muted</code> with a 1 px line in the text's own colour (GPUI's <code>StrikethroughStyle</code>: thickness and colour); the grey part stays at 0.36.</li>
+        <li>Check: 20 × 20 px, 5 px radius, Lucide <code>check</code> 12 px at stroke 2.5 in <code>text</code> on <code>soft</code>; the pointer on it: <code>hot</code>. Undo: Lucide <code>undo-2</code> at stroke 2.25 in <code>muted</code>, no fill; the pointer on it: <code>soft</code>, <code>text</code>. Tooltip: one line, 11.5 px / 500 <code>text</code>, 4 × 8 px padding, 6 px radius, under the button. Then a 6 px gap and the × slot.</li>
+        <li>×: 20 × 20 px, 5 px radius, Lucide <code>x</code> 12 px in <code>muted</code>; pointer over: <code>soft</code>, <code>text</code>. Put back: Lucide <code>eye</code> in the same button.</li>
+        <li>"2 hidden · Show": 20 px line, 11.5 px / 500 <code>faint</code>, Show underlined at 0.25 in <code>muted</code> like "Change" in the footer.</li>
+        <li>"+ Add a to-do": 26 px, 12.5 px / 500 <code>muted</code>, Lucide <code>plus</code> 12 px in the gutter; pointer over: <code>soft</code>, <code>text</code>. The form sits on the expanded-row plate (<code>rgba(255, 240, 225, 0.05)</code>, 6 px radius, 6 px padding); field 26 px, the segmented tabs and arrows as in D.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="todos.js"></script>
+    <script src="e.js"></script>
+    <script>
+      Kit.mount({
+        states: [
+          { id: "fresh", title: "Fresh week", sub: "Wednesday 09:12, just after the reset: nothing struck through, every amount empty and ignored" },
+          { id: "progress", title: "Under way", sub: "Legion check-in, Ascension Trial (3/3), Conquest kills (35/35) and a final boss done: struck through and muted where they stand" },
+          { id: "hover", title: "Pointer on a to-do", sub: "Legion check-in: the row lights, the check and the × appear at its end; the pointer on the check, \"Mark done\"" },
+          { id: "hoverDone", title: "Pointer on a done to-do", sub: "the undo arrow in place of the check; the pointer on it, \"Undo\"" },
+          { id: "reach", title: "A count reaching its limit", sub: "Duty Missions 5/5: same look as a done tick; the up arrow dims, the down arrow takes one back" },
+          { id: "hidden", title: "Hidden rows", sub: "four recharges and two weekly rows hidden: \"4 hidden · Show\" and \"2 hidden · Show\"; the pointer on Show" },
+          { id: "reveal", title: "After Show", sub: "the hidden recharges listed in place, faded, each with a put-back button; \"Hide again\" folds them away" },
+          { id: "adding", title: "Adding a to-do", sub: "\"+ Add a to-do\" opened in place: a name, Count of 3, Weekly; Enter adds, Esc cancels" },
+          { id: "removed", title: "Removing your own", sub: "the × on a to-do of your own removes it, with Undo for four seconds" },
+          { id: "done", title: "Everything done", sub: "every section folded; one note says when the tracked amount is full" },
+          { id: "focus", title: "Keyboard focus on a row", sub: "the ring around the row; the check and × show as under the pointer; Space or Enter marks it done, Delete removes or hides" },
+          { id: "waste", title: "Full, being wasted", sub: "unchanged from D: yellow rows, the warning in the gutter, \"2 full\" on the section and the title" },
+          { id: "menu", title: "Opening it", sub: "To-dos in the meter's \"…\" menu, between PvP meter and Settings; \"1 full\" while an amount you typed is full" },
+          { id: "altOver", title: "Alternative: a line over the name", sub: "the request said \"overlined\"; drawn once to compare with the line through (still open)" },
+          { id: "try", title: "Try it", sub: "a working window: rows, arrows, figures, ×, Show, add and remove, amounts, keyboard; nothing is saved" },
+        ],
+        controls: ["alpha", "scale", "mask"],
+        tileMin: 430,
+        stageMin: 600,
+        render: TodoE.render,
+      });
+    </script>
+  </body>
+</html>

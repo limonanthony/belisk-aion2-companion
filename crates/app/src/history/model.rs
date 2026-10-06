@@ -1,11 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use aether_core::engine::meter::DpsMeter;
-use aether_core::history::HistoryRecord;
-use gpui::{Context, Task};
+use meter_core::engine::meter::DpsMeter;
+use meter_core::history::HistoryRecord;
+use gpui::{Context, Subscription, Task};
 
 use super::list::HistoryList;
+use crate::i18n::{self, fl};
 
 const STATUS_FOR: Duration = Duration::from_secs(4);
 
@@ -16,24 +17,36 @@ pub struct HistoryModel {
     pub list: HistoryList,
     /// The record whose players are shown; one at a time.
     pub open: Option<String>,
-    status: Option<String>,
+    /// How many records the last "Delete all" removed, while its line shows.
+    deleted: Option<usize>,
     status_timer: Option<Task<()>>,
+    _language: Subscription,
 }
 
 impl HistoryModel {
-    pub fn new(meter: Option<Arc<DpsMeter>>) -> Self {
-        let mut model = Self { meter, list: HistoryList::default(), open: None, status: None, status_timer: None };
+    pub fn new(meter: Option<Arc<DpsMeter>>, cx: &mut Context<Self>) -> Self {
+        let locale = i18n::locale(cx);
+        let language = cx.observe(&locale, |this, _, cx| this.rebuild_words(cx));
+        let mut model =
+            Self { meter, list: HistoryList::default(), open: None, deleted: None, status_timer: None, _language: language };
         model.reload();
         model
     }
 
-    pub fn status(&self) -> Option<&str> {
-        self.status.as_deref()
+    pub fn status(&self) -> Option<String> {
+        self.deleted.map(|count| fl!("history-deleted", count = count))
     }
 
     /// Reads the records again, after the meter saved or deleted one.
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
         self.reload();
+        cx.notify();
+    }
+
+    /// Writes the rows again after the language changed.
+    pub fn rebuild_words(&mut self, cx: &mut Context<Self>) {
+        self.list.rebuild_words();
+        self.forget_missing_open_record();
         cx.notify();
     }
 
@@ -65,12 +78,11 @@ impl HistoryModel {
     }
 
     fn report_deleted(&mut self, count: usize, cx: &mut Context<Self>) {
-        let noun = if count == 1 { "record" } else { "records" };
-        self.status = Some(format!("Deleted {count} {noun}. Personal bests are kept."));
+        self.deleted = Some(count);
         self.status_timer = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(STATUS_FOR).await;
             let _ = this.update(cx, |this, cx| {
-                this.status = None;
+                this.deleted = None;
                 cx.notify();
             });
         }));
@@ -97,5 +109,27 @@ impl HistoryModel {
         if self.open.as_deref().is_some_and(|id| self.list.record(id).is_none()) {
             self.open = None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::{AppContext as _, TestAppContext};
+
+    use super::*;
+    use crate::i18n::{Language, LanguageChoice};
+
+    #[gpui::test]
+    fn the_delete_line_follows_a_language_change_while_it_shows(cx: &mut TestAppContext) {
+        let history = cx.new(|cx| HistoryModel::new(None, cx));
+        history.update(cx, |history, cx| history.report_deleted(3, cx));
+        let english = history.read_with(cx, |history, _| history.status()).expect("the line shows");
+
+        cx.update(|cx| i18n::apply(LanguageChoice::French, cx));
+
+        let french = history.read_with(cx, |history, _| history.status()).expect("the line still shows");
+        assert_ne!(french, english);
+        assert_eq!(french, fl!("history-deleted", count = 3));
+        assert_eq!(i18n::language(), Language::French);
     }
 }

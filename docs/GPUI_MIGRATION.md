@@ -57,8 +57,10 @@ listed under Dropped is ported.
 - **Settings** for everything above; **About** with the version, licences,
   storage summary and clear-cache action.
 - **Translations: English and French.** App and overlay strings go through one
-  Rust i18n setup from the first screen. Game data (about 7,100 skill names and
-  8,000 boss and mob names) stays English: there is no French source for it.
+  Rust i18n setup (`crates/app/src/i18n/`, Fluent via `i18n-embed` +
+  `i18n-embed-fl`; see "Translations" below). Game data (about 7,100 skill
+  names and 8,000 boss and mob names) stays English: there is no French source
+  for it.
 - **Dark theme.**
 
 ### Dropped
@@ -104,8 +106,13 @@ least three years from the contact given (default "the person who gave you this
 copy"). The dirty-tree refusal still applies, since the offer names a commit;
 the offer is only honest while that commit is kept and can be handed over.
 
-`WinDivert.dll` is a load-time import of the exe, so it is needed even when
-Npcap does the capturing; only `WinDivert64.sys` is the fallback driver.
+`WinDivert.dll` is delay-loaded (`/DELAYLOAD:WinDivert.dll` in `build.rs`; `cargo
+xtask dist` checks it is a delay-load import, not a load-time one), so the meter
+starts and captures with Npcap when `WinDivert.dll` and `WinDivert64.sys` are
+absent. Before the first WinDivert call `meter-core` loads the DLL from the
+exe's folder and reports WinDivert unavailable when it cannot. Both files still
+ship in the zip. Settings → Capture says what to do when neither Npcap nor the
+files are there.
 
 **Left for phase 6:** a release workflow (CI build and upload). Code signing is
 not planned, so SmartScreen warns; the player README says so. Running the zip
@@ -119,8 +126,8 @@ recordings stay where they are.
 
 The name shown to users is "AION 2 DPS Meter", or "DPS Meter" where an overlay
 has little room; no window says "Aether" (user request, 2026-10-04). About
-still credits the projects this is forked from. Internal names (the
-`aether-core` crate, the identifier, `aether.log`) stay as they are.
+still credits the projects this is forked from. Internal names (the identifier,
+`aether.log`) stay as they are; the core crate, once `aether-core`, is now `meter-core`.
 
 ## Design
 
@@ -235,9 +242,31 @@ the local copy script and the installer's resource list drifted apart (see
   GPUI can only blur the whole window background, not one element.
 - Multi-color inline SVG icons: GPUI draws SVGs in a single color. Convert
   multi-color icons to images.
-- Translations (i18next, English and Korean): the port uses a Rust i18n crate
-  with English and French; Korean is dropped. The overlays currently carry their
-  own small i18n module; the rewrite merges them into one.
+- Translations (i18next, English and Korean): the port uses Fluent through
+  `i18n-embed` with English and French; Korean is dropped. The overlays'
+  own small i18n modules are replaced by the one in `crates/app/src/i18n/`.
+
+## Translations
+
+- **Setup.** `crates/app/i18n/<lang>/aion_2_dps_meter.ftl` (English is the
+  fallback and the reference) is embedded in the exe by `rust-embed`, so the zip
+  stays one exe plus the WinDivert files. `fl!("key", arg = value)` checks the
+  key and its arguments against the English file at compile time.
+- **Language.** Settings → General → Language is System, English or French;
+  System follows Windows' display language (any French → French, else English).
+  It is stored as `general.language` in `settings.json` and applied by
+  `settings/effects.rs` at start and on every change, with no restart:
+  the loader switches, the `Locale` entity notifies and every window redraws.
+- **What is translated.** Every word the app writes: labels, units (KB → Ko),
+  weekdays and months, durations ("1 d 3 h" → "1 j 3 h"), plurals (Fluent
+  uses CLDR: French 0 and 1 are singular), the copied reports. Figures keep
+  their format (48.10M, 9,840) in both languages. Game names (bosses, dungeons,
+  skills, mobs, items and the event names that are the game's) stay English.
+  The core's own messages stay English: the app wraps them in translated
+  sentences where it shows them.
+- **Proofreading.** French was drafted, not reviewed; the user proofreads it.
+- **Test.** `i18n/tests.rs` fails when a key exists in one language only, when
+  a key reads different arguments, or when a file does not parse.
 
 ## Component library: none, plain GPUI
 
@@ -304,7 +333,7 @@ cleanly. UI fixes from upstream have to be redone by hand.
 ## Plan
 
 1. **Done** (branch `phase-1-core-crate`). The backend lives in
-   `crates/aether-core` (package `aether-core`, no Tauri dependency; a Cargo
+   `crates/aether-core` (package `aether-core`, since renamed `crates/core` and `meter-core`; no Tauri dependency; a Cargo
    workspace with `crates/app` since 2a). `src-tauri` depends on it by path and keeps only the command
    bridge (`src/commands.rs`) and `tauri_event_sink.rs`. The core reports
    through `events::MeterEvent` and `trait EventSink`; the logger is
@@ -394,8 +423,8 @@ meter design (2b) only has to draw.
   (`LOCK_DURATION`). GPUI's own `VSyncProvider` thread is platform code, see
   Cost. Quitting cancels a running replay before stopping the meter.
   `meter/view.rs` is the placeholder; `overlay.rs` is the window.
-- The exe imports `WinDivert.dll` (through `aether-core`), even for a replay.
-  Run `pnpm app:windivert:debug` once so the DLL sits beside the exe.
+- The exe delay-loads `WinDivert.dll`, so a replay or probe run needs no DLL
+  beside the exe; `build.rs` still copies both files into `target/<profile>/`.
 - `--overlay-probe` and `--font-probe` run the checks below. They exist only in a
   build with the off-by-default Cargo feature `probes`
   (`cargo run -p aion-2-dps-meter --features probes -- --overlay-probe`); the
@@ -792,14 +821,19 @@ it" or "it hit you"). It is let go when:
 - the meter is **reset** (button, hotkey, idle reset or character change);
 - the local player's **actor id changes**: ids are per-zone handles, so that
   shows a zone change. The identification packet is not re-sent on a zone
-  change, but the new connection opens with the character's combat power
-  (`0x56 0x36`) followed by its own HP packet; the core takes the actor of
-  that first HP packet as the character under the name already known
-  (`StreamProcessor::own_actor`, `DataStorage::rebind_main_actor`), which the
-  app sees as this change. Not on a connection that was named by `0x33 0x36`
-  itself, and only the first HP packet after the combat power counts. The core
-  parses no despawn or entity-removed packet, so nothing more precise is known
-  about a boss left behind (the 2-minute quiet rule covers it). (A re-sent
+  change, so the core finds your actor from your own remain-HP packet instead
+  (`00 8d <id> 01 01 03|06|01 <hp>`: the first skip varint after the target is
+  1; `StreamProcessor::own_actor`, `DataStorage::bind_own_actor`), at every
+  capture start and every new game connection, which the app sees as this
+  change. A connection keeps the first actor the signature showed, unless
+  `0x33 0x36` names the character: that stays authoritative for id and name.
+  A name already known (this run) carries over to the new id only
+  provisionally (a new connection may be another character picked at character
+  select): once the actor's skills show a class, the name stays if that was
+  the class the name had, otherwise the most recent remembered character of the
+  shown class takes over, else "You". The core parses
+  no despawn or entity-removed packet, so nothing more precise is known about a
+  boss left behind (the 2-minute quiet rule covers it). (A re-sent
   identification with the same id is not a zone change.)
 
 Bosses fought together (two sub-bosses of an expedition or conquest, a
@@ -833,8 +867,12 @@ limit is armed on the model's timer, since snapshots stop when nothing is hit.
   the current target, and from the full per-target overview.
 - "You" on any board is found by **name** first. An actor id is trusted only on
   a row nobody has named, because ids change between zones and a stale one can
-  belong to someone else by now. If the game has not named the local player,
-  or they did no damage to the boss, the summary is about the party ("Party
+  belong to someone else by now. If the meter knows your actor but not your
+  name, that nameless row is yours and reads "You" (meter, summary text,
+  detail, history), resolved in the app by `format::unnamed_player`; nothing
+  writes "You" into the core's data or the history records, so a name that
+  arrives later is still a real name. If the meter does not know your actor, or
+  you did no damage to the boss, the summary is about the party ("Party
   DPS", player count, no rank, share, crit, skills or personal best) and the
   copied text starts "Party ...". Nobody else is shown as you. (The capsule's
   lead is `Lead::You` or `Lead::Party`; the top row is no longer passed off as
@@ -843,13 +881,19 @@ limit is armed on the model's timer, since snapshots stop when nothing is hit.
   list, which the core cuts to its player limit before the app can keep your
   row in it; it ranks the full per-target overview and keeps your row in the
   last place if you rank below the cap.
-- Known gap: the identification packet (`0x33 0x36`) was seen in one of the
-  five recorded sessions, the one where the meter was started before login.
-  In the other four it never reaches the parser, in the replays and in the
-  live log (no "main actor" line in sessions of up to 24 minutes with several
-  connection changes), so a meter started with the game running stays
-  unidentified, and "change zone once" does not fix it. Everything above
-  degrades to party figures in that case.
+- **Your name without the name packet.** The game does not send `0x33 0x36`
+  on a zone change, and a meter started after login may not see it for hours.
+  Whenever `0x33 0x36` names your character the app remembers it in
+  `settings.json` (`knownCharacters`: name, server, class, and the 6-byte
+  character key found in the packet; 20 at most, most recent first; kept by
+  "Reset settings"), and hands the list to the core. When your skills show a
+  class, the core names your unnamed actor after the most recently seen
+  remembered character of that class, never before (a class is not guessed);
+  with none it stays "You". A same-class alt shows the remembered name until
+  its own `0x33 0x36` arrives. Matching the key against the `02 97` party
+  roster is not done (roster entries are not parsed and the packet is rare in
+  the recordings). The decision log records the signature, the remembered name
+  applied or rejected, and the game's name replacing them (`[meter] identity:`).
 
 ### Diagnostic log
 
@@ -893,9 +937,9 @@ the log stays on the machine. With the switch off the cost is one flag check.
   rest, fading in over 150 ms; on a one-row board it sits beside the switch.
   No tooltip for the active side while the choice is automatic.
 - **Not identified yet.** A quiet line above the footer, "Start before login,
-  or relog via character select", until the game names you. The game sends
-  the name at login (a zone change does not resend it); returning to
-  character select is the lead from another meter, unverified here.
+  or relog via character select", until the meter knows your actor: your own
+  remain-HP packet usually shows it within seconds; the game's name packet
+  (login only, not at a zone change) or a remembered character names it.
 - **Capsule.** Session: your rank, your damage, "Session" and the clock.
   Target: your DPS, the clock and the pace. Until the meter knows which row
   is you (or when you are not on the board) it shows the party's figure
@@ -1456,7 +1500,7 @@ at `90bac82` (phases 1 and 2), and that commit is tagged `tauri-final`.
 - **Moved with `git mv`:** compiled-in game data (`servers.json`,
   `dungeons.json`, `skill_names_en.json`) to `crates/app/assets/game/data/`
   (the UI is its only reader; the core's own data stays in
-  `crates/aether-core/data/`); class icons, the skill icons (471 files, 9.4 MB,
+  `crates/core/data/`); class icons, the skill icons (471 files, 9.4 MB,
   needed by the phase 3 detail window) and `profile_power_icon_pc.png` to
   `crates/app/assets/game/`; WinDivert to `crates/app/windivert/`; `icon.ico` to
   `crates/app/windows/`.

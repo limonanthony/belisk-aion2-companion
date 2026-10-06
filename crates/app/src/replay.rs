@@ -1,9 +1,9 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use aether_core::engine::meter::DpsMeter;
-use aether_core::events::EventSink;
-use aether_core::logger::AppLogger;
+use meter_core::engine::meter::DpsMeter;
+use meter_core::events::EventSink;
+use meter_core::logger::AppLogger;
 
 /// Starts the meter without a capture driver and feeds it `recording` at
 /// `speed` times the pace it was captured at.

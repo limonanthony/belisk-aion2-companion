@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use aether_core::engine::meter::DpsMeter;
-use aether_core::models::combat::{PvpCombatStatsRow, PvpWatchInfoResponse};
+use meter_core::engine::meter::DpsMeter;
+use meter_core::models::combat::{PvpCombatStatsRow, PvpWatchInfoResponse};
 use gpui::{Context, Entity, Subscription, Task};
 
 use super::data::{self, DamageRow, StatsSort, Suggestion, WatchRow};

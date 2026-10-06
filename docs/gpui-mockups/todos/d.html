@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-dos proposal D: you set the counts</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="todos.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="To-do proposals">
+        <a href="index.html">To-dos overview</a>
+        <a href="e.html">E, struck through when done</a>
+        <a href="d.html" aria-current="page">D, you set the counts</a>
+        <a href="a.html">A, tabs</a>
+        <a href="b.html">B, one list per character</a>
+        <a href="c.html">C, all characters</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>D, you set the counts <small>proposal, not approved: the model you chose, drawn on B with A's rows</small></h1>
+      <ul class="rationale">
+        <li>The meter cannot read any of these counts from the game, so <b>everything is set by you</b>, in three kinds of rows: a <b>tick</b> (done or not), a <b>count</b> "9/14" with one-less and one-more arrows, and an <b>amount</b> for the recharges that bank up to a cap, which stays empty ("—") and ignored unless you type what you have.</li>
+        <li>B's window (370 px, one list per character, the selector follows the character you play) with A's one-line rows. Three folding sections, <b>Today</b>, <b>Recharges</b> and <b>This week</b>, each with its own countdown. Sanctuary and Exploration fold into one row each.</li>
+        <li>The reset hour is a setting, shown in the footer as "Daily reset 09:00 · Change": 09:00 is reported by a fan site and 17:00 has also been seen, so neither is printed as fact. The countdowns follow the setting.</li>
+        <li><b>Try it</b> (last tile): the arrows, the counts, the ticks, the sections and groups, typing an amount, clearing it, and edit mode all work. Nothing is saved. Limits are from the reset research; counts, times and names are invented. Clock: Monday 21:48 (the fresh week: Wednesday 09:12).</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Counts.</b> One more and one less are arrow buttons beside the figure; a click on the figure itself also adds one (the largest target, for the usual "did one more"). The figure stops at 0 and at the limit, and the arrow that cannot go further dims. At the limit the box on the left gets the cream check and the row dims; rows never move. Counts in Today go back to 0 at the daily reset, counts in This week on Wednesday.</li>
+        <li><b>Ticks.</b> A click anywhere on the row ticks or unticks it (Abyssal Forge's final boss, a to-do of your own).</li>
+        <li><b>Amounts.</b> Empty by default: a dash, the name in <code>muted</code>, no estimate, no warning, not counted anywhere. A click on the dash opens a field: type what the game shows now, Enter keeps it, Esc cancels, a click elsewhere keeps it. From then on the meter adds the refill on schedule (+15 Odyle Energy every 3 h, +4 Shugo keys at 16:00, +2 at the daily reset, …) and says "Full in 1 d 2 h"; at the cap the row turns yellow ("Full, being wasted" for Odyle Energy, which refills all day; "Full, spend by Tue 16:00" for a daily refill) and "1 full" shows on the section and the title. After you spend some, correct it with the arrows (1 at a time, Odyle Energy 10) or click the figure and retype.</li>
+        <li><b>Back to empty.</b> Empty the field, or click the × in it: the row returns to the dash and is ignored again.</li>
+        <li><b>Typing takes the keyboard</b> from the game while the field is open, like the PvP name field; Enter, Esc or a click outside gives it back. Every other control is one click and never takes focus.</li>
+        <li><b>Groups.</b> Sanctuary (three raids: attempts and final bosses) and Exploration (ten dungeons, 7 runs each) are one row with "2 of 6 done"; a click opens them. Their rows sit under the group's name. In edit mode each dungeon or raid can be hidden.</li>
+        <li><b>Daily Dungeon.</b> The game calls Unknown Fissure a daily dungeon, but its 14 entries reset on Wednesday, so it is listed under This week as "Daily Dungeon · Unknown Fissure".</li>
+        <li><b>Characters.</b> The list follows the character you play (the meter remembers name, server and class). The selector shows the others with what they have left; picking one shows its list. Duty Missions are marked Account: shared by your characters on one server.</li>
+        <li><b>Edit.</b> The pencil turns the rows into show and hide buttons (hidden rows stay listed, faded) and adds a form below the list: a name, Tick or Count (with how many), Daily or Weekly, Add. Your own to-dos carry "Yours" and a delete button. The Membership box raises Odyle Energy's cap to 840. Duty Commands (20 a week, from Game8 only) start hidden.</li>
+        <li><b>Suggested +1 (option, off by default).</b> When the meter sees a known dungeon's last boss fall, that count's row turns green and offers "+1?"; × lets it go. It never counts by itself. Needs a boss-to-to-do table in the bundled data, which does not exist yet.</li>
+        <li><b>Keyboard and screen readers</b> (for the build, with GPUI's AccessKit roles): a tick row is a checkbox; a figure is a spin button with value, minimum and maximum, announced as "Daily Dungeon, Unknown Fissure, 9 of 14", Up and Down change it, Enter adds one (on an amount, Enter opens the field); the arrows are buttons named "One more: Daily Dungeon, Unknown Fissure"; sections and groups are buttons with an expanded state; an empty amount reads "Odyle Energy, not tracked". Tab goes through them in reading order. The ring: <code>focus-ring</code>, 2 px, 1 px outside.</li>
+      </ul>
+      <h2>Values proposed (not tokens yet)</h2>
+      <ul>
+        <li>Rows 26 px, 2 px apart, as in A; right inset 3 px on count rows so the arrows sit near the edge. Group rows: Lucide <code>chevron-right</code> in the box column; their rows indented 29 px (under the group's name).</li>
+        <li>Arrows: 20 × 20 px, 5 px radius (squarer than the 7 px tool button, as the bars and badges were made squarer), Lucide <code>chevron-down</code> / <code>chevron-up</code> 12 px, stroke 2.25, in <code>muted</code>; <code>text</code> while the pointer is on the row; pointer over: <code>soft</code>; pressed: cream at 0.20; at the limit: <code>faint</code> at 0.45.</li>
+        <li>Figure: 46 × 20 px, 5 px radius, 12.5 px / 600 with "/14" at 11 px / 500 <code>faint</code>; pointer over a count: <code>soft</code>; pointer over an amount: the <code>input</code> fill and edge (it opens a field). Empty amount: the dash in <code>faint</code>.</li>
+        <li>Field: 112 × 22 px, 6 px radius, <code>input</code> fill with the focus edge, the cap in <code>faint</code>, an 18 px × inside. Status text before the arrows: 11.5 px / 500 <code>muted</code>; full: <code>warn</code> 600 on the 0.12 <code>warn</code> row fill with the warning glyph.</li>
+        <li>Group summary "2 of 6 done": 11.5 px / 500 <code>muted</code> (<code>good</code> when all done). "+1?": the small text button on a <code>good</code> 0.16 fill.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="todos.js"></script>
+    <script src="d.js"></script>
+    <script>
+      Kit.mount({
+        states: [
+          { id: "fresh", title: "Fresh week", sub: "Wednesday 09:12, just after the reset: every count at 0, every amount empty and ignored" },
+          { id: "progress", title: "Under way", sub: "Duty Missions 2/5, Daily Dungeon 9/14, Ascension Trial and a final boss done; Sanctuary open; Recharges folded" },
+          { id: "amount", title: "An amount entered", sub: "Odyle Energy typed as 425: the meter adds +15 every 3 h; pointer on the row" },
+          { id: "typing", title: "Typing an amount", sub: "Shugo Festival keys: Enter keeps it; empty or × stops tracking (back to the dash)" },
+          { id: "waste", title: "Full, being wasted", sub: "Odyle Energy at its cap, Invasion keys full until the 16:00 refill: yellow rows, \"2 full\" on the section and the title" },
+          { id: "done", title: "Everything done", sub: "every section folded; one note says when the tracked amount is full" },
+          { id: "edit", title: "Edit mode", sub: "hide and show (Exploration open, four dungeons hidden); your own weekly to-do; adding a count of 3" },
+          { id: "hover", title: "Pointer over one-less", sub: "Daily Dungeon's down arrow, with its tooltip" },
+          { id: "press", title: "Pressing one-more", sub: "Duty Missions going from 2 to 3" },
+          { id: "count", title: "Pointer over a figure", sub: "a click on the figure adds one" },
+          { id: "focus", title: "Keyboard focus on a figure", sub: "announced as \"Daily Dungeon, Unknown Fissure, 9 of 14\"; Up and Down change it" },
+          { id: "suggest", title: "Suggested +1 (option, off by default)", sub: "the meter saw the Ascension Trial's last boss fall at 21:32" },
+          { id: "switch", title: "Character selector", sub: "the characters the meter remembers, with what each has left" },
+          { id: "try", title: "Try it", sub: "a working window: arrows, figures, ticks, sections, groups, amounts, edit mode; nothing is saved" },
+        ],
+        controls: ["alpha", "scale", "mask"],
+        tileMin: 430,
+        stageMin: 600,
+        render: TodoD.render,
+      });
+    </script>
+  </body>
+</html>

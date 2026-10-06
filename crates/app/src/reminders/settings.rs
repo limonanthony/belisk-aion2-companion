@@ -134,7 +134,7 @@ mod tests {
         assert!(settings.scheduled_events().is_empty());
         for info in &EVENTS {
             settings.set_event_enabled(info.id, true);
-            assert_eq!(settings.scheduled_events(), vec![info.id], "{}", info.name);
+            assert_eq!(settings.scheduled_events(), vec![info.id], "{}", info.id.name());
             settings.set_event_enabled(info.id, false);
         }
     }

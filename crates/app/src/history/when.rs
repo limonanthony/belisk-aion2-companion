@@ -7,10 +7,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
 use windows::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime};
 
+use crate::i18n::{fl, month_short, weekday_short};
+
 /// Milliseconds from 1601-01-01 (the FILETIME epoch) to 1970-01-01.
 const EPOCH_GAP_MS: u64 = 11_644_473_600_000;
-const WEEKDAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /// A record's time against the current day, or "--" when Windows cannot
 /// convert it.
@@ -38,13 +38,18 @@ impl LocalTime {
 }
 
 fn label(saved: LocalTime, today: (i32, u16, u16)) -> String {
-    let clock = format!("{:02}:{:02}", saved.hour, saved.minute);
+    let time = format!("{:02}:{:02}", saved.hour, saved.minute);
     let saved_day = days_from_civil(saved.date());
     match days_from_civil(today) - saved_day {
-        0 => format!("Today {clock}"),
-        1 => format!("Yesterday {clock}"),
-        2..=6 => format!("{} {clock}", WEEKDAYS[weekday(saved_day)]),
-        _ => format!("{} {} {clock}", saved.day, MONTHS[usize::from(saved.month.clamp(1, 12)) - 1]),
+        0 => fl!("history-when-today", time = time),
+        1 => fl!("history-when-yesterday", time = time),
+        2..=6 => fl!("history-when-weekday", weekday = weekday_short(weekday(saved_day)), time = time),
+        _ => fl!(
+            "history-when-date",
+            day = i64::from(saved.day),
+            month = month_short(saved.month.clamp(1, 12) as u8),
+            time = time
+        ),
     }
 }
 

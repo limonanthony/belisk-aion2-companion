@@ -25,9 +25,11 @@ use super::summary::{BestLine, FightSummary};
 use crate::assets::Icon;
 use crate::detail::DetailSource;
 use crate::fonts::OVERLAY_FAMILY;
+use crate::i18n::fl;
 use crate::overlay;
 use crate::secondary;
 use crate::style::{class_fill, track, Scale};
+use crate::todos;
 
 const TEXT: u32 = 0xfff6ecf5;
 const SECONDARY: u32 = 0xfff6ecd1;
@@ -74,9 +76,6 @@ const SWITCH_SLIDE: Duration = Duration::from_millis(120);
 const CHIP_FADE: Duration = Duration::from_millis(150);
 const BOARD_FADE: Duration = Duration::from_millis(150);
 const EXPAND_FADE: Duration = Duration::from_millis(180);
-
-const WAITING_HINT: &str = "Alt+CapsLock locks and unlocks the meter";
-const UNIDENTIFIED_HINT: &str = "Start before login, or relog via character select";
 
 struct RowMotion {
     slot: Tween,
@@ -487,7 +486,7 @@ impl MeterView {
             .text_size(s.px(11.5))
             .font_weight(FontWeight::SEMIBOLD)
             .child(icon(if copied { Icon::Check } else { Icon::Copy }, 12., rgba(TEXT), s))
-            .child(if copied { "Copied" } else { "Copy" })
+            .child(if copied { fl!("meter-copied") } else { fl!("meter-copy") })
             .on_click(cx.listener(|this, _, _, cx| this.copy_report(cx)))
     }
 
@@ -561,7 +560,7 @@ impl MeterView {
     ) -> Div {
         let left: Vec<AnyElement> = match footer {
             Some(Footer::Session { damage, targets }) => vec![
-                label("Damage", s).into_any_element(),
+                label(fl!("common-damage"), s).into_any_element(),
                 value(damage, s).into_any_element(),
                 div()
                     .flex_none()
@@ -577,7 +576,7 @@ impl MeterView {
                 vec![pace_figure(&pace, &pace.versus_best, 12., s).into_any_element()]
             }
             Some(Footer::TargetPartyDamage(damage)) => vec![
-                label("Damage", s).into_any_element(),
+                label(fl!("common-damage"), s).into_any_element(),
                 value(damage, s).into_any_element(),
             ],
             None => Vec::new(),
@@ -618,7 +617,7 @@ impl MeterView {
         }
         let half = (SWITCH_WIDTH - 2.0 * SWITCH_INSET) / 2.0;
         let pinned = model.is_board_pinned();
-        let option = |side: Board, text: &'static str| {
+        let option = |side: Board, text: String| {
             let on = side == active;
             let hovered = !self.locked && !on && self.switch_hover == Some(side);
             let id = match side {
@@ -677,8 +676,8 @@ impl MeterView {
                     .rounded(s.px(4.))
                     .bg(rgba(HOT)),
             )
-            .child(option(Board::Session, "Session"))
-            .child(option(Board::Target, "Target"))
+            .child(option(Board::Session, fl!("common-session")))
+            .child(option(Board::Target, fl!("common-target")))
     }
 
     fn rows(
@@ -738,8 +737,8 @@ impl MeterView {
 
     fn waiting_card(&self, model: &MeterModel, s: Scale, cx: &Context<Self>) -> Div {
         let (title, hint, status) = match model.unavailable() {
-            Some(reason) => ("The meter is not running", reason.to_string(), "Stopped"),
-            None => ("Waiting for the first hit", WAITING_HINT.to_string(), "Standing by"),
+            Some(reason) => (fl!("meter-stopped-title"), reason.to_string(), fl!("meter-status-stopped")),
+            None => (fl!("meter-waiting-title"), fl!("meter-lock-hint"), fl!("meter-status-standing-by")),
         };
         let head = self.head(model, SharedString::new_static("DPS Meter"), false, label(status, s), false, s, cx);
         card(model.settings.background_alpha, CARD_WIDTH, s)
@@ -769,8 +768,8 @@ impl MeterView {
         let target = model.correction_target();
         let choice = target.as_ref().map(|target| target.choice);
         let boss_line: SharedString = match &target {
-            Some(target) => format!("Treat {} as a boss", target.name).into(),
-            None => SharedString::new_static("Treat as a boss"),
+            Some(target) => fl!("meter-menu-treat-as-boss", name = target.name.to_string()).into(),
+            None => fl!("meter-menu-treat-as-boss-unnamed").into(),
         };
         let item = |id: &'static str, text: SharedString, item_choice: BossChoice| {
             let enabled = target.is_some();
@@ -812,7 +811,7 @@ impl MeterView {
                         }))
                 })
         };
-        let link = |id: &'static str, text: &'static str, open: fn(&Entity<MeterModel>, &mut App)| {
+        let link = |id: &'static str, text: String, trailer: Option<String>, open: fn(&Entity<MeterModel>, &mut App)| {
             div()
                 .id(id)
                 .h(s.px(26.))
@@ -831,7 +830,11 @@ impl MeterView {
                 }))
                 .child(div().flex_none().size(s.px(12.)))
                 .child(div().flex_1().min_w_0().truncate().font_weight(FontWeight::MEDIUM).child(text))
+                .children(trailer.map(|trailer| {
+                    div().flex_none().text_size(s.px(11.)).text_color(rgba(FAINT)).child(trailer)
+                }))
         };
+        let full = todos::global(cx).read(cx).full_count();
         div()
             .absolute()
             .top(s.px(MENU_TOP))
@@ -846,9 +849,10 @@ impl MeterView {
             .border_color(rgba(POPOVER_BORDER))
             .bg(rgba(POPOVER))
             .text_size(s.px(12.5))
-            .child(link("menu-history", "Fight history", secondary::open_history))
-            .child(link("menu-pvp", "PvP meter", secondary::open_pvp))
-            .child(link("menu-settings", "Settings", secondary::open_settings))
+            .child(link("menu-history", fl!("meter-menu-fight-history"), None, secondary::open_history))
+            .child(link("menu-pvp", fl!("meter-menu-pvp"), None, secondary::open_pvp))
+            .child(link("menu-todos", fl!("meter-menu-todos"), (full > 0).then(|| todos::copy::full(full)), secondary::open_todos))
+            .child(link("menu-settings", fl!("meter-menu-settings"), None, secondary::open_settings))
             .child(div().h(s.px(1.)).mx(s.px(4.)).my(s.px(4.)).bg(rgba(DIVIDER)))
             .when(target.is_none(), |menu| {
                 menu.child(
@@ -859,21 +863,21 @@ impl MeterView {
                         .items_center()
                         .text_size(s.px(11.5))
                         .text_color(rgba(MUTED))
-                        .child("Hit a mob to set whether it is a boss"),
+                        .child(fl!("meter-menu-hit-a-mob")),
                 )
             })
             .child(item("menu-boss", boss_line, BossChoice::Boss))
-            .child(item("menu-not-boss", SharedString::new_static("Not a boss"), BossChoice::NotBoss))
-            .child(item("menu-automatic", SharedString::new_static("Automatic"), BossChoice::Automatic))
+            .child(item("menu-not-boss", fl!("meter-menu-not-a-boss").into(), BossChoice::NotBoss))
+            .child(item("menu-automatic", fl!("meter-menu-automatic").into(), BossChoice::Automatic))
             .with_animation("menu", Animation::new(SWAP_FADE), |menu, t| menu.opacity(t))
     }
 
     fn summary_card(&self, model: &MeterModel, summary: &FightSummary, s: Scale, cx: &Context<Self>) -> Div {
         let fin = summary.kind == SummaryKind::Final;
         let (chip_fill, chip_text, chip_icon, outcome) = if fin {
-            (CHIP_GOOD, GOOD, Icon::Check, "Defeated")
+            (CHIP_GOOD, GOOD, Icon::Check, fl!("meter-summary-defeated"))
         } else {
-            (CHIP_WARN, WARN, Icon::Hourglass, "Fight ended")
+            (CHIP_WARN, WARN, Icon::Hourglass, fl!("meter-summary-ended"))
         };
         let chip = div()
             .flex_none()
@@ -896,7 +900,7 @@ impl MeterView {
                         .text_color(rgba(MUTED))
                         .text_size(s.px(11.))
                         .font_weight(FontWeight::MEDIUM)
-                        .child("may resume"),
+                        .child(fl!("meter-summary-may-resume")),
                 )
             })
             .with_animation("outcome", Animation::new(CHIP_FADE), |chip, t| chip.opacity(t));
@@ -927,7 +931,7 @@ impl MeterView {
                 )
             });
 
-        let key_value = |name: &'static str, figure: SharedString| {
+        let key_value = |name: String, figure: SharedString| {
             div()
                 .w(s.px(104.))
                 .flex()
@@ -965,7 +969,7 @@ impl MeterView {
                             .text_size(s.px(12.))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(rgba(FAINT))
-                            .child(if summary.personal { "DPS" } else { "Party DPS" }),
+                            .child(if summary.personal { fl!("common-dps") } else { fl!("meter-summary-party-dps") }),
                     ),
             )
             .child(
@@ -974,13 +978,13 @@ impl MeterView {
                     .flex()
                     .flex_col()
                     .gap(s.px(3.))
-                    .when_some(summary.rank.clone(), |list, rank| list.child(key_value("Rank", rank)))
-                    .when_some(summary.share.clone(), |list, share| list.child(key_value("Share", share)))
+                    .when_some(summary.rank.clone(), |list, rank| list.child(key_value(fl!("meter-summary-rank"), rank)))
+                    .when_some(summary.share.clone(), |list, share| list.child(key_value(fl!("meter-summary-share"), share)))
                     .when(!summary.personal, |list| {
-                        list.child(key_value("Players", summary.players.clone()))
+                        list.child(key_value(fl!("common-players"), summary.players.clone()))
                     })
                     .when_some(summary.crit.clone(), |list, crit| {
-                        list.child(key_value("Crit", crit))
+                        list.child(key_value(fl!("meter-summary-crit"), crit))
                     }),
             );
 
@@ -1040,9 +1044,9 @@ impl MeterView {
         let foot = footer(s)
             .mt(s.px(2.))
             .when_some(summary.party_dps.clone(), |row, party| {
-                row.child(label("Party", s)).child(value(party, s))
+                row.child(label(fl!("meter-summary-party"), s)).child(value(party, s))
             })
-            .child(label("Damage", s))
+            .child(label(fl!("common-damage"), s))
             .child(value(summary.damage.clone(), s))
             .child(div().flex_1())
             .when(!self.locked, |row| row.child(self.copy_button(s, cx)));
@@ -1079,33 +1083,33 @@ impl MeterView {
                     .pl(s.px(4.))
                     .child(capsule_badge(rank.clone(), *colour, s))
                     .child(figure(damage.clone()))
-                    .child(label("damage", s)),
+                    .child(label(fl!("meter-capsule-damage"), s)),
                 Lead::Party { .. } => pill
                     .pl(s.px(12.))
                     .child(figure(session.damage.clone()))
-                    .child(label("party damage", s)),
+                    .child(label(fl!("meter-capsule-party-damage"), s)),
             };
             return lead
                 .child(divider())
-                .child(label("Session", s))
+                .child(label(fl!("common-session"), s))
                 .child(clock(session.elapsed.clone()));
         }
         let Some(live) = model.live() else {
             return pill
                 .pl(s.px(12.))
                 .child(div().font_weight(FontWeight::SEMIBOLD).child("DPS Meter"))
-                .child(label("Standing by", s));
+                .child(label(fl!("meter-status-standing-by"), s));
         };
         let lead = match &live.lead {
             Lead::You { rank, colour, dps, .. } => pill
                 .pl(s.px(4.))
                 .child(capsule_badge(rank.clone(), *colour, s))
                 .child(figure(dps.clone()))
-                .child(label("DPS", s)),
+                .child(label(fl!("common-dps"), s)),
             Lead::Party { dps } => pill
                 .pl(s.px(12.))
                 .child(figure(dps.clone()))
-                .child(label("party DPS", s)),
+                .child(label(fl!("meter-capsule-party-dps"), s)),
         };
         lead.child(divider())
             .child(clock(live.elapsed.clone()))
@@ -1284,24 +1288,25 @@ fn unidentified_note(s: Scale) -> Div {
         .text_size(s.px(11.5))
         .text_color(rgba(MUTED))
         .child(icon(Icon::Map, 12., rgba(FAINT), s))
-        .child(UNIDENTIFIED_HINT)
+        .child(fl!("meter-unidentified-hint"))
 }
 
 /// What the switch's tooltip says for the side under the pointer; nothing
 /// for the active side while the choice is automatic.
 fn switch_tip(side: Board, active: Board, pinned: bool) -> Option<(SharedString, SharedString)> {
-    let unpin = "Click again to switch by itself. Reset and the next boss also unpin.";
     match (side == active, side, pinned) {
-        (false, Board::Target, _) => Some((
-            "Show the target board".into(),
-            "Follows your target until reset or the next boss.".into(),
-        )),
-        (false, Board::Session, _) => Some((
-            "Show the session board".into(),
-            "Stays until reset or the next boss.".into(),
-        )),
-        (true, Board::Session, true) => Some(("Pinned to Session".into(), unpin.into())),
-        (true, Board::Target, true) => Some(("Pinned to Target".into(), unpin.into())),
+        (false, Board::Target, _) => {
+            Some((fl!("meter-switch-tip-target").into(), fl!("meter-switch-tip-target-line").into()))
+        }
+        (false, Board::Session, _) => {
+            Some((fl!("meter-switch-tip-session").into(), fl!("meter-switch-tip-session-line").into()))
+        }
+        (true, Board::Session, true) => {
+            Some((fl!("meter-switch-tip-pinned-session").into(), fl!("meter-switch-tip-unpin").into()))
+        }
+        (true, Board::Target, true) => {
+            Some((fl!("meter-switch-tip-pinned-target").into(), fl!("meter-switch-tip-unpin").into()))
+        }
         (true, _, false) => None,
     }
 }
@@ -1371,13 +1376,13 @@ fn footer(s: Scale) -> Div {
         .text_color(rgba(MUTED))
 }
 
-fn label(text: &'static str, s: Scale) -> Div {
+fn label(text: impl Into<SharedString>, s: Scale) -> Div {
     div()
         .flex_none()
         .text_size(s.px(11.))
         .font_weight(FontWeight::MEDIUM)
         .text_color(rgba(FAINT))
-        .child(text)
+        .child(text.into())
 }
 
 fn value(text: SharedString, s: Scale) -> Div {
@@ -1575,19 +1580,19 @@ fn pace_figure(pace: &PaceLine, text: &SharedString, icon_size: f32, s: Scale) -
 fn best_chip(best: &BestLine, s: Scale) -> impl IntoElement {
     let (fill, text, glyph, line, figure): (u32, u32, Icon, SharedString, Option<SharedString>) =
         match best {
-            BestLine::First => (PB_NEW_FILL, PB_NEW_TEXT, Icon::Award, "First record".into(), None),
+            BestLine::First => (PB_NEW_FILL, PB_NEW_TEXT, Icon::Award, fl!("meter-best-first").into(), None),
             BestLine::New { pace } => (
                 PB_NEW_FILL,
                 PB_NEW_TEXT,
                 Icon::Award,
-                "New personal best".into(),
+                fl!("meter-best-new").into(),
                 Some(pace.clone()),
             ),
             BestLine::Behind { best, pace } => (
                 CHIP_BAD,
                 BAD,
                 Icon::TrendingDown,
-                format!("Best {best}").into(),
+                fl!("meter-best-behind", best = best.to_string()).into(),
                 Some(pace.clone()),
             ),
         };

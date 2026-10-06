@@ -5,10 +5,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use aether_core::config::DpsMeterConfig;
-use aether_core::engine::meter::DpsMeter;
-use aether_core::events::EventSink;
-use aether_core::logger::AppLogger;
+use meter_core::config::DpsMeterConfig;
+use meter_core::engine::meter::DpsMeter;
+use meter_core::events::EventSink;
+use meter_core::logger::AppLogger;
 
 use crate::settings::AppSettings;
 
@@ -53,6 +53,7 @@ pub fn start(events: Arc<dyn EventSink>, settings: &AppSettings) -> (Arc<DpsMete
     let logger = Arc::new(AppLogger::new(log_dir().join("aether.log"), Box::new(|_| {})));
     let meter = Arc::new(DpsMeter::new(events, logger, data_dir()));
     meter.apply_config(backend_config(settings));
+    meter.set_known_characters(settings.known_characters.clone());
     let started = meter.start_dps_meter();
     (meter, started)
 }
@@ -60,14 +61,13 @@ pub fn start(events: Arc<dyn EventSink>, settings: &AppSettings) -> (Arc<DpsMete
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether_core::config::CaptureBackendPriority;
+    use meter_core::config::CaptureBackendPriority;
 
     #[test]
     fn backend_config_matches_the_defaults_of_the_previous_app() {
         let config = default_backend_config();
         assert_eq!(config.dps_snapshot_interval_ms, 200);
         assert_eq!(config.memory_snapshot_interval_ms, 2000);
-        assert_eq!(config.max_packet_size_threshold, 8192);
         assert_eq!(config.stall_resync_delay_ms, 1000);
         assert_eq!(config.full_processor_stall_resync_delay_ms, 200);
         assert_eq!(config.unknown_packet_stall_resync_delay_ms, 50);

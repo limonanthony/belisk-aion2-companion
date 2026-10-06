@@ -9,11 +9,12 @@ use gpui::{
     Render, ScrollHandle, SharedString, Subscription, Task, Window,
 };
 
-use super::list::{FilterOption, PlayerLine, RecordRow};
+use super::list::{unknown_player, FilterOption, PlayerLine, RecordRow};
 use super::model::HistoryModel;
 use crate::assets::Icon;
 use crate::detail::DetailSource;
 use crate::format;
+use crate::i18n::fl;
 use crate::meter::{MeterModel, OverlaySettings};
 use crate::overlay::WindowDrag;
 use crate::secondary::chrome::{self, Anchor, ButtonKind, Look, Scale, FAINT, MUTED, TEXT};
@@ -166,16 +167,16 @@ impl Render for HistoryView {
         }
 
         let header = chrome::header(
-            chrome::title(Icon::History, "Fight history", Some(model.list.count_label().into()), s),
+            chrome::title(Icon::History, fl!("history-title"), Some(model.list.count_label().into()), s),
             Vec::new(),
             &self.drag,
             s,
         );
         let records = model.list.visible();
         let body: AnyElement = if empty {
-            chrome::empty(Some("No records yet"), "Reset the meter after a fight to save it here.", s).into_any_element()
+            chrome::empty(Some(fl!("history-empty-title").into()), fl!("history-empty-line"), s).into_any_element()
         } else if records.is_empty() {
-            chrome::empty(None, "No record matches the filters.", s).into_any_element()
+            chrome::empty(None, fl!("history-no-match"), s).into_any_element()
         } else {
             // An opened record adds its players to the room, so it opens
             // without pushing the others out of sight.
@@ -194,9 +195,9 @@ impl Render for HistoryView {
             chrome::scroll_list("records", &self.list_scroll, max, content_height > max, list, s).into_any_element()
         };
         let status = model.status().map(|status| {
-            chrome::note(Icon::Check, status.to_string(), true, s)
+            chrome::note(Icon::Check, status.clone(), true, s)
                 .mt(s.px(8.))
-                .with_animation(SharedString::from(status.to_string()), Animation::new(NOTE_FADE), |note, t| note.opacity(t))
+                .with_animation(SharedString::from(status), Animation::new(NOTE_FADE), |note, t| note.opacity(t))
         });
         let card = chrome::card(WIDTH, look)
             .child(header)
@@ -219,11 +220,11 @@ impl Render for HistoryView {
 impl HistoryView {
     fn filters(&self, settings: &OverlaySettings, disabled: bool, s: Scale, cx: &Context<Self>) -> impl IntoElement {
         let list = &self.model.read(cx).list;
-        let target = list.target_filter().map_or(SharedString::new_static("All targets"), |target| target.to_string().into());
+        let target = list.target_filter().map_or_else(|| fl!("history-all-targets").into(), |target| target.to_string().into());
         let player = list
             .player_filter()
-            .map_or(SharedString::new_static("All players"), |player| settings.display_name(player).into());
-        let select = |filter: Filter, label: &'static str, value: SharedString, anchor: &Anchor| {
+            .map_or_else(|| fl!("history-all-players").into(), |player| settings.display_name(player).into());
+        let select = |filter: Filter, label: String, value: SharedString, anchor: &Anchor| {
             let id = match filter {
                 Filter::Target => "target-filter",
                 Filter::Player => "player-filter",
@@ -242,8 +243,8 @@ impl HistoryView {
             .mt(s.px(2.))
             .mb(s.px(8.))
             .when(disabled, |filters| filters.opacity(0.45))
-            .child(select(Filter::Target, "Target", target, &self.target_anchor))
-            .child(select(Filter::Player, "Player", player, &self.player_anchor))
+            .child(select(Filter::Target, fl!("common-target"), target, &self.target_anchor))
+            .child(select(Filter::Player, fl!("common-player"), player, &self.player_anchor))
     }
 
     fn menu_popover(&self, filter: Filter, settings: &OverlaySettings, s: Scale, cx: &Context<Self>) -> Option<AnyElement> {
@@ -253,13 +254,14 @@ impl HistoryView {
         };
         let bounds = anchor.bounds()?;
         let list = &self.model.read(cx).list;
-        let (all, options, selected): (&'static str, Vec<FilterOption>, Option<&str>) = match filter {
-            Filter::Target => ("All targets", list.target_options(), list.target_filter()),
-            Filter::Player => ("All players", list.player_options(), list.player_filter()),
+        let (all, options, selected): (String, Vec<FilterOption>, Option<&str>) = match filter {
+            Filter::Target => (fl!("history-all-targets"), list.target_options(), list.target_filter()),
+            Filter::Player => (fl!("history-all-players"), list.player_options(), list.player_filter()),
         };
         let total = list.total();
+        let unknown = unknown_player();
         let label = |value: &str| match filter {
-            Filter::Player if value != "Unknown" => settings.display_name(value),
+            Filter::Player if value != unknown => settings.display_name(value),
             _ => value.to_string(),
         };
         let item = |index: usize, text: String, count: usize, value: Option<String>| {
@@ -283,7 +285,7 @@ impl HistoryView {
         let items = div()
             .flex()
             .flex_col()
-            .child(item(0, all.to_string(), total, None))
+            .child(item(0, all, total, None))
             .children(options.iter().enumerate().map(|(index, option)| {
                 item(index + 1, label(&option.value), option.count, Some(option.value.clone()))
             }));
@@ -316,7 +318,7 @@ impl HistoryView {
                 .items_center()
                 .gap(s.px(4.))
                 .child(
-                    chrome::text_button("delete-confirm", Some(Icon::Trash), "Delete?", ButtonKind::Danger, 20., s).on_click(
+                    chrome::text_button("delete-confirm", Some(Icon::Trash), fl!("history-delete-one"), ButtonKind::Danger, 20., s).on_click(
                         cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
                             this.settle(cx);
@@ -324,7 +326,7 @@ impl HistoryView {
                         }),
                     ),
                 )
-                .child(chrome::text_button("delete-cancel", None, "Cancel", ButtonKind::Quiet, 20., s).on_click(
+                .child(chrome::text_button("delete-cancel", None, fl!("common-cancel"), ButtonKind::Quiet, 20., s).on_click(
                     cx.listener(|this, _, _, cx| {
                         cx.stop_propagation();
                         this.settle(cx);
@@ -350,7 +352,7 @@ impl HistoryView {
             .child(div().flex_1().min_w_0().truncate().font_weight(FontWeight::SEMIBOLD).child(row.target.clone()))
             .child(div().flex_none().text_size(s.px(11.5)).text_color(rgba(MUTED)).child(row.when.clone()))
             .child(delete);
-        let main = row.main_player.as_deref().map_or_else(|| "Unknown".to_string(), |name| settings.display_name(name));
+        let main = row.main_player.as_deref().map_or_else(unknown_player, |name| settings.display_name(name));
         let meta = div()
             .h(s.px(18.))
             .px(s.px(10.))
@@ -370,18 +372,14 @@ impl HistoryView {
                     .child(chrome::icon(Icon::User, 11., rgba(MUTED), s))
                     .child(div().min_w_0().truncate().child(main)),
             )
-            .child(div().flex_none().child(format!(
-                "{} {}",
-                row.player_count,
-                if row.player_count == 1 { "player" } else { "players" }
-            )))
+            .child(div().flex_none().child(fl!("common-players-count", count = row.player_count)))
             .child(
                 div()
                     .flex_none()
                     .flex()
                     .gap(s.px(3.))
                     .child(div().text_color(rgba(TEXT)).font_weight(FontWeight::SEMIBOLD).child(format::compact(row.damage as f64)))
-                    .child("damage"),
+                    .child(fl!("history-damage")),
             )
             .child(div().flex_none().child(if row.duration_secs > 0.0 {
                 format::duration(row.duration_secs)
@@ -427,7 +425,7 @@ impl HistoryView {
             .text_size(s.px(11.))
             .text_color(rgba(FAINT))
             .child(chrome::icon(Icon::External, 11., rgba(FAINT), s))
-            .child("Click a player to open their details from this record");
+            .child(fl!("history-player-hint"));
         let rows = lines.iter().enumerate().map(|(index, player)| {
             let meter_model = self.meter_model.clone();
             let record = record.clone();
@@ -455,15 +453,14 @@ impl HistoryView {
     fn footer(&self, empty: bool, s: Scale, cx: &Context<Self>) -> impl IntoElement {
         let total = self.model.read(cx).list.total();
         let foot = chrome::footer(s)
-            .child(div().flex_1().min_w_0().truncate().text_color(rgba(FAINT)).child("Saved when you reset the meter"));
+            .child(div().flex_1().min_w_0().truncate().text_color(rgba(FAINT)).child(fl!("history-saved-when")));
         if self.confirm == Some(Confirm::All) {
-            let noun = if total == 1 { "record" } else { "records" };
             return foot
                 .child(
                     chrome::text_button(
                         "delete-all-confirm",
                         Some(Icon::Trash),
-                        format!("Delete all {total} {noun}?"),
+                        fl!("history-delete-all-confirm", count = total),
                         ButtonKind::Danger,
                         22.,
                         s,
@@ -474,15 +471,15 @@ impl HistoryView {
                     })),
                 )
                 .child(
-                    chrome::text_button("delete-all-cancel", None, "Cancel", ButtonKind::Quiet, 22., s)
+                    chrome::text_button("delete-all-cancel", None, fl!("common-cancel"), ButtonKind::Quiet, 22., s)
                         .on_click(cx.listener(|this, _, _, cx| this.settle(cx))),
                 );
         }
         if empty {
-            return foot.child(chrome::text_button("delete-all", Some(Icon::Trash), "Delete all", ButtonKind::Disabled, 22., s));
+            return foot.child(chrome::text_button("delete-all", Some(Icon::Trash), fl!("history-delete-all"), ButtonKind::Disabled, 22., s));
         }
         foot.child(
-            chrome::text_button("delete-all", Some(Icon::Trash), "Delete all", ButtonKind::Quiet, 22., s)
+            chrome::text_button("delete-all", Some(Icon::Trash), fl!("history-delete-all"), ButtonKind::Quiet, 22., s)
                 .on_click(cx.listener(|this, _, _, cx| this.ask(Confirm::All, cx))),
         )
     }
@@ -494,7 +491,7 @@ fn players_height(rows: usize) -> f32 {
 }
 
 fn player_row(rank: usize, player: &PlayerLine, bar: f32, settings: &OverlaySettings, s: Scale) -> gpui::Div {
-    let name = if player.name.starts_with("ID:") { player.name.clone() } else { settings.display_name(&player.name) };
+    let name = if player.named { settings.display_name(&player.name) } else { player.name.clone() };
     let content = chrome::bar_content(player.class.is_none(), s)
         .when_some(player.class, |content, class| content.child(chrome::class_icon(class, 16., s)))
         .child(chrome::name(name, None, if player.you { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM }, s))

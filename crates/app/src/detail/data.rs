@@ -5,9 +5,9 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use aether_core::engine::session::session_skill_totals;
-use aether_core::history::HistoryRecord;
-use aether_core::models::combat::{
+use meter_core::engine::session::session_skill_totals;
+use meter_core::history::HistoryRecord;
+use meter_core::models::combat::{
     ActorInfo, BuffSummary, CombatSnapshot, PlayerOverviewStat, SkillStats, TargetInfo,
 };
 
@@ -149,6 +149,7 @@ struct Facts<'a> {
     buffs: &'a HashMap<u32, Vec<BuffSummary>>,
     /// Session only: the board's own row for the player.
     session_row: Option<SessionFigures<'a>>,
+    main_actor_id: Option<u32>,
 }
 
 struct SessionFigures<'a> {
@@ -185,6 +186,7 @@ fn from_record(actor_id: u32, record: &HistoryRecord) -> Facts<'_> {
         actor_infos: &infos.actor_infos,
         buffs: &record.use_buffs_by_target,
         session_row: None,
+        main_actor_id: infos.main_actor_id,
     }
 }
 
@@ -204,6 +206,7 @@ fn from_target(actor_id: u32, target_id: Option<u32>, snapshot: &CombatSnapshot)
         actor_infos: &infos.actor_infos,
         buffs: &snapshot.use_buffs_by_target,
         session_row: None,
+        main_actor_id: infos.main_actor_id,
     }
 }
 
@@ -227,6 +230,7 @@ fn from_session(actor_id: u32, snapshot: &CombatSnapshot) -> Facts<'_> {
         target_id: None,
         actor_infos: &infos.actor_infos,
         buffs: &snapshot.use_buffs_by_target,
+        main_actor_id: infos.main_actor_id,
         session_row: row.map(|row| SessionFigures {
             name: &row.actor_name,
             server: &row.actor_server_id,
@@ -285,7 +289,10 @@ impl Facts<'_> {
             .and_then(|row| named(row.name))
             .or_else(|| self.actor.and_then(|actor| actor.actor_name.as_deref().and_then(named)))
             .or_else(|| self.overview.and_then(|overview| named(&overview.actor_name)))
-            .map_or_else(|| format!("ID:{actor_id}"), |name| settings.display_name(&name));
+            .map_or_else(
+                || crate::format::unnamed_player(actor_id, self.main_actor_id == Some(actor_id)),
+                |name| settings.display_name(&name),
+            );
         let class = [
             self.session_row.as_ref().map(|row| row.class),
             self.actor.and_then(|actor| actor.actor_class.as_deref()),
@@ -434,8 +441,8 @@ fn buff_rows(
 
 #[cfg(test)]
 mod tests {
-    use aether_core::models::combat::CombatInfos;
-    use aether_core::models::session::{SessionPlayerStat, SessionSummary};
+    use meter_core::models::combat::CombatInfos;
+    use meter_core::models::session::{SessionPlayerStat, SessionSummary};
 
     use super::*;
 
@@ -658,13 +665,15 @@ mod tests {
     }
 
     #[test]
-    fn an_unnamed_player_shows_their_id() {
+    fn an_unnamed_player_shows_their_id_and_you_when_it_is_you() {
         let mut anonymous = snapshot();
         anonymous.combat_infos.actor_infos.get_mut(&ME).unwrap().actor_name = None;
+        let source = DetailSource::Target { actor_id: ME, target_id: Some(BOSS) };
 
-        let detail = build(DetailSource::Target { actor_id: ME, target_id: Some(BOSS) }, &anonymous);
+        assert_eq!(build(source.clone(), &anonymous).identity.name, "You");
 
-        assert_eq!(detail.identity.name, "ID:7");
+        anonymous.combat_infos.main_actor_id = None;
+        assert_eq!(build(source, &anonymous).identity.name, "ID:7");
     }
 
     #[test]

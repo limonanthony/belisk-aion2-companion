@@ -30,6 +30,7 @@
       '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>',
     bell:
       '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+    listChecks: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
     languages:
       '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
     info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
@@ -85,6 +86,7 @@
       capture: "Capture",
       bests: "Personal bests",
       reminders: "Reminders",
+      todos: "To-dos",
       general: "General",
       about: "About",
       ready: "Ready",
@@ -116,6 +118,7 @@
       capture: "Capture",
       bests: "Records perso",
       reminders: "Rappels",
+      todos: "Tâches",
       general: "Général",
       about: "À propos",
       ready: "Prêt",
@@ -149,6 +152,7 @@
     ["capture", "radio"],
     ["bests", "trophy"],
     ["reminders", "bell"],
+    ["todos", "listChecks"],
     ["general", "languages"],
     ["about", "info"],
   ];

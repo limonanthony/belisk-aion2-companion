@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-dos proposal A: tabs, compact checklist</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="todos.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="To-do proposals">
+        <a href="index.html">To-dos overview</a>
+        <a href="e.html">E, struck through when done</a>
+        <a href="d.html">D, you set the counts</a>
+        <a href="a.html" aria-current="page">A, tabs</a>
+        <a href="b.html">B, one list per character</a>
+        <a href="c.html">C, all characters</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>A, tabs, compact checklist <small>earlier exploration, kept for reference: see D</small></h1>
+      <ul class="rationale">
+        <li>A 340 px overlay window like PvP and History: drag it by the title, × closes it. Opened from the meter's "…" menu (To-dos).</li>
+        <li><b>Daily | Weekly</b> tabs; the reset countdown sits right under the tabs. One line per to-do; a click on the row ticks it or adds one to its count. Order never changes, so rows do not move under the pointer.</li>
+        <li><b>Recharges</b> (keys, Odyle Energy, dungeon entries that bank up to a cap): the meter cannot read them, so you click <b>Used up</b> after spending them and it counts from empty: "Full in 2 d 16 h". Once the estimate reaches the cap the row turns yellow: "Full since 09:00".</li>
+        <li>Manual ticks only. No characters: one list (whichever character you play). Limits are from the reset research; counts, times and names are invented. Clock: Monday 21:48.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Ticking.</b> A click on a single to-do ticks it; on a counted one (Duty Missions 3/5) it adds one, and the row ticks itself at the last. Under the pointer a "−" takes one back. The window never takes focus from the game (the overlays' no-activate style).</li>
+        <li><b>Used up.</b> Under the pointer, a recharge's status swaps for "Used up" in the same place (no jump). One click sets the estimate to empty now; the tooltip says when it will be full again.</li>
+        <li><b>Reset.</b> At the daily reset the Daily tab clears; on Wednesday the Weekly tab clears. Recharges are never cleared: they only fill. The 09:00 hour is reported by a fan site, so the footer says so; a Settings row would change it.</li>
+        <li><b>Keyboard and screen readers</b> (for the build): each row is a checkbox ("Duty Missions, 3 of 5", mixed until done); recharges are buttons ("Odyle Energy, full in 2 d 16 h. Mark used up"); Tab moves row to row, Space ticks. The ring is the approved focus-ring colour, 2 px, 1 px outside the row.</li>
+        <li><b>Edit.</b> The pencil turns the list into show/hide toggles; hidden rows stay listed, faded, so they can come back. "Add a to-do" adds a single tick of your own, daily or weekly, with a delete button. Typing there is the only time the window takes the keyboard, like the PvP name field.</li>
+      </ul>
+      <h2>Values proposed (not tokens yet)</h2>
+      <ul>
+        <li>Rows 26 px, 2 px apart, 6 px radius; pointer over: <code>soft</code>. Tick box 16 px, 4 px radius (the rank badge's corner), faint 1.5 px edge; ticked: the cream <code>you-badge</code> with an ink check.</li>
+        <li>Count segments 9 × 5 px, 2 px radius (squarer than the gauge); a 44 × 5 px bar with 2 px radius above 7. Full recharge: <code>warn</code> text on <code>chip-warn</code>-like fill (0.12) across the row, plus the warning glyph.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="todos.js"></script>
+    <script>
+      (function () {
+        const T = Todo;
+        const { icon, btn } = T;
+
+        function item(ctx, it, o = {}) {
+          const done = it.n >= it.of;
+          const cls = ["t-item"];
+          if (done) cls.push("is-done");
+          if (o.hover) cls.push("is-hover");
+          if (o.focus) cls.push("is-focus");
+          if (o.edit && it.hidden) cls.push("is-off");
+          const acct = it.account ? `<span class="t-acct">${icon("users")}Account</span>` : "";
+          const tag = it.custom ? `<small>Yours</small>` : "";
+          let right = T.progress(it);
+          if (o.hover && it.n > 0 && it.of > 1 && !done) right = btn("minus", "Take one back", " is-sm") + right;
+          if (o.edit) {
+            right = `<span class="t-edit">${
+              it.custom ? btn("trash", "Delete this to-do", " is-sm") : btn(it.hidden ? "eyeOff" : "eye", it.hidden ? "Show" : "Hide", " is-sm")
+            }</span>`;
+          }
+          return `<div class="${cls.join(" ")}" ${T.ariaFor(it)}>${T.box(done ? "done" : "")}<span class="t-name">${T.esc(it.name)}${acct}${tag}</span>${right}</div>`;
+        }
+
+        function charge(ctx, r, o = {}) {
+          const full = r.est >= r.cap;
+          const cls = ["t-item"];
+          if (full) cls.push("is-waste");
+          if (o.hover) cls.push("is-hover");
+          if (o.focus) cls.push("is-focus");
+          const glyph = `<span class="t-glyph${full ? " is-warn" : ""}">${icon(full ? "alert" : "hourglass")}</span>`;
+          const status = full ? r.since : r.when;
+          let slot = o.hover
+            ? `<span class="t-slot"><span class="o-tbtn t-small${full ? " is-warn" : ""}" role="button">Used up</span></span>`
+            : `<span class="t-when${full ? " is-warn" : ""}">${status}</span>`;
+          if (o.edit) slot = `<span class="t-edit">${btn("eye", "Hide", " is-sm")}</span>`;
+          const tip = o.tip ? `<div class="t-tip" style="top:30px;right:0"><b>Used up</b>Counts from empty again: full ${o.tip}. Click after you have spent them.</div>` : "";
+          return `<div class="${cls.join(" ")}" role="button" tabindex="0" aria-label="${T.esc(r.name)}, ${T.esc(status.toLowerCase())}. Mark used up">${glyph}<span class="t-name">${T.esc(r.name)}</span>${o.edit ? "" : T.bar(r.est / r.cap, { warn: full })}${slot}${tip}</div>`;
+        }
+
+        const leftOf = (list) => list.filter((it) => !it.hidden && it.n < it.of).length;
+
+        function tabs(on, daily, weekly) {
+          const t = (id, label, small) =>
+            `<span class="o-tab${on === id ? " is-on" : ""}" role="tab" aria-selected="${on === id}">${label}<small${/full/.test(small) ? ' style="color:var(--o-warn)"' : ""}>${small}</small></span>`;
+          return `<div class="o-tabs" role="tablist">${t("daily", "Daily", daily)}${t("weekly", "Weekly", weekly)}</div>`;
+        }
+
+        function dailyBody(ctx, today, charges, o = {}) {
+          const rows = today.map((it) => item(ctx, it, { focus: o.focusId === it.id })).join("");
+          const ch = charges
+            .map((r) => charge(ctx, r, { hover: o.hoverId === r.id, tip: o.hoverId === r.id ? o.tip : "" }))
+            .join("");
+          return `${T.resetLine("daily")}<div class="t-list">${rows}</div><div class="t-sec-label">Recharges<span class="at">estimated from when you used them up</span></div><div class="t-list">${ch}</div>`;
+        }
+
+        function window_(inner) {
+          return `<div class="ov o td" role="dialog" aria-label="To-dos">${inner}</div>`;
+        }
+
+        function weeklyList(ctx, list, o = {}) {
+          const rows = list
+            .slice(o.skip || 0)
+            .filter((it) => o.edit || !it.hidden)
+            .map((it) => item(ctx, it, { edit: o.edit }))
+            .join("");
+          const thumb = o.thumb ? `<span class="o-thumb" style="--t:${o.thumbT || 2}px;--h:${o.thumb}px"></span>` : "";
+          return `<div class="o-scroll${o.thumb ? " has-thumb" : ""}" style="max-height:${o.max || 286}px"><div class="t-list">${rows}</div>${thumb}</div>`;
+        }
+
+        function render(state, ctx) {
+          const today = T.today();
+          const charges = T.recharges();
+          const weekly = T.weekly();
+          const wLeft = `${leftOf(weekly)} left`;
+          switch (state) {
+            case "open":
+              return `<div class="t-stack">${T.meter(ctx)}</div><div style="height:96px"></div>`;
+            case "daily":
+              return window_(`${T.head("To-dos", { count: "1 left" })}${tabs("daily", "1 left", wLeft)}${dailyBody(ctx, today, charges)}${T.foot()}`);
+            case "weekly":
+              return window_(`${T.head("To-dos", { count: `${leftOf(weekly)} left` })}${tabs("weekly", "1 left", wLeft)}${T.resetLine("weekly")}${weeklyList(ctx, weekly, { thumb: 200 })}${T.foot()}`);
+            case "waste": {
+              charges.find((r) => r.id === "deus").est = 4;
+              charges.find((r) => r.id === "deus").since = "Full since 09:00";
+              charges.find((r) => r.id === "invasion").est = 7;
+              charges.find((r) => r.id === "invasion").since = "Full since 16:00";
+              return window_(`${T.head("To-dos", { count: "1 left", chip: T.warnChip("2 full") })}${tabs("daily", "2 full", wLeft)}${dailyBody(ctx, today, charges)}${T.foot()}`);
+            }
+            case "done": {
+              today[0].n = 5;
+              const note = `<div class="o-note is-good t-note">${icon("check")}<span><span class="t-strong">Done for today.</span> Recharges keep filling; a full one shows here in yellow.</span></div>`;
+              return window_(`${T.head("To-dos", { count: "0 left" })}${tabs("daily", "done", "done")}${note}${dailyBody(ctx, today, charges)}${T.foot()}`);
+            }
+            case "edit": {
+              const custom = { ...T.custom()[0], name: "Weekly Legion quest" };
+              const list = weekly.concat([custom]);
+              const hint = `<div class="t-hint" style="margin:0 0 6px">Hide what you don't do. Hidden to-dos stay here, faded, until you show them again.</div>`;
+              return window_(`${T.head("Edit to-dos", { editing: true })}${tabs("weekly", "", "")}${hint}${weeklyList(ctx, list, { edit: true, skip: 4, thumb: 190, thumbT: 116, max: 308 })}${T.addRow({ typed: "Arena of Tactics win", kind: "weekly" })}${T.editFoot()}`);
+            }
+            case "focus":
+              return window_(`${T.head("To-dos", { count: "1 left" })}${tabs("daily", "1 left", wLeft)}${dailyBody(ctx, today, charges, { focusId: "duty", hoverId: "odyle", tip: "Sat 13:48, in 4 d 16 h" })}${T.foot()}`);
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "open", title: "Opening it", sub: "the meter's \"…\" menu gets To-dos; \"1 full\" says a recharge is being wasted" },
+            { id: "daily", title: "Daily", sub: "Duty Missions 3 of 5; recharges with their estimated time to full" },
+            { id: "weekly", title: "Weekly", sub: "until Wednesday 09:00; the list scrolls" },
+            { id: "waste", title: "Being wasted", sub: "two recharges full: yellow rows, \"2 full\" in the header and the tab" },
+            { id: "done", title: "Everything done", sub: "both tabs done; recharges still listed" },
+            { id: "edit", title: "Edit mode", sub: "hide what you don't do; add your own; typing takes the keyboard" },
+            { id: "focus", title: "Pointer and keyboard", sub: "pointer over Odyle Energy (Used up, tooltip); keyboard focus on Duty Missions" },
+          ],
+          controls: ["alpha", "scale"],
+          tileMin: 400,
+          stageMin: 560,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

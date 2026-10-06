@@ -11,15 +11,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
-use aether_core::engine::meter::{CaptureBackend, DpsMeter};
-use aether_core::preflight;
-use aether_core::region;
+use meter_core::engine::meter::{CaptureBackend, DpsMeter};
+use meter_core::preflight;
+use meter_core::region;
 use gpui::{Context, Entity, Task};
 
 use super::files::{self, StorageSummary};
 use super::model::global;
 use crate::game_data;
 use crate::history::record_time;
+use crate::i18n::fl;
 use crate::meter::{MeterModel, ReplayState};
 
 const POLL_EVERY: Duration = Duration::from_secs(1);
@@ -354,7 +355,7 @@ impl RuntimeModel {
                     .target_name
                     .filter(|name| !name.is_empty())
                     .or_else(|| meter.mobs().mob_name(best.mob_code))
-                    .unwrap_or_else(|| format!("Mob {}", best.mob_code)),
+                    .unwrap_or_else(|| fl!("common-mob-numbered", code = best.mob_code)),
                 character: best.character,
                 dps: best.dps,
                 achieved_at_ms: best.achieved_at,

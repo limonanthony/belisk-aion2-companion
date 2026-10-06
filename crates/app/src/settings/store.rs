@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use aether_core::mobs::store::write_atomic;
+use meter_core::mobs::store::write_atomic;
 
 use super::model::AppSettings;
 
@@ -145,7 +145,8 @@ pub fn save(path: &Path, settings: &AppSettings) -> Result<(), String> {
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use aether_core::config::CaptureBackendPriority;
+    use meter_core::config::CaptureBackendPriority;
+    use meter_core::identity::KnownCharacter;
 
     use super::*;
     use crate::meter::{Layout, PctMode};
@@ -194,6 +195,51 @@ mod tests {
         save(&dir.file(), &settings).unwrap();
 
         assert_eq!(load(&dir.file(), 7).settings, settings);
+    }
+
+    #[test]
+    fn remembered_characters_come_back_in_order() {
+        let dir = TestDir::new("characters");
+        let mut settings = AppSettings::default();
+        settings.known_characters = vec![
+            KnownCharacter { name: "Alder".into(), server_id: 1001, class: "RANGER".into(), key: Some("3AA503000000".into()) },
+            KnownCharacter { name: "Birch".into(), server_id: 2002, class: "CLERIC".into(), key: None },
+        ];
+
+        save(&dir.file(), &settings).unwrap();
+
+        assert_eq!(load(&dir.file(), 7).settings.known_characters, settings.known_characters);
+    }
+
+    #[test]
+    fn a_bad_remembered_character_costs_that_entry_only() {
+        let dir = TestDir::new("characters-bad");
+        fs::write(
+            dir.file(),
+            r#"{"version":1,"overlay":{"showDps":false},"knownCharacters":[
+                {"name":"Alder","serverId":1001,"class":"RANGER"},
+                {"name":"Broken","serverId":"x","class":"RANGER"},
+                7]}"#,
+        )
+        .unwrap();
+
+        let loaded = load(&dir.file(), 7);
+
+        assert!(loaded.notice.is_none());
+        assert!(!loaded.settings.overlay.show_dps);
+        let names: Vec<_> = loaded.settings.known_characters.iter().map(|known| known.name.as_str()).collect();
+        assert_eq!(names, ["Alder"]);
+    }
+
+    #[test]
+    fn remembered_characters_that_are_not_a_list_are_dropped_with_the_rest_kept() {
+        let dir = TestDir::new("characters-type");
+        fs::write(dir.file(), r#"{"version":1,"overlay":{"showDps":false},"knownCharacters":"oops"}"#).unwrap();
+
+        let loaded = load(&dir.file(), 7);
+
+        assert!(loaded.settings.known_characters.is_empty());
+        assert!(!loaded.settings.overlay.show_dps);
     }
 
     #[test]
@@ -286,6 +332,29 @@ mod tests {
         assert_eq!(loaded.settings.capture.backend_priority, CaptureBackendPriority::NpcapFirst);
         assert!(loaded.settings.capture.collect_mob_data);
         assert!(dir.file().exists());
+    }
+
+    #[test]
+    fn the_language_follows_windows_until_chosen_and_an_unknown_one_is_ignored() {
+        use crate::i18n::LanguageChoice;
+        let dir = TestDir::new("language");
+
+        fs::write(dir.file(), r#"{"version":1,"overlay":{"showDps":false}}"#).unwrap();
+        assert_eq!(load(&dir.file(), 7).settings.general.language, LanguageChoice::System);
+
+        fs::write(dir.file(), r#"{"version":1,"general":{"language":"french"}}"#).unwrap();
+        assert_eq!(load(&dir.file(), 7).settings.general.language, LanguageChoice::French);
+
+        fs::write(dir.file(), r#"{"version":1,"general":{"language":"klingon"},"overlay":{"showDps":false}}"#).unwrap();
+        let loaded = load(&dir.file(), 7);
+        assert_eq!(loaded.settings.general.language, LanguageChoice::System);
+        assert!(!loaded.settings.overlay.show_dps);
+        assert!(loaded.notice.is_none());
+
+        let mut settings = AppSettings::default();
+        settings.general.language = LanguageChoice::English;
+        save(&dir.file(), &settings).unwrap();
+        assert_eq!(load(&dir.file(), 7).settings.general.language, LanguageChoice::English);
     }
 
     #[test]

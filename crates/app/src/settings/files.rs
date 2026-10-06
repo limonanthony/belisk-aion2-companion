@@ -6,8 +6,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use aether_core::capture::recorder::list_recordings;
-use aether_core::engine::meter::DpsMeter;
+use meter_core::capture::recorder::list_recordings;
+use meter_core::engine::meter::DpsMeter;
 
 use super::store;
 use crate::live_session;

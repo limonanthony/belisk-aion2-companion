@@ -169,6 +169,46 @@
       .row-ctl .badge {
         margin-right: 2px;
       }
+
+      /* To-dos: the daily reset hour, every hour 00:00 to 23:00; the list
+         shows eight at a time, opens scrolled to the chosen hour and scrolls
+         with the 3 px thumb. */
+      .sel.is-hour {
+        min-width: 130px;
+      }
+
+      .sel .menu.is-scroll {
+        height: 232px;
+        overflow: hidden;
+      }
+
+      .menu-thumb {
+        position: absolute;
+        top: var(--t, 60px);
+        right: 3px;
+        width: 3px;
+        height: var(--h, 75px);
+        border-radius: 2px;
+        background: rgba(255, 240, 225, 0.28);
+      }
+
+      /* A value the meter works out, not a control (the weekly reset). */
+      .ro {
+        color: var(--a-muted);
+        font-family: var(--a-display);
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+
+      .dlg p + p {
+        margin-top: 6px;
+      }
+
+      /* The dialog opens with Cancel focused: focus-ring, 2 px, 3 px outside. */
+      .dlg-actions .btn.is-focus {
+        outline: 2px solid rgba(243, 235, 225, 0.9);
+        outline-offset: 3px;
+      }
     </style>
   </head>
   <body>
@@ -183,13 +223,15 @@
         <a href="detail.html">Player detail</a>
         <a href="history.html">Fight history</a>
         <a href="reminders.html">Reminder card</a>
+        <a href="todos.html">To-do window</a>
       </nav>
-      <h1>Settings <small>approved, round 3; Reminders 2026-10-05</small></h1>
+      <h1>Settings <small>approved, round 3; Reminders 2026-10-05; To-dos 2026-10-06</small></h1>
       <ul class="rationale">
         <li>Everything kept: overlay look and rows (with a live preview beside them), meter behaviour, the three shortcuts, capture (backend, connection status, recording and replay, log folder), personal bests, language and About. Changes apply at once; there is no Save.</li>
         <li>Rows are a label and one sentence on the left, the control on a stable right edge, in titled groups. Sidebar navigation, shared with Home.</li>
         <li>Same warm near-black, cream primary and status colours as the overlays, in Kit components: Switch, Slider, Select, segmented control, Kbd, Table, Tooltip, Dialog. Values are in <a href="tokens.md">tokens.md</a>.</li>
         <li>Reminders (approved 2026-10-05) sits after Personal bests: the master switch and how you are reminded, then one switch per event grouped by how often it comes. No preview column; the test button shows the real <a href="reminders.html">reminder card</a>.</li>
+        <li>To-dos (approved 2026-10-06) sits after Reminders: the daily reset hour (the weekly reset follows it), the membership, and two ways to bring the default to-dos back, for every character. Everything else about the to-dos lives in the <a href="todos.html">to-do window</a>.</li>
       </ul>
     </header>
 
@@ -213,6 +255,15 @@
         <li><b>Show a test reminder</b>: shows the card above the meter now, with the sound if it is on, whatever the event switches say. Because Settings may cover the meter, a good badge "Shown above the meter" appears beside the button and fades after 4 s.</li>
         <li><b>Events</b>: Shugo Festival, Dimensional Invasion and Rift portals are on by default; the others are listed, off.</li>
         <li>Times follow this PC's clock. They are the European servers' times (Berlin), so a PC on another time zone would be off by its difference.</li>
+      </ul>
+      <h2>To-dos</h2>
+      <ul>
+        <li><b>Daily reset</b>: a select with every hour, 00:00 to 23:00, 09:00 by default; the list opens scrolled to the chosen hour. The hour moves Today's countdown, the daily recharges' estimates and the weekly reset with it, and the to-do window follows at once. "Change" in the to-do window's footer opens this section.</li>
+        <li><b>Weekly reset</b>: not a control. Wednesday, at the daily reset hour ("Wednesday 09:00", "Wednesday 17:00").</li>
+        <li><b>Membership</b>: one switch for every character, off by default. On, Odyle Energy's cap is 840 instead of 560: an amount above 560 is kept and its "Full in …" estimate uses the new cap. Off again, an amount above 560 is cut to 560.</li>
+        <li><b>Restore default to-dos</b>: on every character, every built-in to-do you hid comes back (Duty Commands too, which start hidden). Your own to-dos, every count and every amount stay. The description says how many are hidden now ("6 hidden, on 2 characters."); with none hidden it says "Nothing is hidden." and the button is disabled. No dialog; after a click a good badge "6 to-dos back" shows beside the button for 4 s.</li>
+        <li><b>Reset to-dos completely…</b>: opens the dialog with Cancel focused, so Enter or Esc changes nothing. "Reset to-dos", on every character: your own to-dos are removed, every hidden to-do comes back, every count goes to 0 and every amount goes back to empty ("—"). The reset hour and the membership stay. Afterwards a good badge "To-dos reset" shows beside the button for 4 s; an open to-do window shows the fresh list at once.</li>
+        <li><b>Not here</b>: hiding and showing single rows, adding your own and the counts stay in the to-do window. "+1?" from boss kills (built later, off by default) would get its switch here.</li>
       </ul>
       <h2>GPUI Kit notes</h2>
       <ul>
@@ -490,6 +541,37 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
               '<div style="height:28px"></div>'
             );
           },
+
+          todos(ctx, st) {
+            const pad = (n) => String(n).padStart(2, "0");
+            // The hour list: 24 hours, eight shown; opened scrolled so 06:00 is
+            // the first visible hour (6 rows of 28 px), 09:00 ticked.
+            const hour =
+              st === "hour"
+                ? `<span class="sel-wrap"><span class="sel is-hour is-open"><span class="val">09:00</span>${icon("chevronDown")}<span class="menu is-scroll"><span style="display:block;margin-top:-168px">${Array.from({ length: 24 }, (_, h) => `${pad(h)}:00`)
+                    .map((h) => `<span class="menu-item${h === "10:00" ? " is-hot" : ""}">${h}${h === "09:00" ? icon("tick") : ""}</span>`)
+                    .join("")}</span><span class="menu-thumb"></span></span></span></span>`
+                : C.sel("09:00").replace('class="sel', 'class="sel is-hour');
+            const restored = st === "restored" || st === "reset";
+            const hidden = restored ? "Nothing is hidden." : "6 hidden, on 2 characters.";
+            const restore = (st === "restored" ? C.badge("6 to-dos back", "good", "check") : "") + C.btn("Restore default to-dos", { ic: "reset", kind: restored ? "disabled" : "" });
+            const reset = (st === "reset" ? C.badge("To-dos reset", "good", "check") : "") + C.btn("Reset to-dos completely…", { kind: "danger" });
+            return (
+              head("To-dos", "The to-do window, opened from the meter's \"…\" menu.") +
+              group(
+                "Resets",
+                row("Daily reset", "Reported, not confirmed. Check the countdown in game.", hour) +
+                  row("Weekly reset", "This week's to-dos start over on Wednesday, at the daily reset hour.", `<span class="ro">Wednesday 09:00</span>`),
+                true
+              ) +
+              group("Recharges", row("Membership", "Odyle Energy fills up to 840 instead of 560, on every character.", C.sw(false))) +
+              group(
+                "Default to-dos",
+                row("Hidden to-dos", `${hidden} Restoring the defaults keeps your own to-dos and all progress.`, restore) +
+                  row("Start over", "Removes your own to-dos, brings back every hidden one and empties every count and amount.", reset)
+              )
+            );
+          },
         };
 
         function render(state, ctx) {
@@ -498,7 +580,9 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
           const dialog =
             sub === "clear"
               ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true"><h3>Clear the cache?</h3><p>Settings, shortcuts and window positions go back to their defaults. Fight history, personal bests and recordings are kept.</p><div class="dlg-actions">${C.btn("Cancel")}${C.btn("Clear cache", { kind: "danger" })}</div></div></div>`
-              : "";
+              : section === "todos" && sub === "confirm"
+                ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-todos"><h3 id="dlg-todos">Reset the to-dos completely?</h3><p>On every character: your own to-dos (3) are removed, every hidden to-do comes back, and every count and amount you entered is emptied.</p><p>The reset hour and the membership stay. This cannot be undone.</p><div class="dlg-actions">${C.btn("Cancel").replace('class="btn', 'class="btn is-focus')}${C.btn("Reset to-dos", { kind: "danger" })}</div></div></div>`
+                : "";
           const thumb = { overlay: 150, behaviour: 360, capture: 200, reminders: 272, about: 280 }[section] || 0;
           const scroll = { "capture:rec": 300, "capture:replay": 470, "reminders:scrolled": 640 }[state] || 0;
           return ctx.shell(ctx, section, content, {
@@ -527,6 +611,11 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
             { id: "reminders:off", title: "Reminders off", sub: "every row under the master switch dims and keeps its own state" },
             { id: "reminders:select", title: "Remind me, open", sub: "1, 2, 3 or 5 min before; 1 by default" },
             { id: "reminders:test", title: "Test reminder shown", sub: "a note for 4 s, since Settings may cover the meter" },
+            { id: "todos", title: "To-dos", sub: "defaults: daily reset 09:00, membership off; six built-in to-dos hidden on two characters" },
+            { id: "todos:hour", title: "Daily reset, open", sub: "every hour, 00:00 to 23:00; opens on the chosen one" },
+            { id: "todos:restored", title: "Default to-dos restored", sub: "the hidden ones are back on every character; your own to-dos and all progress kept; the badge fades after 4 s" },
+            { id: "todos:confirm", title: "Reset to-dos completely", sub: "the confirm dialog, Cancel focused" },
+            { id: "todos:reset", title: "After the complete reset", sub: "your own to-dos gone, nothing hidden, every count and amount empty; the badge fades after 4 s" },
             { id: "general:lang", title: "General", sub: "language menu open" },
             { id: "about", title: "About", sub: "version, licence, credits, storage" },
             { id: "about:clear", title: "About, clearing the cache", sub: "Kit Dialog" },

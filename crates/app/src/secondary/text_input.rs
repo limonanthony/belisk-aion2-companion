@@ -1,9 +1,9 @@
 //! A one-line text field: typing, IME composition, caret movement, paste,
 //! Enter and Escape. It is adapted from GPUI's `examples/input.rs` (Apache-2.0)
-//! without selections or mouse dragging. GPUI Kit's `Input` was not added for
-//! this one field: it would bring the Kit (planned for the main window, phase
-//! 4) into the overlay build ahead of time, with a theme of its own to
-//! override.
+//! without mouse selections or dragging; the only selection is the whole text,
+//! as a field opened on a value has it, so typing replaces it. GPUI Kit's
+//! `Input` was not added for these few fields: it would bring the Kit into the
+//! overlay build, with a theme of its own to override.
 
 use std::ops::Range;
 
@@ -19,6 +19,7 @@ actions!(text_input, [Backspace, Delete, Left, Right, Home, End, Paste, Submit, 
 const CONTEXT: &str = "TextInput";
 const MAX_CHARS: usize = 32;
 const PLACEHOLDER: u32 = 0xfff6ec70;
+const SELECTION: u32 = 0xfff6ec47;
 
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
@@ -44,8 +45,14 @@ pub struct TextInput {
     focus_handle: FocusHandle,
     content: String,
     placeholder: SharedString,
+    max_chars: usize,
+    digits_only: bool,
+    right_aligned: bool,
     /// Byte offset of the caret.
     cursor: usize,
+    /// The whole text is selected: typing replaces it, an arrow key drops the
+    /// selection.
+    all_selected: bool,
     marked_range: Option<Range<usize>>,
     last_layout: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
@@ -65,11 +72,36 @@ impl TextInput {
             focus_handle: cx.focus_handle(),
             content: String::new(),
             placeholder: placeholder.into(),
+            max_chars: MAX_CHARS,
+            digits_only: false,
+            right_aligned: false,
             cursor: 0,
+            all_selected: false,
             marked_range: None,
             last_layout: None,
             last_bounds: None,
         }
+    }
+
+    pub fn with_max_chars(mut self, max_chars: usize) -> Self {
+        self.max_chars = max_chars;
+        self
+    }
+
+    /// Anything typed or pasted other than the digits 0 to 9 is left out.
+    pub fn digits_only(mut self) -> Self {
+        self.digits_only = true;
+        self
+    }
+
+    pub fn right_aligned(mut self) -> Self {
+        self.right_aligned = true;
+        self
+    }
+
+    pub fn set_placeholder(&mut self, placeholder: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.placeholder = placeholder.into();
+        cx.notify();
     }
 
     pub fn text(&self) -> &str {
@@ -79,12 +111,23 @@ impl TextInput {
     pub fn clear(&mut self, cx: &mut Context<Self>) {
         self.content.clear();
         self.cursor = 0;
+        self.all_selected = false;
+        self.marked_range = None;
+        cx.notify();
+    }
+
+    /// Shows `text` selected, so what is typed next replaces it.
+    pub fn set_text_selected(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.content = text.chars().take(self.max_chars).collect();
+        self.cursor = self.content.len();
+        self.all_selected = !self.content.is_empty();
         self.marked_range = None;
         cx.notify();
     }
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.cursor = offset;
+        self.all_selected = false;
         cx.notify();
     }
 
@@ -100,6 +143,10 @@ impl TextInput {
     }
 
     fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
+        if self.all_selected {
+            self.replace(0..self.content.len(), "", cx);
+            return;
+        }
         let start = self.previous_boundary();
         if start < self.cursor {
             self.replace(start..self.cursor, "", cx);
@@ -109,6 +156,10 @@ impl TextInput {
     }
 
     fn delete(&mut self, _: &Delete, window: &mut Window, cx: &mut Context<Self>) {
+        if self.all_selected {
+            self.replace(0..self.content.len(), "", cx);
+            return;
+        }
         let end = self.next_boundary();
         if end > self.cursor {
             self.replace(self.cursor..end, "", cx);
@@ -118,11 +169,13 @@ impl TextInput {
     }
 
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_to(self.previous_boundary(), cx);
+        let to = if self.all_selected { 0 } else { self.previous_boundary() };
+        self.move_to(to, cx);
     }
 
     fn right(&mut self, _: &Right, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_to(self.next_boundary(), cx);
+        let to = if self.all_selected { self.content.len() } else { self.next_boundary() };
+        self.move_to(to, cx);
     }
 
     fn home(&mut self, _: &Home, _: &mut Window, cx: &mut Context<Self>) {
@@ -136,7 +189,8 @@ impl TextInput {
     fn paste(&mut self, _: &Paste, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
             let single_line = text.replace(['\r', '\n'], " ");
-            self.replace(self.cursor..self.cursor, &single_line, cx);
+            let range = self.typing_range();
+            self.replace(range, &single_line, cx);
         }
     }
 
@@ -156,20 +210,40 @@ impl TextInput {
     fn index_for_mouse_position(&self, position: Point<Pixels>) -> usize {
         match (&self.last_bounds, &self.last_layout) {
             (Some(bounds), Some(line)) if !self.content.is_empty() => {
-                line.closest_index_for_x(position.x - bounds.left())
+                line.closest_index_for_x(position.x - bounds.left() - self.text_offset(bounds, line))
             }
             _ => 0,
         }
     }
 
-    /// Replaces `range`, keeping the field within its length limit, and puts
-    /// the caret after the new text.
+    /// How far right of the field's left edge the text starts.
+    fn text_offset(&self, bounds: &Bounds<Pixels>, line: &ShapedLine) -> Pixels {
+        if self.right_aligned {
+            (bounds.size.width - line.width).max(Pixels::ZERO)
+        } else {
+            Pixels::ZERO
+        }
+    }
+
+    /// Where typed text goes: over the selection, else at the caret.
+    fn typing_range(&self) -> Range<usize> {
+        if self.all_selected {
+            0..self.content.len()
+        } else {
+            self.cursor..self.cursor
+        }
+    }
+
+    /// Replaces `range`, keeping the field within its length limit and its
+    /// characters, and puts the caret after the new text.
     fn replace(&mut self, range: Range<usize>, new_text: &str, cx: &mut Context<Self>) {
         let kept = self.content.chars().count() - self.content[range.clone()].chars().count();
-        let room = MAX_CHARS.saturating_sub(kept);
-        let new_text: String = new_text.chars().take(room).collect();
+        let room = self.max_chars.saturating_sub(kept);
+        let new_text: String =
+            new_text.chars().filter(|ch| !self.digits_only || ch.is_ascii_digit()).take(room).collect();
         self.content.replace_range(range.clone(), &new_text);
         self.cursor = range.start + new_text.len();
+        self.all_selected = false;
         self.marked_range = None;
         cx.notify();
     }
@@ -223,8 +297,8 @@ impl EntityInputHandler for TextInput {
     }
 
     fn selected_text_range(&mut self, _: bool, _: &mut Window, _: &mut Context<Self>) -> Option<UTF16Selection> {
-        let caret = self.offset_to_utf16(self.cursor);
-        Some(UTF16Selection { range: caret..caret, reversed: false })
+        let range = self.typing_range();
+        Some(UTF16Selection { range: self.range_to_utf16(&range), reversed: false })
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
@@ -246,7 +320,7 @@ impl EntityInputHandler for TextInput {
             .as_ref()
             .map(|range| self.range_from_utf16(range))
             .or(self.marked_range.clone())
-            .unwrap_or(self.cursor..self.cursor);
+            .unwrap_or_else(|| self.typing_range());
         self.replace(range, new_text, cx);
     }
 
@@ -262,7 +336,7 @@ impl EntityInputHandler for TextInput {
             .as_ref()
             .map(|range| self.range_from_utf16(range))
             .or(self.marked_range.clone())
-            .unwrap_or(self.cursor..self.cursor);
+            .unwrap_or_else(|| self.typing_range());
         self.replace(range.clone(), new_text, cx);
         if !new_text.is_empty() {
             self.marked_range = Some(range.start..range.start + new_text.len());
@@ -281,16 +355,18 @@ impl EntityInputHandler for TextInput {
     ) -> Option<Bounds<Pixels>> {
         let layout = self.last_layout.as_ref()?;
         let range = self.range_from_utf16(&range_utf16);
+        let left = bounds.left() + self.text_offset(&bounds, layout);
         Some(Bounds::from_corners(
-            point(bounds.left() + layout.x_for_index(range.start), bounds.top()),
-            point(bounds.left() + layout.x_for_index(range.end), bounds.bottom()),
+            point(left + layout.x_for_index(range.start), bounds.top()),
+            point(left + layout.x_for_index(range.end), bounds.bottom()),
         ))
     }
 
     fn character_index_for_point(&mut self, point: Point<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<usize> {
-        let line_point = self.last_bounds?.localize(&point)?;
+        let bounds = self.last_bounds?;
+        let line_point = bounds.localize(&point)?;
         let layout = self.last_layout.as_ref()?;
-        let index = layout.index_for_x(point.x - line_point.x)?;
+        let index = layout.index_for_x(line_point.x - self.text_offset(&bounds, layout))?;
         Some(self.offset_to_utf16(index))
     }
 }
@@ -301,7 +377,10 @@ struct TextElement {
 
 struct Prepaint {
     line: ShapedLine,
+    /// Where the line starts, right of the left edge when right-aligned.
+    origin: Point<Pixels>,
     caret: PaintQuad,
+    selection: Option<PaintQuad>,
 }
 
 impl IntoElement for TextElement {
@@ -378,12 +457,15 @@ impl Element for TextElement {
         };
         let font_size = style.font_size.to_pixels(window.rem_size());
         let line = window.text_system().shape_line(shown, font_size, &runs, None);
+        let origin = point(bounds.left() + input.text_offset(&bounds, &line), bounds.top());
         let caret_x = line.x_for_index(if input.content.is_empty() { 0 } else { input.cursor });
         let caret = fill(
-            Bounds::new(point(bounds.left() + caret_x, bounds.top()), size(px(1.), bounds.size.height)),
+            Bounds::new(point((origin.x + caret_x).min(bounds.right() - px(1.)), bounds.top()), size(px(1.), bounds.size.height)),
             style.color,
         );
-        Prepaint { line, caret }
+        let selection = (input.all_selected && !input.content.is_empty())
+            .then(|| fill(Bounds::new(origin, size(line.width, bounds.size.height)), rgba(SELECTION)));
+        Prepaint { line, origin, caret, selection }
     }
 
     fn paint(
@@ -398,9 +480,12 @@ impl Element for TextElement {
     ) {
         let focus_handle = self.input.read(cx).focus_handle.clone();
         window.handle_input(&focus_handle, ElementInputHandler::new(bounds, self.input.clone()), cx);
+        if let Some(selection) = prepaint.selection.clone().filter(|_| focus_handle.is_focused(window)) {
+            window.paint_quad(selection);
+        }
         let line = prepaint.line.clone();
-        let _ = line.paint(bounds.origin, window.line_height(), gpui::TextAlign::Left, None, window, cx);
-        if focus_handle.is_focused(window) {
+        let _ = line.paint(prepaint.origin, window.line_height(), gpui::TextAlign::Left, None, window, cx);
+        if focus_handle.is_focused(window) && prepaint.selection.is_none() {
             window.paint_quad(prepaint.caret.clone());
         }
         let line = prepaint.line.clone();
