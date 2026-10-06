@@ -43,6 +43,7 @@ cargo xtask dist [--allow-dirty] [--no-source [--source-contact "<text>"]]   # b
 ## Project management
 
 - Provider: backlog
+- Project root: /mnt/c/Users/Anthony/Documents/Projects/Aion2-DPS-Meter
 - Backlog directory: backlog
 - Project name: AION 2 DPS Meter
 - Documentation home: provider:docs
