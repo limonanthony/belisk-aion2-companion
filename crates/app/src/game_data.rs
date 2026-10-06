@@ -139,26 +139,8 @@ pub fn dungeon_of(mob_code: u32) -> Option<&'static str> {
     DUNGEONS_BY_BOSS.get(&mob_code).map(String::as_str)
 }
 
-/// The key the bundled tables know a skill under: the exact id first, then the
-/// forms the backend normalises skill ids to. The same lookup as the Tauri
-/// overlay's `resolveSkillId`.
 fn resolve_skill_id(code: u32) -> String {
-    let raw = code.to_string();
-    let head = |n: usize| &raw[..raw.len().min(n)];
-    let mut candidates = vec![raw.clone(), head(8).to_string()];
-    if raw.len() > 8 {
-        let mut base = head(8).to_string();
-        base.pop();
-        base.push('0');
-        candidates.push(base);
-    }
-    if raw.len() > 6 {
-        candidates.push(format!("{:0<8}", head(6)));
-    }
-    candidates
-        .into_iter()
-        .find(|candidate| SKILLS.contains_key(candidate))
-        .unwrap_or_else(|| head(8).to_string())
+    meter_core::skill_names::resolve_skill_key(code, |key| SKILLS.contains_key(key))
 }
 
 pub fn skill_name(code: u32) -> String {
@@ -205,6 +187,7 @@ mod tests {
         assert_eq!(dungeon_of(2300243), Some("Azure Breath Island · Hard"));
         assert_eq!(skill_name(100001), "Basic Attack");
         assert_eq!(skill_name(4_000_000), "Skill 4000000");
+        assert_eq!(skill_name(160_467_011), "Attack");
     }
 
     #[test]

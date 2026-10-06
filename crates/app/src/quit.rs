@@ -13,7 +13,7 @@ use std::time::Duration;
 use gpui::App;
 use windows::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
 
-const HOOK_DEADLINE: Duration = Duration::from_secs(10);
+const HOOK_DEADLINE: Duration = Duration::from_secs(3);
 
 /// Must be installed before any other quit hook, so the deadline covers them all.
 pub fn install_deadline(cx: &mut App) {

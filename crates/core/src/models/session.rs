@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct SessionPlayerStat {
     pub actor_id: u32,
+    /// Other actor ids whose damage is folded into this row: the local
+    /// player's ids from earlier zones. Empty for everyone else.
+    #[serde(default)]
+    pub earlier_actor_ids: Vec<u32>,
     pub actor_name: String,
     pub actor_server_id: String,
     pub actor_class: String,

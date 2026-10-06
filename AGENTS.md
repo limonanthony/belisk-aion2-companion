@@ -16,14 +16,14 @@ PowerShell 5.1 on the development machine has no `&&` — chain with `;`. Cargo
 runs from the Windows toolchain (`cmd.exe /c "cargo ..."` from WSL).
 
 ```
-cargo test --workspace            # the quality gate: meter-core (129 + 1 ignored) + the app (409, including the Settings window's, the reminder card's and the to-do window's keyboard, focus, hover, timing and layout tests in GPUI's test platform, and the English/French key parity test) + xtask (10) + packet-explorer (20), no elevation needed
+cargo test --workspace            # the quality gate: meter-core (144 + 1 ignored) + the app (409, including the Settings window's, the reminder card's and the to-do window's keyboard, focus, hover, timing and layout tests in GPUI's test platform, and the English/French key parity test) + xtask (10) + packet-explorer (23), no elevation needed
 cargo build -p aion-2-dps-meter   # add --release for the shipped build
 cargo run -p aion-2-dps-meter -- --replay <file.aetherpc> [--speed 1.0] [--exit-after-replay]   # replay starts no driver, but the default exe still asks for Administrator; --features probes builds run unelevated
 cargo run -p aion-2-dps-meter     # live capture; the exe asks for Administrator, so run it from an ELEVATED terminal. Settings → Capture has "Collect mob data" (records the mobs fought into mobs.json, off by default) and "Decision log" (writes the meter's decisions (board, boss focus, who "you" are) to aether.log as [meter] lines, off by default); both are stored in settings.json, no launch flags
 cd crates/core; cargo run --example replay -- <file.aetherpc>
 # --features probes adds --overlay-probe, --font-probe and --capture <dir> (--fixtures | --replay <file>) [--language english|french]:
 # --capture draws the overlay off every monitor and saves PrintWindow images, safe while someone plays
-cargo run -p packet-explorer -- <opcodes|flows|timeline|dump|diff|search|events|periodic|parity> <recording>... [options]   # developer-only packet explorer for .aetherpc recordings (a path, a folder, or part of a name in the recordings folder); `help` lists the options. Text runs are masked unless --show-text; never shipped (not reachable from the app, so not in the dist zip)
+cargo run -p packet-explorer -- <opcodes|flows|timeline|dump|diff|search|events|periodic|parity|unnamed-skills> <recording>... [options]   # developer-only packet explorer for .aetherpc recordings (a path, a folder, or part of a name in the recordings folder); `help` lists the options. `unnamed-skills` lists the skill ids the app would show as "Skill <id>" (hits, damage, class) so their names can be added to the bundled data. Text runs are masked unless --show-text; never shipped (not reachable from the app, so not in the dist zip)
 node scripts/build-npc-names.mjs <kuroukihime mobs.json> [noia2 npc_names.json]   # regenerates npc_names_en.json; plain node, no packages
 cargo xtask dist [--allow-dirty] [--no-source [--source-contact "<text>"]]   # builds the portable zip: target/dist/aion-2-dps-meter-<version>-windows-x64.zip (see docs/GPUI_MIGRATION.md, Distribution). --no-source omits source/ for a GPL-3.0 §6(b) written offer in README.txt (zip goes to target/dist/no-source/). Does not run the exe; refuses on a dirty tree (source = `git archive HEAD` / the commit the offer names) or a locked exe
 ```

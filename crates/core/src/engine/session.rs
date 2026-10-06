@@ -23,7 +23,9 @@ pub struct SessionInputs<'a> {
     pub per_target_overview: &'a HashMap<u32, HashMap<u32, PlayerOverviewStat>>,
     pub target_infos: &'a HashMap<u32, TargetInfo>,
     pub main_actor_id: Option<u32>,
-    pub main_actor_name: Option<&'a str>,
+    /// Every actor id the meter established as the local player's since the
+    /// character was identified: one per zone the player has been through.
+    pub local_actor_ids: &'a [u32],
     pub hide_unknown_players: bool,
     pub max_player_count: usize,
 }
@@ -36,12 +38,16 @@ struct Window {
 
 struct PlayerTotals<'a> {
     identity: &'a PlayerOverviewStat,
+    identity_damage: u64,
+    earlier_actor_ids: Vec<u32>,
     damage: u64,
     windows: Vec<Window>,
 }
 
 /// `is_mob_target` keeps players out of the board: damage dealt to a player
-/// (PvP, or a mob hitting you) is not part of the session.
+/// (PvP, or a mob hitting you) is not part of the session. The local player is
+/// one row: actor ids change with every zone, and the earlier ids keep their
+/// damage under the same name.
 pub fn build_session_summary(
     inputs: &SessionInputs,
     is_mob_target: impl Fn(u32) -> bool,
@@ -78,13 +84,29 @@ pub fn build_session_summary(
             });
 
             total_damage += stat.total_damage;
-            let totals = players.entry(*player_id).or_insert_with(|| PlayerTotals {
+            let row_id = match inputs.main_actor_id {
+                Some(main_actor_id) if is_local_player(inputs, stat) => main_actor_id,
+                _ => *player_id,
+            };
+            let totals = players.entry(row_id).or_insert_with(|| PlayerTotals {
                 identity: stat,
+                identity_damage: 0,
+                earlier_actor_ids: Vec::new(),
                 damage: 0,
                 windows: Vec::new(),
             });
             totals.damage += stat.total_damage;
             totals.windows.push(window);
+            if row_id != *player_id && !totals.earlier_actor_ids.contains(player_id) {
+                totals.earlier_actor_ids.push(*player_id);
+            }
+            let outranks_identity = inputs.main_actor_id == Some(stat.actor_id)
+                || (inputs.main_actor_id != Some(totals.identity.actor_id)
+                    && stat.total_damage > totals.identity_damage);
+            if outranks_identity {
+                totals.identity = stat;
+            }
+            totals.identity_damage = totals.identity_damage.max(stat.total_damage);
         }
         target_windows.extend(target_window);
         target_count += 1;
@@ -98,15 +120,10 @@ pub fn build_session_summary(
     });
     if inputs.hide_unknown_players {
         rows.retain(|row| {
-            !row.identity.actor_name.is_empty() || inputs.main_actor_id == Some(row.identity.actor_id)
+            !row.identity.actor_name.is_empty() || is_local_player(inputs, row.identity)
         });
     }
-    keep_within_row_limit(&mut rows, inputs.max_player_count, |player| {
-        inputs.main_actor_id == Some(player.actor_id)
-            || inputs
-                .main_actor_name
-                .is_some_and(|name| !name.is_empty() && name == player.actor_name)
-    });
+    keep_within_row_limit(&mut rows, inputs.max_player_count, |player| is_local_player(inputs, player));
 
     SessionSummary {
         total_damage,
@@ -118,6 +135,7 @@ pub fn build_session_summary(
                 let combat_time_secs = union_length(&mut row.windows);
                 SessionPlayerStat {
                     actor_id: row.identity.actor_id,
+                    earlier_actor_ids: row.earlier_actor_ids,
                     actor_name: row.identity.actor_name.clone(),
                     actor_server_id: row.identity.actor_server_id.clone(),
                     actor_class: row.identity.actor_class.clone(),
@@ -140,9 +158,14 @@ pub fn build_session_summary(
     }
 }
 
+/// Only ids the meter established as the local player's count: a player with
+/// the same name (another server, a namesake) is someone else.
+fn is_local_player(inputs: &SessionInputs, player: &PlayerOverviewStat) -> bool {
+    inputs.main_actor_id == Some(player.actor_id) || inputs.local_actor_ids.contains(&player.actor_id)
+}
+
 /// The last row makes way for the local player when they fall below the cut,
-/// so you always see yourself. Actor ids change between zones while the
-/// character's name does not, so either one identifies you.
+/// so you always see yourself.
 fn keep_within_row_limit(
     rows: &mut Vec<PlayerTotals>,
     max_player_count: usize,
@@ -186,28 +209,31 @@ fn union_length(windows: &mut [Window]) -> f64 {
 }
 
 /// One player's skills summed per skill code across every mob target, for the
-/// player detail window on the Session board. The snapshot already holds every
-/// target's skill table (the core keeps at most 512 targets), so this is one
-/// pass over that player's own tables: no new bookkeeping in the hot path, and
-/// the caller runs it only while that window is open.
+/// player detail window on the Session board. `actor_ids` are every id the
+/// board row folded together. The snapshot already holds every target's skill
+/// table (the core keeps at most 512 targets), so this is one pass over that
+/// player's own tables: no new bookkeeping in the hot path, and the caller
+/// runs it only while that window is open.
 pub fn session_skill_totals(
     skills_by_target: &HashMap<u32, HashMap<u32, HashMap<u32, SkillStats>>>,
-    actor_id: u32,
+    actor_ids: &[u32],
     is_mob_target: impl Fn(u32) -> bool,
 ) -> HashMap<u32, SkillStats> {
     let mut totals: HashMap<u32, SkillStats> = HashMap::new();
-    for (target_id, actors) in skills_by_target {
-        let Some(skills) = actors.get(&actor_id).filter(|_| is_mob_target(*target_id)) else {
-            continue;
-        };
-        for (code, stats) in skills {
-            let total = totals.entry(*code).or_default();
-            total.counts += stats.counts;
-            total.total_damage += stats.total_damage;
-            total.min_damage = total.min_damage.min(stats.min_damage);
-            total.max_damage = total.max_damage.max(stats.max_damage);
-            for (kind, count) in &stats.special_counts {
-                *total.special_counts.entry(kind.clone()).or_insert(0) += count;
+    for actors in skills_by_target
+        .iter()
+        .filter_map(|(target_id, actors)| is_mob_target(*target_id).then_some(actors))
+    {
+        for skills in actor_ids.iter().filter_map(|actor_id| actors.get(actor_id)) {
+            for (code, stats) in skills {
+                let total = totals.entry(*code).or_default();
+                total.counts += stats.counts;
+                total.total_damage += stats.total_damage;
+                total.min_damage = total.min_damage.min(stats.min_damage);
+                total.max_damage = total.max_damage.max(stats.max_damage);
+                for (kind, count) in &stats.special_counts {
+                    *total.special_counts.entry(kind.clone()).or_insert(0) += count;
+                }
             }
         }
     }
@@ -289,7 +315,7 @@ mod tests {
                     per_target_overview: &self.overview,
                     target_infos: &self.infos,
                     main_actor_id: Some(ME),
-                    main_actor_name: None,
+                    local_actor_ids: &[ME],
                     hide_unknown_players,
                     max_player_count,
                 },
@@ -427,27 +453,88 @@ mod tests {
             .all(|pair| pair[0].total_damage >= pair[1].total_damage));
     }
 
+    const OLD_ID: u32 = 40;
+
+    fn summary_with_locals(fight: &Fight, local_actor_ids: &[u32], max_player_count: usize) -> SessionSummary {
+        build_session_summary(
+            &SessionInputs {
+                per_target_overview: &fight.overview,
+                target_infos: &fight.infos,
+                main_actor_id: Some(ME),
+                local_actor_ids,
+                hide_unknown_players: false,
+                max_player_count,
+            },
+            |_| true,
+        )
+    }
+
     #[test]
-    fn the_local_player_is_also_found_by_name_when_their_id_changed() {
+    fn the_row_limit_keeps_the_local_player_under_an_earlier_id() {
         let names = ["", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"];
+        let hits: Vec<_> = (2..=8u32)
+            .map(|id| (id, names[id as usize], 1_000 - u64::from(id) * 10, 0.0, 10.0))
+            .collect();
+        let fight = Fight::new().target(PACK_A, &hits);
+
+        let summary = summary_with_locals(&fight, &[8, 999], 5);
+
+        let last = summary.players.last().unwrap();
+        assert_eq!(last.actor_id, 8);
+        assert_eq!(summary.players.len(), 5);
+    }
+
+    #[test]
+    fn the_local_player_is_one_row_across_the_actor_ids_of_earlier_zones() {
+        let fight = Fight::new()
+            .target(PACK_A, &[(OLD_ID, "Me", 275, 0.0, 10.0), (ALLY, "Ally", 900, 0.0, 10.0)])
+            .target(PACK_B, &[(ME, "Me", 4_800, 20.0, 40.0)]);
+
+        let summary = summary_with_locals(&fight, &[OLD_ID, ME], 10);
+
+        let mine: Vec<_> = summary.players.iter().filter(|player| player.actor_name == "Me").collect();
+        assert_eq!(mine.len(), 1);
+        assert_eq!((mine[0].actor_id, mine[0].total_damage), (ME, 5_075));
+        assert_eq!(mine[0].earlier_actor_ids, vec![OLD_ID]);
+        assert_eq!(summary.total_damage, 5_975);
+        assert!((mine[0].damage_share - 5_075.0 / 5_975.0).abs() < 1e-9);
+        assert_eq!(summary.players.len(), 2);
+    }
+
+    #[test]
+    fn a_player_who_only_has_an_earlier_id_keeps_one_named_row() {
+        let fight = Fight::new().target(PACK_A, &[(OLD_ID, "Me", 275, 0.0, 10.0)]);
+
+        let summary = summary_with_locals(&fight, &[OLD_ID, ME], 10);
+
+        assert_eq!(summary.players.len(), 1);
+        assert_eq!(summary.players[0].actor_name, "Me");
+    }
+
+    #[test]
+    fn a_namesake_that_was_never_the_local_player_keeps_its_own_row() {
+        let fight = Fight::new()
+            .target(PACK_A, &[(ME, "Me", 4_800, 0.0, 10.0), (STRANGER, "Me", 700, 0.0, 10.0)]);
+
+        let summary = summary_with_locals(&fight, &[ME], 10);
+
+        assert_eq!(summary.players.len(), 2);
+        assert_eq!(row(&summary, ME).total_damage, 4_800);
+        assert_eq!(row(&summary, STRANGER).total_damage, 700);
+        assert!(row(&summary, STRANGER).earlier_actor_ids.is_empty());
+    }
+
+    #[test]
+    fn a_namesake_is_not_protected_by_the_row_limit() {
+        let names = ["", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "Me"];
         let hits: Vec<_> = (1..=8u32)
             .map(|id| (id, names[id as usize], 1_000 - u64::from(id) * 10, 0.0, 10.0))
             .collect();
         let fight = Fight::new().target(PACK_A, &hits);
 
-        let summary = build_session_summary(
-            &SessionInputs {
-                per_target_overview: &fight.overview,
-                target_infos: &fight.infos,
-                main_actor_id: Some(999),
-                main_actor_name: Some("P8"),
-                hide_unknown_players: false,
-                max_player_count: 5,
-            },
-            |_| true,
-        );
+        let summary = summary_with_locals(&fight, &[999], 5);
 
-        assert_eq!(summary.players.last().unwrap().actor_name, "P8");
+        assert!(summary.players.iter().all(|player| player.actor_name != "Me"));
     }
 
     #[test]
@@ -486,7 +573,7 @@ mod tests {
             (PACK_A, ALLY, 7, skill(99, 9_999, 1, 999, &[])),
         ]);
 
-        let totals = session_skill_totals(&tables, ME, |_| true);
+        let totals = session_skill_totals(&tables, &[ME], |_| true);
 
         assert_eq!(totals.len(), 2);
         let summed = &totals[&7];
@@ -504,15 +591,33 @@ mod tests {
             (PLAYER_TARGET, ME, 7, skill(1, 5_000, 5_000, 5_000, &[])),
         ]);
 
-        let totals = session_skill_totals(&tables, ME, |target| target != PLAYER_TARGET);
+        let totals = session_skill_totals(&tables, &[ME], |target| target != PLAYER_TARGET);
 
         assert_eq!(totals[&7].total_damage, 100);
+    }
+
+    #[test]
+    fn the_skills_of_a_merged_row_add_up_to_the_board_total() {
+        let fight = Fight::new()
+            .target(PACK_A, &[(OLD_ID, "Me", 275, 0.0, 10.0)])
+            .target(PACK_B, &[(ME, "Me", 4_800, 20.0, 40.0)]);
+        let tables = tables(&[
+            (PACK_A, OLD_ID, 7, skill(1, 275, 275, 275, &[])),
+            (PACK_B, ME, 7, skill(3, 4_800, 1_000, 2_000, &[])),
+        ]);
+
+        let summary = summary_with_locals(&fight, &[OLD_ID, ME], 10);
+        let mine = row(&summary, ME);
+        let ids: Vec<u32> = std::iter::once(mine.actor_id).chain(mine.earlier_actor_ids.iter().copied()).collect();
+        let totals = session_skill_totals(&tables, &ids, |_| true);
+
+        assert_eq!(totals[&7].total_damage, mine.total_damage);
     }
 
     #[test]
     fn a_player_who_hit_nothing_has_no_session_skills() {
         let tables = tables(&[(PACK_A, ALLY, 7, skill(1, 100, 100, 100, &[]))]);
 
-        assert!(session_skill_totals(&tables, ME, |_| true).is_empty());
+        assert!(session_skill_totals(&tables, &[ME], |_| true).is_empty());
     }
 }

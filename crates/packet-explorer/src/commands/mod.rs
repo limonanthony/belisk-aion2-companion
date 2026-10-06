@@ -6,6 +6,7 @@ pub mod opcodes;
 pub mod parity;
 pub mod periodic;
 pub mod search;
+pub mod unnamed_skills;
 
 use crate::args::{describe_opcode, Args};
 use crate::capture::{self, Capture, Packet};
@@ -29,6 +30,7 @@ commands:
   search    a number in every encoding                                           --value 560 [--value ..] [--enc u16le,varint]   |   --pair 560,23 --within 16
   events    opcodes near, and rare away from, noted moments                      --notes notes.txt [--before 5] [--after 30] [--ratio 5]
   periodic  opcodes repeating on a fixed interval or at round wall-clock times   [--min 3] [--merge 2] [--tol 10] [--all]
+  unnamed-skills  skill ids the app shows as 'Skill <id>': hits, damage, class   [--json]
   parity    the shipped StreamProcessor against this tool's framing
 
 common options:
@@ -57,6 +59,9 @@ pub fn run(args: &Args) -> Result<(), String> {
             let files = args.input_files()?;
             if command == "parity" {
                 return parity::run(&files, args);
+            }
+            if command == "unnamed-skills" {
+                return unnamed_skills::run(&files, args);
             }
             let capture = capture::load(&files)?;
             match command {

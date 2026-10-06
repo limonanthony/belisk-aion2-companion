@@ -1,9 +1,10 @@
 ---
 id: TASK-6
 title: Closing the meter with × leaves it running
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-06 15:07'
+updated_date: '2026-10-06 20:09'
 labels:
   - bug
 dependencies: []
@@ -45,3 +46,9 @@ Not fixed yet, by the user's choice: "Just do the tickets don't fix yet i'll tes
 - [ ] #1 Pressing × closes every meter window and ends the process within about a second, whether or not the game is running or sending traffic.
 - [ ] #2 After pressing ×, no aion-2-dps-meter.exe process is left running in Task Manager.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-06 agent fix, awaiting user test. The quit path was already fixed in commit d320c26 (quit.rs: TerminateProcess once the quit hooks finish); the report likely came from an older build [inference]. Capture stop is bounded (Npcap 100 ms read timeout, WinDivertShutdown before join). Change: the hung-hook backstop in crates/app/src/quit.rs went from 10 s to 3 s. Independent review accepted the trace from × to process exit. Not observed: a live × press on the real exe (agents never run it). To test: build, run, press ×, check Task Manager — with and without game traffic.
+<!-- SECTION:NOTES:END -->

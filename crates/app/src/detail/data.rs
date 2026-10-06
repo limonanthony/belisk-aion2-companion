@@ -221,11 +221,15 @@ fn from_session(actor_id: u32, snapshot: &CombatSnapshot) -> Facts<'_> {
         described_as_mob || !is_player
     };
     let row = snapshot.session.players.iter().find(|player| player.actor_id == actor_id);
+    let row_actor_ids: Vec<u32> = row.map_or_else(
+        || vec![actor_id],
+        |row| std::iter::once(row.actor_id).chain(row.earlier_actor_ids.iter().copied()).collect(),
+    );
     Facts {
         mode: DetailMode::Session,
         actor: infos.actor_infos.get(&actor_id),
         overview: None,
-        skills: Cow::Owned(session_skill_totals(&snapshot.by_target_player_skill_stats, actor_id, is_mob)),
+        skills: Cow::Owned(session_skill_totals(&snapshot.by_target_player_skill_stats, &row_actor_ids, is_mob)),
         target: None,
         target_id: None,
         actor_infos: &infos.actor_infos,
@@ -539,6 +543,7 @@ mod tests {
                 combat_time_secs: 70.0,
                 players: vec![SessionPlayerStat {
                     actor_id: ME,
+                    earlier_actor_ids: Vec::new(),
                     actor_name: "Mirelle".to_string(),
                     actor_server_id: "1001".to_string(),
                     actor_class: "Ranger".to_string(),

@@ -179,6 +179,10 @@ struct DataStorageInner {
     last_time_by_target: HashMap<u32, HashMap<u32, f64>>,
     dot_skill_list: Vec<u32>,
     main_actor_id: Option<u32>,
+    /// Every actor id established as the local player's since the character
+    /// was identified, oldest first: the game gives the character a new id in
+    /// each zone.
+    own_actor_ids: Vec<u32>,
     main_actor_name: Option<String>,
     main_actor_combat_power: Option<u64>,
     own_source: OwnSource,
@@ -220,6 +224,7 @@ impl Default for DataStorageInner {
             last_time_by_target: HashMap::new(),
             dot_skill_list: Vec::new(),
             main_actor_id: None,
+            own_actor_ids: Vec::new(),
             main_actor_name: None,
             main_actor_combat_power: None,
             own_source: OwnSource::Unknown,
@@ -281,6 +286,7 @@ impl DataStorage {
         self.boss_only_filtered.store(0, Ordering::Relaxed);
         let mut inner = self.inner.write().unwrap();
         let main_actor_id = inner.main_actor_id;
+        let own_actor_ids = std::mem::take(&mut inner.own_actor_ids);
         let main_actor_name = inner.main_actor_name.clone();
         let main_actor_combat_power = inner.main_actor_combat_power;
         let own_source = inner.own_source;
@@ -303,6 +309,7 @@ impl DataStorage {
 
         *inner = DataStorageInner::default();
         inner.main_actor_id = main_actor_id;
+        inner.own_actor_ids = own_actor_ids;
         inner.main_actor_name = main_actor_name;
         inner.main_actor_combat_power = main_actor_combat_power;
         inner.own_source = own_source;
@@ -536,7 +543,8 @@ impl DataStorage {
                 .or_insert(0) += count;
         }
 
-        if actor_id != packet.target_id {
+        let hit_on_own_summon = inner.summon_owner_map.get(&packet.target_id) == Some(&actor_id);
+        if actor_id != packet.target_id && !hit_on_own_summon {
             inner.last_target = Some(packet.target_id);
             if inner.main_actor_id == Some(actor_id) {
                 inner.last_target_by_main_actor = Some(packet.target_id);
@@ -705,6 +713,10 @@ impl DataStorage {
                 && main_actor_changed(inner.main_actor_name.as_deref(), actor_name);
             if is_new_player {
                 inner.main_actor_combat_power = None;
+                inner.own_actor_ids.clear();
+            }
+            if !inner.own_actor_ids.contains(&actor_id) {
+                inner.own_actor_ids.push(actor_id);
             }
             let overrode = (source == OwnSource::Game
                 && matches!(inner.own_source, OwnSource::Signature | OwnSource::Remembered)
@@ -783,6 +795,7 @@ impl DataStorage {
         {
             let mut inner = self.inner.write().unwrap();
             inner.main_actor_id = Some(actor_id);
+            inner.own_actor_ids = vec![actor_id];
             inner.own_source = OwnSource::Signature;
             inner.own_name_pending = OwnNamePending::Nameless;
         }
@@ -818,6 +831,7 @@ impl DataStorage {
                 }
                 OwnNamePending::Carried { class: carried_class } => {
                     inner.own_source = OwnSource::Signature;
+                    inner.own_actor_ids = vec![actor_id];
                     inner.actor_id_name_map.remove(&actor_id);
                     inner.actor_id_server_map.remove(&actor_id);
                     inner.main_actor_name.take().map(|name| (name, carried_class))
@@ -1117,6 +1131,10 @@ impl DataStorage {
         self.inner.read().unwrap().main_actor_id
     }
 
+    pub fn own_actor_ids(&self) -> Vec<u32> {
+        self.inner.read().unwrap().own_actor_ids.clone()
+    }
+
     pub fn main_actor_name(&self) -> Option<String> {
         self.inner.read().unwrap().main_actor_name.clone()
     }
@@ -1413,6 +1431,34 @@ mod unowned_hit_tests {
     }
 
     #[test]
+    fn hitting_your_own_summon_does_not_make_it_the_target() {
+        let storage = storage();
+        storage.set_main_actor(PLAYER, "Me");
+        storage.append_summon(PLAYER, SUMMON);
+        storage.append_damage(hit(PLAYER));
+
+        let mut on_summon = hit(PLAYER);
+        on_summon.target_id = SUMMON;
+        storage.append_damage(on_summon);
+
+        assert_eq!(storage.last_target_by_main_actor(), Some(MOB));
+        assert_eq!(storage.last_target(), Some(MOB));
+    }
+
+    #[test]
+    fn hitting_someone_elses_summon_still_makes_it_the_target() {
+        let storage = storage();
+        storage.set_main_actor(PLAYER, "Me");
+        storage.append_summon(PLAYER + 1, SUMMON);
+
+        let mut on_summon = hit(PLAYER);
+        on_summon.target_id = SUMMON;
+        storage.append_damage(on_summon);
+
+        assert_eq!(storage.last_target_by_main_actor(), Some(SUMMON));
+    }
+
+    #[test]
     fn a_hit_that_resolves_to_actor_zero_is_dropped() {
         let storage = storage();
         storage.inner.write().unwrap().summon_owner_map.insert(SUMMON, 0);
@@ -1421,5 +1467,51 @@ mod unowned_hit_tests {
         storage.append_damage(hit(0));
 
         assert!(attackers(&storage).is_empty());
+    }
+
+    #[test]
+    fn a_zone_change_adds_the_new_id_to_the_players_own_ids() {
+        let storage = storage();
+        storage.set_main_actor(PLAYER, "Me");
+        storage.set_actor_class(PLAYER, "ELEMENTALIST");
+
+        storage.bind_own_actor(PLAYER + 10);
+        storage.set_actor_class(PLAYER + 10, "ELEMENTALIST");
+        storage.resolve_own_name();
+
+        assert_eq!(storage.own_actor_ids(), vec![PLAYER, PLAYER + 10]);
+    }
+
+    #[test]
+    fn another_character_starts_a_new_list_of_own_ids() {
+        let storage = storage();
+        storage.set_main_actor(PLAYER, "Me");
+        storage.set_main_actor(PLAYER + 1, "Other");
+
+        assert_eq!(storage.own_actor_ids(), vec![PLAYER + 1]);
+    }
+
+    #[test]
+    fn a_carried_name_the_class_rejects_does_not_keep_the_old_id() {
+        let storage = storage();
+        storage.set_main_actor(PLAYER, "Me");
+        storage.set_actor_class(PLAYER, "ELEMENTALIST");
+
+        storage.bind_own_actor(PLAYER + 10);
+        storage.set_actor_class(PLAYER + 10, "CLERIC");
+        storage.resolve_own_name();
+
+        assert_eq!(storage.own_actor_ids(), vec![PLAYER + 10]);
+    }
+
+    #[test]
+    fn a_reset_keeps_the_players_own_ids() {
+        let storage = storage();
+        storage.set_main_actor(PLAYER, "Me");
+        storage.bind_own_actor(PLAYER + 10);
+
+        storage.clear();
+
+        assert_eq!(storage.own_actor_ids(), vec![PLAYER, PLAYER + 10]);
     }
 }

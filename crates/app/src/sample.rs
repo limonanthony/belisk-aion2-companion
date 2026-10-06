@@ -57,6 +57,7 @@ pub fn session() -> SessionSummary {
             .iter()
             .map(|&(id, name, class, server, power, damage, dps)| SessionPlayerStat {
                 actor_id: id,
+                earlier_actor_ids: Vec::new(),
                 actor_name: name.to_string(),
                 actor_server_id: server.to_string(),
                 actor_class: class.to_string(),

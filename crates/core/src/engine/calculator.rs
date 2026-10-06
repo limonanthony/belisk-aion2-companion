@@ -179,13 +179,13 @@ fn build_combat_snapshot(
         hide_unknown_players,
         max_player_count,
     );
-    let main_actor_name = data_storage.main_actor_name();
+    let own_actor_ids = data_storage.own_actor_ids();
     let session = build_session_summary(
         &SessionInputs {
             per_target_overview: &per_target_overview,
             target_infos: &target_infos,
             main_actor_id: data_storage.main_actor_id(),
-            main_actor_name: main_actor_name.as_deref(),
+            local_actor_ids: &own_actor_ids,
             hide_unknown_players,
             max_player_count,
         },

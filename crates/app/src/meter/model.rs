@@ -1190,6 +1190,7 @@ mod tests {
     fn session_player(id: u32, name: &str, damage: u64, dps: f64) -> SessionPlayerStat {
         SessionPlayerStat {
             actor_id: id,
+            earlier_actor_ids: Vec::new(),
             actor_name: name.to_string(),
             actor_server_id: "1001".to_string(),
             actor_class: "Ranger".to_string(),

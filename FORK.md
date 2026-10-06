@@ -768,3 +768,23 @@ Merging `upstream/main` from here: changes to the deleted paths are resolved by
 keeping them deleted. Core changes land in `crates/core` following the
 phase 1 renames (`src-tauri/src/dps_meter/**` to `crates/aether-core/src/**`, then to `crates/core/src/**`;
 `src-tauri/data/*.json` to `crates/core/data/`), so upstream's `src-tauri/src/dps_meter/**` now maps to `crates/core/src/**`.
+
+## Own summons and own rows (TASK-3, TASK-5)
+
+Two small core changes. `DataStorage::append_damage_at` no longer makes a hit on
+the attacker's own summon the "last target" (the Elementalist's spirit
+consumption hits her own spirits, which made the header read `Mob 2920133`).
+The damage itself is still counted. `engine/session.rs` folds the local
+player's rows into one: actor ids change with every zone and the earlier ids
+kept their damage under the same name, so the Session board listed the player
+once per zone. Only ids the meter established as the local player's are folded
+(`DataStorage::own_actor_ids`, the ids carried across zone changes under the
+same character, reset when the character changes); a namesake, for instance on
+another server, keeps its own row. The row lists the folded ids in
+`SessionPlayerStat::earlier_actor_ids`, and the session skill detail sums them.
+
+## Skill names for damage-over-time ids
+
+A damage-over-time hit carries its skill id followed by two digits (ten-digit example: `1709014011` = skill `17090140`). Nine-digit ones such as `160467011` are a seven-digit skill plus the two digits, and the app showed them as `Skill 160467011` because the lookup only cut them to eight digits. `crates/core/src/skill_names.rs` (`resolve_skill_key`, used by `game_data::skill_name`) now also tries the id divided by 100 as the last form, which reaches the existing key `1604670` ("Attack"; Kuroukihime/AIon2-Dps-Meter resolves the same id the same way, `DotDamagePacketProcessor`: `skillCode = u32 / 100`). No data was added.
+
+`packet-explorer unnamed-skills <recording>...` replays recordings through the shipped parser and lists the skill ids that still fall back to `Skill <id>` (hits, damage, class) so their names can be looked up in the source datasets and added.
