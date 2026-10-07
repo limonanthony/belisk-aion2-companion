@@ -135,6 +135,23 @@ pub fn effective() -> RegionId {
     configured()
 }
 
+/// The region packets are interpreted as: the explicit choice, else what the
+/// traffic identifies, else `Auto`. Unlike [`status`] it allocates nothing.
+pub fn resolved() -> RegionId {
+    let Ok(runtime) = RUNTIME.read() else {
+        return RegionId::Auto;
+    };
+    resolve(&runtime)
+}
+
+fn resolve(runtime: &RegionRuntime) -> RegionId {
+    if runtime.configured == RegionId::Auto {
+        detect(runtime).unwrap_or(RegionId::Auto)
+    } else {
+        runtime.configured
+    }
+}
+
 /// Region-aware replacement for upstream's hardcoded Taiwan check.
 pub fn accepts_server_id(server_id: u32) -> bool {
     effective().accepts_server_id(server_id)
@@ -185,11 +202,7 @@ pub fn status() -> RegionStatus {
     RegionStatus {
         configured: runtime.configured,
         detected,
-        effective: if runtime.configured == RegionId::Auto {
-            detected.unwrap_or(RegionId::Auto)
-        } else {
-            runtime.configured
-        },
+        effective: resolve(&runtime),
         server_names_available,
         observed_server_ids: runtime.server_ids.iter().copied().collect(),
         observed_server_ips: runtime.server_ips.iter().map(format_ipv4).collect(),

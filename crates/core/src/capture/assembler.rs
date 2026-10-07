@@ -59,6 +59,11 @@ impl StreamAssembler {
         self.accumulator.clear();
     }
 
+    pub fn discard_buffered(&mut self) {
+        self.accumulator.clear();
+        self.processor.reset_framing();
+    }
+
     pub fn buffer_size(&self) -> usize {
         self.accumulator.size()
     }

@@ -23,6 +23,8 @@ pub enum Subject {
 }
 
 pub struct FightSummary {
+    /// The boss the summary is about, for its fight report.
+    pub target_id: u32,
     pub kind: SummaryKind,
     pub elapsed: SharedString,
     pub boss: SharedString,
@@ -78,9 +80,12 @@ impl FightSummary {
         target_id: u32,
         kind: SummaryKind,
         settings: &OverlaySettings,
+        hide_unknown_players: bool,
         personal_best: impl FnOnce(&str, u32) -> Option<f64>,
     ) -> Option<Self> {
-        let TargetView { info: target, players: ranked } = live::target_view(snapshot, target_id)?;
+        let view = live::target_view(snapshot, target_id, hide_unknown_players)?;
+        let (party_dps, party_damage, party_dps_line) = (view.total_dps, view.total_damage, live::party_dps(&view));
+        let TargetView { info: target, players: ranked, .. } = view;
         if ranked.is_empty() {
             return None;
         }
@@ -99,8 +104,6 @@ impl FightSummary {
         let secs = live::fight_secs(target);
         let boss = live::target_name(target);
         let place = target.target_mob_code.and_then(game_data::dungeon_of);
-        let party_dps: f64 = ranked.iter().map(|player| player.dps.max(0.0)).sum();
-        let party_damage: u64 = ranked.iter().map(|player| player.total_damage).sum();
 
         let mine = you.map(|index| {
             let player = ranked[index];
@@ -147,6 +150,7 @@ impl FightSummary {
         });
 
         Some(Self {
+            target_id,
             kind,
             elapsed: format::duration(secs).into(),
             boss: settings.display_name(&boss).into(),
@@ -166,7 +170,7 @@ impl FightSummary {
                 .and_then(|(_, _, _, crit, _)| *crit)
                 .map(|crit| format::whole_percent(crit).into()),
             class: mine.as_ref().and_then(|(_, player, ..)| PlayerClass::parse(&player.actor_class)),
-            party_dps: mine.as_ref().and_then(|_| live::party_dps(&ranked)),
+            party_dps: mine.as_ref().and_then(|_| party_dps_line),
             damage: match &mine {
                 Some((_, player, ..)) => format::damage(player.total_damage).into(),
                 None => format::damage(party_damage).into(),

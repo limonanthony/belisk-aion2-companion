@@ -701,6 +701,7 @@ mod tests {
             player_skill_stats: HashMap::from([(ME, live.by_target_player_skill_stats[&BOSS][&ME].clone())]),
             player_stats: HashMap::new(),
             use_buffs_by_target: live.use_buffs_by_target.clone(),
+            ledger: None,
             created_at: 0,
         };
 

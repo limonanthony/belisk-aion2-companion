@@ -31,13 +31,33 @@ pub struct Planner {
     /// The start of the last reminder shown, so a replan within the lead time
     /// does not show the same one again.
     last_shown_start_ms: Option<i64>,
+    /// The reminder the last step waited for; none once it was shown or when
+    /// nothing is scheduled.
+    upcoming: Option<Reminder>,
+    /// The reminder the last step waited for whose event had started by the
+    /// time of the next step, so it was never shown.
+    missed: Option<Reminder>,
 }
 
 impl Planner {
+    pub fn upcoming(&self) -> Option<&Reminder> {
+        self.upcoming.as_ref()
+    }
+
+    /// The reminder the last step found already started without having shown
+    /// it, once.
+    pub fn take_missed(&mut self) -> Option<Reminder> {
+        self.missed.take()
+    }
+
     /// A reminder is shown when its time has come and its event has not started
     /// yet: one whose start has passed (the PC slept through it) is dropped.
     pub fn step(&mut self, zone: &impl Zone, settings: &ReminderSettings, now_ms: i64) -> Step {
         let events = settings.scheduled_events();
+        self.missed = self
+            .upcoming
+            .take()
+            .filter(|waited_for| waited_for.start_ms <= now_ms && waited_for.events.iter().any(|id| events.contains(id)));
         let after_ms = match self.last_shown_start_ms {
             Some(shown) if shown - now_ms > LONGEST_LEAD_MS => {
                 self.last_shown_start_ms = None;
@@ -47,12 +67,15 @@ impl Planner {
             None => now_ms,
         };
         let Some(reminder) = next_reminder(zone, &events, settings.lead_minutes, after_ms) else {
+            self.upcoming = None;
             return Step::Idle;
         };
         if reminder.notify_ms > now_ms {
             let remaining = Duration::from_millis((reminder.notify_ms - now_ms) as u64);
+            self.upcoming = Some(reminder);
             return Step::Wait(remaining.min(MAX_NAP));
         }
+        self.upcoming = None;
         self.last_shown_start_ms = Some(reminder.start_ms);
         Step::Show(reminder)
     }
@@ -166,5 +189,73 @@ mod tests {
         let settings = ReminderSettings::default();
         assert!(matches!(step(&mut planner, &settings, at(10, 29, 0)), Step::Show(_)));
         assert!(matches!(step(&mut planner, &settings, at(8, 29, 30)), Step::Show(_)), "08:30 Invasion, an hour and a half back");
+    }
+
+    /// Runs the planner the way the service does, sleeping each `Wait`, and
+    /// returns when each reminder was shown and the start it announced.
+    fn shown_between(zone: &impl Zone, settings: &ReminderSettings, from: i64, until: i64) -> Vec<(i64, i64)> {
+        let mut planner = Planner::default();
+        let mut shown = Vec::new();
+        let mut now = from;
+        while now < until {
+            match planner.step(zone, settings, now) {
+                Step::Show(reminder) => shown.push((now, reminder.start_ms)),
+                Step::Wait(wait) => now += wait.as_millis() as i64,
+                Step::Idle => break,
+            }
+        }
+        shown
+    }
+
+    #[test]
+    fn the_midnight_shugo_festival_is_reminded_on_every_kind_of_day() {
+        use crate::clock::testing::{berlin, utc};
+        let zone = berlin();
+        let midnights = [
+            ("an ordinary day", utc(2026, 10, 5, 22, 0)),
+            ("the day before spring forward", utc(2026, 3, 28, 23, 0)),
+            ("the end of the 23-hour day", utc(2026, 3, 29, 22, 0)),
+            ("the day before fall back", utc(2026, 10, 24, 22, 0)),
+            ("the end of the 25-hour day", utc(2026, 10, 25, 23, 0)),
+            ("a year change", utc(2026, 12, 31, 23, 0)),
+        ];
+        for lead_minutes in LEAD_MINUTES_OPTIONS {
+            let settings = ReminderSettings { lead_minutes, ..ReminderSettings::default() };
+            for (day, midnight) in midnights {
+                let shown = shown_between(&zone, &settings, midnight - 40 * MINUTE, midnight + MINUTE);
+                let reminder = shown.iter().find(|&&(_, start)| start == midnight);
+                let due = midnight - i64::from(lead_minutes) * MINUTE;
+                assert!(
+                    reminder.is_some_and(|&(at, _)| at >= due && at < due + MAX_NAP.as_millis() as i64),
+                    "{day}, lead {lead_minutes} min: {shown:?} for the start at {midnight}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_reminder_whose_event_started_during_a_long_sleep_is_reported_missed_once() {
+        let mut planner = Planner::default();
+        let settings = ReminderSettings::default();
+        assert_eq!(step(&mut planner, &settings, at(10, 20, 0)), Step::Wait(MAX_NAP));
+        assert_eq!(planner.take_missed(), None);
+
+        assert_eq!(step(&mut planner, &settings, at(10, 30, 5)), Step::Wait(MAX_NAP));
+        let missed = planner.take_missed().expect("the 10:30 Invasion went by unannounced");
+        assert_eq!((missed.events, missed.start_ms), (vec![DimensionalInvasion], at(10, 30, 0)));
+        assert_eq!(planner.take_missed(), None);
+
+        assert_eq!(step(&mut planner, &settings, at(10, 30, 35)), Step::Wait(MAX_NAP));
+        assert_eq!(planner.take_missed(), None, "11:00 is still ahead");
+    }
+
+    #[test]
+    fn a_reminder_that_was_shown_is_not_reported_missed() {
+        let mut planner = Planner::default();
+        let settings = ReminderSettings::default();
+        assert_eq!(step(&mut planner, &settings, at(10, 20, 0)), Step::Wait(MAX_NAP));
+        assert!(matches!(step(&mut planner, &settings, at(10, 29, 10)), Step::Show(_)));
+        assert_eq!(step(&mut planner, &settings, at(10, 31, 0)), Step::Wait(MAX_NAP));
+        assert_eq!(planner.take_missed(), None);
     }
 }

@@ -13,8 +13,9 @@ use meter_core::models::combat::CombatSnapshot;
 use gpui::{AsyncApp, Entity};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    PostMessageW, HTCLIENT, MA_ACTIVATE, MA_NOACTIVATE, WM_CHAR, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    PeekMessageW, PostMessageW, HTCLIENT, MA_ACTIVATE, MA_NOACTIVATE, MSG, PM_NOREMOVE, PM_NOYIELD, WM_CHAR,
+    WM_KEYDOWN, WM_KEYFIRST, WM_KEYLAST, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEFIRST, WM_MOUSELAST, WM_MOUSEMOVE,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 
 use crate::capture::{self, shoot_hwnd, MK_LBUTTON, ROW_POINT};
@@ -28,10 +29,12 @@ use crate::meter::{MeterModel, MeterView, OverlaySettings};
 use crate::overlay::{self, off_screen};
 use crate::pvp::{PvpModel, PvpView, StatsSort, Tab};
 use crate::secondary::{self, typing, WindowKind};
+use crate::capture_report;
+use crate::report::ReportRequest;
 
 const VK_RETURN: usize = 0x0D;
 const VK_ESCAPE: usize = 0x1B;
-const TICK: Duration = Duration::from_millis(150);
+pub(crate) const TICK: Duration = Duration::from_millis(150);
 /// The menu's first two entries at 100% scale, in the meter's client area.
 const HISTORY_ITEM_POINT: (i32, i32) = (150, 47);
 const PVP_ITEM_POINT: (i32, i32) = (150, 73);
@@ -52,6 +55,7 @@ pub async fn from_fixtures(
     show_scene(model, fixtures::detail_fight(221.0, 624), cx);
     history_window(model, dir, cx).await?;
     detail_window(model, dir, cx).await?;
+    capture_report::from_fixtures(meter, model, dir, cx).await?;
     pvp_window(model, dir, cx).await?;
     entry_points(meter, model, cx).await?;
     capture_todos::from_fixtures(meter, model, dir, cx).await?;
@@ -204,6 +208,31 @@ async fn history_window(model: &Entity<MeterModel>, dir: &Path, cx: &mut AsyncAp
     handle
         .update(cx, |view, _, cx| view.show_state(None, None, false, cx))
         .map_err(|error| format!("history window gone: {error:#}"))?;
+
+    let saved_earlier = cx.update(|cx| history.read(cx).list.visible()[5].id.clone());
+    handle
+        .update(cx, |view, _, cx| view.show_report_button(Some(newest.clone()), None, cx))
+        .map_err(|error| format!("history window gone: {error:#}"))?;
+    shoot_window(WindowKind::History, dir, "history-11-report-hover", cx).await?;
+    handle
+        .update(cx, |view, _, cx| view.show_report_button(None, Some(saved_earlier.clone()), cx))
+        .map_err(|error| format!("history window gone: {error:#}"))?;
+    shoot_window(WindowKind::History, dir, "history-12-report-focus", cx).await?;
+    handle
+        .update(cx, |view, _, cx| view.show_report_button(None, None, cx))
+        .map_err(|error| format!("history window gone: {error:#}"))?;
+    let record = cx.update(|cx| history.read(cx).list.record(&saved_earlier).cloned()).ok_or("the record is missing")?;
+    handle
+        .update(cx, |_, _, cx| cx.emit(ReportRequest::Saved(record)))
+        .map_err(|error| format!("history window gone: {error:#}"))?;
+    pause(cx, TICK).await;
+    let opened = cx.update(|cx| secondary::window_of(WindowKind::Report, cx).is_some());
+    println!("entry point: a boss record's report button in History: Report window open {opened}");
+    if !opened {
+        return Err("the History report button opened no report".to_string());
+    }
+    shoot_window(WindowKind::Report, dir, "history-13-report-opened", cx).await?;
+    close(WindowKind::Report, cx).await?;
 
     let record = cx.update(|cx| history.read(cx).list.record(&newest).cloned());
     let record = record.ok_or("the newest record is missing")?;
@@ -589,4 +618,27 @@ pub(crate) fn post(hwnd: HWND, message: u32, wparam: usize, lparam: isize) {
     unsafe {
         let _ = PostMessageW(Some(hwnd), message, WPARAM(wparam), LPARAM(lparam));
     }
+}
+
+/// Waits until the keys and clicks posted to `hwnd` have been handled. A
+/// fixed pause is not enough: while GPUI is busy it resumes a timer's task
+/// straight from its runnable queue, before the window's posted messages.
+pub(crate) async fn until_handled(hwnd: HWND, cx: &mut AsyncApp) {
+    const LIMIT: Duration = Duration::from_secs(2);
+    let started = Instant::now();
+    while queued_input(hwnd) {
+        if started.elapsed() > LIMIT {
+            eprintln!("keys or clicks posted to our window are still queued after {} s", LIMIT.as_secs());
+            return;
+        }
+        pause(cx, Duration::from_millis(10)).await;
+    }
+}
+
+fn queued_input(hwnd: HWND) -> bool {
+    let mut message = MSG::default();
+    let mut queued = |first, last| unsafe {
+        PeekMessageW(&mut message, Some(hwnd), first, last, PM_NOREMOVE | PM_NOYIELD).as_bool()
+    };
+    queued(WM_KEYFIRST, WM_KEYLAST) || queued(WM_MOUSEFIRST, WM_MOUSELAST)
 }

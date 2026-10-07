@@ -1,9 +1,10 @@
-//! Diagnostic lines for what the meter decided: which board, which boss, who
-//! "you" are. They go to the core's log, but only while switched on (Settings →
-//! Capture → Log), and a state is written only when it changes, never per
-//! snapshot. The switch is the app's own: the core's debug level also writes a
-//! line for every hit and buff on the packet thread, and stays off. Lines may
-//! hold player names: the log stays on the player's machine.
+//! Diagnostic lines for what a feature decided: which board, which boss, who
+//! "you" are, which reminder is due. They go to the core's log, but only while
+//! switched on (Settings → Capture → Log), and a state is written only when it
+//! changes, never per snapshot. The switch is the app's own: the core's debug
+//! level also writes a line for every hit and buff on the packet thread, and
+//! stays off. Lines may hold player names: the log stays on the player's
+//! machine.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,14 +13,22 @@ use meter_core::logger::AppLogger;
 
 #[derive(Default)]
 pub struct DecisionLog {
+    scope: &'static str,
     logger: Option<Arc<AppLogger>>,
     enabled: bool,
     last: HashMap<&'static str, String>,
 }
 
 impl DecisionLog {
-    pub fn new(logger: Option<Arc<AppLogger>>) -> Self {
-        Self { logger, enabled: false, last: HashMap::new() }
+    /// Lines are written as `[scope] topic: text`.
+    pub fn new(scope: &'static str, logger: Option<Arc<AppLogger>>) -> Self {
+        Self { scope, logger, enabled: false, last: HashMap::new() }
+    }
+
+    /// Gives a log built before the core's logger existed somewhere to write,
+    /// keeping whether it is on.
+    pub fn attach(&mut self, logger: Arc<AppLogger>) {
+        self.logger = Some(logger);
     }
 
     /// Turning it off forgets what was written, so a state that has not
@@ -38,7 +47,7 @@ impl DecisionLog {
     /// Something happened. The text is built only when logging is on.
     pub fn event(&self, topic: &'static str, text: impl FnOnce() -> String) {
         if let Some(logger) = self.logger.as_ref().filter(|_| self.enabled) {
-            logger.info(format!("[meter] {topic}: {}", text()));
+            logger.info(format!("[{}] {topic}: {}", self.scope, text()));
         }
     }
 
@@ -52,7 +61,7 @@ impl DecisionLog {
         if self.last.get(topic) == Some(&state) {
             return;
         }
-        logger.info(format!("[meter] {topic}: {state}"));
+        logger.info(format!("[{}] {topic}: {state}", self.scope));
         self.last.insert(topic, state);
     }
 
@@ -82,7 +91,7 @@ mod tests {
     #[test]
     fn nothing_is_built_or_written_until_enabled() {
         let (logger, lines) = logger("off");
-        let mut log = DecisionLog::new(Some(logger));
+        let mut log = DecisionLog::new("meter", Some(logger));
 
         log.on_change("board", || panic!("state built while off"));
         log.event("focus", || panic!("text built while off"));
@@ -94,7 +103,7 @@ mod tests {
     #[test]
     fn the_cores_per_packet_debug_level_is_not_needed_and_not_turned_on() {
         let (logger, lines) = logger("core");
-        let mut log = DecisionLog::new(Some(Arc::clone(&logger)));
+        let mut log = DecisionLog::new("meter", Some(Arc::clone(&logger)));
         log.set_enabled(true);
 
         log.on_change("board", || "Session".to_string());
@@ -106,7 +115,7 @@ mod tests {
     #[test]
     fn a_state_is_written_once_until_it_changes() {
         let (logger, lines) = logger("change");
-        let mut log = DecisionLog::new(Some(logger));
+        let mut log = DecisionLog::new("meter", Some(logger));
         log.set_enabled(true);
 
         log.on_change("board", || "Session".to_string());
@@ -123,7 +132,7 @@ mod tests {
     #[test]
     fn switching_off_stops_the_lines_and_switching_on_writes_the_state_again() {
         let (logger, lines) = logger("toggle");
-        let mut log = DecisionLog::new(Some(logger));
+        let mut log = DecisionLog::new("meter", Some(logger));
         log.set_enabled(true);
         log.on_change("board", || "Session".to_string());
 

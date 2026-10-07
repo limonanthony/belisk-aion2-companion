@@ -19,9 +19,9 @@ pub const WRITE_INTERVAL: Duration = Duration::from_secs(30);
 /// Above this many HP a mob counts as a possible boss, unless the user rules
 /// otherwise. From global-server observations: bosses 3.6-6.8 million HP
 /// (Enhanced Harcon, Ultimate Berk), trash at most about 0.3 million.
-pub const POSSIBLE_BOSS_HP_THRESHOLD: u32 = 1_000_000;
+pub const POSSIBLE_BOSS_HP_THRESHOLD: u64 = 1_000_000;
 
-pub fn exceeds_possible_boss_hp(hp: u32) -> bool {
+pub fn exceeds_possible_boss_hp(hp: u64) -> bool {
     hp > POSSIBLE_BOSS_HP_THRESHOLD
 }
 

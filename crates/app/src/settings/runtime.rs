@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
+use meter_core::capture::rolling_recorder::ROLLING_FILE_PREFIX;
 use meter_core::engine::meter::{CaptureBackend, DpsMeter};
 use meter_core::preflight;
 use meter_core::region;
@@ -62,6 +63,26 @@ pub struct RecordingProgress {
     pub bytes: u64,
 }
 
+/// Who started a recording, told apart by the file name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecordingOrigin {
+    Manual,
+    UnfamiliarServer,
+    Rolling,
+}
+
+impl RecordingOrigin {
+    fn of_file(name: &str) -> Self {
+        if name.starts_with(AUTOMATIC_PREFIX) {
+            Self::UnfamiliarServer
+        } else if name.starts_with(ROLLING_FILE_PREFIX) {
+            Self::Rolling
+        } else {
+            Self::Manual
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordingItem {
     pub path: PathBuf,
@@ -69,8 +90,7 @@ pub struct RecordingItem {
     pub bytes: u64,
     /// "Today 21:42", as the history lists times.
     pub when: String,
-    /// Started by the meter on a server no profile matches.
-    pub unfamiliar_server: bool,
+    pub origin: RecordingOrigin,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -394,7 +414,7 @@ fn read_recordings(meter: &DpsMeter) -> Vec<RecordingItem> {
         .map(|file| {
             let modified_ms = modified_ms(Path::new(&file.path));
             RecordingItem {
-                unfamiliar_server: file.name.starts_with(AUTOMATIC_PREFIX),
+                origin: RecordingOrigin::of_file(&file.name),
                 when: modified_ms.map_or_else(|| "--".to_string(), record_time),
                 path: PathBuf::from(file.path),
                 name: file.name,

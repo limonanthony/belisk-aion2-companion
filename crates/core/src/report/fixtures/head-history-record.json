@@ -1,0 +1,154 @@
+[
+  {
+    "id": "56499-1791386104885",
+    "targetId": 56499,
+    "totalDamage": 1680000,
+    "targetInfo": {
+      "id": 56499,
+      "targetMobCode": 2980153,
+      "targetName": "Furious Feruk",
+      "isBoss": true,
+      "currentHp": 0,
+      "maxHp": 1680000,
+      "targetStartTime": {
+        "1846": 1791000004.0,
+        "1845": 1791000000.0
+      },
+      "targetLastTime": {
+        "1845": 1791000060.0,
+        "1846": 1791000058.0
+      }
+    },
+    "combatInfos": {
+      "actorInfos": {
+        "1846": {
+          "id": 1846,
+          "actorName": "Saebrin",
+          "actorServerId": "1302",
+          "actorClass": "ELEMENTALIST",
+          "combatPower": 3900,
+          "actorSkillSpec": {
+            "16040000": [
+              2,
+              4
+            ]
+          }
+        },
+        "1845": {
+          "id": 1845,
+          "actorName": "Ysmera",
+          "actorServerId": "1302",
+          "actorClass": "ELEMENTALIST",
+          "combatPower": 3900,
+          "actorSkillSpec": {
+            "16040000": [
+              2,
+              4
+            ]
+          }
+        }
+      },
+      "targetInfos": {
+        "56499": {
+          "id": 56499,
+          "targetMobCode": 2980153,
+          "targetName": "Furious Feruk",
+          "isBoss": true,
+          "currentHp": 0,
+          "maxHp": 1680000,
+          "targetStartTime": {
+            "1846": 1791000004.0,
+            "1845": 1791000000.0
+          },
+          "targetLastTime": {
+            "1845": 1791000060.0,
+            "1846": 1791000058.0
+          }
+        }
+      },
+      "mainActorId": 1845,
+      "mainActorName": "Ysmera",
+      "lastTargetByMainActor": 56499,
+      "lastTarget": 56499,
+      "timeNow": 1791000061.0
+    },
+    "playerSkillStats": {
+      "1846": {
+        "16040000": {
+          "counts": 100,
+          "totalDamage": 800000,
+          "minDamage": 100,
+          "maxDamage": 9000,
+          "specialCounts": {
+            "BACK": 10,
+            "CRITICAL": 40
+          }
+        }
+      },
+      "1845": {
+        "16040000": {
+          "counts": 100,
+          "totalDamage": 800000,
+          "minDamage": 100,
+          "maxDamage": 9000,
+          "specialCounts": {
+            "BACK": 10,
+            "CRITICAL": 40
+          }
+        }
+      }
+    },
+    "playerStats": {
+      "1846": {
+        "actorId": 1846,
+        "actorName": "Saebrin",
+        "actorServerId": "1302",
+        "actorClass": "CLERIC",
+        "combatPower": 3900,
+        "counts": 811,
+        "totalDamage": 680000,
+        "minDamage": 10,
+        "maxDamage": 9000,
+        "specialCounts": {
+          "CRITICAL": 120,
+          "MULTIHIT": 12
+        },
+        "dps": 11333.333333333334,
+        "damageShare": 0.5,
+        "damageContribution": 0.5
+      },
+      "1845": {
+        "actorId": 1845,
+        "actorName": "Ysmera",
+        "actorServerId": "1302",
+        "actorClass": "ELEMENTALIST",
+        "combatPower": 3900,
+        "counts": 811,
+        "totalDamage": 1000000,
+        "minDamage": 10,
+        "maxDamage": 9000,
+        "specialCounts": {
+          "MULTIHIT": 12,
+          "CRITICAL": 364
+        },
+        "dps": 16666.666666666668,
+        "damageShare": 0.5,
+        "damageContribution": 0.5
+      }
+    },
+    "useBuffsByTarget": {
+      "56499": [
+        {
+          "targetId": 56499,
+          "actorId": 1845,
+          "skillCode": 163000008,
+          "coverage": 0.9,
+          "active": false,
+          "lastStartMs": 1,
+          "lastEndMs": 2
+        }
+      ]
+    },
+    "createdAt": 1791386104885
+  }
+]

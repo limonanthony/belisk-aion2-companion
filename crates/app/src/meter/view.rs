@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use gpui::{
     div, img, prelude::*, px, relative, rgb, rgba, size, svg,
     Animation, AnimationExt as _, AnyElement, App, ClipboardItem, Context, Div, ElementId,
-    Entity, EventEmitter, FontFeatures, FontWeight, Global, Hsla, IntoElement, Render, SharedString, Stateful,
+    Entity, EventEmitter, FontFeatures, FontWeight, Global, Hsla, IntoElement, Render, Role, SharedString, Stateful,
     Task, Window, WindowHandle,
 };
 
@@ -29,6 +29,7 @@ use crate::i18n::fl;
 use crate::overlay;
 use crate::secondary;
 use crate::style::{class_fill, track, Scale};
+use crate::report::ReportRequest;
 use crate::todos;
 
 const TEXT: u32 = 0xfff6ecf5;
@@ -128,6 +129,9 @@ pub struct MeterView {
     tip_timer: Option<Task<()>>,
     menu_open: bool,
     menu_close: Option<Task<()>>,
+    /// The pointer is on the summary card's report button, from its enter and
+    /// leave.
+    report_hover: bool,
     drag: overlay::WindowDrag,
     /// Dev captures cannot move a real pointer, so they set it here.
     #[cfg(feature = "probes")]
@@ -145,6 +149,8 @@ pub struct MeterView {
 pub struct LockChanged(pub bool);
 
 impl EventEmitter<LockChanged> for MeterView {}
+
+impl EventEmitter<ReportRequest> for MeterView {}
 
 struct MeterWindow(WindowHandle<MeterView>);
 
@@ -183,6 +189,7 @@ impl MeterView {
             tip_timer: None,
             menu_open: false,
             menu_close: None,
+            report_hover: false,
             drag: overlay::WindowDrag::default(),
             #[cfg(feature = "probes")]
             forced_pointer: None,
@@ -230,6 +237,13 @@ impl MeterView {
         self.menu_open = menu_open;
         self.menu_close = None;
         self.copied = copied.then(|| Task::ready(()));
+        cx.notify();
+    }
+
+    /// For dev captures: the pointer on the summary card's report button.
+    #[cfg(feature = "probes")]
+    pub fn force_report_hover(&mut self, hovered: bool, cx: &mut Context<Self>) {
+        self.report_hover = hovered;
         cx.notify();
     }
 
@@ -488,6 +502,36 @@ impl MeterView {
             .child(icon(if copied { Icon::Check } else { Icon::Copy }, 12., rgba(TEXT), s))
             .child(if copied { fl!("meter-copied") } else { fl!("meter-copy") })
             .on_click(cx.listener(|this, _, _, cx| this.copy_report(cx)))
+    }
+
+    /// "Open the fight report", full width under the skills.
+    fn report_button(&self, target_id: u32, s: Scale, cx: &Context<Self>) -> Stateful<Div> {
+        div()
+            .id("open-report")
+            .debug_selector(|| "open-report".to_string())
+            .role(Role::Button)
+            .aria_label(fl!("meter-summary-open-report"))
+            .mt(s.px(8.))
+            .h(s.px(24.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap(s.px(6.))
+            .rounded(s.px(7.))
+            .bg(rgba(if self.report_hover { HOT } else { SOFT }))
+            .cursor_pointer()
+            .text_color(rgba(TEXT))
+            .text_size(s.px(12.))
+            .font_weight(FontWeight::SEMIBOLD)
+            .child(icon(Icon::FileText, 12., rgba(TEXT), s))
+            .child(fl!("meter-summary-open-report"))
+            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                if this.report_hover != *hovered {
+                    this.report_hover = *hovered;
+                    cx.notify();
+                }
+            }))
+            .on_click(cx.listener(move |_, _, _, cx| cx.emit(ReportRequest::OnMeter { target_id })))
     }
 
     /// Session or Target: header, (gauge), rows, the not-identified line, the
@@ -1039,7 +1083,8 @@ impl MeterView {
             })
             .child(hero)
             .when_some(summary.best.as_ref(), |body, best| body.child(best_chip(best, s)))
-            .when(!summary.skills.is_empty(), |body| body.child(skills));
+            .when(!summary.skills.is_empty(), |body| body.child(skills))
+            .when(!self.locked, |body| body.child(self.report_button(summary.target_id, s, cx)));
 
         let foot = footer(s)
             .mt(s.px(2.))
@@ -1148,6 +1193,9 @@ impl Render for MeterView {
 
         let summary = model.summary();
         let collapsed = capsule && !self.expanded && model.unavailable().is_none();
+        if summary.is_none() {
+            self.report_hover = false;
+        }
         if summary.is_some() || collapsed {
             self.close_menu();
         }
@@ -1638,4 +1686,91 @@ fn system_figures(model: &MeterModel, s: Scale) -> Vec<Div> {
     figures.extend(system.cpu.clone().map(|cpu| div().flex_none().child(cpu)));
     figures.extend(system.memory.clone().map(|memory| div().flex_none().child(memory)));
     figures
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gpui::{AppContext as _, Modifiers, TestAppContext, VisualTestContext};
+    use meter_core::events::MeterEvent;
+    use meter_core::models::combat::CombatSnapshot;
+
+    use super::*;
+    use crate::sample;
+
+    struct Card<'a> {
+        view: Entity<MeterView>,
+        requested: Rc<RefCell<Vec<u32>>>,
+        cx: &'a mut VisualTestContext,
+    }
+
+    /// The meter after `snapshots`, a moment later, with what its report
+    /// button asks for.
+    fn card(cx: &mut TestAppContext, snapshots: Vec<(CombatSnapshot, Instant)>) -> Card<'_> {
+        let model = cx.new(|_| {
+            let mut model = MeterModel::new(OverlaySettings::default(), None);
+            for (snapshot, at) in snapshots {
+                model.apply(MeterEvent::DpsSnapshot(snapshot), at);
+            }
+            model.advance(Instant::now());
+            model
+        });
+        let (view, cx) = cx.add_window_view(|_, cx| MeterView::new(model, cx));
+        let requested = Rc::new(RefCell::new(Vec::new()));
+        let log = requested.clone();
+        cx.update(|_, cx| {
+            cx.subscribe(&view, move |_, request: &ReportRequest, _| {
+                if let ReportRequest::OnMeter { target_id } = request {
+                    log.borrow_mut().push(*target_id);
+                }
+            })
+            .detach()
+        });
+        Card { view, requested, cx }
+    }
+
+    fn killed() -> Vec<(CombatSnapshot, Instant)> {
+        let now = Instant::now();
+        vec![(sample::boss_fight(247.0, 40), now), (sample::boss_fight(248.0, 0), now)]
+    }
+
+    #[gpui::test]
+    fn the_summary_cards_button_asks_for_the_report_of_its_boss(cx: &mut TestAppContext) {
+        let card = card(cx, killed());
+        let button = card.cx.debug_bounds("open-report").expect("the button under the skills");
+
+        card.cx.simulate_click(button.center(), Modifiers::none());
+
+        assert_eq!(*card.requested.borrow(), vec![sample::BOSS_ID]);
+    }
+
+    #[gpui::test]
+    fn the_fight_ended_card_offers_the_report_too(cx: &mut TestAppContext) {
+        let quiet = Instant::now() - Duration::from_secs(125);
+        let card = card(cx, vec![(sample::boss_fight(177.0, 183), quiet)]);
+        let kind = card.cx.update(|_, cx| card.view.read(cx).model.read(cx).summary().map(|summary| summary.kind));
+        assert_eq!(kind, Some(SummaryKind::Provisional));
+
+        let button = card.cx.debug_bounds("open-report").expect("the button on the provisional card");
+        card.cx.simulate_click(button.center(), Modifiers::none());
+
+        assert_eq!(*card.requested.borrow(), vec![sample::BOSS_ID]);
+    }
+
+    #[gpui::test]
+    fn a_locked_summary_card_has_no_report_button(cx: &mut TestAppContext) {
+        let card = card(cx, killed());
+        let view = card.view.clone();
+
+        card.cx.update(|_, cx| {
+            view.update(cx, |view, cx| {
+                view.locked = true;
+                cx.notify();
+            })
+        });
+
+        assert!(card.cx.debug_bounds("open-report").is_none());
+    }
 }

@@ -20,6 +20,7 @@ use crate::capture::recorder::{
     list_recordings, prune_recordings, replay_recording, PacketRecorder, RecordingFile,
     RecordingStatus, ReplayPacer,
 };
+use crate::capture::rolling_recorder::RollingRecorder;
 use crate::capture::windivert_capturer::{check_windivert_status, WinDivertCapturer};
 use crate::config::{CaptureBackendPriority, DpsMeterConfig, SharedDpsMeterConfig};
 use crate::engine::calculator::DpsCalculator;
@@ -29,6 +30,7 @@ use crate::models::combat::{CombatSnapshot, PvpCombatStatsRow, PvpWatchInfoRespo
 use crate::models::diagnostics::{DpsMeterState, MemorySnapshot};
 use crate::models::session::SessionSummary;
 use crate::mobs::catalog::{MobCatalog, MobStorage};
+use crate::report::fight_report::FightReport;
 use crate::storage::data_storage::DataStorage;
 use crate::events::{EventSink, MeterEvent};
 use crate::logger::AppLogger;
@@ -90,6 +92,7 @@ pub struct DpsMeter {
     ping_tracker: Arc<PingTracker>,
     packet_channel: Channel<CapturedPacket>,
     recorder: Arc<PacketRecorder>,
+    rolling_recorder: Arc<RollingRecorder>,
     recordings_dir: PathBuf,
     replaying: Arc<AtomicBool>,
     windivert_capturer: WinDivertCapturer,
@@ -178,7 +181,9 @@ impl FightCloser {
         if snapshot.total_damage == 0 {
             return;
         }
-        let saved = self.history.save_and_clear(snapshot);
+        let saved = self.history.save_and_clear(snapshot, |target, dealers| {
+            self.calculator.fight_ledger(target, dealers)
+        });
         self.events.emit(MeterEvent::HistoryUpdated);
         if self.personal_bests.record_and_save(&saved) {
             self.events.emit(MeterEvent::PersonalBestsUpdated);
@@ -241,6 +246,11 @@ impl DpsMeter {
         let ping_tracker = Arc::new(PingTracker::new());
         let packet_channel = Channel::new(PACKET_CHANNEL_CAPACITY);
         let recorder = Arc::new(PacketRecorder::new());
+        let replaying = Arc::new(AtomicBool::new(false));
+        let rolling_recorder = Arc::new(RollingRecorder::new(
+            Arc::clone(&logger),
+            Arc::clone(&replaying),
+        ));
         let recordings_dir = app_data_dir
             .clone()
             .unwrap_or_else(|| std::env::temp_dir().join("aether"))
@@ -251,6 +261,7 @@ impl DpsMeter {
         let dispatcher = CaptureDispatcher::new(
             packet_channel.clone(),
             Arc::clone(&recorder),
+            Arc::clone(&rolling_recorder),
             Arc::clone(&data_storage),
             Arc::clone(&logger),
             Arc::clone(&ping_tracker),
@@ -303,8 +314,9 @@ impl DpsMeter {
             ping_tracker,
             packet_channel,
             recorder,
+            rolling_recorder,
             recordings_dir,
-            replaying: Arc::new(AtomicBool::new(false)),
+            replaying,
             windivert_capturer,
             pcap_capturer,
             active_capture_backend: Arc::new(Mutex::new(None)),
@@ -357,6 +369,7 @@ impl DpsMeter {
         let config = config.normalized();
         *self.config.write().unwrap() = config.clone();
         crate::region::set_configured(config.region);
+        self.sync_rolling_recording();
         self.logger.info(format!(
             "region profile applied: {}",
             config.region.label()
@@ -422,6 +435,7 @@ impl DpsMeter {
             *self.active_capture_backend.lock().unwrap() = Some(backend);
             self.logger
                 .info(format!("capture backend selected: {backend:?}"));
+            self.sync_rolling_recording();
         }
         self.start_snapshot_loop();
         self.start_memory_snapshot_loop();
@@ -470,6 +484,17 @@ impl DpsMeter {
         }
     }
 
+    /// Rolling recording runs while the meter captures live and the setting is
+    /// on; a replay feeds the same pipeline but is not the player's session.
+    fn sync_rolling_recording(&self) {
+        let capturing = self.active_capture_backend.lock().unwrap().is_some();
+        if capturing && self.config.read().unwrap().record_every_session {
+            self.rolling_recorder.enable(self.recordings_dir.clone());
+        } else {
+            self.rolling_recorder.disable();
+        }
+    }
+
     pub fn stop_dps_meter(&self) {
         if !self.running.swap(false, Ordering::SeqCst) {
             self.emit_running_status();
@@ -482,6 +507,7 @@ impl DpsMeter {
         self.dispatcher.stop();
         self.auto_record.lock().unwrap().active_since = None;
         let _ = self.recorder.stop();
+        self.sync_rolling_recording();
         // A fight still on the meter is kept, not thrown away: stopping the
         // meter or quitting right after a boss used to lose it.
         self.fight.save_fight_to_history();
@@ -592,6 +618,29 @@ impl DpsMeter {
 
     pub fn get_dps_snapshot(&self, target_damage_threshold: u64) -> Option<CombatSnapshot> {
         self.fight.snapshot(target_damage_threshold)
+    }
+
+    /// The end-of-fight report of the boss fight against `target_id`: from the
+    /// fight still on the meter, or else from the newest saved record of that
+    /// target. `None` when the target is not a boss somebody has hit.
+    pub fn fight_report(&self, target_id: u32) -> Option<FightReport> {
+        if let Some(snapshot) = self.fight.snapshot(0) {
+            if let Some(target) = snapshot.combat_infos.target_infos.get(&target_id) {
+                let dealers: Vec<u32> = snapshot
+                    .by_target_player_stats
+                    .get(&target_id)
+                    .map(|stats| stats.keys().copied().collect())
+                    .unwrap_or_default();
+                let ledger = self.calculator.fight_ledger(target, &dealers);
+                return FightReport::from_snapshot(&snapshot, target_id, ledger.as_ref());
+            }
+        }
+        self.history
+            .get_records()
+            .iter()
+            .rev()
+            .find(|record| record.target_id == target_id)
+            .and_then(FightReport::from_record)
     }
 
     pub fn get_pvp_watch_info(&self, names: &[String]) -> PvpWatchInfoResponse {

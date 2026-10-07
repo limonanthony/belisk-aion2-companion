@@ -12,16 +12,21 @@ use gpui::{
     WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
     DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
     DWMWINDOWATTRIBUTE,
 };
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONULL,
+    MONITOR_DEFAULTTOPRIMARY,
+};
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetWindowLongPtrW, GetWindowRect, SetLayeredWindowAttributes,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE, GWL_STYLE, HWND_TOPMOST,
+    GetClientRect, GetWindow, GetWindowLongPtrW, GetWindowRect, SetLayeredWindowAttributes,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT,
+    HWND_NOTOPMOST, HWND_TOPMOST,
     LWA_ALPHA, MA_NOACTIVATE, SPI_GETCLIENTAREAANIMATION, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
     SWP_NOSIZE, SWP_NOZORDER, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
     WINDOW_STYLE, WM_MOUSEACTIVATE, WM_NCDESTROY, WS_CAPTION, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT,
@@ -139,6 +144,55 @@ pub fn show_without_activating(hwnd: HWND) {
 pub fn raise_without_activating(hwnd: HWND) {
     unsafe {
         let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+}
+
+/// Takes the window out of the topmost band, without activating it, and puts
+/// it behind `went_to`, the window the user went to. Leaving the band puts it
+/// above every normal window, the one just activated included when that one
+/// rose first, so it then swaps places with `went_to` only when `went_to` is
+/// right below: a topmost window is not, nor is the desktop, which stays at
+/// the bottom, and the window must not sink under either.
+pub fn lower_behind(hwnd: HWND, went_to: Option<HWND>) {
+    let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+    unsafe {
+        let _ = SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, flags);
+        let next = GetWindow(hwnd, GW_HWNDNEXT);
+        if let Some(went_to) = went_to.filter(|&went_to| next.is_ok_and(|next| next == went_to)) {
+            let _ = SetWindowPos(hwnd, Some(went_to), 0, 0, 0, 0, flags);
+        }
+    }
+}
+
+/// Makes the overlay visible, on top, and on a monitor, for a later launch
+/// asking the running meter to show itself. It does not take focus: the
+/// overlay is non-activating by design, and pulling focus out of the game
+/// would be worse than a meter that stays where it was.
+pub fn bring_forward(hwnd: HWND) {
+    show_without_activating(hwnd);
+    if unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL) }.is_invalid() {
+        move_onto_primary_monitor(hwnd);
+    }
+    raise_without_activating(hwnd);
+}
+
+fn move_onto_primary_monitor(hwnd: HWND) {
+    let mut monitor = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+    unsafe {
+        let primary = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+        if !GetMonitorInfoW(primary, &mut monitor).as_bool() {
+            return;
+        }
+        let margin = OVERLAY_MARGIN as i32;
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            monitor.rcWork.left + margin,
+            monitor.rcWork.top + margin,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
     }
 }
 

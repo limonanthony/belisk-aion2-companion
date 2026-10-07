@@ -94,9 +94,13 @@ enum Scene {
     SameClassSession,
     SameClassBoss,
     Unidentified,
+    /// The boss fight with players the game has not named.
+    BossUnknownPlayers,
     Boss,
     LongBoss,
     Final,
+    /// The kill before the game has named you: the summary is the party's.
+    FinalParty,
     Provisional,
 }
 
@@ -105,6 +109,7 @@ struct Fixture {
     settings: OverlaySettings,
     scene: Scene,
     best: Option<f64>,
+    hide_unknown_players: bool,
     pointer: bool,
     locked: bool,
     pin: Option<Board>,
@@ -113,6 +118,8 @@ struct Fixture {
     copied: bool,
     correct: Option<BossChoice>,
     unavailable: Option<&'static str>,
+    /// The pointer on the summary card's report button.
+    report_hover: bool,
 }
 
 /// Every state of docs/gpui-mockups/approved/meter.html, in its order, then
@@ -130,6 +137,7 @@ async fn capture_fixtures(
         settings: full.clone(),
         scene,
         best: None,
+        hide_unknown_players: false,
         pointer: false,
         locked: false,
         pin: None,
@@ -138,6 +146,7 @@ async fn capture_fixtures(
         copied: false,
         correct: None,
         unavailable: None,
+        report_hover: false,
     };
     let ahead = Some(46_265.0);
     let behind = Some(51_740.0);
@@ -204,6 +213,11 @@ async fn capture_fixtures(
         fixture("shades-session", Scene::SameClassSession),
         Fixture { best: ahead, ..fixture("shades-target", Scene::SameClassBoss) },
         Fixture { settings: capsule.clone(), ..fixture("shades-capsule", Scene::SameClassSession) },
+        fixture("unknown-players-shown", Scene::BossUnknownPlayers),
+        Fixture { hide_unknown_players: true, ..fixture("unknown-players-hidden", Scene::BossUnknownPlayers) },
+        Fixture { best: Some(45_440.0), report_hover: true, ..fixture("summary-final-hover", Scene::Final) },
+        fixture("summary-party", Scene::FinalParty),
+        Fixture { best: Some(45_440.0), locked: true, ..fixture("summary-locked", Scene::Final) },
     ];
 
     for fixture in &fixtures {
@@ -515,6 +529,7 @@ fn show_fixture(
         model.update(cx, |model, cx| {
             *model = MeterModel::new(fixture.settings.clone(), None);
             model.use_memory_mobs();
+            model.set_hide_unknown_players(fixture.hide_unknown_players);
             if let Some(best) = fixture.best {
                 model.seed_personal_best(sample::YOU, sample::BOSS_MOB, best);
             }
@@ -534,12 +549,21 @@ fn show_fixture(
                     (fixtures::same_classes(sample::boss_fight(221.0, 624)), now),
                 ],
                 Scene::Unidentified => vec![(fixtures::unidentified(), now)],
+                Scene::BossUnknownPlayers => vec![(fixtures::boss_with_unknown_players(), now)],
                 Scene::Boss => vec![(sample::boss_fight(221.0, 624), now)],
                 Scene::LongBoss => vec![(fixtures::long_boss_fight(221.0, 624), now)],
                 Scene::Final => vec![
                     (sample::boss_fight(247.0, 40), now),
                     (sample::boss_fight(248.0, 0), now),
                 ],
+                Scene::FinalParty => {
+                    let unnamed = |mut snapshot: meter_core::models::combat::CombatSnapshot| {
+                        snapshot.combat_infos.main_actor_id = None;
+                        snapshot.combat_infos.main_actor_name = None;
+                        snapshot
+                    };
+                    vec![(unnamed(sample::boss_fight(247.0, 40)), now), (unnamed(sample::boss_fight(248.0, 0)), now)]
+                }
                 Scene::Provisional => vec![(sample::boss_fight(177.0, 183), quiet)],
             };
             for (snapshot, at) in snapshots {
@@ -557,7 +581,10 @@ fn show_fixture(
     });
     set_view(window, Some(fixture.pointer), fixture.locked, cx)?;
     window
-        .update(cx, |view, _, cx| view.force_hover(fixture.hover, fixture.menu, fixture.copied, cx))
+        .update(cx, |view, _, cx| {
+            view.force_hover(fixture.hover, fixture.menu, fixture.copied, cx);
+            view.force_report_hover(fixture.report_hover, cx);
+        })
         .map_err(|error| format!("overlay window gone: {error:#}"))
 }
 

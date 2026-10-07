@@ -191,6 +191,7 @@ mod tests {
         settings.behaviour.end_fight_after_secs = 0;
         settings.capture.backend_priority = CaptureBackendPriority::WinDivertFirst;
         settings.capture.collect_mob_data = true;
+        settings.capture.record_every_session = true;
 
         save(&dir.file(), &settings).unwrap();
 

@@ -13,7 +13,7 @@ use meter_core::storage::data_storage::MainActorDetectedPayload;
 use gpui::{Context, SharedString, Task};
 
 use super::board::{Board, BoardChoice};
-use super::decisions::DecisionLog;
+use crate::decision_log::DecisionLog;
 use super::fight::{FightTracker, TargetFacts};
 use super::focus::{BossFocus, Change, Involvement, Release, Released, SWITCH_AFTER};
 use crate::format;
@@ -125,6 +125,8 @@ struct BestEntry {
 /// in on the UI thread; views observe the entity that owns this.
 pub struct MeterModel {
     pub settings: OverlaySettings,
+    /// Settings → Behaviour → "Hide unknown players", from the settings layer.
+    hide_unknown_players: bool,
     meter: Option<Arc<DpsMeter>>,
     /// Where boss corrections live: the meter's catalog.
     mobs: Option<Arc<MobCatalog>>,
@@ -157,11 +159,12 @@ impl MeterModel {
     pub fn new(settings: OverlaySettings, meter: Option<Arc<DpsMeter>>) -> Self {
         Self {
             tracker: FightTracker::new(settings.show_fight_summary),
+            hide_unknown_players: false,
             choice: BoardChoice::default(),
             shades: ShadeBook::default(),
             focus: BossFocus::default(),
             coexist_after_kill: None,
-            decisions: DecisionLog::new(meter.as_ref().map(|meter| Arc::clone(meter.logger()))),
+            decisions: DecisionLog::new("meter", meter.as_ref().map(|meter| Arc::clone(meter.logger()))),
             session: None,
             header: None,
             settings,
@@ -208,6 +211,22 @@ impl MeterModel {
             self.rebuild_live();
             self.rebuild_summary();
         }
+    }
+
+    /// Takes the "Hide unknown players" switch in and redraws what was
+    /// prepared without it, when it changed.
+    pub fn set_hide_unknown_players(&mut self, hide: bool) {
+        if self.hide_unknown_players == hide {
+            return;
+        }
+        self.hide_unknown_players = hide;
+        self.rebuild_live();
+        self.rebuild_summary();
+    }
+
+    /// Whether Settings → Behaviour hides players the game never named.
+    pub fn hide_unknown_players(&self) -> bool {
+        self.hide_unknown_players
     }
 
     /// Words prepared in the old language ("You", the copied report) are
@@ -456,7 +475,7 @@ impl MeterModel {
             Some(summary) => Some(summary.report.clone()),
             None => {
                 let snapshot = self.snapshot.as_ref()?;
-                live::battle_report(snapshot, self.board_target(snapshot)?)
+                live::battle_report(snapshot, self.board_target(snapshot)?, self.hide_unknown_players)
             }
         }
     }
@@ -715,7 +734,7 @@ impl MeterModel {
             .map(|target| self.settings.display_name(&live::target_name(target)).into());
         let (best, meter) = (&mut self.best, self.meter.as_deref());
         self.live = target_id.and_then(|id| {
-            LiveBoard::build(snapshot, id, &self.settings, &mut self.shades, |character, mob| {
+            LiveBoard::build(snapshot, id, &self.settings, self.hide_unknown_players, &mut self.shades, |character, mob| {
                 personal_best(best, meter, character, mob)
             })
         });
@@ -731,7 +750,7 @@ impl MeterModel {
         let Some(snapshot) = &self.snapshot else {
             return;
         };
-        if let Some(view) = target_id.and_then(|id| live::target_view(snapshot, id)) {
+        if let Some(view) = target_id.and_then(|id| live::target_view(snapshot, id, self.hide_unknown_players)) {
             let found = live::find_you(
                 snapshot,
                 view.players.iter().map(|player| (player.actor_id, player.actor_name.as_str())),
@@ -761,6 +780,7 @@ impl MeterModel {
             shown.target_id,
             shown.kind,
             &self.settings,
+            self.hide_unknown_players,
             |character, mob| personal_best(best, meter, character, mob),
         );
         if let Some(summary) = &self.summary {
@@ -885,6 +905,7 @@ mod tests {
     use crate::game_data::PlayerClass;
     use crate::i18n::fl;
     use crate::meter::live::Lead;
+    use crate::meter::settings::PctMode;
     use crate::meter::fight::SummaryKind;
 
     fn player(id: u32, name: &str, damage: u64, dps: f64) -> PlayerOverviewStat {
@@ -980,7 +1001,7 @@ mod tests {
             .chain(std::iter::once(player(2, "You", 10, 1.0)))
             .collect();
         let crowded = indexed(crowded);
-        let live = LiveBoard::build(&crowded, 7, &OverlaySettings::default(), &mut ShadeBook::default(), |_, _| None).unwrap();
+        let live = LiveBoard::build(&crowded, 7, &OverlaySettings::default(), false, &mut ShadeBook::default(), |_, _| None).unwrap();
         assert_eq!(live.rows.len(), 10);
         let last = live.rows.last().unwrap();
         assert!(last.is_you);
@@ -991,11 +1012,11 @@ mod tests {
     #[test]
     fn pace_needs_ten_seconds_of_a_boss_fight_and_a_best() {
         let settings = OverlaySettings::default();
-        let early = LiveBoard::build(&snapshot(500, Some(9), 9.0), 7, &settings, &mut ShadeBook::default(), |_, _| Some(40.0)).unwrap();
+        let early = LiveBoard::build(&snapshot(500, Some(9), 9.0), 7, &settings, false, &mut ShadeBook::default(), |_, _| Some(40.0)).unwrap();
         assert!(early.pace.is_none());
 
         let mut asked = None;
-        let live = LiveBoard::build(&snapshot(500, Some(9), 12.0), 7, &settings, &mut ShadeBook::default(), |character, mob| {
+        let live = LiveBoard::build(&snapshot(500, Some(9), 12.0), 7, &settings, false, &mut ShadeBook::default(), |character, mob| {
             asked = Some((character.to_string(), mob));
             Some(40.0)
         })
@@ -1006,7 +1027,7 @@ mod tests {
         assert_eq!(pace.figure.as_ref(), "+25.0%");
         assert_eq!(pace.versus_best.as_ref(), fl!("meter-pace-versus-best", pace = "+25.0%"));
 
-        let unknown = LiveBoard::build(&snapshot(500, Some(9), 12.0), 7, &settings, &mut ShadeBook::default(), |_, _| None).unwrap();
+        let unknown = LiveBoard::build(&snapshot(500, Some(9), 12.0), 7, &settings, false, &mut ShadeBook::default(), |_, _| None).unwrap();
         assert!(unknown.pace.is_none());
     }
 
@@ -1577,6 +1598,114 @@ mod tests {
         model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &mobs, Some((2, "You")))), at(start, 50));
         assert_eq!(model.active_board(), Board::Session, "a corpse is not engaged again");
         assert_eq!(model.summary().map(|summary| summary.boss.as_ref()), Some("Boss"));
+    }
+
+    fn crowd_with_strangers(you: &str) -> Vec<PlayerOverviewStat> {
+        vec![
+            player(4, "Puller", 9_000, 90.0),
+            player(5, "", 6_000, 60.0),
+            player(2, you, 4_000, 40.0),
+            player(6, "", 1_000, 10.0),
+        ]
+    }
+
+    fn target_rows(model: &MeterModel) -> Vec<(Option<String>, String)> {
+        model
+            .live()
+            .unwrap()
+            .rows
+            .iter()
+            .map(|row| (row.name.as_ref().map(|name| name.to_string()), row.rank.to_string()))
+            .collect()
+    }
+
+    /// Boss focused while an add was hit last, the boss the last target, and a
+    /// meter that counts bosses only (no add in the snapshot at all).
+    fn strangers_scenarios(you: &str) -> Vec<(&'static str, Vec<Mob>, u32)> {
+        let boss = || mob(BOSS_ID, true, 800, 40.0, crowd_with_strangers(you));
+        vec![
+            ("a boss that is not the last target", vec![boss(), mob(TRASH_ID, false, 100, 9.0, trash_party())], TRASH_ID),
+            ("the last target", vec![boss(), mob(TRASH_ID, false, 100, 9.0, trash_party())], BOSS_ID),
+            ("a bosses-only count", vec![boss()], BOSS_ID),
+        ]
+    }
+
+    fn settle_on_boss(model: &mut MeterModel, mobs: &[Mob], current: u32, you: &str, start: Instant) {
+        let engage = [mob(BOSS_ID, true, 800, 40.0, crowd_with_strangers(you))];
+        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &engage, Some((2, you)))), start);
+        model.apply(MeterEvent::DpsSnapshot(world(current, mobs, Some((2, you)))), at(start, 1));
+        assert_eq!(model.focused_boss(), Some(BOSS_ID));
+    }
+
+    #[test]
+    fn hiding_unknown_players_leaves_no_unnamed_row_on_the_target_board() {
+        for pct_mode in [PctMode::Contribution, PctMode::Share] {
+            for (scenario, mobs, current) in strangers_scenarios("You") {
+                let settings = OverlaySettings { pct_mode, ..OverlaySettings::default() };
+                let mut model = MeterModel::new(settings, None);
+                model.set_hide_unknown_players(true);
+                settle_on_boss(&mut model, &mobs, current, "You", Instant::now());
+
+                assert_eq!(
+                    target_rows(&model),
+                    vec![(Some("Puller".to_string()), "1".to_string()), (Some("You".to_string()), "2".to_string())],
+                    "{scenario}, {pct_mode:?}: only named players, ranked one after the other"
+                );
+                assert_eq!(model.live().unwrap().party_damage.as_ref(), crate::format::damage(20_000), "{scenario}: hidden damage still counts");
+                assert!(model.report().unwrap().lines().all(|line| !line.contains("ID:")), "{scenario}: the copied report");
+            }
+        }
+    }
+
+    #[test]
+    fn unnamed_players_stay_on_the_target_board_while_the_switch_is_off() {
+        for (scenario, mobs, current) in strangers_scenarios("You") {
+            let mut model = MeterModel::new(OverlaySettings::default(), None);
+            settle_on_boss(&mut model, &mobs, current, "You", Instant::now());
+
+            let rows = target_rows(&model);
+            assert_eq!(rows.len(), 4, "{scenario}");
+            assert_eq!(rows[1], (Some("ID:5".to_string()), "2".to_string()), "{scenario}");
+            assert!(model.report().unwrap().contains("ID:5"), "{scenario}");
+        }
+    }
+
+    #[test]
+    fn your_unnamed_row_stays_on_the_target_board_with_unknown_players_hidden() {
+        for (scenario, mobs, current) in strangers_scenarios("") {
+            let mut model = MeterModel::new(OverlaySettings::default(), None);
+            model.set_hide_unknown_players(true);
+            settle_on_boss(&mut model, &mobs, current, "", Instant::now());
+
+            assert_eq!(
+                target_rows(&model),
+                vec![(Some("Puller".to_string()), "1".to_string()), (Some("You".to_string()), "2".to_string())],
+                "{scenario}: strangers go, your unnamed row reads You"
+            );
+            assert!(model.live().unwrap().rows[1].is_you);
+        }
+    }
+
+    #[test]
+    fn flipping_the_switch_redraws_the_target_board_and_the_summary() {
+        let start = Instant::now();
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let alive = [mob(BOSS_ID, true, 800, 40.0, crowd_with_strangers("You"))];
+        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &alive, Some((2, "You")))), start);
+        let dead = [mob(BOSS_ID, true, 0, 45.0, crowd_with_strangers("You"))];
+        model.apply(MeterEvent::DpsSnapshot(world(BOSS_ID, &dead, Some((2, "You")))), at(start, 45));
+        assert_eq!(model.live().unwrap().rows.len(), 4);
+        assert_eq!(model.summary().unwrap().rank.as_deref(), Some("3/4"));
+
+        model.set_hide_unknown_players(true);
+
+        assert_eq!(model.live().unwrap().rows.len(), 2);
+        let summary = model.summary().unwrap();
+        assert_eq!(summary.rank.as_deref(), Some("2/2"));
+        assert!(!summary.report.contains("ID:"));
+
+        model.set_hide_unknown_players(false);
+        assert_eq!(model.live().unwrap().rows.len(), 4);
     }
 
     /// Sets "now" and how long ago you last hit each given target.

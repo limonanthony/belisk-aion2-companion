@@ -10,5 +10,6 @@ pub mod models;
 pub mod personal_best;
 pub mod preflight;
 pub mod region;
+pub mod report;
 pub mod skill_names;
 pub mod storage;

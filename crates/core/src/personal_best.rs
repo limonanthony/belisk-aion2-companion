@@ -231,6 +231,7 @@ mod tests {
             player_skill_stats: HashMap::new(),
             player_stats,
             use_buffs_by_target: HashMap::new(),
+            ledger: None,
             created_at: 1,
         }
     }

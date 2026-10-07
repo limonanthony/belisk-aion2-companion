@@ -642,4 +642,43 @@ mod tests {
         wait(cx, FADE);
         assert!(!is_open(cx));
     }
+
+    #[gpui::test]
+    fn a_card_that_timed_out_is_gone_and_released_so_the_next_reminder_opens_a_visible_one(cx: &mut TestAppContext) {
+        let (first, handle) = {
+            let (view, cx) = open(cx, request(vec![EventId::ShugoFestival], 0));
+            let first = view.downgrade();
+            let handle = cx.windows()[0];
+            drop(view);
+            wait(cx, SHOWN_FOR);
+            wait(cx, FADE);
+            assert!(!is_open(cx), "30 s and the fade are over");
+            assert!(cx.update_window(handle, |_, _, _| ()).is_err(), "nothing can still be shown into it");
+            (first, handle)
+        };
+        assert!(first.upgrade().is_none(), "the view is released, so the registry's release hook has run");
+        let _ = handle;
+
+        cx.executor().advance_clock(Duration::from_secs(30 * 60));
+        cx.run_until_parked();
+        let (view, cx) = open(cx, request(vec![EventId::DimensionalInvasion], 0));
+        assert!(is_open(cx));
+        assert!(cx.debug_bounds("reminder").is_some(), "the new card is drawn");
+        assert_eq!(names(&view, cx), vec!["Dimensional Invasion"]);
+    }
+
+    #[gpui::test]
+    fn a_reminder_arriving_while_the_card_fades_out_keeps_the_window_and_the_new_card(cx: &mut TestAppContext) {
+        let (view, cx) = open(cx, request(vec![EventId::ShugoFestival], 16));
+        let card = cx.debug_bounds("reminder").expect("the card is drawn");
+        cx.simulate_click(card.center(), gpui::Modifiers::none());
+        assert!(is_open(cx), "fading out");
+
+        let newer = request(vec![EventId::DimensionalInvasion], 16);
+        cx.update(|_, cx| view.update(cx, |view, cx| view.show(&newer, cx)));
+        wait(cx, FADE);
+        wait(cx, FADE);
+        assert!(is_open(cx), "the fade out was cancelled");
+        assert_eq!(names(&view, cx), vec!["Dimensional Invasion"]);
+    }
 }

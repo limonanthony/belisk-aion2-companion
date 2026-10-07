@@ -5,6 +5,8 @@ mod capture;
 #[cfg(feature = "probes")]
 mod capture_reminders;
 #[cfg(feature = "probes")]
+mod capture_report;
+#[cfg(feature = "probes")]
 mod capture_secondary;
 #[cfg(feature = "probes")]
 mod capture_settings;
@@ -12,6 +14,7 @@ mod capture_settings;
 mod capture_todos;
 mod cli;
 mod clock;
+mod decision_log;
 mod detail;
 #[cfg(feature = "probes")]
 mod fixtures;
@@ -32,9 +35,11 @@ mod pvp;
 mod quit;
 mod reminders;
 mod replay;
+mod report;
 mod sample;
 mod secondary;
 mod settings;
+mod single_instance;
 mod style;
 mod todos;
 
@@ -67,10 +72,33 @@ fn run_app() -> u32 {
         }
     };
 
+    // Decided before anything of the meter starts: no window, settings, log
+    // or capture is touched by a launch that only hands over to the running one.
+    let instance = if args.wants_live() {
+        match single_instance::claim() {
+            Ok(single_instance::Claim::First(running)) => Some(running),
+            Ok(single_instance::Claim::AlreadyRunning(running)) => {
+                return match running.ask_to_come_forward() {
+                    Ok(()) => 0,
+                    Err(error) => {
+                        eprintln!("the meter is already running: {error}");
+                        1
+                    }
+                };
+            }
+            Err(error) => {
+                eprintln!("{error}; a second meter may run beside this one");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     gpui_platform::application()
         .with_assets(assets::Assets)
         .run(move |cx| {
-            if let Err(error) = start(args, cx) {
+            if let Err(error) = start(args, instance, cx) {
                 eprintln!("{error}");
                 FAILED.store(true, Ordering::SeqCst);
                 cx.quit();
@@ -84,7 +112,7 @@ fn exit_code() -> u32 {
     u32::from(FAILED.load(Ordering::SeqCst))
 }
 
-fn start(args: Args, cx: &mut App) -> Result<(), String> {
+fn start(args: Args, instance: Option<single_instance::Running>, cx: &mut App) -> Result<(), String> {
     quit::install_deadline(cx);
     quit::install_exit(cx, exit_code);
     fonts::register(cx)?;
@@ -133,6 +161,9 @@ fn start(args: Args, cx: &mut App) -> Result<(), String> {
     let settings = cx.new(|_| settings);
     settings::install(&settings, cx);
     reminders::install(&settings, args.wants_live(), cx);
+    if let Some(meter) = &meter {
+        reminders::log_to(Arc::clone(meter.logger()), cx);
+    }
     todos::install(&settings, args.wants_live(), cx);
     cx.on_app_quit({
         let settings = settings.clone();
@@ -157,7 +188,10 @@ fn start(args: Args, cx: &mut App) -> Result<(), String> {
     let foreground_before_open = probe::foreground_window();
     let window = overlay::open(cx, model.clone(), placement)?;
     meter::install_window(window, cx);
-    secondary::init(&window, placement, cx)?;
+    if let Some(instance) = instance {
+        instance.serve(cx).detach();
+    }
+    secondary::init(&window, &model, placement, cx)?;
 
     #[cfg(feature = "probes")]
     if let Some(dir) = args.capture.clone() {

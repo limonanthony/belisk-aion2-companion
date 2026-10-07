@@ -18,7 +18,8 @@ use windows::Win32::UI::WindowsAndMessaging::{WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_
 use crate::capture::{self, MK_LBUTTON};
 use crate::capture_reminders;
 use crate::capture_secondary::{
-    check_title, close, pack, pause, post, report_window, shoot_window, show_scene, window_handle, window_hwnd,
+    check_title, close, pack, pause, post, report_window, shoot_window, show_scene, until_handled, window_handle,
+    window_hwnd,
 };
 use crate::fixtures;
 use crate::meter::{MeterModel, MeterView};
@@ -429,6 +430,7 @@ fn device(x: f32, y: f32, scale: f32) -> (i32, i32) {
 async fn key(hwnd: windows::Win32::Foundation::HWND, vk: usize, cx: &mut AsyncApp) {
     post(hwnd, WM_KEYDOWN, vk, 1);
     post(hwnd, WM_KEYUP, vk, KEY_UP);
+    until_handled(hwnd, cx).await;
     pause(cx, TICK).await;
 }
 

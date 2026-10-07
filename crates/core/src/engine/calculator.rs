@@ -6,7 +6,8 @@ use crate::models::combat::{
     PlayerOverviewStat, PvpDamageOverviewStat, SkillStats, TargetInfo,
 };
 use crate::engine::session::{build_session_summary, SessionInputs};
-use crate::storage::data_storage::DataStorage;
+use crate::report::ledger::{build_ledger, ActorDirectory, FightLedger, FightWindow, LedgerSources};
+use crate::storage::data_storage::{infer_actor_class, DataStorage, FightLedgerInputs};
 
 pub struct DpsCalculator {
     data_storage: Arc<DataStorage>,
@@ -23,6 +24,31 @@ impl DpsCalculator {
 
     pub fn reset_snapshot_state(&self) {
         *self.last_total_damage.lock().unwrap() = None;
+    }
+
+    /// What the party took, healed and lost in the fight against `target`, from
+    /// the players in `damage_dealers`. `None` until somebody has hit it.
+    pub fn fight_ledger(&self, target: &TargetInfo, damage_dealers: &[u32]) -> Option<FightLedger> {
+        let window = FightWindow::of(target)?;
+        let (from, to) = window.event_range();
+        let FightLedgerInputs { events, names, servers, mut classes, buff_intervals } =
+            self.data_storage.fight_ledger_inputs(target.id, damage_dealers, (from, to));
+        for heal in &events.heals {
+            if !classes.contains_key(&heal.healer_id) {
+                if let Some(class) = infer_actor_class(heal.skill_code) {
+                    classes.insert(heal.healer_id, class);
+                }
+            }
+        }
+        Some(build_ledger(&LedgerSources {
+            target_id: target.id,
+            window,
+            damage_dealers,
+            events: &events,
+            actors: ActorDirectory { names: &names, servers: &servers, classes: &classes },
+            mob_name: &|mob_code| self.data_storage.mob_name(mob_code),
+            buff_intervals: &buff_intervals,
+        }))
     }
 
     pub fn get_dps_snapshot(
@@ -344,7 +370,7 @@ fn build_target_infos(
             });
             let (cur_hp, max_hp) = mob_id_hp
                 .get(tid)
-                .map(|(c, m)| (Some(*c), Some(*m)))
+                .map(|(c, m)| (Some(display_hp(*c)), Some(display_hp(*m))))
                 .unwrap_or((None, None));
 
             (
@@ -521,6 +547,11 @@ fn build_per_target_overview_stats(
 // Summon merging
 // =============================================================================
 
+/// `TargetInfo` carries 32-bit HP; larger values show as the largest it holds.
+fn display_hp(hp: u64) -> u32 {
+    u32::try_from(hp).unwrap_or(u32::MAX)
+}
+
 fn resolve_owner(actor_id: u32, summon_owner_map: &HashMap<u32, u32>) -> u32 {
     let mut current = actor_id;
     for _ in 0..8 {
@@ -688,7 +719,7 @@ fn target_battle_start_ms(
         .unwrap_or(now_ms)
 }
 
-fn covered_duration_ms(
+pub(crate) fn covered_duration_ms(
     intervals: &VecDeque<BuffInterval>,
     range_start_ms: u64,
     range_end_ms: u64,

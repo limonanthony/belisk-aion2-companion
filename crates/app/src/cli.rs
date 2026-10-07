@@ -144,6 +144,15 @@ mod tests {
         assert!(!parse(&["--replay", "a.aetherpc"]).unwrap().wants_live());
     }
 
+    #[cfg(feature = "probes")]
+    #[test]
+    fn capture_and_probe_runs_are_never_live() {
+        assert!(!parse(&["--capture", "shots", "--fixtures"]).unwrap().wants_live());
+        assert!(!parse(&["--capture", "shots", "--replay", "a.aetherpc"]).unwrap().wants_live());
+        assert!(!parse(&["--overlay-probe"]).unwrap().wants_live());
+        assert!(!parse(&["--font-probe"]).unwrap().wants_live());
+    }
+
     #[test]
     fn speed_defaults_to_real_time() {
         assert_eq!(parse(&[]).unwrap().speed, 1.0);

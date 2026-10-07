@@ -23,5 +23,6 @@ pub use widgets::{reveal_marker, Reveal};
 pub use files::StorageSummary;
 #[cfg(feature = "probes")]
 pub use runtime::{
-    BestRow, CaptureCheck, CaptureStatus, MeterTile, RecordingItem, RecordingProgress, ReplayProgress, StorageState,
+    BestRow, CaptureCheck, CaptureStatus, MeterTile, RecordingItem, RecordingOrigin, RecordingProgress, ReplayProgress,
+    StorageState,
 };

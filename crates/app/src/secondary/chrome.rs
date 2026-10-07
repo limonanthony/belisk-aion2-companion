@@ -148,7 +148,7 @@ pub fn count(text: impl Into<SharedString>, s: Scale) -> Div {
         .child(text.into())
 }
 
-fn close_button(s: Scale) -> Stateful<Div> {
+pub fn close_button(s: Scale) -> Stateful<Div> {
     tool_button("close", Icon::Close, false, s).on_click(|_, window, _| window.remove_window())
 }
 

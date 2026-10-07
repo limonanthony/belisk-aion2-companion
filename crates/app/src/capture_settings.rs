@@ -18,7 +18,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::capture::{self, shoot_hwnd, MK_LBUTTON};
 use crate::capture_reminders;
-use crate::capture_secondary::{close, pack, pause, post, shoot_window, show_scene, window_handle, window_hwnd};
+use crate::capture_secondary::{
+    close, pack, pause, post, shoot_window, show_scene, until_handled, window_handle, window_hwnd,
+};
 use crate::fixtures;
 use crate::i18n::fl;
 use crate::meter::{Layout, MeterModel, MeterView, OverlaySettings, PctMode};
@@ -26,7 +28,8 @@ use crate::overlay::{self, off_screen};
 use crate::sample;
 use crate::secondary::{self, WindowKind};
 use crate::settings::{
-    self, BestRow, CaptureCheck, CaptureStatus, MeterTile, RecordingItem, RecordingProgress, ReplayProgress,
+    self, BestRow, CaptureCheck, CaptureStatus, MeterTile, RecordingItem, RecordingOrigin, RecordingProgress,
+    ReplayProgress,
     RuntimeModel, Section, SettingsView, StorageState, StorageSummary,
 };
 use crate::todos;
@@ -184,6 +187,7 @@ async fn overlay_page(page: &Page, meter: WindowHandle<MeterView>, dir: &Path, c
 
     page.tab_to("total-damage", cx).await?;
     page.key(VK_SPACE, cx).await;
+    shoot_window(WindowKind::Settings, dir, "settings-06-total-damage-on", cx).await?;
     page.tab_to("layout", cx).await?;
     let damage = cx.update(|cx| settings::global(cx).read(cx).get().overlay.show_damage);
     println!("keyboard: Space on Total damage: shown {damage}");
@@ -478,6 +482,7 @@ impl Page {
     async fn key(&self, vk: usize, cx: &mut AsyncApp) {
         post(self.hwnd, WM_KEYDOWN, vk, 1);
         post(self.hwnd, WM_KEYUP, vk, KEY_UP);
+        until_handled(self.hwnd, cx).await;
         pause(cx, KEY_GAP).await;
     }
 
@@ -485,6 +490,7 @@ impl Page {
         post(self.hwnd, WM_MOUSEMOVE, 0, pack(point));
         post(self.hwnd, WM_LBUTTONDOWN, MK_LBUTTON, pack(point));
         post(self.hwnd, WM_LBUTTONUP, 0, pack(point));
+        until_handled(self.hwnd, cx).await;
         pause(cx, TICK).await;
     }
 
@@ -494,13 +500,16 @@ impl Page {
     }
 
     async fn tab_to(&self, key: &str, cx: &mut AsyncApp) -> Result<()> {
+        let mut walked = Vec::new();
         for _ in 0..60 {
             self.key(VK_TAB, cx).await;
-            if self.focused(cx).as_deref() == Some(key) {
+            let focused = self.focused(cx);
+            if focused.as_deref() == Some(key) {
                 return Ok(());
             }
+            walked.push(focused.unwrap_or_else(|| "-".to_string()));
         }
-        Err(format!("Tab never reached {key} in the Settings window"))
+        Err(format!("Tab never reached {key} in the Settings window; focus after each Tab: {}", walked.join(", ")))
     }
 
     /// The section's sidebar entry, reached with Tab and opened with Enter.
@@ -584,17 +593,18 @@ fn running_capture() -> CaptureStatus {
 
 fn recordings() -> Vec<RecordingItem> {
     [
-        ("manual-2026-10-03-2142.aetherpc", 2, 2_516_582, false),
-        ("auto-2026-10-02-2031.aetherpc", 27, 3_250_585, true),
-        ("manual-2026-09-29-2210.aetherpc", 100, 1_887_436, false),
+        ("manual-2026-10-03-2142.aetherpc", 2, 2_516_582, RecordingOrigin::Manual),
+        ("rolling-1790000000000.aetherpc", 5, 412_483_912, RecordingOrigin::Rolling),
+        ("auto-2026-10-02-2031.aetherpc", 27, 3_250_585, RecordingOrigin::UnfamiliarServer),
+        ("manual-2026-09-29-2210.aetherpc", 100, 1_887_436, RecordingOrigin::Manual),
     ]
     .into_iter()
-    .map(|(name, hours_ago, bytes, unfamiliar_server)| RecordingItem {
+    .map(|(name, hours_ago, bytes, origin)| RecordingItem {
         path: std::env::temp_dir().join(name),
         name: name.to_string(),
         bytes,
         when: hours_before_now(hours_ago),
-        unfamiliar_server,
+        origin,
     })
     .collect()
 }

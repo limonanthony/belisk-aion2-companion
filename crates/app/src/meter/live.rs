@@ -137,10 +137,14 @@ pub fn target_name(target: &TargetInfo) -> String {
 /// A target and everyone who hit it, most damage first. Built from the
 /// per-target overview, which holds every player: the snapshot's own
 /// `last_target_all_players_overview_stats` is cut to the core's player limit
-/// before this app can keep your row in it.
+/// before this app can keep your row in it. `players` leaves out the unnamed
+/// ones when asked to, except you; the totals still count everyone, as the
+/// core's session board does.
 pub struct TargetView<'a> {
     pub info: &'a TargetInfo,
     pub players: Vec<&'a PlayerOverviewStat>,
+    pub total_damage: u64,
+    pub total_dps: f64,
 }
 
 pub fn target_info(snapshot: &CombatSnapshot, id: u32) -> Option<&TargetInfo> {
@@ -151,12 +155,24 @@ pub fn target_info(snapshot: &CombatSnapshot, id: u32) -> Option<&TargetInfo> {
         .or_else(|| snapshot.last_target_info.as_ref().filter(|target| target.id == id))
 }
 
-pub fn target_view(snapshot: &CombatSnapshot, id: u32) -> Option<TargetView<'_>> {
+pub fn target_view(snapshot: &CombatSnapshot, id: u32, hide_unknown_players: bool) -> Option<TargetView<'_>> {
     let info = target_info(snapshot, id)?;
     let mut players: Vec<&PlayerOverviewStat> =
         snapshot.by_target_player_stats.get(&id)?.values().collect();
     players.sort_by(|a, b| b.total_damage.cmp(&a.total_damage).then(a.actor_id.cmp(&b.actor_id)));
-    Some(TargetView { info, players })
+    let total_damage = players.iter().map(|player| player.total_damage).sum();
+    let total_dps = players.iter().map(|player| player.dps.max(0.0)).sum();
+    if hide_unknown_players {
+        let you = find_you(snapshot, players.iter().map(|player| (player.actor_id, player.actor_name.as_str())))
+            .map(|found| found.index);
+        players = players
+            .into_iter()
+            .enumerate()
+            .filter(|&(index, player)| !player.actor_name.is_empty() || Some(index) == you)
+            .map(|(_, player)| player)
+            .collect();
+    }
+    Some(TargetView { info, players, total_damage, total_dps })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -224,9 +240,8 @@ pub fn you_status(snapshot: &CombatSnapshot, found: Option<FoundYou>, count: usi
     }
 }
 
-pub fn party_dps(ranked: &[&PlayerOverviewStat]) -> Option<SharedString> {
-    let total: f64 = ranked.iter().map(|player| player.dps.max(0.0)).sum();
-    (ranked.len() > 1 && total > 0.0).then(|| format::compact(total).into())
+pub fn party_dps(view: &TargetView) -> Option<SharedString> {
+    (view.players.len() > 1 && view.total_dps > 0.0).then(|| format::compact(view.total_dps).into())
 }
 
 pub fn pace_against(best_dps: f64, dps: f64) -> Option<f64> {
@@ -240,10 +255,12 @@ impl LiveBoard {
         snapshot: &CombatSnapshot,
         target_id: u32,
         settings: &OverlaySettings,
+        hide_unknown_players: bool,
         shades: &mut ShadeBook,
         personal_best: impl FnOnce(&str, u32) -> Option<f64>,
     ) -> Option<Self> {
-        let TargetView { info: target, players: ranked } = target_view(snapshot, target_id)?;
+        let view = target_view(snapshot, target_id, hide_unknown_players)?;
+        let TargetView { info: target, players: ranked, .. } = view;
         if ranked.is_empty() {
             return None;
         }
@@ -265,7 +282,7 @@ impl LiveBoard {
                 let colour = rows.iter().find(|row| row.is_you).and_then(|row| row.colour);
                 Lead::you(index, colour, player.dps, player.total_damage)
             }
-            None => Lead::party(ranked.iter().map(|player| player.dps)),
+            None => Lead::party(std::iter::once(view.total_dps)),
         };
 
         let pace = match you {
@@ -289,7 +306,7 @@ impl LiveBoard {
             boss_hp: Some(target).filter(|_| settings.show_boss_hp).and_then(boss_hp),
             rows,
             lead,
-            party_damage: format::damage(ranked.iter().map(|player| player.total_damage).sum()).into(),
+            party_damage: format::damage(view.total_damage).into(),
             pace,
         })
     }
@@ -376,14 +393,14 @@ pub fn player_row(
 }
 
 /// The text Copy puts on the clipboard while the live meter is up.
-pub fn battle_report(snapshot: &CombatSnapshot, target_id: u32) -> Option<String> {
-    let view = target_view(snapshot, target_id)?;
+pub fn battle_report(snapshot: &CombatSnapshot, target_id: u32, hide_unknown_players: bool) -> Option<String> {
+    let view = target_view(snapshot, target_id, hide_unknown_players)?;
     let ranked = view.players;
     if ranked.is_empty() {
         return None;
     }
     let target = Some(view.info);
-    let total: u64 = ranked.iter().map(|player| player.total_damage).sum();
+    let total = view.total_damage;
     let secs = target.map_or(0.0, fight_secs);
     let party = if secs > 0.0 { total as f64 / secs } else { 0.0 };
     let name = target

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 pub enum WindowKind {
     History,
     Detail,
+    Report,
     Pvp,
     Todos,
     Settings,
