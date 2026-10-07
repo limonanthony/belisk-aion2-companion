@@ -10,6 +10,7 @@ use crate::capture::assembler::StreamAssembler;
 use crate::capture::capturer::CapturedPacket;
 use crate::capture::channel::Channel;
 use crate::capture::recorder::PacketRecorder;
+use crate::capture::rolling_recorder::RollingRecorder;
 use crate::capture::ping_tracker::PingTracker;
 use crate::capture::tcp_reassembler::{TcpFlowKey, TcpReassembler};
 use crate::config::SharedDpsMeterConfig;
@@ -18,7 +19,7 @@ use crate::logger::AppLogger;
 
 const TLS_CONTENT_TYPES: [u8; 4] = [0x14, 0x15, 0x16, 0x17];
 const TLS_VERSIONS: [u8; 5] = [0x00, 0x01, 0x02, 0x03, 0x04];
-const MAGIC: [u8; 3] = [0x0E, 0x00, 0x36];
+pub(crate) const MAGIC: [u8; 3] = [0x0E, 0x00, 0x36];
 const MAGIC_LOCK_THRESHOLD: usize = 1;
 const MAGIC_LOCK_WINDOW: Duration = Duration::from_secs(3);
 
@@ -67,7 +68,7 @@ struct DispatcherState {
 
 struct TrackedAssembler {
     assembler: StreamAssembler,
-    last_processed_at: Instant,
+    last_packet_at: Instant,
 }
 
 struct TrackedTcpReassembler {
@@ -106,12 +107,12 @@ impl TrackedAssembler {
     fn new(assembler: StreamAssembler) -> Self {
         Self {
             assembler,
-            last_processed_at: Instant::now(),
+            last_packet_at: Instant::now(),
         }
     }
 
-    fn mark_processed(&mut self) {
-        self.last_processed_at = Instant::now();
+    fn mark_packet_received(&mut self) {
+        self.last_packet_at = Instant::now();
     }
 }
 
@@ -152,6 +153,16 @@ impl DispatcherState {
         self.logged_magic_packets = 0;
     }
 
+    fn tracked_assemblers_mut(
+        &mut self,
+        key: &str,
+    ) -> impl Iterator<Item = &mut TrackedAssembler> + '_ {
+        self.assemblers
+            .get_mut(key)
+            .into_iter()
+            .chain(self.nickname_assemblers.get_mut(key))
+    }
+
     fn ensure_candidate_assemblers(&mut self, key: &str, logger: &Arc<AppLogger>) {
         let data_storage = Arc::clone(&self.data_storage);
         let config = Arc::clone(&self.config);
@@ -184,6 +195,7 @@ impl DispatcherState {
 pub struct CaptureDispatcher {
     channel: Channel<CapturedPacket>,
     recorder: Arc<PacketRecorder>,
+    rolling_recorder: Arc<RollingRecorder>,
     logger: Arc<AppLogger>,
     ping_tracker: Arc<PingTracker>,
     running: Arc<AtomicBool>,
@@ -196,6 +208,7 @@ impl CaptureDispatcher {
     pub fn new(
         channel: Channel<CapturedPacket>,
         recorder: Arc<PacketRecorder>,
+        rolling_recorder: Arc<RollingRecorder>,
         data_storage: Arc<DataStorage>,
         logger: Arc<AppLogger>,
         ping_tracker: Arc<PingTracker>,
@@ -210,6 +223,7 @@ impl CaptureDispatcher {
         Self {
             channel,
             recorder,
+            rolling_recorder,
             logger,
             ping_tracker,
             running: Arc::new(AtomicBool::new(false)),
@@ -226,6 +240,7 @@ impl CaptureDispatcher {
 
         let channel = self.channel.clone();
         let recorder = Arc::clone(&self.recorder);
+        let rolling_recorder = Arc::clone(&self.rolling_recorder);
         let logger = Arc::clone(&self.logger);
         let ping_tracker = Arc::clone(&self.ping_tracker);
         let running = Arc::clone(&self.running);
@@ -242,6 +257,7 @@ impl CaptureDispatcher {
                 // Tapped here, before reassembly, so a recording holds exactly
                 // what capture produced -- replay then re-runs the real pipeline.
                 recorder.record(&packet);
+                rolling_recorder.record(&packet);
 
                 let mut state = state.lock().unwrap();
                 let flow_key = TcpFlowKey {
@@ -250,6 +266,12 @@ impl CaptureDispatcher {
                     dst_ip: packet.dst_ip,
                     dst_port: packet.dst_port,
                 };
+                let key = directional_connection_key(
+                    packet.src_ip,
+                    packet.src_port,
+                    packet.dst_ip,
+                    packet.dst_port,
+                );
                 let tracked_reassembler =
                     state.tcp_reassemblers.entry(flow_key).or_insert_with(|| {
                         TrackedTcpReassembler {
@@ -261,22 +283,45 @@ impl CaptureDispatcher {
                 let reassembler = &mut tracked_reassembler.reassembler;
                 let previous_retransmits = reassembler.retransmits();
                 let previous_gap_skips = reassembler.gap_skips();
-                let aligned = reassembler.feed(packet.sequence, std::mem::take(&mut packet.data));
-                if aligned.is_empty() {
+                let reassembly = reassembler.feed(
+                    packet.sequence,
+                    std::mem::take(&mut packet.data),
+                    packet.captured_at,
+                );
+                let retransmits = reassembler.retransmits();
+                let gap_skips = reassembler.gap_skips();
+
+                for tracked in state.tracked_assemblers_mut(&key) {
+                    tracked.mark_packet_received();
+                }
+                if let Some(gap_skip) = reassembly.gap_skip {
+                    logger.info(format!(
+                        "tcp sequence gap skipped src={}:{} dst={}:{} missing_bytes={} waited={:.1}s held_bytes={}",
+                        format_ipv4(packet.src_ip),
+                        packet.src_port,
+                        format_ipv4(packet.dst_ip),
+                        packet.dst_port,
+                        gap_skip.missing_bytes,
+                        gap_skip.waited_secs,
+                        gap_skip.held_bytes
+                    ));
+                    for tracked in state.tracked_assemblers_mut(&key) {
+                        tracked.assembler.discard_buffered();
+                    }
+                }
+                if reassembly.segments.is_empty() {
                     continue;
                 }
-                packet.data = aligned.concat();
-                if reassembler.retransmits() != previous_retransmits
-                    || reassembler.gap_skips() != previous_gap_skips
-                {
+                packet.data = reassembly.segments.concat();
+                if retransmits != previous_retransmits || gap_skips != previous_gap_skips {
                     logger.debug(format!(
                         "tcp reassembly src={}:{} dst={}:{} retransmits={} gap_skips={}",
                         format_ipv4(packet.src_ip),
                         packet.src_port,
                         format_ipv4(packet.dst_ip),
                         packet.dst_port,
-                        reassembler.retransmits(),
-                        reassembler.gap_skips()
+                        retransmits,
+                        gap_skips
                     ));
                 }
                 ping_tracker.on_packet(&packet.data, packet.captured_at);
@@ -305,12 +350,6 @@ impl CaptureDispatcher {
                     continue;
                 }
 
-                let key = directional_connection_key(
-                    packet.src_ip,
-                    packet.src_port,
-                    packet.dst_ip,
-                    packet.dst_port,
-                );
                 let contains_magic = packet
                     .data
                     .windows(MAGIC.len())
@@ -365,7 +404,6 @@ impl CaptureDispatcher {
                     let _ = assembler
                         .assembler
                         .process_chunk(&packet.data, combat_damage_enabled);
-                    assembler.mark_processed();
 
                     let nickname_assembler = state
                         .nickname_assemblers
@@ -374,7 +412,6 @@ impl CaptureDispatcher {
                     let _ = nickname_assembler
                         .assembler
                         .process_chunk(&packet.data, false);
-                    nickname_assembler.mark_processed();
                 }
             }
         });
@@ -416,7 +453,7 @@ impl CaptureDispatcher {
             .retain(|_, tracked| now.duration_since(tracked.last_seen_at) <= max_idle);
 
         state.assemblers.retain(|key, tracked| {
-            let is_stale = now.duration_since(tracked.last_processed_at) > max_idle;
+            let is_stale = now.duration_since(tracked.last_packet_at) > max_idle;
             if !is_stale {
                 return true;
             }
