@@ -342,6 +342,29 @@ global server block is catalogued, it stops by itself for global.
 It exists because launch day is exactly when nobody thinks to press Record in
 time. Off switch: Settings → Aion 2 → Connection → Advanced.
 
+### Rolling recording of whole sessions
+
+Settings → Capture → **Record every session** (off by default) keeps the game's
+traffic of the whole live session so a game event can be investigated after the
+fact (`capture/rolling_recorder.rs`). It is a second `PacketRecorder` beside the
+manual / automatic one, so all of them can run at once; files are
+`rolling-<unix ms>.aetherpc`, in the same recordings folder and format, and
+replay like any other. A new file starts every 30 minutes, and after each start
+(and when the meter starts) the oldest `rolling-*` files are deleted until
+their total is at most 2 GB. `session-*` and
+`auto-*` files are never touched. It records only while the meter captures live
+(not during a replay) and closes the file when the switch is turned off or the
+meter stops.
+
+Only game packets are written. A packet is kept when its (local port, remote
+ip:port) pair is a connection `query_game_connections()` lists for `aion2.exe`
+(refreshed once a second on its own thread, never per packet), when it goes to
+a server port such a connection has used (so a new connection is not lost
+before the next refresh), or when its flow has carried the `0E 00 36`
+heartbeat (the fallback when the lookup finds nothing, as with a replayed
+source). Packets before the heartbeat on a flow the lookup cannot see are not
+kept; the dispatcher ignores them as well.
+
 ### On Early Access day
 
 1. Start the meter and play. The first two minutes are recorded automatically.
@@ -472,6 +495,17 @@ the player. All three are gone.
 Capture itself was already passive: Npcap copies packets, and WinDivert is
 opened with `SNIFF | RECV_ONLY`, so it can neither drop, delay, alter, nor
 inject anything.
+
+Since then the Npcap capturer also learns where the game's traffic is before
+the first packet, from two things the OS publishes to any user: the process
+list by image name (a Toolhelp snapshot, like Task Manager) for the PIDs of
+`aion2.exe`, and the system TCP table (`GetExtendedTcpTable`, like
+`netstat -ano`) for the connections those PIDs own. It opens no handle on any
+process and reads no command line or start time. The connection picks which
+adapter to probe first, the loopback adapter when the remote is 127.0.0.1
+(an accelerator such as ExitLag proxies through loopback), and wakes detection
+when a connection appears. It is only a hint: detection still waits for the
+game's own bytes.
 
 ## Always on top
 
@@ -785,6 +819,98 @@ another server, keeps its own row. The row lists the folded ids in
 
 ## Skill names for damage-over-time ids
 
-A damage-over-time hit carries its skill id followed by two digits (ten-digit example: `1709014011` = skill `17090140`). Nine-digit ones such as `160467011` are a seven-digit skill plus the two digits, and the app showed them as `Skill 160467011` because the lookup only cut them to eight digits. `crates/core/src/skill_names.rs` (`resolve_skill_key`, used by `game_data::skill_name`) now also tries the id divided by 100 as the last form, which reaches the existing key `1604670` ("Attack"; Kuroukihime/AIon2-Dps-Meter resolves the same id the same way, `DotDamagePacketProcessor`: `skillCode = u32 / 100`). No data was added.
+A damage-over-time hit carries its skill id followed by two digits (ten-digit example: `1709014011` = skill `17090140`). Nine-digit ones are a seven-digit skill plus the two digits; the app showed them as `Skill 160467011` because the lookup only cut them to eight digits. `crates/core/src/skill_names.rs` (`resolve_skill_key`, used by `game_data::skill_name`) now also tries the id divided by 100 as the last form (Kuroukihime/AIon2-Dps-Meter resolves the same id the same way, `DotDamagePacketProcessor`: `skillCode = u32 / 100`). A nine-digit id is not, however, a player's skill: the lookup rule stays because some nine-digit ids are really credited to players (Theostone procs such as `300111511`, Damage Reflection `122705021`, `120001xxx` effects) and the `/100` form is how `122705021` reaches "Damage Reflection".
+
+### Thamon's absorption recovery is not player damage
+
+In Thamon (Tamon trial, mob 2300811) the boss's absorption buffs recover health in periodic ticks that the game credits to players, under the effects `160466011` and `160467011` (seven-digit skills `1604660` and `1604670`, the "Attack" that `resolve_skill_key` names, plus two digits). The 2026-10-07 18:15 record has `160467011` as 1,516,948 of one player's 3,319,419 damage (148 hits, 1,724 to 95,764 each, no crit, back or double flags). Across the saved history, every Thamon record carries them, 15,898,260 damage in 2,099 hits for `160467011` and 4,497,840 in 537 for `160466011`, and no other boss does. Notmeter's notes describe the reference meter suppressing the same ticks.
+
+`damage.rs` drops a nine-digit code whose `/100` is `1604660` or `1604670` (`is_thamon_absorption_recovery`) on every path: `04 38` hits, `05 38` damage ticks and the `05 38` heal and damage-taken ledger records. It is deliberately not a rule for all nine-digit codes: the history holds legitimate ones (Theostones, Damage Reflection), so the match is the two evidenced skills. The reference meter also matches the tick's effect instance against an active absorption buff on the target; this meter does not track that, so a player's own use of the same two effect ids would be dropped too (none was seen). No recording covers Thamon, so which of the two paths (`04 38` or `05 38`) carries the ticks is unconfirmed; both are covered. Buff codes `16046600`, `16046601`, `16046700` and `16046701` as damage were never seen and are not matched.
 
 `packet-explorer unnamed-skills <recording>...` replays recordings through the shipped parser and lists the skill ids that still fall back to `Skill <id>` (hits, damage, class) so their names can be looked up in the source datasets and added.
+
+## Reading the game's packets (TASK-14)
+
+Upstream read most packets by guessing: fixed skips, byte markers and value
+ranges. A clean-room study of how two other meters read the same traffic
+(notes kept outside the repository; none of their code was copied) gave the
+real layouts, and each change below was checked by replaying the recordings
+before and after.
+
+- **Framing.** A frame is `[varint L][opcode 2][body]`, `L + varintLen - 4`
+  bytes long. Upstream used `L - 3` with a `+1` for bundles, right only when the
+  length fits one byte: frames of 128 bytes or more ended one byte early and the
+  next one was read from the wrong place (half of the long frames in some
+  recordings, and one flow lost 561 frames).
+- **Damage `04 38`** (`parser/damage_record.rs`): a reader driven by the u16
+  flags field, which must consume the frame exactly (24,031 of 24,031 recorded
+  frames do). The optional u32 sits before the hit kind; kind 9 (reflected) and
+  frames without an amount give no hit. One record per frame: the `01 00` the
+  old loop took for a separator is a trailing u16.
+- **Spawn `41 36`** (`parser/spawn_record.rs`): entity, flags (u16 on the global
+  servers, u32 on Korea/Taiwan), mob code, current and max HP, the buff list,
+  then the owner when `flags & 0x10`. Summon owners come only from here now;
+  the marker scans are gone, and `04 8D` (a death with its killer) no longer
+  makes the killer the owner.
+- **HP `00 8D`** (`parser/hp_record.rs`): a mask, small `{kind, i32}` and big
+  `{kind, i64}` stats; kind 0 is current HP, kind 7 max HP. HP is 64-bit in
+  storage (upstream dropped anything above 1e9); the app's HP fields stay u32
+  and saturate.
+- **Death `42 36`** (`parser/death_record.rs`): flag 3 sets a known monster's HP
+  to 0, the same state an HP packet of 0 leaves, so existing kill detection
+  confirms deaths it missed. Flags 1 and 7 are removals, not kills.
+- **Damage over time `05 38`**: only mode `0x0A` is damage. Mode `0x0B` (a
+  self, party or pet effect, never a monster in the recordings) used to be
+  counted, with its remaining total read as the tick.
+- **Buff removal `2C 38`** (`parser/buff_removal_record.rs`): ends the removed
+  instance's interval instead of letting it run to its full duration. The
+  apply packets are read by opcode (`2A` has a count byte, `2B` does not)
+  instead of trying one offset and then another.
+
+## The fight report's data (TASK-15.2)
+
+The end-of-fight report for boss fights needs what damage dealt does not say:
+what the party took, healed and lost. `crates/core/src/report/` records it and
+builds the report; the report window is TASK-15.3 and 15.4.
+
+- **Recorded while playing** (`report/events.rs`, in `DataStorage`, cleared by a
+  reset like the stats): hits taken, heals and player deaths, each with its
+  time, in bounded queues (60,000 hits, 60,000 heals, 2,000 deaths; the oldest
+  go first). Nothing here touches the damage stats, the target or the boss
+  focus: a monster's hit on a player used to be dropped by the 7-digit skill
+  rule, and still is; it is also kept as damage taken. Replaying the seven
+  recordings before and after gives identical targets, boss focus and damage.
+- **Hits taken**: a `04 38` record with an amount whose skill is not a player's,
+  and a `05 38` damage tick (mode `0x0A`) of such a skill, on a target that is
+  not a monster, from a source that is not a known player or a summon.
+- **Heals**, kept per skill and kind (`HealKind`): *Direct*, a hit of a skill in
+  `healing_skill_code.json` with an amount on a non-monster target (heals of
+  others and of oneself; seen from a Cleric's Radiant Benediction, Healing
+  Light, Radiant Recovery and a Chanter's Recuperation); *OverTime*, a `05 38`
+  tick of mode `0x0B` of a class skill (8-digit code) with its tick amount
+  (Light of Regeneration, Recuperation; the 7-digit self ticks of system
+  effects are not a player's healing); *Drain* and *Regeneration*, the extra
+  amounts of a damaging hit (`F & 0x200`, `F & 0x400`), credited to the
+  attacker (only regeneration appears in the recordings: a flat recovery per
+  hit). Overheal cannot be separated, and a shield's amount cannot be told from
+  a heal's: no shield skill carries an amount in the recordings except three
+  hits (Protection Armor 451 and 75, Crossguard 153), which count.
+  `heal_amount` (the `F & 2` block) is read but not counted; it only appears
+  on monster hits on monsters.
+- **Deaths** (`parser/char_die_record.rs`): `04 8D` is a death of any entity
+  with the killer the game names (a player by name, a monster by its mob code or
+  entity), and, for a player victim, the last hit taken in the 5 s before it.
+  `04 8D` was read as summon ownership before TASK-14 and had no parser after.
+- **Scope**: the report covers the window from the first to the last hit on the
+  boss plus 5 s (a wiped party dies just after its last blow). Players are the
+  ones who hit the boss and the ones who healed them. Buff uptime is clipped to
+  the window with overlaps counted once.
+- **Saved**: `HistoryRecord.ledger` (`FightLedger`, serde default `None`) only
+  on boss records, about 15 KB of JSON (3 KB compressed) for a five-player
+  fight. Older files load unchanged and open with Healing, Damage taken and
+  Deaths "not recorded" (`None`, not zero); no migration rewrites them.
+- **The data API**: `FightReport::from_record(&HistoryRecord)` for History,
+  `DpsMeter::fight_report(target_id)` for the fight on the meter (newest saved
+  record of that target when the meter has been reset). One value carries the
+  header, the five key figures, one row per player and, per player, the hit
+  types as counts, the skills, buffs, heals and damage taken.
