@@ -1,245 +1,62 @@
+use crate::capture::parser::damage_record::{
+    AttackPosition, DamageRecord, KIND_CRITICAL, KIND_REFLECTED, SPECIAL_DOUBLE, SPECIAL_PARRY,
+    SPECIAL_PERFECT, read_damage_record,
+};
+use crate::capture::parser::periodic_record::{
+    read_periodic_record, PeriodicRecord, MODE_DAMAGE_TICK, MODE_HEAL_TICK,
+};
 use crate::capture::parser::utils::{
     bytes_to_hex, read_u32_le_or_default as parse_u32_le, read_varint,
 };
 use crate::capture::processor::StreamProcessor;
 use crate::models::packet::{ParsedDamagePacket, SpecialDamage};
 
-#[derive(Debug)]
-struct DamagePacketReader<'a> {
-    packet: &'a [u8],
-    offset: usize,
-}
+/// Class skills have 8-digit codes; basic attacks, monster and system effects
+/// have shorter ones.
+const FIRST_CLASS_SKILL_CODE: u32 = 10_000_000;
 
-impl<'a> DamagePacketReader<'a> {
-    fn new(packet: &'a [u8], offset: usize) -> Self {
-        Self { packet, offset }
-    }
-
-    fn remaining_bytes(&self) -> usize {
-        self.packet.len().saturating_sub(self.offset)
-    }
-
-    fn try_read_var_int(&mut self) -> Option<u32> {
-        let output = read_varint(self.packet, self.offset);
-        if !output.is_valid() {
-            return None;
-        }
-        self.offset += output.length;
-        u32::try_from(output.value).ok()
-    }
-}
+/// Thamon's absorption buffs (the "roar" skills) recover the boss's absorbed
+/// damage in periodic ticks the game credits to players; their effects are
+/// 7-digit skills followed by two digits.
+const THAMON_ABSORPTION_SKILLS: [u32; 2] = [1_604_660, 1_604_670];
 
 impl StreamProcessor {
-    #[allow(unused_assignments)]
     pub(crate) fn parse_damage_packet(
         &mut self,
         packet: &[u8],
         _is_compressed_bundle: bool,
     ) -> bool {
-        // self.log_packet_source(packet, is_compressed_bundle);
-        let mut reader = DamagePacketReader::new(packet, 0);
-        if reader.offset + 1 >= packet.len() {
+        let Some(record) = read_damage_record(packet) else {
             return false;
+        };
+        if let Some(amount) = monster_hit_amount(&record) {
+            self.data_storage.record_incoming_hit(
+                record.target_id,
+                record.actor_id,
+                record.raw_skill_code,
+                amount,
+            );
         }
-        if packet[reader.offset] != 0x04 || packet[reader.offset + 1] != 0x38 {
-            return false;
-        }
-        reader.offset += 2;
+        let Some(parsed) = damage_event(&record) else {
+            return true;
+        };
 
-        let mut parsed_any = false;
-        while reader.remaining_bytes() > 0 {
-            let checkpoint = reader.offset;
-            if reader.remaining_bytes() >= 2
-                && packet[reader.offset] == 0x01
-                && packet[reader.offset + 1] == 0x00
-            {
-                reader.offset += 2;
-            } else if parsed_any {
-                break;
-            }
-
-            let Some(target_id) = reader.try_read_var_int() else {
-                reader.offset = checkpoint;
-                break;
-            };
-
-            let Some(switch_value) = reader.try_read_var_int() else {
-                reader.offset = checkpoint;
-                break;
-            };
-            let and_result = switch_value & 0x0F;
-            if !matches!(and_result, 4..=7) {
-                reader.offset = checkpoint;
-                break;
-            }
-
-            if reader.try_read_var_int().is_none() {
-                reader.offset = checkpoint;
-                break;
-            }
-
-            let Some(actor_id) = reader.try_read_var_int() else {
-                reader.offset = checkpoint;
-                break;
-            };
-            if actor_id == 0 {
-                reader.offset = checkpoint;
-                break;
-            }
-
-            if reader.offset + 4 > packet.len() {
-                reader.offset = checkpoint;
-                break;
-            }
-            let mut exact_skill_code = parse_u32_le(packet, reader.offset);
-            reader.offset += 4;
-
-            if (3_000_000..=3_099_999).contains(&exact_skill_code) {
-                exact_skill_code = exact_skill_code * 10 + 1;
-            }
-            if !(1..=299_999_999).contains(&exact_skill_code)
-                || (1_000_000..=9_999_999).contains(&exact_skill_code)
-            {
-                reader.offset = checkpoint;
-                break;
-            }
-
-            if reader.remaining_bytes() > 0 {
-                reader.offset += 1;
-            }
-
-            let Some(dummy_type) = reader.try_read_var_int() else {
-                reader.offset = checkpoint;
-                break;
-            };
-            let damage_type = (dummy_type & 0xFF) as u8;
-
-            let temp_v = match and_result {
-                5 => 12,
-                6 => 10,
-                7 => 14,
-                _ => 8,
-            };
-
-            let mut specials = Vec::new();
-            if matches!(and_result, 5..=7) && reader.offset + temp_v <= packet.len() {
-                let special_area = &packet[reader.offset..reader.offset + temp_v];
-                let special_byte = special_area[0];
-                if special_byte & 0x02 != 0 {
-                    specials.push(SpecialDamage::Parry);
-                }
-                if special_byte & 0x04 != 0 {
-                    specials.push(SpecialDamage::Perfect);
-                }
-                if special_byte & 0x08 != 0 {
-                    specials.push(SpecialDamage::Double);
-                }
-                if special_byte & 0x20 != 0 {
-                    specials.push(SpecialDamage::Smite);
-                }
-                match special_area.get(2).copied() {
-                    Some(0x01) => specials.push(SpecialDamage::Back),
-                    Some(0x02) => specials.push(SpecialDamage::Front),
-                    _ => {}
-                }
-            }
-
-            if damage_type == 3 {
-                specials.push(SpecialDamage::Critical);
-            }
-
-            // Damage tail versions share the same varint stream:
-            //   old: [unknown][damage][hit_count][per-hit...]
-            //   new: [0][legacy_damage][damage][hit_count][per-hit...]
-            // When the first value is 0, damage/hit_count shift right by one varint.
-            reader.offset = reader.offset.saturating_add(temp_v);
-            let tail_values = collect_varints(packet, reader.offset, 12);
-            let Some(unknown) = read_varint_u32(packet, reader.offset) else {
-                reader.offset = checkpoint;
-                break;
-            };
-            reader.offset += read_varint(packet, reader.offset).length;
-
-            let Some(legacy_damage) = read_varint_u32(packet, reader.offset) else {
-                reader.offset = checkpoint;
-                break;
-            };
-            reader.offset += read_varint(packet, reader.offset).length;
-
-            let mut tail_mode = "old";
-            let mut damage = legacy_damage;
-
-            if unknown == 0 {
-                let Some(shifted_damage) = read_varint_u32(packet, reader.offset) else {
-                    reader.offset = checkpoint;
-                    break;
-                };
-                let shifted_len = read_varint(packet, reader.offset).length;
-                let hit_count_info = read_varint(packet, reader.offset + shifted_len);
-                if shifted_damage > 0
-                    && hit_count_info.is_valid()
-                    && (1..=25).contains(&hit_count_info.value)
-                {
-                    tail_mode = "shifted";
-                    damage = shifted_damage;
-                    reader.offset += shifted_len;
-                }
-            }
-
-            let tail_hit_count = read_varint_u32(packet, reader.offset).unwrap_or(0);
-            let multi_hit = parse_repeated_multi_hit(packet, reader.offset);
-            reader.offset = multi_hit.next_offset;
-
-            if damage > 99_999_999 {
-                reader.offset = checkpoint;
-                break;
-            }
-
-            let resolved_skill_code = normalize_skill_id(exact_skill_code);
-            let special_names: Vec<String> = specials
-                .iter()
-                .map(|special| special.as_str().to_string())
-                .collect();
-
-            let parsed = ParsedDamagePacket {
-                target_id,
-                actor_id,
-                skill_code: resolved_skill_code,
-                ori_skill_code: exact_skill_code,
-                damage: u64::from(damage),
-                is_dot: false,
-                is_crit: specials.contains(&SpecialDamage::Critical),
-                multi_hit_damage: multi_hit.damage,
-                multi_hit_count: multi_hit.count,
-                specials: special_names.clone(),
-            };
-
-            self.data_storage.append_damage(parsed);
-            self.logger.debug(format!(
-                "[{}] damage target={} actor={} skill={} ori_code={} damage={} tail_mode={} unknown={} legacy_damage={} raw_damage={} tail_values={:?} tail_hit_count={} multi_hit_count={} multi_hit_damage={} per_hits={:?} specials={:?} packet_len={} packet_hex={}",
-                self.port,
-                target_id,
-                actor_id,
-                resolved_skill_code,
-                exact_skill_code,
-                damage,
-                tail_mode,
-                unknown,
-                legacy_damage,
-                damage,
-                tail_values,
-                tail_hit_count,
-                multi_hit.count,
-                multi_hit.damage,
-                multi_hit.per_hit_values,
-                special_names,
-                packet.len(),
-                bytes_to_hex(packet)
-            ));
-            parsed_any = true;
-        }
-
-        parsed_any
+        self.logger.debug(format!(
+            "[{}] damage target={} actor={} skill={} ori_code={} damage={} multi_hit_count={} multi_hit_damage={} specials={:?} packet_len={} packet_hex={}",
+            self.port,
+            parsed.target_id,
+            parsed.actor_id,
+            parsed.skill_code,
+            parsed.ori_skill_code,
+            parsed.damage,
+            parsed.multi_hit_count,
+            parsed.multi_hit_damage,
+            parsed.specials,
+            packet.len(),
+            bytes_to_hex(packet)
+        ));
+        self.data_storage.append_damage(parsed);
+        true
     }
 
     pub(crate) fn parse_dot_packet(&mut self, packet: &[u8], _is_compressed_bundle: bool) -> bool {
@@ -249,6 +66,9 @@ impl StreamProcessor {
             return false;
         }
         offset += 2;
+        if let Some(tick) = read_periodic_record(packet) {
+            self.record_periodic_effect(&tick);
+        }
 
         let target_info = read_varint(packet, offset);
         if !target_info.is_valid() {
@@ -259,8 +79,8 @@ impl StreamProcessor {
             return false;
         }
 
-        let unknown_bit_flag = packet[offset];
-        if (unknown_bit_flag & 0x02) == 0 {
+        let mode = packet[offset];
+        if mode != MODE_DAMAGE_TICK {
             return true;
         }
         offset += 1;
@@ -286,6 +106,9 @@ impl StreamProcessor {
         }
 
         let skill_code_candidate = parse_u32_le(packet, offset);
+        if is_thamon_absorption_recovery(skill_code_candidate) {
+            return true;
+        }
         let skill_code = normalize_skill_id(skill_code_candidate);
         offset += 4;
 
@@ -305,6 +128,8 @@ impl StreamProcessor {
             multi_hit_damage: 0,
             multi_hit_count: 0,
             specials: Vec::new(),
+            drain_amount: 0,
+            regeneration_amount: 0,
         };
         let log_target_id = parsed.target_id;
         let log_actor_id = parsed.actor_id;
@@ -322,6 +147,123 @@ impl StreamProcessor {
         ));
         true
     }
+
+    /// Ticks of a class skill that heal are heals; damage ticks from a monster
+    /// are damage the target took. The tick still goes through the damage path
+    /// below, as before. A heal tick of a monster or system effect (a potion,
+    /// natural recovery) is not a player's healing.
+    fn record_periodic_effect(&self, tick: &PeriodicRecord) {
+        let Some(amount) = tick.tick_amount else {
+            return;
+        };
+        let skill_code = original_skill_code(tick.skill_code.unwrap_or(tick.effect_id));
+        if is_thamon_absorption_recovery(skill_code) {
+            return;
+        }
+        match tick.mode {
+            MODE_HEAL_TICK if skill_code >= FIRST_CLASS_SKILL_CODE => self.data_storage.record_heal_tick(
+                tick.actor_id,
+                tick.target_id,
+                displayed_skill_code(skill_code),
+                amount,
+            ),
+            MODE_DAMAGE_TICK if is_monster_skill_code(skill_code) => self
+                .data_storage
+                .record_incoming_hit(tick.target_id, tick.actor_id, skill_code, amount),
+            _ => {}
+        }
+    }
+}
+
+/// Reflected hits, records without a damage amount (evades, effects, heals) and
+/// hits from monster skills are not damage dealt by a player.
+fn damage_event(record: &DamageRecord) -> Option<ParsedDamagePacket> {
+    if record.kind == KIND_REFLECTED {
+        return None;
+    }
+    let damage = record.amount?;
+
+    let ori_skill_code = original_skill_code(record.raw_skill_code);
+    if !is_player_skill_code(ori_skill_code) || is_thamon_absorption_recovery(ori_skill_code) {
+        return None;
+    }
+
+    let is_crit = record.kind == KIND_CRITICAL;
+    let mut specials = Vec::new();
+    if record.has_special(SPECIAL_PARRY) {
+        specials.push(SpecialDamage::Parry);
+    }
+    if record.has_special(SPECIAL_PERFECT) {
+        specials.push(SpecialDamage::Perfect);
+    }
+    if record.has_special(SPECIAL_DOUBLE) {
+        specials.push(SpecialDamage::Double);
+    }
+    match record.position {
+        Some(AttackPosition::Back) => specials.push(SpecialDamage::Back),
+        Some(AttackPosition::Front) => specials.push(SpecialDamage::Front),
+        None => {}
+    }
+    if is_crit {
+        specials.push(SpecialDamage::Critical);
+    }
+
+    Some(ParsedDamagePacket {
+        target_id: record.target_id,
+        actor_id: record.actor_id,
+        skill_code: normalize_skill_id(ori_skill_code),
+        ori_skill_code,
+        damage,
+        is_dot: false,
+        is_crit,
+        multi_hit_damage: record.multi_hit.damage,
+        multi_hit_count: record.multi_hit.count,
+        specials: specials
+            .iter()
+            .map(|special| special.as_str().to_string())
+            .collect(),
+        drain_amount: record.drain_amount.unwrap_or(0),
+        regeneration_amount: record.regeneration_amount.unwrap_or(0),
+    })
+}
+
+fn is_player_skill_code(code: u32) -> bool {
+    (1..=299_999_999).contains(&code) && !(1_000_000..=9_999_999).contains(&code)
+}
+
+fn is_thamon_absorption_recovery(code: u32) -> bool {
+    (100_000_000..=999_999_999).contains(&code) && THAMON_ABSORPTION_SKILLS.contains(&(code / 100))
+}
+
+/// The amount of a hit that a monster's skill landed, if it is one.
+fn monster_hit_amount(record: &DamageRecord) -> Option<u64> {
+    if record.kind == KIND_REFLECTED || !is_monster_skill_code(original_skill_code(record.raw_skill_code)) {
+        return None;
+    }
+    record.amount
+}
+
+fn original_skill_code(raw: u32) -> u32 {
+    if (3_000_000..=3_099_999).contains(&raw) {
+        raw * 10 + 1
+    } else {
+        raw
+    }
+}
+
+/// Not a player's skill, and not no skill at all.
+fn is_monster_skill_code(code: u32) -> bool {
+    code != 0 && !is_player_skill_code(code)
+}
+
+/// The code a skill's damage is kept under: an 8-digit skill without its
+/// variant digits, any other code as it is.
+pub(crate) fn displayed_skill_code(raw: u32) -> u32 {
+    if (10_000_000..=99_999_999).contains(&raw) {
+        normalize_skill_id(raw)
+    } else {
+        raw
+    }
 }
 
 fn normalize_skill_id(raw: u32) -> u32 {
@@ -332,81 +274,106 @@ fn normalize_skill_id(raw: u32) -> u32 {
     }
 }
 
-#[derive(Debug, Default)]
-struct RepeatedMultiHit {
-    count: u32,
-    damage: u64,
-    per_hit_values: Vec<u32>,
-    next_offset: usize,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::capture::parser::damage_record::{hit_frame, hit_frame_with_skill};
 
-fn parse_repeated_multi_hit(packet: &[u8], offset: usize) -> RepeatedMultiHit {
-    let Some(count) = read_varint_u32(packet, offset) else {
-        return RepeatedMultiHit {
-            next_offset: offset,
-            ..Default::default()
-        };
-    };
-    if !(1..=25).contains(&count) {
-        return RepeatedMultiHit {
-            next_offset: offset,
-            ..Default::default()
-        };
+    const STATE_AND_EFFECT: [u8; 9] = [0x57, 0xFA, 0x3D, 0x6C, 0x01, 0x00, 0x00, 0x00, 0x05];
+
+    fn event(frame: &[u8]) -> Option<ParsedDamagePacket> {
+        damage_event(&read_damage_record(frame).expect("frame is readable"))
     }
 
-    let mut cursor = offset + read_varint(packet, offset).length;
-    let mut per_hit_values = Vec::with_capacity(count as usize);
-    let mut first_hit = None;
-
-    for _ in 0..count {
-        let Some(hit) = read_varint_u32(packet, cursor) else {
-            return RepeatedMultiHit {
-                next_offset: offset,
-                ..Default::default()
-            };
-        };
-        if hit == 0 || first_hit.is_some_and(|first| first != hit) {
-            return RepeatedMultiHit {
-                next_offset: offset,
-                ..Default::default()
-            };
-        }
-
-        first_hit = Some(hit);
-        per_hit_values.push(hit);
-        cursor += read_varint(packet, cursor).length;
+    fn amount_tail(amount: &[u8]) -> Vec<u8> {
+        let mut tail = STATE_AND_EFFECT.to_vec();
+        tail.extend_from_slice(amount);
+        tail.extend_from_slice(&[0x01, 0x00]);
+        tail
     }
 
-    RepeatedMultiHit {
-        count,
-        damage: per_hit_values.iter().map(|value| u64::from(*value)).sum(),
-        per_hit_values,
-        next_offset: cursor,
-    }
-}
+    #[test]
+    fn crit_hit_with_extra_word_before_the_kind_is_a_crit_of_the_right_amount() {
+        let mut after_action = vec![0xDE, 0xAD, 0xBE, 0xEF, 3];
+        after_action.extend(amount_tail(&[0xE8, 0x07]));
 
-fn read_varint_u32(data: &[u8], offset: usize) -> Option<u32> {
-    let out = read_varint(data, offset);
-    if !out.is_valid() {
-        return None;
-    }
+        let parsed = event(&hit_frame(0x0005, &after_action)).unwrap();
 
-    u32::try_from(out.value).ok()
-}
-
-fn collect_varints(data: &[u8], start: usize, max_count: usize) -> Vec<i64> {
-    let mut values = Vec::new();
-    let mut offset = start;
-
-    while offset < data.len() && values.len() < max_count {
-        let out = read_varint(data, offset);
-        if !out.is_valid() {
-            break;
-        }
-
-        values.push(out.value);
-        offset += out.length;
+        assert!(parsed.is_crit);
+        assert_eq!(parsed.specials, ["CRITICAL"]);
+        assert_eq!(parsed.damage, 1000);
+        assert_eq!(parsed.actor_id, 18);
+        assert_eq!(parsed.target_id, 16022);
     }
 
-    values
+    #[test]
+    fn reflected_damage_is_not_the_actors_damage() {
+        let mut after_action = vec![KIND_REFLECTED];
+        after_action.extend(amount_tail(&[0x64]));
+
+        assert!(event(&hit_frame(0x0004, &after_action)).is_none());
+    }
+
+    #[test]
+    fn record_without_amount_is_no_damage_event() {
+        let mut after_action = vec![1];
+        after_action.extend(STATE_AND_EFFECT);
+        after_action.extend_from_slice(&[0x01, 0x00]);
+
+        assert!(event(&hit_frame(0x0000, &after_action)).is_none());
+    }
+
+    #[test]
+    fn flags_with_the_low_byte_high_bit_set_read_as_one_word() {
+        let mut after_action = vec![2];
+        after_action.extend(STATE_AND_EFFECT);
+        after_action.extend_from_slice(&[0x2C, 0x07, 0x01, 0x00]);
+
+        let parsed = event(&hit_frame(0x0084, &after_action)).unwrap();
+
+        assert_eq!(parsed.damage, 44);
+        assert!(!parsed.is_crit);
+    }
+
+    #[test]
+    fn back_attack_after_a_multi_byte_heal_is_still_a_back_attack() {
+        let mut after_action = vec![2, 0b0100_1110, 0x80, 0x80, 0x01, 1];
+        after_action.extend(amount_tail(&[0x64]));
+
+        let parsed = event(&hit_frame(0x0006, &after_action)).unwrap();
+
+        assert_eq!(parsed.specials, ["PARRY", "PERFECT", "DOUBLE", "BACK"]);
+    }
+
+    #[test]
+    fn multi_hit_list_reports_its_count_and_total() {
+        let mut after_action = vec![2];
+        after_action.extend_from_slice(&STATE_AND_EFFECT);
+        after_action.extend_from_slice(&[0xD8, 0x04, 3, 0xC8, 0x01, 0xC8, 0x01, 0xC8, 0x01, 0x01, 0x00]);
+
+        let parsed = event(&hit_frame(0x0024, &after_action)).unwrap();
+
+        assert_eq!(parsed.damage, 600);
+        assert_eq!(parsed.multi_hit_count, 3);
+        assert_eq!(parsed.multi_hit_damage, 600);
+    }
+
+    #[test]
+    fn skill_codes_are_normalised_to_the_base_skill() {
+        let mut after_action = vec![2];
+        after_action.extend(amount_tail(&[0x64]));
+
+        let parsed = event(&hit_frame(0x0004, &after_action)).unwrap();
+
+        assert_eq!(parsed.ori_skill_code, 11_020_151);
+        assert_eq!(parsed.skill_code, 11_020_000);
+    }
+
+    #[test]
+    fn monster_skill_hit_is_not_counted() {
+        let mut after_action = vec![2];
+        after_action.extend(amount_tail(&[0x64]));
+
+        assert!(event(&hit_frame_with_skill(0x0004, 1_223_380, &after_action)).is_none());
+    }
 }

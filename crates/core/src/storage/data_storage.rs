@@ -15,7 +15,17 @@ use crate::models::combat::{
 };
 use crate::models::packet::ParsedDamagePacket;
 use crate::mobs::catalog::MobCatalog;
+use crate::report::events::{CombatEventLog, CombatEvents, Heal, HealKind, IncomingHit, Killer};
+use crate::report::ledger::{fight_party, BuffIntervals};
 use crate::storage::loaders::load_healing_skill_codes;
+
+pub(crate) struct FightLedgerInputs {
+    pub events: CombatEvents,
+    pub names: HashMap<u32, String>,
+    pub servers: HashMap<u32, String>,
+    pub classes: HashMap<u32, String>,
+    pub buff_intervals: BuffIntervals,
+}
 
 const ACTOR_METADATA_CAPACITY: usize = 2_000;
 const MOB_METADATA_CAPACITY: usize = 5_000;
@@ -26,6 +36,7 @@ const SUMMON_METADATA_CAPACITY: usize = 5_000;
 
 const BUFF_TARGET_CAPACITY: usize = 1_024;
 const BUFF_INTERVALS_PER_SKILL_CAPACITY: usize = 1_024;
+const BUFF_INSTANCE_CAPACITY: usize = 4_096;
 const BUFF_INTERVAL_MERGE_TOLERANCE_MS: u64 = 100;
 
 const ACTOR_CLASS_SKILL_IGNORE_LIST: [&str; 2] = ["1134", "1740"];
@@ -81,6 +92,10 @@ where
 
     fn get(&self, key: &K) -> Option<&V> {
         self.map.get(key)
+    }
+
+    fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+        self.map.get_mut(key)
     }
 
     fn get_mut_or_insert_with<F>(&mut self, key: K, default: F) -> &mut V
@@ -165,9 +180,12 @@ struct DataStorageInner {
     actor_id_combat_power_map: BoundedMap<u32, u64>,
     actor_id_skill_spec_map: BoundedMap<u32, HashMap<u32, Vec<u32>>>,
     mob_id_code_map: BoundedMap<u32, u32>,
-    mob_id_hp_map: BoundedMap<u32, (u32, u32)>,
+    mob_id_hp_map: BoundedMap<u32, (u64, u64)>,
     player_hp_map: BoundedMap<u32, PlayerHpInfo>,
     use_buffs_by_target: BoundedMap<u32, HashMap<u32, HashMap<u32, VecDeque<BuffInterval>>>>,
+    /// The buff a `(target, instance id)` pair stands for, so a removal packet
+    /// that names only the instance can end the right interval.
+    buff_instances: BoundedMap<(u32, u32), BuffInstance>,
     summon_owner_map: BoundedMap<u32, u32>,
     start_time: Option<f64>,
     /// Last time the player running Aether was in the fight: hit something,
@@ -196,6 +214,14 @@ struct DataStorageInner {
     pvp_last_attacker_by_target: HashMap<u32, PvpPlayerKey>,
     pvp_combat_stats: HashMap<PvpPlayerKey, PvpCombatStats>,
     pvp_dead_players: HashSet<PvpPlayerKey>,
+    /// Hits taken, heals and deaths, for the report of a boss fight.
+    combat_events: CombatEventLog,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BuffInstance {
+    actor_id: u32,
+    skill_code: u32,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -217,6 +243,7 @@ impl Default for DataStorageInner {
             mob_id_hp_map: BoundedMap::new(MOB_METADATA_CAPACITY),
             player_hp_map: BoundedMap::new(ACTOR_METADATA_CAPACITY),
             use_buffs_by_target: BoundedMap::new(BUFF_TARGET_CAPACITY),
+            buff_instances: BoundedMap::new(BUFF_INSTANCE_CAPACITY),
             summon_owner_map: BoundedMap::new(SUMMON_METADATA_CAPACITY),
             start_time: None,
             activity_at: None,
@@ -236,6 +263,7 @@ impl Default for DataStorageInner {
             pvp_last_attacker_by_target: HashMap::new(),
             pvp_combat_stats: HashMap::new(),
             pvp_dead_players: HashSet::new(),
+            combat_events: CombatEventLog::default(),
         }
     }
 }
@@ -343,6 +371,7 @@ impl DataStorage {
     pub fn save_buff(
         &self,
         target_id: u32,
+        instance_id: u32,
         actor_id: u32,
         skill_code: u32,
         _server_start_ms: u64,
@@ -384,6 +413,9 @@ impl DataStorage {
             while skill_intervals.len() > BUFF_INTERVALS_PER_SKILL_CAPACITY {
                 skill_intervals.pop_front();
             }
+            inner
+                .buff_instances
+                .insert((target_id, instance_id), BuffInstance { actor_id, skill_code });
         }
 
         BuffSummary {
@@ -397,11 +429,57 @@ impl DataStorage {
         }
     }
 
+    /// The game ended a buff instance before its duration ran out. Its
+    /// interval stops now, unless another instance of the same buff on the
+    /// same target is still running.
+    pub fn end_buff(&self, target_id: u32, instance_id: u32) {
+        let ended_at_ms = current_timestamp_millis();
+        let mut inner = self.inner.write().unwrap();
+        let Some(ended) = inner.buff_instances.remove(&(target_id, instance_id)) else {
+            return;
+        };
+        let another_instance_runs = inner.buff_instances.map.iter().any(|((target, _), other)| {
+            *target == target_id
+                && other.actor_id == ended.actor_id
+                && other.skill_code == ended.skill_code
+        });
+        if another_instance_runs {
+            return;
+        }
+        let Some(last_interval) = inner
+            .use_buffs_by_target
+            .get_mut(&target_id)
+            .and_then(|by_actor| by_actor.get_mut(&ended.actor_id))
+            .and_then(|by_skill| by_skill.get_mut(&ended.skill_code))
+            .and_then(|intervals| intervals.back_mut())
+        else {
+            return;
+        };
+        last_interval.end_ms = last_interval.end_ms.min(ended_at_ms);
+    }
+
     pub fn append_damage_at(&self, packet: ParsedDamagePacket, timestamp: f64) {
         let config = self.config.read().unwrap().clone();
         let mut inner = self.inner.write().unwrap();
 
         if self.healing_skill_codes.contains(&packet.skill_code) {
+            let skill_code = if (10_000_000..=99_999_999).contains(&packet.ori_skill_code) {
+                packet.skill_code
+            } else {
+                packet.ori_skill_code
+            };
+            record_heal(
+                &mut inner,
+                Heal {
+                    at: timestamp,
+                    healer_id: packet.actor_id,
+                    target_id: packet.target_id,
+                    skill_code,
+                    kind: HealKind::Direct,
+                    amount: packet.damage,
+                    critical: packet.is_crit,
+                },
+            );
             return;
         }
 
@@ -543,6 +621,26 @@ impl DataStorage {
                 .or_insert(0) += count;
         }
 
+        if !inner.mob_id_code_map.contains_key(&packet.actor_id) {
+            for (kind, amount) in [
+                (HealKind::Drain, packet.drain_amount),
+                (HealKind::Regeneration, packet.regeneration_amount),
+            ] {
+                record_heal(
+                    &mut inner,
+                    Heal {
+                        at: timestamp,
+                        healer_id: actor_id,
+                        target_id: actor_id,
+                        skill_code: stats_skill_code,
+                        kind,
+                        amount,
+                        critical: false,
+                    },
+                );
+            }
+        }
+
         let hit_on_own_summon = inner.summon_owner_map.get(&packet.target_id) == Some(&actor_id);
         if actor_id != packet.target_id && !hit_on_own_summon {
             inner.last_target = Some(packet.target_id);
@@ -561,6 +659,107 @@ impl DataStorage {
         drop(inner);
         if own_class_learned {
             self.resolve_own_name();
+        }
+    }
+
+    /// A hit a monster's skill landed on `victim_id`, by a record or a damage
+    /// tick. It is not damage dealt: it moves no target and no stats.
+    pub fn record_incoming_hit(&self, victim_id: u32, source_id: u32, skill_code: u32, amount: u64) {
+        self.record_incoming_hit_at(victim_id, source_id, skill_code, amount, current_timestamp_seconds());
+    }
+
+    pub fn record_incoming_hit_at(&self, victim_id: u32, source_id: u32, skill_code: u32, amount: u64, at: f64) {
+        let mut inner = self.inner.write().unwrap();
+        let from_a_player = inner.actor_id_name_map.contains_key(&source_id) && !inner.mob_id_code_map.contains_key(&source_id);
+        if amount == 0
+            || victim_id == source_id
+            || from_a_player
+            || inner.mob_id_code_map.contains_key(&victim_id)
+            || inner.summon_owner_map.contains_key(&source_id)
+        {
+            return;
+        }
+        let source_mob_code = inner.mob_id_code_map.get(&source_id).copied();
+        inner.combat_events.record_hit(IncomingHit { at, victim_id, source_id, source_mob_code, skill_code, amount });
+    }
+
+    /// A tick of a heal over time.
+    pub fn record_heal_tick(&self, healer_id: u32, target_id: u32, skill_code: u32, amount: u64) {
+        self.record_heal_tick_at(healer_id, target_id, skill_code, amount, current_timestamp_seconds());
+    }
+
+    pub fn record_heal_tick_at(&self, healer_id: u32, target_id: u32, skill_code: u32, amount: u64, at: f64) {
+        let heal = Heal { at, healer_id, target_id, skill_code, kind: HealKind::OverTime, amount, critical: false };
+        record_heal(&mut self.inner.write().unwrap(), heal);
+    }
+
+    /// The game's record of a player's death. `killer_name` is empty unless the
+    /// killer is a player; `killer_mob_code` is 0 unless it names a monster.
+    pub fn record_player_death(
+        &self,
+        victim_id: u32,
+        skill_code: u32,
+        killer_id: u32,
+        killer_name: &str,
+        killer_mob_code: u32,
+    ) {
+        self.record_player_death_at(victim_id, skill_code, killer_id, killer_name, killer_mob_code, current_timestamp_seconds());
+    }
+
+    pub fn record_player_death_at(
+        &self,
+        victim_id: u32,
+        skill_code: u32,
+        killer_id: u32,
+        killer_name: &str,
+        killer_mob_code: u32,
+        at: f64,
+    ) {
+        let mut inner = self.inner.write().unwrap();
+        if inner.mob_id_code_map.contains_key(&victim_id) {
+            return;
+        }
+        let mob_code = if killer_name.is_empty() {
+            Some(killer_mob_code)
+                .filter(|code| *code != 0)
+                .or_else(|| inner.mob_id_code_map.get(&killer_id).copied())
+        } else {
+            None
+        };
+        let killer = Killer { id: killer_id, name: Some(killer_name.to_string()).filter(|name| !name.is_empty()), mob_code };
+        inner.combat_events.record_death(at, victim_id, skill_code, killer);
+    }
+
+    /// The hits taken, heals and deaths from `from` to `to`, in seconds since
+    /// the epoch.
+    pub fn combat_events(&self, from: f64, to: f64) -> CombatEvents {
+        self.inner.read().unwrap().combat_events.between(from, to)
+    }
+
+    /// Everything a boss fight ledger reads from storage, copied in one short
+    /// read lock: the combat events of the window and the buffs on the target
+    /// and on the party only, not on every actor ever buffed.
+    pub(crate) fn fight_ledger_inputs(
+        &self,
+        target_id: u32,
+        damage_dealers: &[u32],
+        (from, to): (f64, f64),
+    ) -> FightLedgerInputs {
+        let inner = self.inner.read().unwrap();
+        let events = inner.combat_events.between(from, to);
+        let buff_intervals = fight_party(damage_dealers, &events.heals)
+            .into_iter()
+            .chain([target_id])
+            .filter_map(|buffed| {
+                inner.use_buffs_by_target.get(&buffed).map(|casters| (buffed, casters.clone()))
+            })
+            .collect();
+        FightLedgerInputs {
+            events,
+            names: inner.actor_id_name_map.as_hash_map(),
+            servers: inner.actor_id_server_map.as_hash_map(),
+            classes: inner.actor_id_class_map.as_hash_map(),
+            buff_intervals,
         }
     }
 
@@ -619,28 +818,51 @@ impl DataStorage {
         inner.mob_id_code_map.insert(target_id, mob_code);
     }
 
-    pub fn append_mob_hp(&self, target_id: u32, current_hp: u32) {
-        let mut inner = self.inner.write().unwrap();
-        let entry = inner
-            .mob_id_hp_map
-            .get_mut_or_insert_with(target_id, || (current_hp, current_hp));
-        entry.0 = current_hp;
-        if current_hp > entry.1 {
-            entry.1 = current_hp;
+    /// The game reported the mob dead. Its HP goes to zero, the same state an
+    /// HP packet of zero leaves, so every consumer of that state sees the
+    /// kill. A mob whose HP was never recorded has nothing to zero.
+    pub fn mark_mob_dead(&self, target_id: u32) {
+        if let Some(hp) = self.inner.write().unwrap().mob_id_hp_map.get_mut(&target_id) {
+            hp.0 = 0;
         }
     }
 
-    pub fn append_player_hp(&self, actor_id: u32, current_hp: u32) {
+    pub fn set_mob_hp(&self, target_id: u32, current_hp: Option<u64>, max_hp: Option<u64>) {
+        let Some(seed) = current_hp.or(max_hp) else {
+            return;
+        };
+        let mut inner = self.inner.write().unwrap();
+        let entry = inner
+            .mob_id_hp_map
+            .get_mut_or_insert_with(target_id, || (seed, seed));
+        if let Some(current_hp) = current_hp {
+            entry.0 = current_hp;
+        }
+        if let Some(max_hp) = max_hp {
+            entry.1 = max_hp;
+        }
+        entry.1 = entry.1.max(entry.0);
+    }
+
+    pub fn set_player_hp(&self, actor_id: u32, current_hp: Option<u32>, max_hp: Option<u32>) {
+        let Some(seed) = current_hp.or(max_hp) else {
+            return;
+        };
         let mut inner = self.inner.write().unwrap();
         let entry = inner
             .player_hp_map
             .get_mut_or_insert_with(actor_id, || PlayerHpInfo {
                 actor_id,
-                current_hp,
-                max_observed_hp: current_hp,
+                current_hp: seed,
+                max_observed_hp: seed,
             });
-        entry.current_hp = current_hp;
-        entry.max_observed_hp = entry.max_observed_hp.max(current_hp);
+        if let Some(current_hp) = current_hp {
+            entry.current_hp = current_hp;
+        }
+        if let Some(max_hp) = max_hp {
+            entry.max_observed_hp = max_hp;
+        }
+        entry.max_observed_hp = entry.max_observed_hp.max(entry.current_hp);
     }
 
     pub fn append_summon(&self, owner_id: u32, summon_id: u32) {
@@ -654,20 +876,8 @@ impl DataStorage {
         inner.summon_owner_map.insert(summon_id, owner_id);
     }
 
-    pub fn has_summon_owner(&self, summon_id: u32) -> bool {
-        self.inner
-            .read()
-            .unwrap()
-            .summon_owner_map
-            .contains_key(&summon_id)
-    }
-
-    pub fn has_mob(&self, actor_id: u32) -> bool {
-        self.inner
-            .read()
-            .unwrap()
-            .mob_id_code_map
-            .contains_key(&actor_id)
+    pub fn forget_summon_owner(&self, summon_id: u32) {
+        self.inner.write().unwrap().summon_owner_map.map.remove(&summon_id);
     }
 
     pub fn get_mob_code(&self, target_id: u32) -> Option<u32> {
@@ -1104,7 +1314,7 @@ impl DataStorage {
         self.inner.read().unwrap().mob_id_code_map.as_hash_map()
     }
 
-    pub fn mob_id_hp_snapshot(&self) -> HashMap<u32, (u32, u32)> {
+    pub fn mob_id_hp_snapshot(&self) -> HashMap<u32, (u64, u64)> {
         self.inner.read().unwrap().mob_id_hp_map.as_hash_map()
     }
 
@@ -1168,7 +1378,7 @@ fn infer_specialty_slots(skill_id: u32) -> Vec<u32> {
     slots
 }
 
-fn infer_actor_class(skill_code: u32) -> Option<String> {
+pub(crate) fn infer_actor_class(skill_code: u32) -> Option<String> {
     let skill_code = skill_code.to_string();
     if skill_code.len() < 2 {
         return None;
@@ -1201,6 +1411,15 @@ fn current_timestamp_seconds() -> f64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs_f64())
         .unwrap_or_default()
+}
+
+/// A heal is kept when a player healed a player: nothing a monster did or took.
+fn record_heal(inner: &mut DataStorageInner, heal: Heal) {
+    let involves_a_monster = inner.mob_id_code_map.contains_key(&heal.healer_id)
+        || inner.mob_id_code_map.contains_key(&heal.target_id);
+    if heal.amount > 0 && !involves_a_monster {
+        inner.combat_events.record_heal(heal);
+    }
 }
 
 /// Whether a counted hit belongs to your fight: you dealt it, you took it, or
@@ -1406,6 +1625,8 @@ mod unowned_hit_tests {
             multi_hit_damage: 0,
             multi_hit_count: 0,
             specials: Vec::new(),
+            drain_amount: 0,
+            regeneration_amount: 0,
         }
     }
 
@@ -1513,5 +1734,190 @@ mod unowned_hit_tests {
         storage.clear();
 
         assert_eq!(storage.own_actor_ids(), vec![PLAYER, PLAYER + 10]);
+    }
+}
+
+#[cfg(test)]
+mod combat_event_tests {
+    use std::sync::{Arc, RwLock};
+
+    use super::DataStorage;
+    use crate::config::DpsMeterConfig;
+    use crate::events::{EventSink, MeterEvent};
+    use crate::mobs::catalog::MobCatalog;
+    use crate::models::packet::ParsedDamagePacket;
+    use crate::report::events::HealKind;
+
+    struct Silent;
+    impl EventSink for Silent {
+        fn emit(&self, _: MeterEvent) {}
+    }
+
+    const PLAYER: u32 = 7;
+    const HEALER: u32 = 8;
+    const BOSS: u32 = 900;
+    const ADD: u32 = 901;
+    const BOSS_CODE: u32 = 2_300_810;
+    const MONSTER_SKILL: u32 = 1_607_630;
+
+    fn storage() -> DataStorage {
+        let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
+        let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
+        let storage = DataStorage::new(Arc::new(Silent), config, mobs);
+        storage.append_actor(PLAYER, "Player", None);
+        storage.append_actor(HEALER, "Healer", None);
+        storage.append_mob(BOSS, BOSS_CODE);
+        storage.append_mob(ADD, 2_920_174);
+        storage
+    }
+
+    fn hit(actor_id: u32, target_id: u32, skill_code: u32, damage: u64) -> ParsedDamagePacket {
+        ParsedDamagePacket {
+            target_id,
+            actor_id,
+            skill_code,
+            ori_skill_code: skill_code + 1,
+            damage,
+            is_dot: false,
+            is_crit: false,
+            multi_hit_damage: 0,
+            multi_hit_count: 0,
+            specials: Vec::new(),
+            drain_amount: 0,
+            regeneration_amount: 0,
+        }
+    }
+
+    #[test]
+    fn a_monsters_hit_on_a_player_is_damage_taken_that_moves_no_target_and_no_stats() {
+        let storage = storage();
+
+        storage.record_incoming_hit_at(PLAYER, BOSS, MONSTER_SKILL, 900, 10.0);
+
+        let hits = storage.combat_events(0.0, 20.0).hits;
+        assert_eq!(hits.len(), 1);
+        assert_eq!((hits[0].source_mob_code, hits[0].amount), (Some(BOSS_CODE), 900));
+        assert_eq!(storage.last_target(), None);
+        assert_eq!(storage.last_target_by_main_actor(), None);
+        assert!(storage.get_dps_stats_snapshot().is_empty());
+    }
+
+    #[test]
+    fn what_is_not_a_monster_hitting_a_player_is_not_damage_taken() {
+        let storage = storage();
+
+        storage.record_incoming_hit_at(ADD, BOSS, MONSTER_SKILL, 900, 10.0);
+        storage.record_incoming_hit_at(PLAYER, HEALER, MONSTER_SKILL, 900, 10.0);
+        storage.record_incoming_hit_at(PLAYER, PLAYER, MONSTER_SKILL, 900, 10.0);
+        storage.record_incoming_hit_at(PLAYER, BOSS, MONSTER_SKILL, 0, 10.0);
+
+        assert!(storage.combat_events(0.0, 20.0).hits.is_empty());
+    }
+
+    #[test]
+    fn a_hit_from_a_monster_not_yet_seen_spawning_is_still_damage_taken() {
+        let storage = storage();
+
+        storage.record_incoming_hit_at(PLAYER, 5_000, MONSTER_SKILL, 900, 10.0);
+
+        assert_eq!(storage.combat_events(0.0, 20.0).hits[0].source_mob_code, None);
+    }
+
+    #[test]
+    fn a_healing_skills_amount_on_a_player_is_a_heal_and_not_damage() {
+        let storage = storage();
+        let mut healing_hit = hit(HEALER, PLAYER, 17_800_000, 1_000);
+        healing_hit.is_crit = true;
+
+        storage.append_damage_at(healing_hit, 10.0);
+
+        let heals = storage.combat_events(0.0, 20.0).heals;
+        assert_eq!(heals.len(), 1);
+        assert_eq!(
+            (heals[0].healer_id, heals[0].target_id, heals[0].skill_code, heals[0].kind, heals[0].amount, heals[0].critical),
+            (HEALER, PLAYER, 17_800_000, HealKind::Direct, 1_000, true)
+        );
+        assert!(storage.get_dps_stats_snapshot().is_empty());
+    }
+
+    #[test]
+    fn a_healing_skill_landing_on_a_monster_is_not_a_heal() {
+        let storage = storage();
+
+        storage.append_damage_at(hit(HEALER, BOSS, 17_800_000, 1_000), 10.0);
+
+        assert!(storage.combat_events(0.0, 20.0).heals.is_empty());
+    }
+
+    #[test]
+    fn health_regained_on_a_damaging_hit_is_a_heal_of_the_attacker_and_the_damage_still_counts() {
+        let storage = storage();
+        let mut regenerating_hit = hit(PLAYER, BOSS, 12_060_000, 3_000);
+        regenerating_hit.regeneration_amount = 677;
+        regenerating_hit.drain_amount = 12;
+
+        storage.append_damage_at(regenerating_hit, 10.0);
+
+        let mut heals = storage.combat_events(0.0, 20.0).heals;
+        heals.sort_by_key(|heal| heal.kind);
+        assert_eq!(heals.len(), 2);
+        assert_eq!((heals[0].kind, heals[0].amount), (HealKind::Drain, 12));
+        assert_eq!((heals[1].kind, heals[1].amount), (HealKind::Regeneration, 677));
+        assert_eq!((heals[1].healer_id, heals[1].target_id, heals[1].skill_code), (PLAYER, PLAYER, 12_060_000));
+        assert_eq!(storage.last_target(), Some(BOSS));
+    }
+
+    #[test]
+    fn a_heal_tick_is_an_over_time_heal() {
+        let storage = storage();
+
+        storage.record_heal_tick_at(HEALER, PLAYER, 17_090_000, 340, 10.0);
+
+        let heals = storage.combat_events(0.0, 20.0).heals;
+        assert_eq!((heals[0].kind, heals[0].amount), (HealKind::OverTime, 340));
+    }
+
+    #[test]
+    fn a_death_names_a_monster_killer_by_its_entity_and_carries_the_last_hit() {
+        let storage = storage();
+        storage.record_incoming_hit_at(PLAYER, BOSS, MONSTER_SKILL, 52_300, 10.0);
+
+        storage.record_player_death_at(PLAYER, MONSTER_SKILL, BOSS, "", 0, 11.0);
+
+        let death = &storage.combat_events(0.0, 20.0).deaths[0];
+        assert_eq!(death.killer.mob_code, Some(BOSS_CODE));
+        assert_eq!(death.killer.name, None);
+        assert_eq!(death.last_hit.as_ref().map(|hit| hit.amount), Some(52_300));
+    }
+
+    #[test]
+    fn a_death_names_a_player_killer_by_name() {
+        let storage = storage();
+
+        storage.record_player_death_at(PLAYER, 17_050_000, 8_030, "Veyra", 0, 11.0);
+
+        let death = &storage.combat_events(0.0, 20.0).deaths[0];
+        assert_eq!(death.killer.name.as_deref(), Some("Veyra"));
+        assert_eq!(death.killer.mob_code, None);
+        assert_eq!(death.last_hit, None);
+    }
+
+    #[test]
+    fn the_death_of_a_monster_is_not_a_player_death() {
+        let storage = storage();
+
+        storage.record_player_death_at(ADD, 0, 0, "", 0, 11.0);
+
+        assert!(storage.combat_events(0.0, 20.0).deaths.is_empty());
+    }
+
+    #[test]
+    fn a_reset_forgets_the_events() {
+        let storage = storage();
+        storage.record_incoming_hit_at(PLAYER, BOSS, MONSTER_SKILL, 900, 10.0);
+
+        storage.clear();
+
+        assert!(storage.combat_events(0.0, 20.0).hits.is_empty());
     }
 }

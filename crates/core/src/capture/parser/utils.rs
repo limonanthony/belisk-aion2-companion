@@ -29,6 +29,13 @@ pub fn read_varint(data: &[u8], offset: usize) -> VarIntOutput {
     }
 }
 
+/// Total bytes of a frame, its own length varint included. The varint's value
+/// is the number of bytes after the varint plus 4, whatever the varint's size.
+pub fn frame_total_bytes(length: &VarIntOutput) -> Option<usize> {
+    let length_bytes = i64::try_from(length.length).ok()?;
+    usize::try_from(length.value + length_bytes - 4).ok()
+}
+
 pub fn read_u32_le(data: &[u8], offset: usize) -> Option<u32> {
     let bytes = data.get(offset..offset + 4)?;
     Some(u32::from_le_bytes(bytes.try_into().ok()?))

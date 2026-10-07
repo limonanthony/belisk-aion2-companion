@@ -7,7 +7,6 @@ pub enum SpecialDamage {
     Parry,
     Perfect,
     Double,
-    Smite,
     Critical,
 }
 
@@ -19,7 +18,6 @@ impl SpecialDamage {
             Self::Parry => "PARRY",
             Self::Perfect => "PERFECT",
             Self::Double => "DOUBLE",
-            Self::Smite => "SMITE",
             Self::Critical => "CRITICAL",
         }
     }
@@ -56,4 +54,10 @@ pub struct ParsedDamagePacket {
     pub multi_hit_damage: u64,
     pub multi_hit_count: u32,
     pub specials: Vec<String>,
+    /// Health the attacker drained with the hit; 0 when none.
+    #[serde(default)]
+    pub drain_amount: u64,
+    /// Health the attacker regained with the hit; 0 when none.
+    #[serde(default)]
+    pub regeneration_amount: u64,
 }

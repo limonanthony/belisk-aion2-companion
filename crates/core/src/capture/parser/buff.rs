@@ -1,3 +1,4 @@
+use crate::capture::parser::buff_removal_record::read_buff_removal_record;
 use crate::capture::parser::utils::{
     bytes_to_hex, read_u32_le_or_default as parse_u32_le, read_u64_le_or_default as parse_u64_le,
     read_varint,
@@ -18,55 +19,29 @@ impl StreamProcessor {
         if !target_info.is_valid() {
             return false;
         }
-        let after_target_offset = offset + target_info.length;
-        offset = after_target_offset + 2;
+        // 2A carries a count byte before its record; 2B is the record alone.
+        let mask_offset = offset + target_info.length + usize::from(opcode == 0x2A);
+        offset = mask_offset + 1;
         if offset >= packet.len() {
             return false;
         }
 
-        let unknown_info = read_varint(packet, offset);
-        if !unknown_info.is_valid() {
+        let instance_info = read_varint(packet, offset);
+        if !instance_info.is_valid() {
             return false;
         }
-        offset += unknown_info.length;
+        offset += instance_info.length;
 
         if offset + 4 > packet.len() {
             return false;
         }
-        let mut skill_code = parse_u32_le(packet, offset);
+        let skill_code = parse_u32_le(packet, offset);
         offset += 4;
 
-        let is_valid_buff_skill = |code: u32| {
-            (110_000_000..=200_000_000).contains(&code) || (20_000_000..30_000_000).contains(&code)
-        };
-        if opcode == 0x2B && !is_valid_buff_skill(skill_code) {
-            let retry_offset = after_target_offset + 1;
-            if retry_offset < packet.len() {
-                let retry_unknown_info = read_varint(packet, retry_offset);
-                let retry_skill_offset = retry_offset + retry_unknown_info.length;
-                if retry_unknown_info.is_valid() && retry_skill_offset + 4 <= packet.len() {
-                    let retry_skill_code = parse_u32_le(packet, retry_skill_offset);
-                    if is_valid_buff_skill(retry_skill_code) {
-                        skill_code = retry_skill_code;
-                        offset = retry_skill_offset + 4;
-                    }
-                }
-            }
-        }
-
-        if skill_code < 110_000_000 || skill_code > 200_000_000 {
-            if !(20_000_000..30_000_000).contains(&skill_code) {
-                // self.logger.debug(format!(
-                //     "[{}] buff skipped target={} skill={} opcode={:02X}38 packet_len={} packet_hex={}",
-                //     self.port,
-                //     target_info.value,
-                //     skill_code,
-                //     opcode,
-                //     packet.len(),
-                //     bytes_to_hex(packet)
-                // ));
-                return true;
-            }
+        let is_valid_buff_skill = (110_000_000..=200_000_000).contains(&skill_code)
+            || (20_000_000..30_000_000).contains(&skill_code);
+        if !is_valid_buff_skill {
+            return true;
         }
 
         if offset + 16 > packet.len() {
@@ -104,6 +79,7 @@ impl StreamProcessor {
         let server_start_ms = server_time.saturating_sub(duration);
         let buff = self.data_storage.save_buff(
             target_info.value as u32,
+            instance_info.value as u32,
             actor_info.value as u32,
             skill_code,
             server_start_ms,
@@ -128,6 +104,20 @@ impl StreamProcessor {
             packet.len(),
             bytes_to_hex(packet)
         ));
+        true
+    }
+
+    pub(crate) fn parse_buff_removal_packet(
+        &mut self,
+        packet: &[u8],
+        _is_compressed_bundle: bool,
+    ) -> bool {
+        let Some(record) = read_buff_removal_record(packet) else {
+            return false;
+        };
+        for instance_id in record.instance_ids {
+            self.data_storage.end_buff(record.target_id, instance_id);
+        }
         true
     }
 }

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::capture::parser::context::ParserContext;
 use crate::capture::parser::nickname;
-use crate::capture::parser::utils::read_varint;
+use crate::capture::parser::utils::{frame_total_bytes, read_varint};
 use crate::config::SharedDpsMeterConfig;
 use crate::capture::census;
 use crate::storage::data_storage::DataStorage;
@@ -19,6 +19,10 @@ const KNOWN_PACKET_HEADERS: &[(u8, u8)] = &[
     (0x05, 0x38),
     (0x2A, 0x38),
     (0x2B, 0x38),
+    (0x2C, 0x38),
+    (0x42, 0x36),
+    // Player death and killer. Parsed in the combat flow only, but known
+    // everywhere: it keeps the stall resync and the census treating it as ours.
     (0x04, 0x8D),
     (0x00, 0x8D),
     // Field boss timers. No longer parsed since 2.2.0, but still a known
@@ -62,7 +66,7 @@ fn resolve_packet_prefix(packet: &[u8], length_offset: usize) -> Option<PacketPr
 fn inspect_stall_candidate(buffer: &[u8]) -> StallCandidate {
     let length_info = read_varint(buffer, 0);
     let declared_packet_len = if length_info.is_valid() && length_info.value > 0 {
-        usize::try_from(length_info.value.saturating_sub(3)).ok()
+        frame_total_bytes(&length_info)
     } else {
         None
     };
@@ -188,6 +192,14 @@ impl StreamProcessor {
         self.combat_damage_enabled = enabled;
     }
 
+    pub fn reset_framing(&mut self) {
+        self.stalled_since = None;
+        self.stalled_candidate = None;
+        self.stall_began = None;
+        self.stalled_buffer_len = 0;
+        self.hunting_packet_start = false;
+    }
+
     pub fn consume_stream(&mut self, buffer: &[u8]) -> usize {
         let mut offset = 0usize;
 
@@ -206,8 +218,7 @@ impl StreamProcessor {
                 continue;
             }
 
-            let Ok(total_packet_bytes) = usize::try_from(length_info.value.saturating_sub(3))
-            else {
+            let Some(total_packet_bytes) = frame_total_bytes(&length_info) else {
                 offset += 1;
                 continue;
             };
@@ -233,16 +244,11 @@ impl StreamProcessor {
                 && current_packet[payload_start + 1] == 0xFF;
 
             if is_bundle {
-                let bundle_size = total_packet_bytes + 1;
-                if offset + bundle_size > buffer.len() {
-                    break;
-                }
-                self.unwrap_bundle(&buffer[offset + payload_start..offset + bundle_size]);
-                offset += bundle_size;
+                self.unwrap_bundle(&current_packet[payload_start..]);
             } else {
                 self.parse_packet(current_packet, false);
-                offset += total_packet_bytes;
             }
+            offset += total_packet_bytes;
         }
 
         // if buffer.len() >= 4 {
@@ -376,7 +382,7 @@ impl StreamProcessor {
                 break;
             }
 
-            let Ok(inner_total_bytes) = usize::try_from(length_info.value.saturating_sub(3)) else {
+            let Some(inner_total_bytes) = frame_total_bytes(&length_info) else {
                 break;
             };
             if inner_total_bytes == 0 {
@@ -455,10 +461,14 @@ impl StreamProcessor {
                 (0x05, 0x38) if self.combat_damage_enabled => {
                     self.parse_dot_packet(payload, is_compressed_bundle)
                 }
+                (0x04, 0x8D) if self.combat_damage_enabled => {
+                    self.parse_char_die_packet(payload, is_compressed_bundle)
+                }
                 (0x2A, 0x38) | (0x2B, 0x38) => {
                     self.parse_buff_packet(payload, is_compressed_bundle)
                 }
-                (0x04, 0x8D) => self.parse_summon_packet_048d(payload, is_compressed_bundle),
+                (0x2C, 0x38) => self.parse_buff_removal_packet(payload, is_compressed_bundle),
+                (0x42, 0x36) => self.parse_death_packet(payload, is_compressed_bundle),
                 (0x00, 0x8D) => self.parse_remain_hp_packet(payload, is_compressed_bundle),
                 _ => false,
             },
@@ -491,6 +501,7 @@ mod own_actor_tests {
     use std::sync::{Arc, Mutex, RwLock};
 
     use super::StreamProcessor;
+    use crate::capture::parser::spawn_record::frames::{MOB_CODE, OWNER, Spawn, with_owner};
     use crate::config::DpsMeterConfig;
     use crate::events::{EventSink, MeterEvent};
     use crate::identity::{IdentityDecision, KnownCharacter};
@@ -548,9 +559,23 @@ mod own_actor_tests {
     }
 
     fn frame(payload: &[u8]) -> Vec<u8> {
-        let mut frame = vec![u8::try_from(payload.len() + 1).expect("short frame")];
+        let length = u32::try_from(payload.len() + 4).expect("small frame");
+        let mut frame = varint(length);
         frame.extend_from_slice(payload);
         frame
+    }
+
+    fn filler(body_len: usize) -> Vec<u8> {
+        let mut payload = vec![0x0B, 0xE3];
+        payload.extend((0..body_len).map(|index| (index * 31 + 7) as u8));
+        frame(&payload)
+    }
+
+    fn bundle(inner_frames: &[u8]) -> Vec<u8> {
+        let mut payload = vec![0xFF, 0xFF];
+        payload.extend_from_slice(&u32::try_from(inner_frames.len()).expect("small bundle").to_le_bytes());
+        payload.extend_from_slice(&lz4_flex::block::compress(inner_frames));
+        frame(&payload)
     }
 
     fn varint(mut value: u32) -> Vec<u8> {
@@ -565,20 +590,49 @@ mod own_actor_tests {
         }
     }
 
-    fn remain_hp(target: u32, skips: [u8; 3], hp: u32) -> Vec<u8> {
+    fn small_stat_hp(target: u32, kind: u8, value: u32) -> Vec<u8> {
         let mut payload = vec![0x00, 0x8D];
         payload.extend(varint(target));
-        payload.extend_from_slice(&skips);
-        payload.extend_from_slice(&hp.to_le_bytes());
+        payload.extend_from_slice(&[1, 1, kind]);
+        payload.extend_from_slice(&value.to_le_bytes());
+        frame(&payload)
+    }
+
+    fn big_stat_hp(target: u32, stats: &[(u8, u64)]) -> Vec<u8> {
+        let mut payload = vec![0x00, 0x8D];
+        payload.extend(varint(target));
+        payload.push(2);
+        payload.push(u8::try_from(stats.len()).expect("few stats"));
+        for (kind, value) in stats {
+            payload.push(*kind);
+            payload.extend_from_slice(&i64::try_from(*value).expect("positive hp").to_le_bytes());
+        }
         frame(&payload)
     }
 
     fn own_hp(target: u32) -> Vec<u8> {
-        remain_hp(target, [1, 1, 3], 2_332)
+        small_stat_hp(target, 3, 2_332)
     }
 
-    fn mob_hp(target: u32, hp: u32) -> Vec<u8> {
-        remain_hp(target, [4, 1, 1], hp)
+    fn mob_hp(target: u32, hp: u64) -> Vec<u8> {
+        big_stat_hp(target, &[(0, hp)])
+    }
+
+    fn spawn(spawn: &Spawn) -> Vec<u8> {
+        frame(&spawn.frame())
+    }
+
+    fn death_with_killer(victim: u32, killer: u32) -> Vec<u8> {
+        let mut payload = vec![0x04, 0x8D];
+        payload.extend(varint(victim));
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload.extend(varint(killer));
+        payload.extend_from_slice(&1302u16.to_le_bytes());
+        payload.extend_from_slice(&[4]);
+        payload.extend_from_slice(b"Slay");
+        payload.push(0);
+        payload.extend_from_slice(&[0; 9]);
+        frame(&payload)
     }
 
     fn named_by_the_game(actor_id: u32, name: &str, key: Option<[u8; 6]>) -> Vec<u8> {
@@ -617,6 +671,8 @@ mod own_actor_tests {
                 multi_hit_damage: 0,
                 multi_hit_count: 0,
                 specials: Vec::new(),
+                drain_amount: 0,
+                regeneration_amount: 0,
             },
             1.0,
         );
@@ -651,7 +707,7 @@ mod own_actor_tests {
     fn only_an_hp_packet_with_the_signature_counts() {
         let mut connection = connection();
 
-        feed(&mut connection, &[mob_hp(MOB, 40_000), remain_hp(MOB + 1, [2, 1, 3], 2_332)]);
+        feed(&mut connection, &[mob_hp(MOB, 40_000), mob_hp(MOB + 1, 2_332)]);
 
         assert_eq!(connection.storage.main_actor_id(), None);
     }
@@ -660,9 +716,354 @@ mod own_actor_tests {
     fn a_signature_hp_above_the_boss_threshold_is_a_big_mob_and_binds_nobody() {
         let mut connection = connection();
 
-        feed(&mut connection, &[remain_hp(MOB, [1, 1, 3], 9_800_000), own_hp(AFTER_ZONE_CHANGE)]);
+        feed(&mut connection, &[small_stat_hp(MOB, 3, 9_800_000), own_hp(AFTER_ZONE_CHANGE)]);
 
         assert_eq!(connection.storage.main_actor_id(), Some(AFTER_ZONE_CHANGE));
+    }
+
+    #[test]
+    fn a_mob_hp_above_u32_is_kept() {
+        let mut connection = connection();
+
+        feed(&mut connection, &[mob_hp(MOB, 5_000_000_000)]);
+
+        assert_eq!(connection.storage.mob_id_hp_snapshot().get(&MOB), Some(&(5_000_000_000, 5_000_000_000)));
+    }
+
+    #[test]
+    fn a_max_hp_stat_makes_the_max_exact_even_when_hp_first_seen_is_lower() {
+        let mut connection = connection();
+
+        feed(&mut connection, &[big_stat_hp(MOB, &[(0, 40_000), (7, 100_000)]), mob_hp(MOB, 30_000)]);
+
+        assert_eq!(connection.storage.mob_id_hp_snapshot().get(&MOB), Some(&(30_000, 100_000)));
+    }
+
+    #[test]
+    fn a_global_spawn_with_an_owner_registers_the_mob_hp_and_summon() {
+        let mut connection = connection();
+        let summon = with_owner(Spawn::global());
+
+        feed(&mut connection, &[spawn(&summon)]);
+
+        assert_eq!(connection.storage.get_mob_code(summon.entity_id), Some(MOB_CODE));
+        assert_eq!(connection.storage.mob_id_hp_snapshot().get(&summon.entity_id), Some(&(119_700, 119_700)));
+        assert_eq!(connection.storage.summon_owner_snapshot().get(&summon.entity_id), Some(&OWNER));
+    }
+
+    #[test]
+    fn a_kr_tw_spawn_with_an_owner_registers_the_summon() {
+        let mut connection = connection();
+        let summon = with_owner(Spawn::kr_tw());
+
+        feed(&mut connection, &[spawn(&summon)]);
+
+        assert_eq!(connection.storage.get_mob_code(summon.entity_id), Some(MOB_CODE));
+        assert_eq!(connection.storage.summon_owner_snapshot().get(&summon.entity_id), Some(&OWNER));
+    }
+
+    #[test]
+    fn a_spawn_without_an_owner_registers_no_summon_and_frees_a_reused_entity_id() {
+        let mut connection = connection();
+        let summon = with_owner(Spawn::global());
+        let reused = Spawn::global();
+
+        feed(&mut connection, &[spawn(&summon)]);
+        assert!(connection.storage.summon_owner_snapshot().contains_key(&summon.entity_id));
+        feed(&mut connection, &[spawn(&reused)]);
+
+        assert!(connection.storage.summon_owner_snapshot().is_empty());
+    }
+
+    #[test]
+    fn a_death_record_is_not_summon_ownership() {
+        let mut connection = connection();
+
+        let parsed = connection.processor.parse_packet(&death_with_killer(54_321, 7_000), false);
+
+        assert!(!parsed);
+        assert!(connection.storage.summon_owner_snapshot().is_empty());
+    }
+
+    #[test]
+    fn a_death_record_in_the_combat_flow_is_a_death_with_the_killer_the_game_names() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+
+        feed(&mut connection, &[death_with_killer(54_321, 7_000)]);
+
+        let deaths = connection.storage.combat_events(0.0, f64::MAX).deaths;
+        assert_eq!(deaths.len(), 1);
+        assert_eq!(deaths[0].victim_id, 54_321);
+        assert_eq!(deaths[0].killer.name.as_deref(), Some("Slay"));
+        assert!(connection.storage.summon_owner_snapshot().is_empty());
+    }
+
+    const PLAYER: u32 = 16_022;
+
+    fn monster_hit_on_the_player(skill_code: u32) -> Vec<u8> {
+        let effect_sequence_state = [0x57, 0xFA, 0x3D, 0x6C, 0x01, 0x00, 0x00, 0x00, 0x05];
+        let mut payload = vec![0x04, 0x38, 0x96, 0x7D, 0x04, 0x00, 18];
+        payload.extend_from_slice(&skill_code.to_le_bytes());
+        payload.push(0x4A);
+        payload.push(2);
+        payload.extend_from_slice(&effect_sequence_state);
+        payload.extend_from_slice(&[0x64, 0x01, 0x00]);
+        frame(&payload)
+    }
+
+    #[test]
+    fn a_monster_hit_on_a_player_is_damage_taken_and_moves_no_target() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+        connection.storage.append_actor(PLAYER, "Victim", None);
+        connection.storage.append_mob(18, 2_300_810);
+
+        feed(&mut connection, &[monster_hit_on_the_player(1_607_630)]);
+
+        let hits = connection.storage.combat_events(0.0, f64::MAX).hits;
+        assert_eq!(hits.len(), 1);
+        assert_eq!((hits[0].victim_id, hits[0].source_mob_code, hits[0].skill_code, hits[0].amount), (PLAYER, Some(2_300_810), 1_607_630, 100));
+        assert_eq!(connection.storage.last_target(), None);
+        assert!(connection.storage.get_dps_stats_snapshot().is_empty());
+    }
+
+    #[test]
+    fn a_hit_from_a_player_skill_is_damage_dealt_and_not_damage_taken() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+        connection.storage.append_actor(PLAYER, "Victim", None);
+
+        feed(&mut connection, &[monster_hit_on_the_player(RANGER_SKILL)]);
+
+        assert!(connection.storage.combat_events(0.0, f64::MAX).hits.is_empty());
+        assert_eq!(connection.storage.last_target(), Some(PLAYER));
+    }
+
+    fn heal_tick_on_self(skill_code: u32) -> Vec<u8> {
+        let mut payload = vec![0x05, 0x38, 0xB5, 0x0E, 0x0B, 0xB5, 0x0E, 0x88, 0x07, 0xD9, 0xFA, 0x7F, 0x60, 0xF7, 0x1E, 0xB7, 0x03];
+        payload.extend_from_slice(&skill_code.to_le_bytes());
+        frame(&payload)
+    }
+
+    #[test]
+    fn a_heal_tick_of_a_class_skill_is_a_heal_over_time_of_its_amount() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+
+        feed(&mut connection, &[heal_tick_on_self(16_190_020)]);
+
+        let heals = connection.storage.combat_events(0.0, f64::MAX).heals;
+        assert_eq!(heals.len(), 1);
+        assert_eq!((heals[0].healer_id, heals[0].target_id, heals[0].skill_code, heals[0].amount), (1_845, 1_845, 16_190_000, 439));
+        assert_eq!(heals[0].kind, crate::report::events::HealKind::OverTime);
+    }
+
+    #[test]
+    fn a_heal_tick_of_a_system_effect_is_not_a_players_healing() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+
+        feed(&mut connection, &[heal_tick_on_self(2_011_101)]);
+
+        assert!(connection.storage.combat_events(0.0, f64::MAX).heals.is_empty());
+    }
+
+    fn death(entity: u32, flag: u8) -> Vec<u8> {
+        let mut payload = vec![0x42, 0x36];
+        payload.extend(varint(entity));
+        payload.extend_from_slice(&[0, flag]);
+        frame(&payload)
+    }
+
+    fn mob_hp_of(connection: &Connection, entity: u32) -> Option<(u64, u64)> {
+        connection.storage.mob_id_hp_snapshot().get(&entity).copied()
+    }
+
+    #[test]
+    fn a_death_flag_of_three_leaves_the_mob_with_zero_hp_and_its_max() {
+        let mut connection = connection();
+        let boss = Spawn::global();
+        feed(&mut connection, &[spawn(&boss), mob_hp(boss.entity_id, 30_000)]);
+
+        feed(&mut connection, &[death(boss.entity_id, 3)]);
+
+        assert_eq!(mob_hp_of(&connection, boss.entity_id), Some((0, 119_700)));
+    }
+
+    #[test]
+    fn removal_flags_leave_the_mob_alive() {
+        for flag in [1, 7] {
+            let mut connection = connection();
+            let boss = Spawn::global();
+            feed(&mut connection, &[spawn(&boss), death(boss.entity_id, flag)]);
+
+            assert_eq!(mob_hp_of(&connection, boss.entity_id), Some((119_700, 119_700)), "flag {flag}");
+        }
+    }
+
+    #[test]
+    fn a_death_of_an_entity_with_no_recorded_hp_records_nothing() {
+        let mut connection = connection();
+
+        feed(&mut connection, &[death(MOB, 3)]);
+
+        assert_eq!(mob_hp_of(&connection, MOB), None);
+    }
+
+    fn dot_tick_of_skill(target: u32, mode: u8, actor: u32, skill_code: u32, damage: u8) -> Vec<u8> {
+        let mut payload = vec![0x05, 0x38];
+        payload.extend(varint(target));
+        payload.push(mode);
+        payload.extend(varint(actor));
+        payload.push(1);
+        payload.extend_from_slice(&skill_code.to_le_bytes());
+        payload.push(damage);
+        frame(&payload)
+    }
+
+    fn dot_tick(target: u32, mode: u8, actor: u32, damage: u8) -> Vec<u8> {
+        dot_tick_of_skill(target, mode, actor, RANGER_SKILL, damage)
+    }
+
+    fn damage_dealt_by(connection: &Connection, actor: u32) -> u64 {
+        connection
+            .storage
+            .get_dps_stats_snapshot()
+            .values()
+            .filter_map(|actors| actors.get(&actor))
+            .flat_map(|skills| skills.values())
+            .map(|stats| stats.total_damage)
+            .sum()
+    }
+
+    #[test]
+    fn only_the_damage_tick_mode_of_a_periodic_effect_counts() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+
+        for mode in [0x00, 0x02, 0x08, 0x09, 0x0B, 0x30] {
+            feed(&mut connection, &[dot_tick(MOB, mode, 18, 50)]);
+        }
+        assert_eq!(damage_dealt_by(&connection, 18), 0);
+
+        feed(&mut connection, &[dot_tick(MOB, 0x0A, 18, 50)]);
+        assert_eq!(damage_dealt_by(&connection, 18), 50);
+    }
+
+    const THAMON_ABSORPTION_RECOVERY: u32 = 160_467_011;
+    const PLAYER_DAMAGE_OVER_TIME: u32 = 1_709_014_011;
+
+    #[test]
+    fn a_thamon_absorption_recovery_hit_is_no_damage_dealt_and_moves_no_target() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+        connection.storage.append_actor(PLAYER, "Victim", None);
+
+        feed(&mut connection, &[monster_hit_on_the_player(THAMON_ABSORPTION_RECOVERY)]);
+
+        assert_eq!(damage_dealt_by(&connection, 18), 0);
+        assert_eq!(connection.storage.last_target(), None);
+        assert!(connection.storage.combat_events(0.0, f64::MAX).hits.is_empty());
+    }
+
+    #[test]
+    fn a_thamon_absorption_recovery_tick_is_no_damage_dealt_and_moves_no_target() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+
+        feed(&mut connection, &[dot_tick_of_skill(MOB, 0x0A, 18, THAMON_ABSORPTION_RECOVERY, 50)]);
+
+        assert_eq!(damage_dealt_by(&connection, 18), 0);
+        assert_eq!(connection.storage.last_target(), None);
+    }
+
+    #[test]
+    fn a_player_damage_over_time_tick_still_counts() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+
+        feed(&mut connection, &[dot_tick_of_skill(MOB, 0x0A, 18, PLAYER_DAMAGE_OVER_TIME, 50)]);
+
+        assert_eq!(damage_dealt_by(&connection, 18), 50);
+    }
+
+    #[test]
+    fn a_thamon_absorption_recovery_heal_tick_is_no_healing() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+
+        feed(&mut connection, &[heal_tick_on_self(THAMON_ABSORPTION_RECOVERY)]);
+
+        assert!(connection.storage.combat_events(0.0, f64::MAX).heals.is_empty());
+    }
+
+    const BUFF_SKILL: u32 = 110_100_001;
+    const BUFF_DURATION_MS: u64 = 60_000;
+
+    fn buff_applied(opcode: u8, target: u32, instance: u32, actor: u32) -> Vec<u8> {
+        let mut payload = vec![opcode, 0x38];
+        payload.extend(varint(target));
+        if opcode == 0x2A {
+            payload.push(1);
+        }
+        payload.push(1);
+        payload.extend(varint(instance));
+        payload.extend_from_slice(&BUFF_SKILL.to_le_bytes());
+        payload.extend_from_slice(&BUFF_DURATION_MS.to_le_bytes());
+        payload.extend_from_slice(&0u64.to_le_bytes());
+        payload.extend(varint(actor));
+        frame(&payload)
+    }
+
+    fn buff_removed(target: u32, instance: u32) -> Vec<u8> {
+        let mut payload = vec![0x2C, 0x38];
+        payload.extend(varint(target));
+        payload.extend_from_slice(&[1, 0]);
+        payload.extend(varint(instance));
+        payload.push(1);
+        frame(&payload)
+    }
+
+    fn buff_length_ms(connection: &Connection, target: u32, actor: u32) -> u64 {
+        let intervals = connection.storage.buff_intervals_snapshot();
+        let interval = intervals[&target][&actor][&BUFF_SKILL].back().expect("one interval");
+        interval.end_ms - interval.start_ms
+    }
+
+    #[test]
+    fn a_removal_ends_the_buff_it_names_before_its_duration_runs_out() {
+        for (opcode, instance) in [(0x2A, 7), (0x2B, 7), (0x2B, 300)] {
+            let mut connection = connection();
+            feed(&mut connection, &[buff_applied(opcode, MOB, instance, 18)]);
+            assert_eq!(buff_length_ms(&connection, MOB, 18), BUFF_DURATION_MS);
+
+            feed(&mut connection, &[buff_removed(MOB, instance)]);
+
+            assert!(buff_length_ms(&connection, MOB, 18) < 5_000, "opcode {opcode:02X} instance {instance}");
+        }
+    }
+
+    #[test]
+    fn a_removal_of_another_instance_does_not_end_the_buff() {
+        let mut connection = connection();
+        feed(&mut connection, &[buff_applied(0x2A, MOB, 7, 18), buff_applied(0x2A, MOB, 8, 18)]);
+
+        feed(&mut connection, &[buff_removed(MOB, 7)]);
+        assert_eq!(buff_length_ms(&connection, MOB, 18), BUFF_DURATION_MS);
+
+        feed(&mut connection, &[buff_removed(MOB, 8)]);
+        assert!(buff_length_ms(&connection, MOB, 18) < 5_000);
+    }
+
+    #[test]
+    fn a_removal_of_a_buff_never_seen_changes_nothing() {
+        let mut connection = connection();
+        feed(&mut connection, &[buff_applied(0x2A, MOB, 7, 18)]);
+
+        feed(&mut connection, &[buff_removed(MOB, 99), buff_removed(MOB + 1, 7)]);
+
+        assert_eq!(buff_length_ms(&connection, MOB, 18), BUFF_DURATION_MS);
     }
 
     #[test]
@@ -698,6 +1099,32 @@ mod own_actor_tests {
             connection.storage.actor_id_name_snapshot().get(&AFTER_ZONE_CHANGE).map(String::as_str),
             Some(NAME)
         );
+    }
+
+    #[test]
+    fn a_frame_with_a_two_byte_length_is_followed_by_the_next_frame() {
+        let mut connection = connection();
+        let mut stream = filler(200);
+        stream.extend(own_hp(AFTER_ZONE_CHANGE));
+
+        let consumed = connection.processor.consume_stream(&stream);
+
+        assert_eq!(consumed, stream.len());
+        assert_eq!(connection.storage.main_actor_id(), Some(AFTER_ZONE_CHANGE));
+    }
+
+    #[test]
+    fn a_frame_with_a_two_byte_length_inside_a_bundle_is_followed_by_the_next_inner_frame() {
+        let mut connection = connection();
+        let mut inner_frames = filler(200);
+        inner_frames.extend(own_hp(AFTER_ZONE_CHANGE));
+        let mut stream = bundle(&inner_frames);
+        stream.extend(filler(20));
+
+        let consumed = connection.processor.consume_stream(&stream);
+
+        assert_eq!(consumed, stream.len());
+        assert_eq!(connection.storage.main_actor_id(), Some(AFTER_ZONE_CHANGE));
     }
 
     #[test]
@@ -970,8 +1397,9 @@ mod framing_tests {
     }
 
     fn unknown_packet(total_bytes: usize) -> Vec<u8> {
-        let length = total_bytes + 3;
-        let mut packet = if length < 0x80 {
+        let length_bytes = if total_bytes + 3 < 0x80 { 1 } else { 2 };
+        let length = total_bytes + 4 - length_bytes;
+        let mut packet = if length_bytes == 1 {
             vec![length as u8]
         } else {
             vec![(length & 0x7F) as u8 | 0x80, (length >> 7) as u8]
@@ -1094,5 +1522,18 @@ mod framing_tests {
             assert_eq!(*size, (index + 1) * TCP_SEGMENT, "nothing is dropped before the packet is whole");
         }
         assert_eq!(buffered.last(), Some(&0), "the packet and the one after it were framed");
+    }
+
+    #[test]
+    fn framing_restarts_at_the_next_frame_after_the_buffered_head_is_discarded() {
+        let mut assembler = assembler();
+        let head_of_a_large_packet = unknown_packet(13_000);
+        assembler.process_chunk(&head_of_a_large_packet[..3 * TCP_SEGMENT], false);
+        assert_eq!(assembler.buffer_size(), 3 * TCP_SEGMENT);
+
+        assembler.discard_buffered();
+        assembler.process_chunk(&unknown_packet(20), false);
+
+        assert_eq!(assembler.buffer_size(), 0, "the frame after the gap was framed on its own");
     }
 }

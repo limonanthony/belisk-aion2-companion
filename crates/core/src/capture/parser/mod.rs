@@ -1,6 +1,14 @@
 pub(crate) mod buff;
+pub(crate) mod buff_removal_record;
+pub(crate) mod char_die_record;
 pub(crate) mod context;
 pub(crate) mod damage;
+pub(crate) mod damage_record;
+pub(crate) mod death_record;
+pub(crate) mod hp_record;
 pub(crate) mod nickname;
+pub(crate) mod periodic_record;
+pub(crate) mod spawn_record;
 pub(crate) mod summon;
 pub mod utils;
+pub(crate) mod wire_cursor;

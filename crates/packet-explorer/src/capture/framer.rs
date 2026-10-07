@@ -3,7 +3,7 @@
 //! meter-core, which also waits for a packet whose bytes have not all arrived,
 //! however large.
 
-use meter_core::capture::parser::utils::read_varint;
+use meter_core::capture::parser::utils::{frame_total_bytes, read_varint};
 use lz4_flex::block::decompress;
 use serde::Serialize;
 
@@ -42,6 +42,11 @@ pub struct Framer {
 impl Framer {
     pub fn leftover(&self) -> usize {
         self.buffer.len()
+    }
+
+    pub fn discard_buffered(&mut self) {
+        self.buffer.clear();
+        self.stalled_since = None;
     }
 
     pub fn feed(&mut self, captured_at: f64, data: &[u8], out: &mut Vec<Frame>) {
@@ -91,8 +96,8 @@ impl Framer {
                 self.skip_byte(&mut offset);
                 continue;
             }
-            let total = match usize::try_from(length.value.saturating_sub(3)) {
-                Ok(total) if total > 0 && total <= MAX_FRAME_LEN => total,
+            let total = match frame_total_bytes(&length) {
+                Some(total) if total > 0 && total <= MAX_FRAME_LEN => total,
                 _ => {
                     self.skip_byte(&mut offset);
                     continue;
@@ -111,16 +116,11 @@ impl Framer {
                 self.stats.frames_over_8k += 1;
             }
             if is_bundle(packet, payload_start) {
-                let bundle_end = offset + total + 1;
-                if bundle_end > buffer.len() {
-                    break;
-                }
-                self.unwrap_bundle(&buffer[offset + payload_start..bundle_end], out);
-                offset = bundle_end;
+                self.unwrap_bundle(&packet[payload_start..], out);
             } else {
                 self.emit(packet, false, out);
-                offset += total;
             }
+            offset += total;
         }
         offset
     }
@@ -156,7 +156,7 @@ impl Framer {
             if !length.is_valid() || length.value <= 0 {
                 break;
             }
-            let Ok(total) = usize::try_from(length.value.saturating_sub(3)) else {
+            let Some(total) = frame_total_bytes(&length) else {
                 break;
             };
             if total == 0 {
@@ -229,12 +229,7 @@ mod tests {
     }
 
     fn length_header(bytes_after_header: usize) -> Vec<u8> {
-        (1..=3usize)
-            .map(|header_len| varint((header_len + bytes_after_header + 3) as u32))
-            .zip(1..=3usize)
-            .find(|(header, header_len)| header.len() == *header_len)
-            .map(|(header, _)| header)
-            .unwrap()
+        varint((bytes_after_header + 4) as u32)
     }
 
     fn packet(opcode: [u8; 2], body_len: usize) -> Vec<u8> {
@@ -275,7 +270,7 @@ mod tests {
         let mut payload = vec![0xFF, 0xFF];
         payload.extend_from_slice(&(inflated.len() as u32).to_le_bytes());
         payload.extend_from_slice(&compressed);
-        let mut stream = length_header(payload.len() - 1);
+        let mut stream = length_header(payload.len());
         stream.extend_from_slice(&payload);
 
         let mut framer = Framer::default();
@@ -286,5 +281,34 @@ mod tests {
         assert_eq!(opcodes, vec![[0x33, 0x36], [0x0B, 0xE3]]);
         assert!(out.iter().all(|frame| frame.in_bundle));
         assert_eq!(framer.stats.bundles_unwrapped, 1);
+    }
+
+    #[test]
+    fn frames_with_a_two_byte_length_are_followed_by_the_next_frame_outside_and_inside_a_bundle() {
+        let body: Vec<u8> = (0..200usize).map(|index| (index * 31 + 7) as u8).collect();
+        let big = |opcode: [u8; 2]| {
+            let mut bytes = length_header(2 + body.len());
+            bytes.extend_from_slice(&opcode);
+            bytes.extend_from_slice(&body);
+            bytes
+        };
+        let mut inflated = big([0x33, 0x36]);
+        inflated.extend(packet([0x45, 0x36], 10));
+        let mut payload = vec![0xFF, 0xFF];
+        payload.extend_from_slice(&(inflated.len() as u32).to_le_bytes());
+        payload.extend_from_slice(&lz4_flex::block::compress(&inflated));
+        let mut stream = big([0x0B, 0xE3]);
+        stream.extend(length_header(payload.len()));
+        stream.extend_from_slice(&payload);
+        stream.extend(packet([0x01, 0x43], 20));
+
+        let mut framer = Framer::default();
+        let mut out = Vec::new();
+        framer.feed(0.0, &stream, &mut out);
+
+        let opcodes: Vec<_> = out.iter().map(|frame| [frame.payload[0], frame.payload[1]]).collect();
+        assert_eq!(opcodes, vec![[0x0B, 0xE3], [0x33, 0x36], [0x45, 0x36], [0x01, 0x43]]);
+        assert_eq!(framer.stats.skipped_bytes, 0);
+        assert_eq!(framer.leftover(), 0);
     }
 }

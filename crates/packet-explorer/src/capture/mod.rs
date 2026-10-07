@@ -96,6 +96,7 @@ pub struct Chunk {
     pub t: f64,
     pub flow: usize,
     pub data: Vec<u8>,
+    pub follows_gap: bool,
 }
 
 pub struct RawFile {
@@ -123,6 +124,7 @@ pub fn read_raw(path: &Path) -> Result<RawFile, String> {
     let mut flow_index: HashMap<TcpFlowKey, usize> = HashMap::new();
     let mut flow_keys = Vec::new();
     let mut reassemblers: Vec<TcpReassembler> = Vec::new();
+    let mut gap_before_next_chunk: Vec<bool> = Vec::new();
     let mut chunks = Vec::new();
     let (mut start, mut end, mut records) = (f64::INFINITY, f64::NEG_INFINITY, 0u64);
 
@@ -141,15 +143,18 @@ pub fn read_raw(path: &Path) -> Result<RawFile, String> {
         let flow = *flow_index.entry(key).or_insert_with(|| {
             flow_keys.push(key);
             reassemblers.push(TcpReassembler::default());
+            gap_before_next_chunk.push(false);
             flow_keys.len() - 1
         });
-        let aligned = reassemblers[flow].feed(packet.sequence, packet.data);
-        if aligned.is_empty() {
+        let reassembly = reassemblers[flow].feed(packet.sequence, packet.data, packet.captured_at);
+        gap_before_next_chunk[flow] |= reassembly.gap_skip.is_some();
+        if reassembly.segments.is_empty() {
             return true;
         }
-        let data = aligned.concat();
+        let data = reassembly.segments.concat();
         if !looks_like_tls(&data) {
-            chunks.push(Chunk { t: packet.captured_at, flow, data });
+            let follows_gap = std::mem::take(&mut gap_before_next_chunk[flow]);
+            chunks.push(Chunk { t: packet.captured_at, flow, data, follows_gap });
         }
         true
     })?;
@@ -247,6 +252,9 @@ fn frame_file(raw: &RawFile, file: usize) -> FramedFile {
 
         match roles[chunk.flow] {
             FlowRole::GameServer => {
+                if chunk.follows_gap {
+                    framers[chunk.flow].discard_buffered();
+                }
                 framers[chunk.flow].feed(chunk.t, &chunk.data, &mut frames);
                 for frame in frames.drain(..) {
                     packets.push(Packet {
