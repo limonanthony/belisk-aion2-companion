@@ -8,11 +8,13 @@ use std::sync::{
 };
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::net::Ipv4Addr;
 
 use libloading::{Library, Symbol};
 use serde::Serialize;
 
 use crate::capture::channel::Channel;
+use crate::capture::game_connections::{query_game_connections, GameConnection};
 use crate::logger::AppLogger;
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,6 +71,8 @@ struct PcapPkthdr {
 }
 
 const PCAP_IF_LOOPBACK: c_uint = 0x0000_0001;
+const AF_INET_FAMILY: u16 = 2;
+const GAME_CONNECTION_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAGIC_PATTERN: [u8; 3] = [0x0E, 0x00, 0x36];
 
 #[derive(Clone)]
@@ -76,6 +80,7 @@ struct DeviceInfo {
     name: String,
     description: String,
     has_addresses: bool,
+    ipv4_addresses: Vec<Ipv4Addr>,
     is_loopback: bool,
 }
 
@@ -189,6 +194,7 @@ impl NpcapLib {
                 name,
                 description,
                 has_addresses: !device.addresses.is_null(),
+                ipv4_addresses: collect_ipv4_addresses(device.addresses),
                 is_loopback: (device.flags & PCAP_IF_LOOPBACK) != 0,
             });
 
@@ -281,14 +287,17 @@ impl PcapCapturer {
             };
             let mut last_device_inventory = String::new();
             let mut last_detected_target = String::new();
+            let mut last_hinted_devices = String::new();
+            let mut game_connections = GameConnectionWatch::new(Arc::clone(&logger));
 
             while running.load(Ordering::SeqCst) {
+                game_connections.refresh();
                 // 1. find magic devices
                 let devices = match npcap.find_all_devices() {
                     Ok(devices) => devices,
                     Err(error) => {
                         logger.error(format!("Failed to enumerate capture devices: {error}"));
-                        sleep_while_running(&running, detection_interval);
+                        wait_for_next_detection(&running, detection_interval, &mut game_connections);
                         continue;
                     }
                 };
@@ -315,6 +324,22 @@ impl PcapCapturer {
                         }
                     }
                     last_device_inventory = inventory;
+                }
+
+                let devices = prefer_devices_with_game_connection(devices, game_connections.current());
+                let hinted_devices = devices
+                    .iter()
+                    .filter(|device| carries_game_connection(device, game_connections.current()))
+                    .map(|device| device.label())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if hinted_devices != last_hinted_devices {
+                    if !hinted_devices.is_empty() {
+                        logger.info(format!(
+                            "game connection hint: probing first: {hinted_devices}"
+                        ));
+                    }
+                    last_hinted_devices = hinted_devices;
                 }
                 let mut detected_target: Option<CaptureTarget> = None;
 
@@ -371,7 +396,7 @@ impl PcapCapturer {
                     }
                 }
 
-                sleep_while_running(&running, detection_interval);
+                wait_for_next_detection(&running, detection_interval, &mut game_connections);
             }
 
             stop_capture_threads(&capture_threads);
@@ -470,6 +495,22 @@ fn format_device_inventory(devices: &[DeviceInfo]) -> String {
         .join("\n")
 }
 
+fn collect_ipv4_addresses(mut address: *mut PcapAddr) -> Vec<Ipv4Addr> {
+    let mut addresses = Vec::new();
+    while !address.is_null() {
+        let entry = unsafe { &*address };
+        if !entry.addr.is_null() {
+            let sockaddr = unsafe { &*entry.addr };
+            if sockaddr.sa_family == AF_INET_FAMILY {
+                let [_, _, a, b, c, d, ..] = sockaddr.sa_data;
+                addresses.push(Ipv4Addr::new(a, b, c, d));
+            }
+        }
+        address = entry.next;
+    }
+    addresses
+}
+
 fn prioritize_devices(mut devices: Vec<DeviceInfo>) -> Vec<DeviceInfo> {
     devices.sort_by_key(|device| {
         let loopback_priority = if device.is_loopback || device.is_virtual() {
@@ -486,6 +527,24 @@ fn prioritize_devices(mut devices: Vec<DeviceInfo>) -> Vec<DeviceInfo> {
         let name = device.label().to_ascii_lowercase();
         (loopback_priority, address_priority, name)
     });
+    devices
+}
+
+fn carries_game_connection(device: &DeviceInfo, connections: &[GameConnection]) -> bool {
+    connections.iter().any(|connection| {
+        if connection.goes_through_loopback() {
+            device.is_loopback
+        } else {
+            device.ipv4_addresses.contains(&connection.local_addr)
+        }
+    })
+}
+
+fn prefer_devices_with_game_connection(
+    mut devices: Vec<DeviceInfo>,
+    connections: &[GameConnection],
+) -> Vec<DeviceInfo> {
+    devices.sort_by_key(|device| !carries_game_connection(device, connections));
     devices
 }
 
@@ -683,5 +742,203 @@ fn sleep_while_running(running: &Arc<AtomicBool>, duration: Duration) {
     let deadline = Instant::now() + duration;
     while running.load(Ordering::SeqCst) && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(100));
+    }
+}
+
+struct GameConnectionWatch {
+    logger: Arc<AppLogger>,
+    connections: Vec<GameConnection>,
+    last_error: Option<String>,
+}
+
+impl GameConnectionWatch {
+    fn new(logger: Arc<AppLogger>) -> Self {
+        Self {
+            logger,
+            connections: Vec::new(),
+            last_error: None,
+        }
+    }
+
+    fn current(&self) -> &[GameConnection] {
+        &self.connections
+    }
+
+    /// Returns true when the game has connections and the set differs from the previous read.
+    fn refresh(&mut self) -> bool {
+        let latest = match query_game_connections() {
+            Ok(connections) => {
+                self.last_error = None;
+                connections
+            }
+            Err(error) => {
+                if self.last_error.as_deref() != Some(error.as_str()) {
+                    self.logger
+                        .info(format!("game connection hint unavailable: {error}"));
+                    self.last_error = Some(error);
+                }
+                Vec::new()
+            }
+        };
+
+        if latest == self.connections {
+            return false;
+        }
+
+        if latest.is_empty() {
+            self.logger.info("game connections: none");
+        } else {
+            self.logger.info(format!(
+                "game connections: {}",
+                latest
+                    .iter()
+                    .map(GameConnection::to_string)
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ));
+        }
+        let has_connections = !latest.is_empty();
+        self.connections = latest;
+        has_connections
+    }
+}
+
+fn wait_for_next_detection(
+    running: &Arc<AtomicBool>,
+    detection_interval: Duration,
+    game_connections: &mut GameConnectionWatch,
+) {
+    let deadline = Instant::now() + detection_interval;
+    while running.load(Ordering::SeqCst) && Instant::now() < deadline {
+        sleep_while_running(running, GAME_CONNECTION_POLL_INTERVAL.min(detection_interval));
+        if game_connections.refresh() {
+            return;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(name: &str, is_loopback: bool, addresses: &[Ipv4Addr]) -> DeviceInfo {
+        DeviceInfo {
+            name: name.to_string(),
+            description: name.to_string(),
+            has_addresses: !addresses.is_empty(),
+            ipv4_addresses: addresses.to_vec(),
+            is_loopback,
+        }
+    }
+
+    fn connection(local: Ipv4Addr, remote: Ipv4Addr) -> GameConnection {
+        GameConnection {
+            local_addr: local,
+            local_port: 50_000,
+            remote_addr: remote,
+            remote_port: 13_328,
+        }
+    }
+
+    fn names(devices: &[DeviceInfo]) -> Vec<&str> {
+        devices.iter().map(|device| device.name.as_str()).collect()
+    }
+
+    fn sample_devices() -> Vec<DeviceInfo> {
+        prioritize_devices(vec![
+            device("ethernet", false, &[Ipv4Addr::new(192, 168, 1, 20)]),
+            device("wifi", false, &[Ipv4Addr::new(10, 0, 0, 5)]),
+            device("loopback", true, &[]),
+        ])
+    }
+
+    #[test]
+    fn adapter_owning_the_local_address_is_probed_first() {
+        let connections = [connection(
+            Ipv4Addr::new(10, 0, 0, 5),
+            Ipv4Addr::new(203, 0, 113, 7),
+        )];
+
+        let ordered = prefer_devices_with_game_connection(sample_devices(), &connections);
+
+        assert_eq!(names(&ordered), ["wifi", "loopback", "ethernet"]);
+    }
+
+    #[test]
+    fn loopback_adapter_is_probed_first_when_the_remote_is_localhost() {
+        let connections = [connection(Ipv4Addr::LOCALHOST, Ipv4Addr::LOCALHOST)];
+
+        let ordered = prefer_devices_with_game_connection(sample_devices(), &connections);
+
+        assert_eq!(names(&ordered), ["loopback", "ethernet", "wifi"]);
+    }
+
+    #[test]
+    fn device_order_is_unchanged_without_a_hint() {
+        let ordered = prefer_devices_with_game_connection(sample_devices(), &[]);
+
+        assert_eq!(names(&ordered), names(&sample_devices()));
+    }
+
+    #[test]
+    fn device_order_is_unchanged_when_no_adapter_owns_the_local_address() {
+        let connections = [connection(
+            Ipv4Addr::new(172, 16, 0, 9),
+            Ipv4Addr::new(203, 0, 113, 7),
+        )];
+
+        let ordered = prefer_devices_with_game_connection(sample_devices(), &connections);
+
+        assert_eq!(names(&ordered), names(&sample_devices()));
+    }
+
+    fn sockaddr(family: u16, sa_data: [u8; 14]) -> SockAddr {
+        SockAddr {
+            sa_family: family,
+            sa_data,
+        }
+    }
+
+    #[test]
+    fn collects_only_ipv4_addresses_from_the_pcap_address_chain() {
+        const AF_INET6_FAMILY: u16 = 23;
+        let mut ipv4 = sockaddr(AF_INET_FAMILY, [0x34, 0x12, 192, 168, 1, 20, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let mut ipv6 = sockaddr(AF_INET6_FAMILY, [0, 0, 0, 0, 0, 0, 0xFE, 0x80, 0, 0, 0, 0, 0, 0]);
+        let mut second_ipv4 = sockaddr(AF_INET_FAMILY, [0, 0, 10, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+        let mut last = PcapAddr {
+            next: ptr::null_mut(),
+            addr: &mut second_ipv4,
+            netmask: ptr::null_mut(),
+            broadaddr: ptr::null_mut(),
+            dstaddr: ptr::null_mut(),
+        };
+        let mut without_address = PcapAddr {
+            next: &mut last,
+            addr: ptr::null_mut(),
+            netmask: ptr::null_mut(),
+            broadaddr: ptr::null_mut(),
+            dstaddr: ptr::null_mut(),
+        };
+        let mut v6_entry = PcapAddr {
+            next: &mut without_address,
+            addr: &mut ipv6,
+            netmask: ptr::null_mut(),
+            broadaddr: ptr::null_mut(),
+            dstaddr: ptr::null_mut(),
+        };
+        let mut first = PcapAddr {
+            next: &mut v6_entry,
+            addr: &mut ipv4,
+            netmask: ptr::null_mut(),
+            broadaddr: ptr::null_mut(),
+            dstaddr: ptr::null_mut(),
+        };
+
+        assert_eq!(
+            collect_ipv4_addresses(&mut first),
+            [Ipv4Addr::new(192, 168, 1, 20), Ipv4Addr::new(10, 0, 0, 5)]
+        );
+        assert!(collect_ipv4_addresses(ptr::null_mut()).is_empty());
     }
 }
