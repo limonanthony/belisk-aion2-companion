@@ -79,6 +79,8 @@ pub struct CaptureSettings {
     pub backend_priority: CaptureBackendPriority,
     /// Record the first two minutes on a server no profile matches.
     pub record_unfamiliar_servers: bool,
+    /// Keep the game traffic of every live session in rolling files.
+    pub record_every_session: bool,
     /// Record every mob fought into `mobs.json`.
     pub collect_mob_data: bool,
     /// Write the meter's decisions to the log as `[meter]` lines.
@@ -90,6 +92,7 @@ impl Default for CaptureSettings {
         Self {
             backend_priority: CaptureBackendPriority::default(),
             record_unfamiliar_servers: true,
+            record_every_session: false,
             collect_mob_data: false,
             decision_log: false,
         }
@@ -145,6 +148,7 @@ impl AppSettings {
         base.idle_reset_secs = self.behaviour.end_fight_after_secs;
         base.capture_backend_priority = self.capture.backend_priority.clone();
         base.auto_record_unknown_server = self.capture.record_unfamiliar_servers;
+        base.record_every_session = self.capture.record_every_session;
         base.collect_mobs = self.capture.collect_mob_data;
         base
     }
@@ -385,5 +389,16 @@ mod tests {
         assert!(!config.collect_mobs && !config.boss_only && !config.my_muzhuang_only);
         assert_eq!(config.idle_reset_secs, 300);
         assert_eq!(config.max_player_count, 10);
+    }
+
+    #[test]
+    fn recording_every_session_is_off_by_default_and_the_core_is_told_when_it_is_on() {
+        assert!(!AppSettings::default().capture.record_every_session);
+        assert!(!AppSettings::default().backend_config(DpsMeterConfig::default()).record_every_session);
+
+        let mut settings = AppSettings::default();
+        settings.capture.record_every_session = true;
+
+        assert!(settings.backend_config(DpsMeterConfig::default()).record_every_session);
     }
 }

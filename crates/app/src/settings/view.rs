@@ -32,7 +32,7 @@ use super::files::{self, Document, Folder};
 use super::model::{
     end_fight_after_label, global, AppSettings, CountMode, DetailPlacement, Settings, END_FIGHT_AFTER_OPTIONS,
 };
-use super::runtime::{CaptureCheck, MeterTile, ReplayProgress, RuntimeModel, StorageState};
+use super::runtime::{CaptureCheck, MeterTile, RecordingOrigin, ReplayProgress, RuntimeModel, StorageState};
 use super::widgets::{
     self, alert, backdrop, badge, button, description, dimmed_row, disabled_select, group, group_title, icon, list_row,
     note, page_head, row, scroll_thumb, segmented, select_menu, select_trigger, side_item, slider, spinner, switch, tile,
@@ -885,7 +885,7 @@ impl SettingsView {
             self.switch_row(
                 "total-damage",
                 fl!("settings-overlay-total-damage"),
-                None,
+                Some(fl!("settings-overlay-total-damage-text")),
                 overlay.show_damage,
                 |all, on| all.overlay.show_damage = on,
                 window,
@@ -1228,6 +1228,15 @@ impl SettingsView {
                 window,
                 cx,
             ),
+            self.switch_row(
+                "record-every-session",
+                fl!("settings-capture-record-every-session"),
+                Some(fl!("settings-capture-record-every-session-text")),
+                settings.capture.record_every_session,
+                |all, on| all.capture.record_every_session = on,
+                window,
+                cx,
+            ),
             row(fl!("settings-capture-packet-recording"), Some(recording_text), recording_control),
         ]);
 
@@ -1235,8 +1244,14 @@ impl SettingsView {
         for (index, item) in recordings.iter().enumerate() {
             let replaying = matches!(&replay, ReplayProgress::Running { name } if *name == item.name);
             let mut line = format!("{} \u{b7} {}", item.when, format::file_size(item.bytes));
-            if item.unfamiliar_server {
-                line.push_str(&format!(" \u{b7} {}", fl!("settings-capture-unfamiliar-server")));
+            match item.origin {
+                RecordingOrigin::Manual => {}
+                RecordingOrigin::UnfamiliarServer => {
+                    line.push_str(&format!(" \u{b7} {}", fl!("settings-capture-unfamiliar-server")));
+                }
+                RecordingOrigin::Rolling => {
+                    line.push_str(&format!(" \u{b7} {}", fl!("settings-capture-rolling-recording")));
+                }
             }
             let runtime_entity = self.runtime.clone();
             let actions = if replaying {
@@ -2236,16 +2251,23 @@ fn sample_meter(overlay: OverlaySettings) -> MeterModel {
     model
 }
 
-/// Brings the open Settings window back to the front. Not GPUI's
-/// `activate_window`: that presses Alt with `SendInput`, and the app injects
-/// no input. The request comes from a click in our own meter, so Windows
-/// normally grants the foreground; when it refuses, Windows itself flashes
-/// the taskbar button instead.
+/// Brings the Settings window in front of everything and gives it the
+/// keyboard. It joins the topmost band, where the overlays are, until the
+/// user goes to another program: a normal window, even the active one, stays
+/// under every topmost window, and a game can be one. Not GPUI's
+/// `activate_window`: that presses Alt with
+/// `SendInput`, and the app injects no input. The request comes from a click
+/// in our own meter, which entitles this process to `SetForegroundWindow`;
+/// when Windows refuses anyway, the window is still in front and Windows
+/// flashes its taskbar button.
 pub fn bring_forward(hwnd: HWND) {
     unsafe {
         if IsIconic(hwnd).as_bool() {
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }
+    }
+    crate::overlay::raise_without_activating(hwnd);
+    unsafe {
         let _ = SetForegroundWindow(hwnd);
     }
 }

@@ -100,7 +100,7 @@ impl PacketRecorder {
         }
 
         fs::create_dir_all(dir).map_err(|error| format!("Cannot create {dir:?}: {error}"))?;
-        let path = dir.join(format!("{prefix}-{}.aetherpc", unix_millis()));
+        let path = unused_recording_path(dir, prefix);
 
         let file = File::create(&path).map_err(|error| format!("Cannot create {path:?}: {error}"))?;
         let mut writer = BufWriter::new(file);
@@ -343,6 +343,30 @@ pub fn prune_recordings(dir: &Path, prefix: &str, keep: usize) -> usize {
     removed
 }
 
+/// Delete the oldest recordings whose names start with `prefix` until the
+/// ones left take at most `max_bytes`. Returns how many were removed.
+pub fn prune_recordings_to_size(dir: &Path, prefix: &str, max_bytes: u64) -> usize {
+    let mut kept_bytes = 0u64;
+    let mut over_budget = false;
+    let mut removed = 0;
+    for file in list_recordings(dir)
+        .into_iter()
+        .filter(|file| file.name.starts_with(prefix))
+    {
+        if kept_bytes + file.bytes > max_bytes {
+            over_budget = true;
+        }
+        if over_budget {
+            if fs::remove_file(&file.path).is_ok() {
+                removed += 1;
+            }
+        } else {
+            kept_bytes += file.bytes;
+        }
+    }
+    removed
+}
+
 pub fn list_recordings(dir: &Path) -> Vec<RecordingFile> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
@@ -381,6 +405,19 @@ fn unix_millis() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0)
+}
+
+/// A rotation can land in the same millisecond as the file it replaces, and
+/// creating over that name would truncate it.
+fn unused_recording_path(dir: &Path, prefix: &str) -> PathBuf {
+    let mut stamp = unix_millis();
+    loop {
+        let path = dir.join(format!("{prefix}-{stamp}.aetherpc"));
+        if !path.exists() {
+            return path;
+        }
+        stamp += 1;
+    }
 }
 
 #[cfg(test)]
@@ -553,6 +590,41 @@ mod prune_tests {
             left,
             vec!["auto-1.aetherpc", "auto-2.aetherpc", "session-1.aetherpc"],
             "the two newest automatic ones stay, and a recording made by hand is never pruned"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn size_pruning_keeps_the_newest_files_that_fit_and_touches_no_other_prefix() {
+        let dir = std::env::temp_dir().join("aether-recorder-test-prune-size");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("dir");
+        for (name, age) in [
+            ("rolling-1.aetherpc", 40),
+            ("rolling-2.aetherpc", 30),
+            ("rolling-3.aetherpc", 20),
+            ("rolling-4.aetherpc", 10),
+            ("session-1.aetherpc", 50),
+            ("auto-1.aetherpc", 50),
+        ] {
+            fs::write(dir.join(name), vec![0u8; 100]).expect("size");
+            let when = SystemTime::now() - Duration::from_secs(age);
+            fs::File::options()
+                .write(true)
+                .open(dir.join(name))
+                .and_then(|file| file.set_modified(when))
+                .expect("set modified");
+        }
+
+        let removed = prune_recordings_to_size(&dir, "rolling-", 250);
+
+        assert_eq!(removed, 2);
+        let mut left: Vec<String> = list_recordings(&dir).into_iter().map(|f| f.name).collect();
+        left.sort();
+        assert_eq!(
+            left,
+            vec!["auto-1.aetherpc", "rolling-3.aetherpc", "rolling-4.aetherpc", "session-1.aetherpc"]
         );
 
         let _ = fs::remove_dir_all(&dir);

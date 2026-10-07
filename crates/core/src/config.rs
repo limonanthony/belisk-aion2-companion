@@ -95,6 +95,10 @@ pub struct DpsMeterConfig {
     /// either way.
     #[serde(default)]
     pub collect_mobs: bool,
+    /// Keep the game's traffic of the whole live session in rolling
+    /// 30-minute files of the recordings folder, the newest up to 2 GB.
+    #[serde(default)]
+    pub record_every_session: bool,
 }
 
 impl Default for DpsMeterConfig {
@@ -119,6 +123,7 @@ impl Default for DpsMeterConfig {
             idle_reset_secs: DEFAULT_IDLE_RESET_SECS,
             auto_record_unknown_server: true,
             collect_mobs: false,
+            record_every_session: false,
         }
     }
 }

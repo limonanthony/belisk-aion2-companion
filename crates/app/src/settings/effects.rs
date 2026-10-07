@@ -28,7 +28,10 @@ pub fn connect(settings: &Entity<Settings>, model: &Entity<MeterModel>, meter: O
         meter.set_known_characters(applied.known_characters.clone());
     }
     i18n::apply(applied.general.language, cx);
-    model.update(cx, |model, _| model.set_decision_log(applied.capture.decision_log));
+    model.update(cx, |model, _| {
+        model.set_decision_log(applied.capture.decision_log);
+        model.set_hide_unknown_players(applied.behaviour.hide_unknown_players);
+    });
 
     let model = model.clone();
     let mut core_apply: Option<Task<()>> = None;
@@ -44,6 +47,12 @@ pub fn connect(settings: &Entity<Settings>, model: &Entity<MeterModel>, meter: O
         if next.overlay != applied.overlay {
             model.update(cx, |model, cx| {
                 model.set_overlay_settings(next.overlay.clone());
+                cx.notify();
+            });
+        }
+        if next.behaviour.hide_unknown_players != applied.behaviour.hide_unknown_players {
+            model.update(cx, |model, cx| {
+                model.set_hide_unknown_players(next.behaviour.hide_unknown_players);
                 cx.notify();
             });
         }
@@ -79,6 +88,7 @@ fn core_update(before: &AppSettings, after: &AppSettings, running: DpsMeterConfi
     let changed = before.behaviour != after.behaviour
         || before.overlay.players_shown != after.overlay.players_shown
         || before.capture.record_unfamiliar_servers != after.capture.record_unfamiliar_servers
+        || before.capture.record_every_session != after.capture.record_every_session
         || before.capture.collect_mob_data != after.capture.collect_mob_data;
     changed.then(|| after.backend_config(running))
 }
@@ -106,6 +116,18 @@ mod tests {
         assert_eq!(config.max_player_count, 12);
         assert!(config.pvp_mode_on);
         assert_eq!(config.dps_snapshot_interval_ms, 200);
+    }
+
+    #[test]
+    fn switching_session_recording_on_reaches_the_running_core() {
+        let before = AppSettings::default();
+        let mut after = before.clone();
+        after.capture.record_every_session = true;
+
+        let config = core_update(&before, &after, running()).expect("the core is told");
+
+        assert!(config.record_every_session);
+        assert!(core_update(&after, &before, running()).is_some_and(|config| !config.record_every_session));
     }
 
     #[test]
@@ -142,5 +164,26 @@ mod tests {
 
         choose(cx, LanguageChoice::English);
         assert_eq!((i18n::language(), crate::format::unnamed_player(1, true)), (Language::English, "You".to_string()));
+    }
+
+    #[gpui::test]
+    fn the_hide_unknown_players_switch_reaches_the_meter_model_at_once(cx: &mut gpui::TestAppContext) {
+        use gpui::AppContext as _;
+
+        use crate::meter::OverlaySettings;
+
+        let settings = cx.new(|_| Settings::in_memory(AppSettings::default()));
+        let model = cx.new(|_| MeterModel::new(OverlaySettings::default(), None));
+        cx.update(|cx| connect(&settings, &model, None, cx));
+        let hidden = |cx: &mut gpui::TestAppContext| model.read_with(cx, |model, _| model.hide_unknown_players());
+        assert!(hidden(cx), "the default is on, and connecting applies it");
+
+        let choose = |cx: &mut gpui::TestAppContext, hide| {
+            cx.update(|cx| settings.update(cx, |settings, cx| settings.update(cx, |all| all.behaviour.hide_unknown_players = hide)));
+        };
+        choose(cx, false);
+        assert!(!hidden(cx));
+        choose(cx, true);
+        assert!(hidden(cx));
     }
 }
