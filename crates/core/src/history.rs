@@ -8,6 +8,7 @@ use crate::mobs::store::write_atomic;
 use crate::models::combat::{
     BuffSummary, CombatInfos, CombatSnapshot, PlayerOverviewStat, SkillStats, TargetInfo,
 };
+use crate::report::ledger::FightLedger;
 
 const MAGIC: &[u8; 4] = b"DPSH";
 const VERSION: u16 = 1;
@@ -30,6 +31,10 @@ pub struct HistoryRecord {
     pub player_stats: HashMap<u32, PlayerOverviewStat>,
     #[serde(default)]
     pub use_buffs_by_target: HashMap<u32, Vec<BuffSummary>>,
+    /// What the party took, healed and lost in a boss fight. `None` in a fight
+    /// saved before the meter kept it, and in every fight that is not a boss's.
+    #[serde(default)]
+    pub ledger: Option<FightLedger>,
     pub created_at: u64,
 }
 
@@ -101,16 +106,25 @@ impl HistoryStore {
     }
 
     /// Persist current snapshot as per-target history records, then clear.
-    /// Returns what was saved, for the personal bests to learn from.
-    pub fn save_and_clear(&self, snapshot: CombatSnapshot) -> Vec<HistoryRecord> {
-        let records = Self::extract_records(snapshot);
+    /// `ledger_of` gives the ledger of a boss fight from its target and the
+    /// players who hit it. Returns what was saved, for the personal bests to
+    /// learn from.
+    pub fn save_and_clear(
+        &self,
+        snapshot: CombatSnapshot,
+        ledger_of: impl Fn(&TargetInfo, &[u32]) -> Option<FightLedger>,
+    ) -> Vec<HistoryRecord> {
+        let records = Self::extract_records(snapshot, ledger_of);
         if !records.is_empty() {
             self.push(records.clone());
         }
         records
     }
 
-    fn extract_records(snapshot: CombatSnapshot) -> Vec<HistoryRecord> {
+    fn extract_records(
+        snapshot: CombatSnapshot,
+        ledger_of: impl Fn(&TargetInfo, &[u32]) -> Option<FightLedger>,
+    ) -> Vec<HistoryRecord> {
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -159,6 +173,10 @@ impl HistoryStore {
                     ..snapshot.combat_infos.clone()
                 };
 
+                let ledger = target_info.as_ref().filter(|target| target.is_boss).and_then(|target| {
+                    let dealers: Vec<u32> = player_stats.keys().copied().collect();
+                    ledger_of(target, &dealers)
+                });
                 Some(HistoryRecord {
                     id: format!("{}-{}", target_id, now_ms),
                     target_id,
@@ -168,6 +186,7 @@ impl HistoryStore {
                     player_stats,
                     player_skill_stats: skill_stats,
                     use_buffs_by_target,
+                    ledger,
                     created_at: now_ms,
                 })
             })
@@ -316,6 +335,10 @@ mod tests {
         }
     }
 
+    fn no_ledger(_: &TargetInfo, _: &[u32]) -> Option<FightLedger> {
+        None
+    }
+
     fn ids(store: &HistoryStore) -> Vec<String> {
         let mut ids: Vec<String> = store.get_records().into_iter().map(|record| record.id).collect();
         ids.sort();
@@ -328,14 +351,14 @@ mod tests {
         let mut small = fight_on(&[1]);
         small.by_target_player_stats.get_mut(&1).unwrap().get_mut(&1).unwrap().total_damage = HISTORY_THRESHOLD;
 
-        assert!(store.save_and_clear(small).is_empty());
+        assert!(store.save_and_clear(small, no_ledger).is_empty());
         assert!(store.get_records().is_empty());
     }
 
     #[test]
     fn one_record_is_deleted_by_id_and_the_others_stay() {
         let store = HistoryStore::new();
-        store.save_and_clear(fight_on(&[1, 2, 3]));
+        store.save_and_clear(fight_on(&[1, 2, 3]), no_ledger);
         let doomed = ids(&store).remove(1);
 
         assert!(store.delete_record(&doomed));
@@ -347,7 +370,7 @@ mod tests {
     #[test]
     fn deleting_everything_reports_how_many_went() {
         let store = HistoryStore::new();
-        store.save_and_clear(fight_on(&[1, 2, 3]));
+        store.save_and_clear(fight_on(&[1, 2, 3]), no_ledger);
 
         assert_eq!(store.clear_all(), 3);
         assert!(store.get_records().is_empty());
@@ -359,7 +382,7 @@ mod tests {
         let dir = crate::mobs::store::test_dir::TestDir::new();
         let store = HistoryStore::new();
         store.init_dir(dir.path().to_path_buf());
-        store.save_and_clear(fight_on(&[1, 2]));
+        store.save_and_clear(fight_on(&[1, 2]), no_ledger);
 
         let reloaded = HistoryStore::new();
         reloaded.init_dir(dir.path().to_path_buf());
@@ -375,7 +398,7 @@ mod tests {
         let dir = crate::mobs::store::test_dir::TestDir::new();
         let store = HistoryStore::new();
         store.init_dir(dir.path().to_path_buf());
-        store.save_and_clear(fight_on(&[1]));
+        store.save_and_clear(fight_on(&[1]), no_ledger);
         std::fs::write(dir.path().join("history").join("combat_history.bin.tmp"), b"half a wri").unwrap();
 
         let reloaded = HistoryStore::new();
@@ -384,5 +407,95 @@ mod tests {
 
         assert_eq!(ids(&reloaded), ids(&store));
         assert_eq!(ids(&reloaded).len(), 1);
+    }
+
+    fn target(id: u32, is_boss: bool) -> TargetInfo {
+        TargetInfo {
+            id,
+            target_mob_code: Some(2_300_810),
+            target_name: Some("Tiere".to_string()),
+            is_boss,
+            current_hp: Some(0),
+            max_hp: Some(1_000),
+            target_start_time: HashMap::from([(1, 100.0)]),
+            target_last_time: HashMap::from([(1, 160.0)]),
+        }
+    }
+
+    fn ledger_with(player_ids: &[u32]) -> FightLedger {
+        FightLedger {
+            window: crate::report::ledger::FightWindow { started_at: 100.0, ended_at: 160.0 },
+            players: player_ids
+                .iter()
+                .map(|&actor_id| crate::report::ledger::LedgerPlayer {
+                    actor_id,
+                    actor_name: String::new(),
+                    actor_server_id: String::new(),
+                    actor_class: String::new(),
+                    healing: Vec::new(),
+                    damage_taken: Vec::new(),
+                })
+                .collect(),
+            deaths: Vec::new(),
+            buffs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn only_a_boss_fight_is_saved_with_the_ledger_of_the_players_who_hit_it() {
+        let store = HistoryStore::new();
+        let mut snapshot = fight_on(&[10, 20]);
+        snapshot.combat_infos.target_infos.insert(10, target(10, true));
+        snapshot.combat_infos.target_infos.insert(20, target(20, false));
+
+        store.save_and_clear(snapshot, |target, dealers| {
+            assert!(target.is_boss, "asked for the ledger of a fight that is not a boss's");
+            Some(ledger_with(dealers))
+        });
+
+        let records = store.get_records();
+        let boss = records.iter().find(|record| record.target_id == 10).unwrap();
+        let mob = records.iter().find(|record| record.target_id == 20).unwrap();
+        assert_eq!(boss.ledger.as_ref().map(|ledger| ledger.players.len()), Some(1));
+        assert_eq!(mob.ledger, None);
+    }
+
+    #[test]
+    fn a_ledger_is_kept_through_the_file() {
+        let dir = crate::mobs::store::test_dir::TestDir::new();
+        let store = HistoryStore::new();
+        store.init_dir(dir.path().to_path_buf());
+        let mut snapshot = fight_on(&[10]);
+        snapshot.combat_infos.target_infos.insert(10, target(10, true));
+        store.save_and_clear(snapshot, |_, dealers| Some(ledger_with(dealers)));
+
+        let reloaded = HistoryStore::new();
+        reloaded.init_dir(dir.path().to_path_buf());
+        reloaded.load_from_disk();
+
+        assert_eq!(reloaded.get_records()[0].ledger, store.get_records()[0].ledger);
+        assert!(reloaded.get_records()[0].ledger.is_some());
+    }
+
+    #[test]
+    fn a_history_file_written_before_the_ledger_loads_with_no_ledger() {
+        let json = include_str!("report/fixtures/head-history-record.json").as_bytes();
+        let compressed = lz4_flex::compress_prepend_size(json);
+        let mut file = Vec::new();
+        file.extend_from_slice(MAGIC);
+        file.extend_from_slice(&VERSION.to_le_bytes());
+        file.extend_from_slice(&crc32fast::hash(&compressed).to_le_bytes());
+        file.extend_from_slice(&compressed);
+        let dir = crate::mobs::store::test_dir::TestDir::new();
+        let store = HistoryStore::new();
+        store.init_dir(dir.path().to_path_buf());
+        std::fs::write(dir.path().join("history").join("combat_history.bin"), file).unwrap();
+
+        store.load_from_disk();
+
+        let records = store.get_records();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].target_id, 56_499);
+        assert_eq!(records[0].ledger, None);
     }
 }

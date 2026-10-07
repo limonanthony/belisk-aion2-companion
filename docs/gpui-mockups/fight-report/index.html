@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fight report: proposals</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <style>
+      .fr {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 0 32px 48px;
+      }
+
+      .fr h2 {
+        margin: 30px 0 4px;
+        font-size: 18px;
+        font-weight: 650;
+      }
+
+      .fr h2 a {
+        color: var(--page-text);
+      }
+
+      .fr .lede {
+        max-width: 92ch;
+        margin: 0 0 12px;
+        color: var(--page-muted);
+      }
+
+      .fr b {
+        color: var(--page-text);
+        font-weight: 600;
+      }
+
+      .fr ul,
+      .fr ol {
+        max-width: 104ch;
+        margin: 0;
+        padding-left: 22px;
+        color: var(--page-muted);
+      }
+
+      .fr li + li {
+        margin-top: 6px;
+      }
+
+      .tag {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: rgba(134, 227, 168, 0.14);
+        color: #86e3a8;
+        font-size: 12px;
+        font-weight: 600;
+        vertical-align: 2px;
+      }
+
+      .tag.is-quiet {
+        background: rgba(255, 255, 255, 0.07);
+        color: var(--page-muted);
+      }
+
+      .tag.is-open {
+        background: rgba(242, 198, 109, 0.14);
+        color: #f2c66d;
+      }
+
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+        gap: 14px;
+        max-width: 900px;
+        margin-top: 12px;
+      }
+
+      .frames {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(var(--min, 600px), 1fr));
+        gap: 14px;
+        margin-top: 12px;
+      }
+
+      .shot {
+        margin: 0;
+      }
+
+      .shot figcaption {
+        margin-bottom: 6px;
+        color: var(--page-faint);
+        font-size: 12px;
+      }
+
+      .shot iframe {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-radius: 10px;
+        background: var(--page-surface);
+      }
+
+      table.cmp {
+        width: 100%;
+        max-width: 1200px;
+        margin-top: 10px;
+        border-collapse: collapse;
+        color: var(--page-muted);
+        font-size: 13px;
+      }
+
+      table.cmp th,
+      table.cmp td {
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--page-border);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      table.cmp th {
+        color: var(--page-text);
+        font-weight: 600;
+      }
+
+      table.cmp td:first-child {
+        color: var(--page-text);
+        white-space: nowrap;
+      }
+
+      @media (max-width: 700px) {
+        .fr {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+
+        table.cmp {
+          display: block;
+          overflow-x: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Fight report proposals">
+        <a href="index.html" aria-current="page">Fight report overview</a>
+        <a href="c.html">C, one table (chosen)</a>
+        <a href="player.html">Player details</a>
+        <a href="align.html">Figure alignment (decided)</a>
+        <a href="entry.html">Opening the report</a>
+        <a href="a.html">A, tabs (not chosen)</a>
+        <a href="b.html">B, one scrolling report (not chosen)</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>End-of-fight report for boss fights <small>TASK-15.1: approved 2026-10-07 with the crown, now in <a href="../approved/report.html">approved/report.html</a>, the summary states of <a href="../approved/meter.html?states=final,final-hover,provisional,summary-party,summary-fr,summary-locked">approved/meter.html</a> and <a href="../approved/history.html">approved/history.html</a>; this page is kept as history</small></h1>
+      <ul class="rationale">
+        <li>After a boss fight, a button opens a <b>full report of that fight</b>: for every player the damage and DPS, the healing, the damage taken, and the deaths (who died, when in the fight, what killed them). A click on a player opens <b>everything they did</b>: damage per skill, how many critical hits and every other hit type, how long each buff was up (m:ss), their heals per skill, the damage they took by source, their deaths.</li>
+        <li>Boss fights only. No boss health graph and no hit-by-hit timeline: the deaths are a list with the time into the fight, not a timeline.</li>
+        <li>Drawn on the approved overlay language: the 520 px window of the detail window, the meter's bars and rank badges (the less-rounded ends), Barlow Semi Condensed with tabular figures, the class icons and skill icons from <code>crates/app/assets/</code>, the opacity and content scale controls. Each page draws every state over three game scenes.</li>
+        <li>Game names are real data (Basilus the False in Fallen Guardian's City, Tyrant Tassin, Superbia, the class and monster skills); which monster used which skill, the players and every figure are invented.</li>
+      </ul>
+    </header>
+
+    <div class="fr">
+      <h2><a href="c.html">C, one table, every figure</a> <span class="tag">chosen</span></h2>
+      <p class="lede">One row per player with Damage, DPS, Healing, Damage taken and Deaths side by side; a click on a column header sorts by it and the bars and ranks follow. The deaths are listed under the table. Damage taken by source and heals by skill are in the player details. The user: "the table shows more infos without clicking".</p>
+      <div class="frames" style="--min: 600px">
+        <figure class="shot"><figcaption>Fresh report, sorted by damage</figcaption><iframe title="C, fresh report" src="c.html?embed&amp;scenes=dark&amp;states=fresh" height="460"></iframe></figure>
+        <figure class="shot"><figcaption>Sorted by healing: Saebrin cast no heals ("—", name kept)</figcaption><iframe title="C, sorted by healing" src="c.html?embed&amp;scenes=dark&amp;states=sort-heal" height="460"></iframe></figure>
+        <figure class="shot"><figcaption>Several deaths, sorted by Deaths</figcaption><iframe title="C, several deaths" src="c.html?embed&amp;scenes=dark&amp;states=deaths-several" height="510"></iframe></figure>
+        <figure class="shot"><figcaption>14 players on a field boss: the table scrolls</figcaption><iframe title="C, many players" src="c.html?embed&amp;scenes=dark&amp;states=many" height="540"></iframe></figure>
+      </div>
+
+      <h2><a href="player.html">Player details</a> <span class="tag">chosen: inside the report</span></h2>
+      <p class="lede">The approved detail window's layout, extended: Healing, Damage taken and Deaths join the key figures; the hit types show counts and rates ("665 41.9%"); the skill table gains a Crits column; four tabs, Damage, Buffs (uptime as m:ss, "4:01"), Healing (per skill) and Damage taken (by monster skill). Opens inside the report from a player's row or their line under Deaths, with "‹ Report" to go back.</p>
+      <div class="frames" style="--min: 600px">
+        <figure class="shot"><figcaption>Damage per skill with crit counts; a skill opened to every hit type</figcaption><iframe title="Player, skill opened" src="player.html?embed&amp;scenes=dark&amp;states=open" height="520"></iframe></figure>
+        <figure class="shot"><figcaption>Buffs: up for how long, as m:ss</figcaption><iframe title="Player, buffs" src="player.html?embed&amp;scenes=dark&amp;states=buffs" height="560"></iframe></figure>
+        <figure class="shot"><figcaption>Healing per skill (the cleric)</figcaption><iframe title="Player, healing" src="player.html?embed&amp;scenes=dark&amp;states=healing" height="420"></iframe></figure>
+        <figure class="shot"><figcaption>Damage taken by monster skill (the templar)</figcaption><iframe title="Player, damage taken" src="player.html?embed&amp;scenes=dark&amp;states=taken" height="440"></iframe></figure>
+        <figure class="shot"><figcaption>A player who died twice and cast no heals</figcaption><iframe title="Player, deaths and no heals" src="player.html?embed&amp;scenes=dark&amp;states=heal-none" height="400"></iframe></figure>
+      </div>
+
+      <h2><a href="entry.html">Opening the report</a> <span class="tag">chosen</span></h2>
+      <p class="lede">The approved boss summary card gets "Open the fight report", full width under the skills, on the final card and on the provisional "Fight ended, may resume" card. History gets a report button on boss records only, so a report can be opened again after the summary is gone.</p>
+      <div class="frames" style="--min: 400px">
+        <figure class="shot"><figcaption>Open the fight report, under the skills</figcaption><iframe title="Summary, full-width button" src="entry.html?embed&amp;scenes=dark&amp;states=wide" height="340"></iframe></figure>
+        <figure class="shot"><figcaption>Fight ended, may resume: the report is offered too</figcaption><iframe title="Provisional summary, full-width button" src="entry.html?embed&amp;scenes=dark&amp;states=wide-ended" height="360"></iframe></figure>
+        <figure class="shot"><figcaption>History: pointer on a boss record's report button</figcaption><iframe title="History, report button" src="entry.html?embed&amp;scenes=dark&amp;states=his-row-hover" height="500"></iframe></figure>
+      </div>
+
+      <h2>The boss icon before the boss's name in History <span class="tag">chosen: the crown</span></h2>
+      <p class="lede">Boss records get a small icon before the boss's name so they stand out from mob records (the two mob records here have none, and no report button). Both are Lucide icons, 12 px in <code>hp</code>, the boss gauge's colour. <b>Chosen on 2026-10-07: the crown</b> ("yeah use a crown"), as recommended: the report already draws the skull for deaths (the Deaths column, the deaths list, a player's death plate), so a skull on a record could read as "someone died in this fight"; the crown says "boss" and means nothing else in the meter. The "Boss icon" control on <a href="entry.html">Opening the report</a> switches every History state.</p>
+      <div class="pair">
+        <figure class="shot"><figcaption>1. Crown (recommended)</figcaption><iframe title="History, crown on boss records" src="entry.html?embed&amp;scenes=dark&amp;states=his-crown" height="500"></iframe></figure>
+        <figure class="shot"><figcaption>2. Skull</figcaption><iframe title="History, skull on boss records" src="entry.html?embed&amp;scenes=dark&amp;states=his-skull" height="500"></iframe></figure>
+      </div>
+
+      <h2>Decided 2026-10-07</h2>
+      <ol>
+        <li><b>Report layout: C, one table.</b> "The table shows more infos without clicking." A (tabs) and B (one scrolling report) were not chosen; they stay below as history.</li>
+        <li><b>The button on the summary card: "Open the fight report", full width under the skills.</b> "Report" beside Copy and an icon in the header were not chosen.</li>
+        <li><b>Also from History: a report button on each boss record</b>, never on mob records; boss records also get an icon before the name: the crown (chosen with the final approval). "Only inside an opened record" was not chosen.</li>
+        <li><b>Player details open inside the report</b>, from a player's row or their line under Deaths, with "‹ Report" to go back. The detail window was not chosen.</li>
+        <li><b>Uptime as m:ss</b>, "4:01", like the fight time.</li>
+        <li><b>Hit types as count and rate</b>, "665 41.9%".</li>
+        <li><b>The report is also offered from the provisional summary</b> ("Fight ended, may resume").</li>
+        <li><b>Damage taken by source: per player only</b>, in the player details.</li>
+        <li><b>Sorting in C: Damage first; the sort is kept while the window is open.</b></li>
+        <li><b>Figure alignment: plates left, tables right.</b> "It looked better when it was aligned start + table aligned end." The key-figure and hit-type plates keep label above value at the left of each cell, as the approved detail window does; every table puts its figures and headers at the right of each column (decimal points and the K and M suffixes line up). All start, All center and All end were not chosen; <a href="align.html">align.html</a> keeps all four behind its "Alignment" control as history.</li>
+      </ol>
+
+      <h2><a href="align.html">Figure alignment: plates left, tables right</a> <span class="tag">decided</span></h2>
+      <p class="lede">The report, then Mirelle's details on the Damage tab, as c.html and player.html draw them. Every table header sits over its figures: a list that scrolls keeps its figures and its header clear of the 8 px thumb gutter, a list too short to scroll has neither. On <a href="align.html">align.html</a> the "Alignment" control switches every state between the chosen mix and the three single rules not chosen.</p>
+      <div class="frames" style="--min: 570px">
+        <figure class="shot"><figcaption>Plates left, tables right (chosen)</figcaption><iframe title="Alignment chosen: report and player details" src="align.html?embed&amp;scenes=dark&amp;states=pair&amp;align=chosen" height="930"></iframe></figure>
+      </div>
+
+      <h2><a href="a.html">A, tabs</a> <span class="tag is-quiet">not chosen</span></h2>
+      <p class="lede">Damage, Healing, Damage taken and Deaths as four tabs, each a ranked list with a share column; the Damage taken tab adds the party's damage by monster skill.</p>
+      <div class="frames" style="--min: 600px">
+        <figure class="shot"><figcaption>Damage tab</figcaption><iframe title="A, damage" src="a.html?embed&amp;scenes=dark&amp;states=fresh" height="420"></iframe></figure>
+        <figure class="shot"><figcaption>Damage taken, then by source</figcaption><iframe title="A, damage taken" src="a.html?embed&amp;scenes=dark&amp;states=taken" height="620"></iframe></figure>
+      </div>
+
+      <h2><a href="b.html">B, one scrolling report</a> <span class="tag is-quiet">not chosen</span></h2>
+      <p class="lede">Damage, Healing, Damage taken and Deaths as folding sections, read top to bottom; the list scrolls inside the window.</p>
+      <div class="frames" style="--min: 600px">
+        <figure class="shot"><figcaption>At the top</figcaption><iframe title="B, top" src="b.html?embed&amp;scenes=dark&amp;states=fresh" height="590"></iframe></figure>
+        <figure class="shot"><figcaption>Scrolled down</figcaption><iframe title="B, scrolled" src="b.html?embed&amp;scenes=dark&amp;states=scrolled" height="590"></iframe></figure>
+      </div>
+
+      <h2>Other placements <span class="tag is-quiet">not chosen</span></h2>
+      <p class="lede">"Report" beside Copy in the summary's footer (in French Copy had to lose its label), a tool button in the header, "Fight report" only inside an opened History record, and the player details in the detail window. Each stays drawn at the end of its page.</p>
+      <div class="frames" style="--min: 400px">
+        <figure class="shot"><figcaption>Report beside Copy, in French</figcaption><iframe title="Summary, footer button in French" src="entry.html?embed&amp;scenes=dark&amp;states=footer-fr" height="340"></iframe></figure>
+        <figure class="shot"><figcaption>Player details in the detail window</figcaption><iframe title="Player, detail window" src="player.html?embed&amp;scenes=dark&amp;states=detail" height="480"></iframe></figure>
+      </div>
+
+      <h2>The three directions</h2>
+      <table class="cmp">
+        <thead>
+          <tr><th></th><th>A, tabs <span class="tag is-quiet">not chosen</span></th><th>B, one scrolling report <span class="tag is-quiet">not chosen</span></th><th>C, one table <span class="tag">chosen</span></th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Window</td><td>520 px; height follows the tab</td><td>520 px; 372 px of report, then it scrolls</td><td>520 px; hugs the table (scrolls past 8 rows)</td></tr>
+          <tr><td>Damage, healing, taken</td><td>One at a time, a click apart</td><td>All, a scroll apart; each name three times</td><td>All on one row per player; sort by any column</td></tr>
+          <tr><td>Deaths</td><td>Their own tab, with the count</td><td>The last section</td><td>Under the table, always visible</td></tr>
+          <tr><td>Damage taken by source</td><td>Party-wide on the Taken tab; per player in details</td><td>Per player in details</td><td>Per player in details</td></tr>
+          <tr><td>Share of each measure</td><td>A share column on every tab</td><td>A share column in every section</td><td>Not shown (the bar shows it)</td></tr>
+          <tr><td>14 players</td><td>Each tab scrolls</td><td>About 1,300 px of report</td><td>The table scrolls; deaths stay visible</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Why C</h2>
+      <ul>
+        <li>The user: "the table shows more infos without clicking". The request is one look at "how did everyone do and what happened": damage, heals, damage taken and deaths at once. C answers it on one screen with no click; A hides three answers behind tabs, B spreads them over a long scroll and repeats every name three times.</li>
+        <li>The comparisons players make after a wipe or a slow kill run across measures (the healer's output beside the tank's damage taken, a death beside low damage); only C puts them on the same row.</li>
+        <li>It stays short on a game screen: six players and a death fit in about 400 px. The detailed breakdowns (by skill, by source, uptime) live one click away in the player details, where they have room.</li>
+        <li>It reuses what is approved: the meter's rows, the approved sorting pattern (active header in <code>text</code> with an arrow, the others underlined), the history and detail windows' header and figures.</li>
+      </ul>
+
+      <h2>Not decided by these drawings</h2>
+      <ul>
+        <li>Which effects count as heals (shields, life drain such as Blood Absorption) is checked on a recording with a healer before TASK-15.2 settles it; the drawings show direct heals, heals over time and self-heals. Overheal is not shown.</li>
+        <li>The killing blow ("last hit") assumes the meter can tie a death to the hit before it; TASK-15.2 confirms what the packets give.</li>
+        <li>Fights saved before this change open with Damage, skills and buffs, and say that healing, damage taken and deaths were not recorded (drawn on every page).</li>
+      </ul>
+    </div>
+  </body>
+</html>

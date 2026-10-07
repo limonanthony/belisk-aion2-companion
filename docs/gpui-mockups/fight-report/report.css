@@ -1,0 +1,1456 @@
+/* Fight report proposals (TASK-15.1). Builds on ../approved/shared.css and
+ * ../approved/overlay.css; everything here is preview-local until the user
+ * approves a direction. The player-detail pieces (det-*, sk-*, bf-*) are
+ * copied from ../approved/detail.html; the summary card (d-*) and the
+ * history record (rec-*) pieces are copied from ../approved/meter.html and
+ * ../approved/history.html, so the entry points look exactly as approved.
+ * Values that are new are marked "new". */
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Regular.ttf") format("truetype");
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Medium.ttf") format("truetype");
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Bold.ttf") format("truetype");
+  font-weight: 700;
+}
+
+.ov.o {
+  --o-font: "Meter Barlow", "Barlow Semi Condensed", "Bahnschrift", sans-serif;
+  --rp-ring: rgba(243, 235, 225, 0.9);
+  font-stretch: normal;
+}
+
+.ov.o.rp {
+  width: 520px;
+}
+
+.o .i.sm {
+  width: 12px;
+  height: 12px;
+}
+
+/* Lucide, single colour: the "you" weight is 600 (Barlow has no 650). */
+.o-row.is-you .o-name {
+  font-weight: 600;
+}
+
+/* ---- Report header: the window title row, then the boss block ---- */
+.rp-boss {
+  padding: 2px 4px 0;
+}
+
+.rp-boss-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.rp-boss-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.rp-time {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.rp-boss-sub {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+}
+
+.o-chip small {
+  color: var(--o-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ---- Key figures: label over value on one dark plate (detail.html) ---- */
+.det-figs {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--o-track);
+}
+
+.det-figs > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.det-figs span {
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.det-figs b {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.det-figs b.is-none {
+  color: var(--o-faint);
+}
+
+.det-figs.is-small {
+  margin-top: 4px;
+  padding: 6px 10px;
+}
+
+.det-figs.is-small b {
+  font-size: 13px;
+}
+
+/* new: a hit type's count with its rate after it. */
+.det-figs.is-small b small {
+  margin-left: 4px;
+  color: var(--o-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ---- Rows: the meter's badge + bar, made clickable (new) ---- */
+.rp .o-th > span:not(.grow) {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.rp .o-th .grow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The header's left edge sits on the names (badge 26 px + track inset and
+   icon 26 px); its right edge on the figures (track 9 px + the chevron slot
+   18 px + the scroll gutter 8 px). */
+.rp .o-th.is-players {
+  padding-left: 52px;
+  padding-right: 35px;
+}
+
+.rp .o-th.is-players.no-scroll {
+  padding-right: 27px;
+}
+
+.rp .o-track > :not(.o-fill) {
+  z-index: 1;
+}
+
+/* Pointer on a row: the track lifts by `soft`, the chevron shows. */
+.rp .o-row.is-hover .o-track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 5px;
+  background: rgba(255, 240, 225, 0.07);
+}
+
+.rp-go {
+  display: inline-flex;
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--o-muted);
+  visibility: hidden;
+}
+
+.rp-go .i {
+  width: 12px;
+  height: 12px;
+}
+
+.o-row.is-hover .rp-go,
+.o-row.is-focus .rp-go {
+  visibility: visible;
+}
+
+/* Keyboard focus: focus-ring, 2 px, 1 px outside the row, so it fits the
+   3 px gap between rows. */
+.o-row.is-focus,
+.o-tab.is-focus,
+.o-tbtn.is-focus,
+.o-btn.is-focus,
+.rp-death.is-focus {
+  outline: 2px solid var(--rp-ring);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+.o-tab.is-focus {
+  border-radius: 6px;
+}
+
+.o-btn.is-focus {
+  border-radius: 7px;
+}
+
+.o-tbtn.is-focus {
+  border-radius: 999px;
+}
+
+.o-tbtn.is-hot {
+  background: var(--o-hot);
+}
+
+.o-tab.is-hover:not(.is-on) {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.o-tab.is-off {
+  opacity: 0.4;
+}
+
+.o-row.is-dim .o-name,
+.o-row.is-dim .o-num {
+  color: var(--o-muted);
+}
+
+.rp-cell {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.rp-cell.is-side {
+  color: var(--o-muted);
+  font-size: 12.5px;
+}
+
+.rp-cell.is-none {
+  color: var(--o-faint);
+}
+
+.rp-cell small {
+  margin-left: 3px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.rp-sub-fig {
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+/* Deaths beside a name: a skull and the count, in `bad`; zero is faint. */
+.rp-dead {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  color: var(--o-bad);
+  font-weight: 600;
+}
+
+.rp-dead .i {
+  width: 11px;
+  height: 11px;
+}
+
+.rp-dead.is-zero {
+  color: var(--o-faint);
+  font-weight: 500;
+}
+
+/* ---- Scrolling lists ---- */
+.rp-scroll {
+  position: relative;
+  overflow: hidden;
+  margin: -3px;
+  padding: 3px;
+}
+
+.rp-scroll.has-thumb {
+  padding-right: 11px;
+}
+
+.rp-scroll .o-thumb {
+  right: 4px;
+}
+
+/* ---- Deaths: a list of who, when and what killed them (new) ---- */
+.rp-deaths {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rp-death {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 6px;
+  border-radius: 5px;
+  background: var(--o-track);
+}
+
+.rp-death.is-hover {
+  background: rgba(40, 36, 32, 0.6);
+}
+
+.rp-death .at {
+  width: 32px;
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.rp-death .sk {
+  width: 12px;
+  height: 12px;
+  color: var(--o-bad);
+}
+
+.rp-death .who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 128px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.rp-death .who b {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.rp-death.is-you .who b {
+  font-weight: 600;
+}
+
+.rp-death .by {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rp-death .by .faint {
+  margin-right: 4px;
+  font-size: 11.5px;
+}
+
+.rp-death .by small {
+  margin-left: 5px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.rp-death .blow {
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.rp-death .blow small {
+  margin-left: 3px;
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+/* An empty section: one quiet line, not a full empty state (new). */
+.rp-quiet {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px;
+  color: var(--o-muted);
+  font-size: 12px;
+}
+
+.rp-quiet .i {
+  width: 12px;
+  height: 12px;
+}
+
+.rp-quiet.is-good {
+  color: var(--o-good);
+}
+
+/* Folding section labels (B) */
+.o-sec .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.o-sec .o-count b {
+  color: var(--o-muted);
+  font-weight: 600;
+}
+
+.o-sec.is-hover {
+  border-radius: 6px;
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+/* Source rows inside an opened Taken row (A) */
+.rp-src {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 1px 0 3px 26px;
+  padding: 6px 9px 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 240, 225, 0.05);
+}
+
+.rp-src > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  font-size: 12px;
+}
+
+.rp-src .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rp-src .nm small {
+  margin-left: 5px;
+  color: var(--o-muted);
+  font-size: 11px;
+}
+
+.rp-src .n {
+  width: 44px;
+  flex-shrink: 0;
+  color: var(--o-muted);
+  text-align: right;
+}
+
+.rp-src .v {
+  width: 52px;
+  flex-shrink: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.rp-src .p {
+  width: 40px;
+  flex-shrink: 0;
+  color: var(--o-muted);
+  text-align: right;
+}
+
+.rp-src .more {
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+/* Footer hint */
+.rp-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--o-faint);
+  text-overflow: ellipsis;
+}
+
+.rp-hint .i {
+  width: 12px;
+  height: 12px;
+}
+
+/* ---- Player details (detail.html, extended) ---- */
+.det-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.det-who img.cls {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 10px;
+}
+
+.det-who b {
+  overflow: hidden;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.det-who .srv {
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 12px;
+}
+
+.det-cp {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--o-muted);
+  font-size: 12px;
+}
+
+.det-cp img {
+  width: 14px;
+  height: 14px;
+}
+
+.det-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  padding: 0 4px;
+  overflow: hidden;
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.det-sub .i {
+  width: 12px;
+  height: 12px;
+}
+
+/* new: the back button in the report's player view */
+.o-tbtn.rp-back {
+  flex-shrink: 0;
+  padding: 0 9px 0 6px;
+}
+
+/* new: deaths of this player, under the figures */
+.rp-pdeaths {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(247, 168, 168, 0.1);
+}
+
+.rp-pdeaths > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  overflow: hidden;
+  color: var(--o-text);
+  font-size: 12px;
+}
+
+.rp-pdeaths .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-bad);
+}
+
+.rp-pdeaths b {
+  color: var(--o-bad);
+  font-weight: 600;
+}
+
+.rp-pdeaths .src {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rp-pdeaths small {
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.rp-pdeaths .grow + small {
+  flex-shrink: 0;
+}
+
+.rp-ptabs {
+  margin-top: 8px;
+}
+
+.sk-head {
+  margin-top: 0;
+}
+
+.sk .o-track,
+.sk .o-row {
+  height: 24px;
+}
+
+.sk-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+
+/* The game data has no icon for this skill: a quiet square (detail/view.rs). */
+.sk-icon.is-none {
+  display: inline-block;
+  background: rgba(255, 240, 225, 0.1);
+}
+
+.c-n {
+  width: 40px;
+}
+
+.c-p {
+  width: 46px;
+}
+
+.c-t {
+  width: 92px;
+}
+
+.c-u {
+  width: 74px;
+}
+
+.c-t small,
+.c-u small {
+  margin-left: 4px;
+  color: var(--o-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.c-chev {
+  width: 14px;
+  color: var(--o-faint);
+}
+
+.c-chev .i {
+  width: 12px;
+  height: 12px;
+}
+
+/* Header edges: the skill icon on the left; on the right the chevron slot
+   and the scroll gutter 8 px, as the player table. */
+.rp .o-th.is-skills {
+  padding-left: 30px;
+  padding-right: 17px;
+}
+
+.rp .o-th.is-skills.no-scroll {
+  padding-right: 9px;
+}
+
+.sk-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 0;
+  margin: 3px 0 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 240, 225, 0.05);
+}
+
+.sk-more > div {
+  display: flex;
+  width: 25%;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sk-more span {
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.sk-more b {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sk-more b small {
+  margin-left: 4px;
+  color: var(--o-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.spec {
+  display: inline-flex;
+  gap: 3px;
+  padding-top: 2px;
+}
+
+.spec i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: rgba(255, 240, 225, 0.16);
+}
+
+.spec i.on {
+  background: var(--o-cream);
+}
+
+/* Buff uptime rows (detail.html's buff rows, with the time up) */
+.bf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 2px 4px 4px;
+}
+
+.bf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bf > img {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 5px;
+}
+
+.bf-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bf-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bf-line .nm {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.bf-line .by {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--o-muted);
+  font-size: 11px;
+}
+
+.bf-line .by img {
+  width: 12px;
+  height: 12px;
+  border-radius: 6px;
+}
+
+.bf-bar {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--o-track);
+}
+
+.bf-bar .o-fill {
+  border-radius: 2px;
+}
+
+/* new: uptime as m:ss ("4:01", decided 2026-10-07), then the share of the fight */
+.bf-up {
+  width: 62px;
+  flex-shrink: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.bf-cov {
+  width: 40px;
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+/* The buff rows always scroll inside the 8 px thumb gutter, so the header
+   ends 8 px earlier too: "Up for" and "of 5:12" over their figures. */
+.bf-th {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  padding: 0 12px 0 4px;
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.bf-th .h-up {
+  width: 62px;
+  text-align: right;
+}
+
+.bf-th .h-cov {
+  width: 40px;
+  text-align: right;
+}
+
+.bf-sec {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  margin-top: 4px;
+  padding: 0 4px;
+  color: var(--o-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bf-sec:first-child {
+  margin-top: 0;
+}
+
+.bf-sec .o-count {
+  font-size: 11px;
+}
+
+/* Damage taken bars: the health colour (tokens.md, `hp`). */
+.o-fill.is-hp {
+  background: linear-gradient(90deg, rgba(232, 115, 95, 0.16), rgba(232, 115, 95, 0.55));
+}
+
+/* ---- Entry points: the approved summary card (meter.html), copied ---- */
+.ov.d {
+  --d-bg: rgba(16, 14, 12, var(--bg-a));
+  --d-track: rgba(0, 0, 0, 0.34);
+  --d-soft: rgba(255, 240, 225, 0.08);
+  --d-hot: rgba(255, 240, 225, 0.13);
+  --d-text: rgba(255, 246, 236, 0.96);
+  --d-muted: rgba(255, 246, 236, 0.66);
+  --d-faint: rgba(255, 246, 236, 0.44);
+  --d-good: #86e3a8;
+  --d-warn: #f2c66d;
+  --d-bad: #f7a8a8;
+  --d-hp: #e8735f;
+  --d-font: "Meter Barlow", "Barlow Semi Condensed", "Bahnschrift", sans-serif;
+  --rp-ring: rgba(243, 235, 225, 0.9);
+
+  position: relative;
+  zoom: var(--scale);
+  width: 310px;
+  padding: 8px 8px 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 236, 214, 0.1);
+  border-radius: 14px;
+  background: var(--d-bg);
+  color: var(--d-text);
+  font: 13px/1 var(--d-font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ov.d.has-menu {
+  overflow: visible;
+}
+
+.d .i {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  stroke-width: 2;
+}
+
+.d .grow {
+  flex: 1;
+}
+
+.d-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 2px 0 4px;
+}
+
+.d-time {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.d-label {
+  flex-shrink: 0;
+  color: var(--d-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.d-val {
+  flex-shrink: 0;
+  color: var(--d-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.d-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  color: var(--d-muted);
+}
+
+.d-btn.is-hot {
+  background: var(--d-hot);
+  color: var(--d-text);
+}
+
+.d-tbtn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--d-soft);
+  color: var(--d-text);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.d-tbtn.is-hot {
+  background: var(--d-hot);
+}
+
+.d-tbtn.is-focus,
+.d-btn.is-focus,
+.d-wide.is-focus {
+  outline: 2px solid var(--rp-ring);
+  outline-offset: 1px;
+}
+
+.d-tbtn .i {
+  width: 12px;
+  height: 12px;
+}
+
+.d-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  margin-top: 2px;
+  padding: 0 0 0 4px;
+  color: var(--d-muted);
+  font-size: 11.5px;
+}
+
+/* new: two text buttons share the footer's end, 4 px apart */
+.d-foot .d-acts {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.d-gauge {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 4px;
+}
+
+.d-seg {
+  position: relative;
+  flex: 1;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(255, 240, 225, 0.12);
+}
+
+.d-seg i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 3px;
+  background: var(--d-hp);
+}
+
+.d-gauge .d-hpv {
+  width: 32px;
+  margin-left: 3px;
+  color: var(--d-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.d-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.d-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+}
+
+.d-track {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 18px;
+  padding: 0 9px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--d-track);
+  font-size: 12px;
+}
+
+.d-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 5px;
+  background: linear-gradient(90deg, rgba(var(--rgb), 0.14), rgba(var(--rgb), 0.5));
+}
+
+.d-track > :not(.d-fill) {
+  position: relative;
+}
+
+.d-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.d-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px 0 7px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.d-out.is-final {
+  background: rgba(134, 227, 168, 0.14);
+  color: var(--d-good);
+}
+
+.d-out.is-quiet {
+  background: rgba(242, 198, 109, 0.13);
+  color: var(--d-warn);
+}
+
+.d-out small {
+  color: var(--d-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.d-sum {
+  padding: 4px 4px 2px;
+}
+
+.d-sum-name {
+  overflow: hidden;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.d-sum-where {
+  margin-top: 3px;
+  color: var(--d-muted);
+  font-size: 11.5px;
+}
+
+.d-sum-hero {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 9px;
+}
+
+.d-big {
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 0.9;
+}
+
+.d-big small {
+  margin-left: 4px;
+  color: var(--d-faint);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.d-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.d-kv .d-label {
+  color: var(--d-muted);
+}
+
+.d-kv p {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 104px;
+  margin: 0;
+}
+
+.d-pb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin-top: 9px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.d-pb.is-new {
+  background: rgba(250, 204, 21, 0.17);
+  color: #fde68a;
+}
+
+.d-pb.is-behind {
+  background: rgba(247, 168, 168, 0.13);
+  color: var(--d-bad);
+}
+
+.d-sum .d-rows {
+  padding-top: 8px;
+}
+
+/* Option 2: a full-width tonal button under the skills (new) */
+.d-wide {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 24px;
+  margin-top: 8px;
+  border-radius: 7px;
+  background: var(--d-soft);
+  color: var(--d-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.d-wide .i {
+  width: 12px;
+  height: 12px;
+}
+
+.d-wide.is-hot {
+  background: var(--d-hot);
+}
+
+/* Tooltip under a button (the to-do window's tooltip) */
+.rp-tip {
+  position: absolute;
+  z-index: 6;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 236, 214, 0.14);
+  border-radius: 6px;
+  background: rgba(30, 26, 22, 0.98);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  color: rgba(255, 246, 236, 0.96);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+/* ---- Entry points: the approved history records (history.html), copied ---- */
+.ov.o.his {
+  width: 370px;
+}
+
+.rec {
+  border-radius: 7px;
+  background: var(--o-track);
+}
+
+.rec + .rec {
+  margin-top: 4px;
+}
+
+.rec-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 4px 0 10px;
+}
+
+.rec-top .tgt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+/* The boss-record icon before the boss's name (new; the open pick: crown or
+   skull). In the boss gauge's `hp`; mob records keep the empty slot so every
+   name starts at the same edge. */
+.rec-top .rec-boss {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin-right: -1px;
+  color: var(--o-hp);
+}
+
+.rec-top .rec-boss .i {
+  width: 12px;
+  height: 12px;
+}
+
+.rec-top .when {
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.rec-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 18px;
+  padding: 0 10px 4px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.rec-meta b {
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+.rec-meta .main {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--o-text);
+}
+
+.rec-meta .main .i {
+  width: 11px;
+  height: 11px;
+  color: var(--o-muted);
+}
+
+.rec.is-open {
+  background: rgba(0, 0, 0, 0.4);
+  outline: 1px solid rgba(255, 246, 236, 0.18);
+  outline-offset: -1px;
+}
+
+.rec-players {
+  padding: 2px 8px 8px;
+}
+
+.rec-players .hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.rec-players .hint .i {
+  width: 11px;
+  height: 11px;
+}
+
+.rec .o-btn {
+  width: 20px;
+  height: 20px;
+}
+
+.rec .o-btn .i {
+  width: 12px;
+  height: 12px;
+}
+
+.rec .o-btn.is-hot {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.rec .o-tbtn.is-small {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+
+.filters {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  margin: 2px 0 8px;
+}
+
+/* ---- Figure alignment comparison (align.html, decided 2026-10-07:
+   plates left, tables right, as c.html and player.html draw them) ----
+   One wrapper per variant sets where figures sit in their column or plate
+   cell. "chosen" keeps the plates at the start and the tables at the end;
+   start, center and end apply one rule to both (not chosen, kept as
+   history). Only figure columns, their headers and the figure plates move;
+   names, skill names, icons, rank badges, bars and the chevron columns stay
+   where c.html and player.html draw them. */
+.al {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.al-chosen {
+  --al-text: right;
+  --al-flex: flex-end;
+  --al-plate-text: left;
+  --al-plate-flex: flex-start;
+}
+
+.al-start {
+  --al-text: left;
+  --al-flex: flex-start;
+  --al-plate-text: left;
+  --al-plate-flex: flex-start;
+}
+
+.al-center {
+  --al-text: center;
+  --al-flex: center;
+  --al-plate-text: center;
+  --al-plate-flex: center;
+}
+
+.al-end {
+  --al-text: right;
+  --al-flex: flex-end;
+  --al-plate-text: right;
+  --al-plate-flex: flex-end;
+}
+
+/* Table figures and their headers: the report's player table, the deaths
+   list (time, last hit), the skill table, the buff uptime columns. */
+.al .rp .o-th > span:not(.grow):not(.c-chev):not(.h-who),
+.al .rp-cell,
+.al .o-num:not(.c-chev),
+.al .rp-death .at,
+.al .rp-death .blow,
+.al .bf-up,
+.al .bf-cov,
+.al .bf-th .h-up,
+.al .bf-th .h-cov {
+  text-align: var(--al-text);
+}
+
+.al .o-th .is-sort {
+  justify-content: var(--al-flex);
+}
+
+/* The deaths list header (c.html sets it inline); the last hit gets a
+   fixed column here so its alignment shows. */
+.al .o-th.al-dhead {
+  padding-left: 6px;
+}
+
+.al .o-th.al-dhead > .h-at {
+  width: 32px;
+}
+
+.al .o-th.al-dhead > span.h-who {
+  width: 128px;
+  padding-left: 22px;
+  text-align: left;
+}
+
+.al .o-th.al-dhead > .h-blow,
+.al .rp-death .blow {
+  width: 46px;
+}
+
+/* Figure plates: label above value, both on the variant's edge. */
+.al .det-figs > div {
+  align-items: var(--al-plate-flex);
+  text-align: var(--al-plate-text);
+}

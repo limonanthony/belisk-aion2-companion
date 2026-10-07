@@ -699,6 +699,33 @@
         margin-top: 2px;
         padding-right: 4px;
       }
+
+      /* "Open the fight report" (approved 2026-10-07): a full-width tonal
+         button under the skills, on every summary card while unlocked. */
+      .d-wide {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 24px;
+        margin-top: 8px;
+        border-radius: 7px;
+        background: var(--d-soft);
+        color: var(--d-text);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .d-wide:hover,
+      .d-wide.is-hot {
+        background: var(--d-hot);
+      }
+
+      .d-wide .i {
+        width: 12px;
+        height: 12px;
+      }
     </style>
   </head>
   <body>
@@ -709,8 +736,9 @@
         <a href="pvp.html">PvP overlay</a>
         <a href="detail.html">Player detail</a>
         <a href="history.html">Fight history</a>
+        <a href="report.html">Fight report</a>
       </nav>
-      <h1>Meter overlay <small>approved, rounds 1, 2 and 4</small></h1>
+      <h1>Meter overlay <small>approved, rounds 1, 2 and 4; the summary's report button approved 2026-10-07</small></h1>
       <ul class="rationale">
         <li>Each player is a soft-cornered bar in class colour that brightens toward its leading edge; rank is a small rounded-square badge, cream for you, with a cream rim on your bar. Figures are compact (61.2K); the target's health is a ten-segment gauge.</li>
         <li>Two boards, chosen by themselves: <b>Session</b> in the open world (everyone's damage since the last reset, rows stable across mobs) and <b>Target</b> on a boss. The footer's Session | Target switch shows which; clicking the other side pins it, and a dot marks the pin.</li>
@@ -728,6 +756,7 @@
         <li><b>Target board footer.</b> With a personal best for this boss, the left side shows the pace against it once the fight is 10 s old ("−6.8% vs PB", green ahead, rose behind). Without one, or before 10 s, it shows the party's damage on this target.</li>
         <li><b>Not identified yet.</b> The game sends your character's name at login, so the meter has to be running before you log in (returning to character select and back may also work). Until then rows show <code>ID:&lt;n&gt;</code>, nobody is marked as you, the capsule shows the party's figure without a rank badge, and a quiet line above the footer says "Start before login, or relog via character select".</li>
         <li><b>"…" menu.</b> The boss correction for the target in the header (Treat as a boss / Not a boss / Automatic); History, PvP and Settings will join it later. A click elsewhere in the meter, a second click on "…", or the pointer leaving the card closes it.</li>
+        <li><b>Fight summary.</b> After a boss fight the card turns into the summary: "Defeated" when the boss died, "Fight ended, may resume" when it went quiet. Under the skills, a full-width <b>"Open the fight report"</b> opens the <a href="report.html">fight report</a> for that fight, on the final and the provisional card alike, personal or party; the button makes the summary card 32 px taller (24 px and 8 px above it). Locked (click-through): no report button, no Copy, no ×; unlock, or open the report from History. × still returns to the meter; the summary stays while the report is open.</li>
       </ul>
       <h2>Intended motion</h2>
       <ul>
@@ -1024,39 +1053,65 @@
 
         // ---- Fight summary ---------------------------------------------------------
 
-        function summary(ctx, final) {
+        const SUMMARY_TEXT = {
+          en: { defeated: "Defeated", ended: "Fight ended", resume: "may resume", rank: "Rank", share: "Share", crit: "Crit", best: "New personal best", party: "Party", partyDps: "Party DPS", players: "Players", damage: "Damage", copy: "Copy", open: "Open the fight report" },
+          fr: { defeated: "Vaincu", ended: "Combat terminé", resume: "peut reprendre", rank: "Rang", share: "Part", crit: "Crit.", best: "Nouveau record perso", party: "Groupe", partyDps: "DPS du groupe", players: "Joueurs", damage: "Dégâts", copy: "Copier", open: "Ouvrir le rapport de combat" },
+        };
+
+        // s: { final, hover (on the report button), locked, party (the game has
+        //      not named you, or you did not hit the boss), fr }
+        function summary(ctx, s) {
           const { fmt, you } = ctx;
+          const L = SUMMARY_TEXT[s.fr ? "fr" : "en"];
+          const final = s.final;
           const secs = final ? ctx.summarySecs : ctx.quietSecs;
           const top = ctx.skills[0].share;
-          const pb = final
-            ? `<div class="d-pb is-new">${icon("award")}<span class="grow">New personal best</span>+${(ctx.pb.newPace * 100).toFixed(1)}%</div>`
-            : `<div class="d-pb is-behind">${icon("down")}<span class="grow">Best ${fmt.compact(ctx.pb.dps)}</span>−${Math.abs(ctx.pb.quietPace * 100).toFixed(1)}%</div>`;
+          const pb = s.party
+            ? ""
+            : final
+              ? `<div class="d-pb is-new">${icon("award")}<span class="grow">${L.best}</span>+${(ctx.pb.newPace * 100).toFixed(1)}%</div>`
+              : `<div class="d-pb is-behind">${icon("down")}<span class="grow">Best ${fmt.compact(ctx.pb.dps)}</span>−${Math.abs(ctx.pb.quietPace * 100).toFixed(1)}%</div>`;
+          const hero = s.party
+            ? `<div class="d-sum-hero">
+    <span class="d-big">${fmt.compact(ctx.partyDps)}<small>${L.partyDps}</small></span>
+    <span class="d-kv"><p><span class="d-label">${L.players}</span><span class="d-val">${ctx.count}</span></p></span>
+  </div>`
+            : `<div class="d-sum-hero">
+    <span class="d-big">${fmt.compact(you.dps)}<small>DPS</small></span>
+    <span class="d-kv">
+      <p><span class="d-label">${L.rank}</span><span class="d-val">${you.rank}/${ctx.count}</span></p>
+      <p><span class="d-label">${L.share}</span><span class="d-val">${fmt.pct(you.pct)}</span></p>
+      <p><span class="d-label">${L.crit}</span><span class="d-val">${(ctx.crit * 100).toFixed(0)}%</span></p>
+    </span>
+  </div>`;
+          const skills = s.party
+            ? ""
+            : `<div class="d-rows">${ctx.skills
+                .map((k) => `<div class="d-row">${bar(k.share / top, you.rgb, `<span class="d-name">${k.name}</span><span class="d-val">${(k.share * 100).toFixed(0)}%</span>`)}</div>`)
+                .join("")}</div>`;
+          const report = s.locked ? "" : `<div class="d-wide${s.hover ? " is-hot" : ""}" role="button" tabindex="0">${icon("fileText")}${L.open}</div>`;
+          const figs = s.party
+            ? `<span class="d-label">${L.damage}</span><span class="d-val">${fmt.compact(ctx.partyDps * secs)}</span>`
+            : `<span class="d-label">${L.party}</span><span class="d-val">${fmt.compact(ctx.partyDps)}</span><span class="d-label">${L.damage}</span><span class="d-val">${fmt.compact(you.dps * secs)}</span>`;
+          const copy = s.locked ? "" : `<span class="d-tbtn" role="button" tabindex="0">${icon("copy")}${L.copy}</span>`;
           return card(
             ctx,
             `<div class="d-head" style="padding-left:0">
-  <span class="d-out ${final ? "is-final" : "is-quiet"}">${icon(final ? "check" : "hourglass")}${final ? "Defeated" : "Fight ended"}${final ? "" : " <small>may resume</small>"}</span>
+  <span class="d-out ${final ? "is-final" : "is-quiet"}">${icon(final ? "check" : "hourglass")}${final ? L.defeated : L.ended}${final ? "" : ` <small>${L.resume}</small>`}</span>
   <span class="grow"></span>
   <span class="d-time">${fmt.time(secs)}</span>
-  ${btn("close", "Back to the meter", " is-close")}
+  ${s.locked ? "" : btn("close", "Back to the meter", " is-close")}
 </div>
 ${final ? "" : gauge(ctx.quietHp)}
 <div class="d-sum"${final ? ' style="padding-top:7px"' : ""}>
   <div class="d-sum-name">${ctx.boss.label}</div>
   <div class="d-sum-where">${ctx.boss.where}</div>
-  <div class="d-sum-hero">
-    <span class="d-big">${fmt.compact(you.dps)}<small>DPS</small></span>
-    <span class="d-kv">
-      <p><span class="d-label">Rank</span><span class="d-val">${you.rank}/${ctx.count}</span></p>
-      <p><span class="d-label">Share</span><span class="d-val">${fmt.pct(you.pct)}</span></p>
-      <p><span class="d-label">Crit</span><span class="d-val">${(ctx.crit * 100).toFixed(0)}%</span></p>
-    </span>
-  </div>
+  ${hero}
   ${pb}
-  <div class="d-rows">${ctx.skills
-    .map((s) => `<div class="d-row">${bar(s.share / top, you.rgb, `<span class="d-name">${s.name}</span><span class="d-val">${(s.share * 100).toFixed(0)}%</span>`)}</div>`)
-    .join("")}</div>
+  ${skills}
+  ${report}
 </div>
-<div class="d-foot"><span class="d-label">Party</span><span class="d-val">${fmt.compact(ctx.partyDps)}</span><span class="d-label">Damage</span><span class="d-val">${fmt.compact(you.dps * secs)}</span><span class="grow"></span><span class="d-tbtn" role="button" tabindex="0">${icon("copy")}Copy</span></div>`
+<div class="d-foot">${figs}<span class="grow"></span>${copy}</div>`
           );
         }
 
@@ -1103,9 +1158,17 @@ ${final ? "" : gauge(ctx.quietHp)}
             case "capsule-idle":
               return capsuleIdle();
             case "final":
-              return summary(ctx, true);
+              return summary(ctx, { final: true });
+            case "final-hover":
+              return summary(ctx, { final: true, hover: true });
             case "provisional":
-              return summary(ctx, false);
+              return summary(ctx, { final: false });
+            case "summary-party":
+              return summary(ctx, { final: true, party: true });
+            case "summary-fr":
+              return summary(ctx, { final: true, fr: true });
+            case "summary-locked":
+              return summary(ctx, { final: true, locked: true });
           }
           return "";
         }
@@ -1132,8 +1195,12 @@ ${final ? "" : gauge(ctx.quietHp)}
             { id: "capsule-session", title: "Capsule, open world", sub: "your Session rank and damage" },
             { id: "capsule-target", title: "Capsule, boss", sub: "your DPS, time and pace" },
             { id: "capsule-idle", title: "Capsule, waiting", sub: "nothing hit yet" },
-            { id: "final", title: "Summary, defeated", sub: "final: the boss died" },
-            { id: "provisional", title: "Summary, fight ended", sub: "provisional: the boss went quiet" },
+            { id: "final", title: "Summary, defeated", sub: "final: the boss died; \"Open the fight report\" under the skills" },
+            { id: "final-hover", title: "Summary, pointer on the report button", sub: "the button lights (hot); a click opens the fight report" },
+            { id: "provisional", title: "Summary, fight ended", sub: "provisional: the boss went quiet; the report is offered too" },
+            { id: "summary-party", title: "Summary, party", sub: "the game has not named you, or you did not hit the boss" },
+            { id: "summary-fr", title: "Summary, in French", sub: "\"Ouvrir le rapport de combat\" fits with room to spare" },
+            { id: "summary-locked", title: "Summary, locked", sub: "click-through: no report button, Copy or ×" },
           ],
           stageMin: 300,
           render,

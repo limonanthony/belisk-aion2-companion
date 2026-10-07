@@ -139,6 +139,68 @@
         padding: 0 8px;
         font-size: 11.5px;
       }
+
+      /* Fight report (approved 2026-10-07): boss records get a crown before
+         the boss's name, in the boss gauge's `hp`; mob records keep the empty
+         12 px slot, so every name starts at the same edge. */
+      .rec-top .rec-boss {
+        display: inline-flex;
+        flex-shrink: 0;
+        width: 12px;
+        height: 12px;
+        margin-right: -1px;
+        color: var(--o-hp);
+      }
+
+      .rec-top .rec-boss .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      /* The report button: the 20 px record button, before Delete, on boss
+         records only; mob records keep its slot empty. */
+      .rec .o-btn.is-rep,
+      .rec .rec-slot {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+      }
+
+      .rec .o-btn.is-rep .i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .rec .o-btn.is-rep.is-hot {
+        background: var(--o-soft);
+        color: var(--o-text);
+      }
+
+      .rec .o-btn.is-focus {
+        outline: 2px solid rgba(243, 235, 225, 0.9);
+        outline-offset: 1px;
+        border-radius: 7px;
+      }
+
+      .rec-top {
+        position: relative;
+      }
+
+      /* Tooltip under the report button: one line on the popover colours. */
+      .rec-tip {
+        position: absolute;
+        top: 23px;
+        right: 22px;
+        z-index: 6;
+        padding: 4px 8px;
+        border: 1px solid rgba(255, 236, 214, 0.14);
+        border-radius: 6px;
+        background: rgba(30, 26, 22, 0.98);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+        color: var(--o-text);
+        font-size: 11.5px;
+        font-weight: 500;
+      }
     </style>
   </head>
   <body>
@@ -149,12 +211,14 @@
         <a href="pvp.html">PvP overlay</a>
         <a href="detail.html">Player detail</a>
         <a href="history.html" aria-current="page">Fight history</a>
+        <a href="report.html">Fight report</a>
       </nav>
-      <h1>Fight history <small>approved, round 2</small></h1>
+      <h1>Fight history <small>approved, round 2; the crown and report button on boss records approved 2026-10-07</small></h1>
       <ul class="rationale">
         <li>Newest records first, two lines each: target and time, then main player, player count, damage and duration. Filter by target and by main player, each with its number of records.</li>
         <li>One record opens at a time to its players; clicking a player opens the detail window in history mode.</li>
         <li>Deleting asks first: the delete button itself turns into "Delete?" with Cancel, for one record and for all. Personal bests survive deleting history. Values are in <a href="tokens.md">tokens.md</a>.</li>
+        <li><b>Boss records</b> have a crown before the boss's name and a report button before Delete, which opens the <a href="report.html">fight report</a> for that fight. Records of fights that were not boss fights (here "Unknown target #4412") keep both slots empty, so every name starts at the same edge and the dates line up.</li>
       </ul>
     </header>
 
@@ -166,6 +230,7 @@
         <li>The count reads "14 records", or "6 / 14 records" while a filter hides some. Filters list each target and main player with its number of records, most frequent first.</li>
         <li>One record opens at a time. The record's players are sorted by damage, with DPS and share, and open the player detail in history mode.</li>
         <li>After Delete all, a status line confirms ("Deleted 14 records.") for four seconds; with nothing to delete the button is disabled. Personal bests are kept.</li>
+        <li>The report button's tooltip is "Fight report". A record saved before the report existed still opens one: Damage, skills and buffs are complete; Healing, Damage taken and Deaths say "not recorded".</li>
       </ul>
       <h2>GPUI notes</h2>
       <ul>
@@ -199,13 +264,17 @@
           return `<div class="filters"${disabled ? ' style="opacity:0.45"' : ""}>${select("Target", target, open)}${select("Player", main)}${menu}</div>`;
         }
 
-        function recRow(ctx, r, { open = false, confirm = false } = {}) {
+        // r.mob: the record's target was not a boss: no crown, no report button.
+        function recRow(ctx, r, { open = false, confirm = false, repHover = false, repFocus = false } = {}) {
           const { fmt } = ctx;
           let del = btn("trash", "Delete this record", " is-del");
           if (confirm) {
             del = `<span class="confirm"><span class="o-tbtn is-danger" role="button">${icon("trash")}Delete?</span><span class="o-tbtn is-quiet" role="button">Cancel</span></span>`;
           }
-          const top = `<div class="rec-top"><span class="tgt">${r.targetLabel}</span><span class="when">${r.when}</span>${del}</div>`;
+          const mark = r.mob ? `<span class="rec-boss"></span>` : `<span class="rec-boss" role="img" aria-label="Boss">${icon("crown")}</span>`;
+          const rep = r.mob ? `<span class="rec-slot"></span>` : btn("fileText", "Fight report", ` is-rep${repHover ? " is-hot" : ""}${repFocus ? " is-focus" : ""}`);
+          const tip = repHover ? `<div class="rec-tip" role="tooltip">Fight report</div>` : "";
+          const top = `<div class="rec-top">${mark}<span class="tgt">${r.targetLabel}</span><span class="when">${r.when}</span>${rep}${del}${tip}</div>`;
           const meta = `<div class="rec-meta"><span class="main">${icon("user")}${r.mainLabel}</span><span>${r.players} ${r.players === 1 ? "player" : "players"}</span><span><b>${fmt.compact(r.dmg)}</b> damage</span><span>${fmt.time(r.secs)}</span></div>`;
           let players = "";
           if (open) {
@@ -224,10 +293,10 @@
           return `<div class="rec${open ? " is-open" : ""}${confirm ? " is-marked" : ""}">${top}${meta}${players}</div>`;
         }
 
-        function list(ctx, records, { openIdx = -1, confirmIdx = -1, limit = 7, thumb = true } = {}) {
+        function list(ctx, records, { openIdx = -1, confirmIdx = -1, repHover = -1, repFocus = -1, limit = 7, thumb = true } = {}) {
           const shown = records.slice(0, limit);
           return `<div class="o-scroll${thumb ? " has-thumb" : ""}">${shown
-            .map((r, i) => recRow(ctx, r, { open: i === openIdx, confirm: i === confirmIdx }))
+            .map((r, i) => recRow(ctx, r, { open: i === openIdx, confirm: i === confirmIdx, repHover: i === repHover, repFocus: i === repFocus }))
             .join("")}${thumb ? '<span class="o-thumb" style="--t:2px;--h:90px"></span>' : ""}</div>`;
         }
 
@@ -259,6 +328,10 @@
               return `<div class="ov o his">${head(`${n} records`)}${filters(ctx)}${list(ctx, recs, { confirmIdx: 2 })}${foot(ctx)}</div>`;
             case "del-all":
               return `<div class="ov o his">${head(`${n} records`)}${filters(ctx)}${list(ctx, recs)}${foot(ctx, { confirmAll: true })}</div>`;
+            case "report-hover":
+              return `<div class="ov o his">${head(`${n} records`)}${filters(ctx)}${list(ctx, recs, { repHover: 0 })}${foot(ctx)}</div>`;
+            case "report-focus":
+              return `<div class="ov o his">${head(`${n} records`)}${filters(ctx)}${list(ctx, recs, { repFocus: 5 })}${foot(ctx)}</div>`;
             case "deleted":
               return `<div class="ov o his">${head("0 records")}${filters(ctx, { disabled: true })}<div class="o-empty"><strong>No records yet</strong>Reset the meter after a fight (Alt+Q) to save it here.</div>${foot(ctx, { disabled: true, status: "deleted" })}</div>`;
           }
@@ -268,11 +341,13 @@
         Kit.mount({
           states: [
             { id: "empty", title: "Empty", sub: "no fights saved yet" },
-            { id: "list", title: "Records", sub: "newest first; the list scrolls" },
+            { id: "list", title: "Records", sub: "newest first; the list scrolls; a crown and a report button on boss records, none on the mob record" },
             { id: "filter", title: "Filtering", sub: "target dropdown open, 6 of 14 shown" },
             { id: "open", title: "Record opened", sub: "its players; click one for the detail" },
             { id: "del-one", title: "Deleting one record", sub: "asks before deleting" },
             { id: "del-all", title: "Deleting all", sub: "asks before deleting" },
+            { id: "report-hover", title: "Pointer on a report button", sub: "tooltip \"Fight report\"; a click opens the fight report" },
+            { id: "report-focus", title: "Keyboard focus on a report button", sub: "yesterday's Veilwarden Orsikh, saved before the report existed: its report says what was not recorded" },
             { id: "deleted", title: "After deleting all", sub: "status line, then empty" },
           ],
           controls: ["alpha", "scale", "mask"],

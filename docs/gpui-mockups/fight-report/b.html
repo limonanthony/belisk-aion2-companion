@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fight report B: one scrolling report</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="report.css" />
+    <style>
+      .b-view {
+        position: relative;
+        margin-top: 6px;
+        overflow: hidden;
+      }
+
+      .b-view .b-inner {
+        padding: 3px 11px 3px 3px;
+        margin: -3px;
+      }
+
+      .b-view .o-thumb {
+        right: 1px;
+      }
+
+      .b-sec {
+        cursor: default;
+      }
+
+      .b-sec .b-total {
+        margin-left: auto;
+        color: var(--o-text);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .b-sec .b-total small {
+        margin-left: 4px;
+        color: var(--o-faint);
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .o-sec.is-focus {
+        outline: 2px solid var(--rp-ring);
+        outline-offset: 1px;
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Fight report proposals">
+        <a href="index.html">Fight report overview</a>
+        <a href="c.html">C, one table (chosen)</a>
+        <a href="player.html">Player details</a>
+        <a href="entry.html">Opening the report</a>
+        <a href="a.html">A, tabs (not chosen)</a>
+        <a href="b.html" aria-current="page">B, one scrolling report (not chosen)</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>B, one scrolling report <small>not chosen: C, one table, was chosen on 2026-10-07; kept as exploration history</small></h1>
+      <ul class="rationale">
+        <li><b>Not chosen.</b> The user chose <a href="c.html">C, one table</a>: "the table shows more infos without clicking". This page is kept as it was drawn, as the history of the choice.</li>
+        <li>The same window, header and key figures as A and C. Under them the whole report reads <b>top to bottom</b>: Damage, Healing, Damage taken, Deaths, each a section with its total and a ranked list of bars, like a printed report.</li>
+        <li>Sections fold (the to-do window's section labels): a click on a label folds or unfolds it, and the window remembers which are folded. The list scrolls inside the window.</li>
+        <li>A click on a player in any section opens their details inside the report.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li>The window hugs its content up to 372 px of report, then scrolls with the 3 px thumb. Each section is sorted by its own measure, ranks and bars follow it; players with nothing in a section stay at its end with "—".</li>
+        <li>Pointer on a row: the bar lifts, the chevron shows (enter and leave only). Pointer on a section label: <code>soft</code> fill, the title in <code>text</code>.</li>
+        <li>Keyboard (only through accessibility tools: the overlay windows never take focus from the game): Tab goes section label, its rows, the next label; Space or Enter on a label folds it; Enter on a row opens the player.</li>
+        <li>A fight saved before this change: the Healing, Damage taken and Deaths sections each say "Not recorded for this fight".</li>
+        <li>Compared with C: everything is visible without a click, but each name appears three times and the answers sit a scroll apart; with 14 players the report is about 1,300 px long.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="report.js"></script>
+    <script>
+      (function () {
+        const R = Report;
+        const { compact } = R.fmt;
+        const icon = R.icon;
+        const VIEW = 372;
+
+        const SECTIONS = [
+          { id: "damage", title: "Damage", key: "dmg", total: "total", cols: [["Damage", 56, (p) => p.dmg, "strong"], ["DPS", 50, (p) => p.dps, "side"]] },
+          { id: "healing", title: "Healing", key: "heal", total: "healTotal", cols: [["Healed", 56, (p) => p.heal, "strong"], ["Per second", 56, (p) => p.heal / p.secs, "side"]] },
+          { id: "taken", title: "Damage taken", key: "taken", total: "takenTotal", cols: [["Taken", 56, (p) => p.taken, "strong"], ["Per second", 56, (p) => p.taken / p.secs, "side"]] },
+        ];
+
+        function label(s, open, total, b) {
+          return `<div class="o-sec b-sec${b.hoverSec === s ? " is-hover" : ""}${b.focusSec === s ? " is-focus" : ""}" role="button" aria-expanded="${open}">${icon(open ? "chevronDown" : "chevronRight")}${total[0]}<span class="b-total">${total[1]}</span></div>`;
+        }
+
+        function section(ctx, f, s, b) {
+          const open = !(b.folded || []).includes(s.id);
+          const notRec = f.old && s.id !== "damage";
+          const head = label(s.id, open, [s.title, notRec ? "" : compact(f[s.total])], b);
+          if (!open) return { html: head, h: 30 };
+          if (notRec) return { html: head + `<div class="rp-quiet">Not recorded for this fight</div>`, h: 54 };
+          const sorted = f.players.map((p) => ({ ...p, secs: f.secs })).sort((a, b2) => b2[s.key] - a[s.key] || b2.dmg - a.dmg);
+          const top = sorted[0][s.key] || 1;
+          const th = `<div class="o-th" style="padding-left:52px;padding-right:0"><span class="grow">Player</span>${s.cols.map(([l, w], i) => `<span class="${i === 0 ? "is-sort" : ""}" style="width:${w}px">${l}${i === 0 ? icon("arrowDown") : ""}</span>`).join("")}<span style="width:20px"></span><span style="width:38px">Share</span></div>`;
+          const rows = sorted
+            .map((p) => {
+              const v = p[s.key];
+              const cells = s.cols
+                .map(([, w, get, kind]) => {
+                  const x = get(p);
+                  return x ? `<span class="rp-cell ${kind === "strong" ? "o-strong" : "is-side"}" style="width:${w}px">${compact(x)}</span>` : `<span class="rp-cell is-none" style="width:${w}px">—</span>`;
+                })
+                .join("");
+              return R.playerRow(ctx, p, {
+                rank: sorted.indexOf(p) + 1,
+                scale: v / top,
+                hover: b.hover && b.hover[0] === s.id && b.hover[1] === p.name,
+                focus: b.focus && b.focus[0] === s.id && b.focus[1] === p.name,
+                cells,
+                after: `<span class="o-pc">${v ? R.fmt.p1(v / f[s.total]) : ""}</span>`,
+              });
+            })
+            .join("");
+          return { html: head + th + `<div class="o-rows">${rows}</div>`, h: 30 + 20 + sorted.length * 25 - 3 };
+        }
+
+        function deaths(ctx, f, b) {
+          const open = !(b.folded || []).includes("deaths");
+          const n = f.deathList.length;
+          const head = label("deaths", open, ["Deaths", f.old ? "" : `${n}`], b);
+          if (!open) return { html: head, h: 30 };
+          if (f.old) return { html: head + `<div class="rp-quiet">Not recorded for this fight</div>`, h: 54 };
+          if (!n) return { html: head + R.noDeaths(), h: 54 };
+          return { html: head + R.deathHead() + R.deathRows(ctx, f, b.deathHover != null ? { hover: b.deathHover } : {}), h: 50 + n * 27 - 3 };
+        }
+
+        /* b: { scroll (px), folded [], hover [sec, name], focus [sec, name], hoverSec, focusSec, deathHover } */
+        function report(ctx, f, b = {}) {
+          const parts = SECTIONS.map((s) => section(ctx, f, s, b)).concat(deaths(ctx, f, b));
+          const content = parts.reduce((t, p) => t + p.h, 0);
+          const scrolls = content > VIEW;
+          const top = scrolls ? Math.min(b.scroll || 0, content - VIEW) : 0;
+          const html = parts.map((p) => p.html).join("");
+          let view;
+          if (scrolls) {
+            const th = Math.max(24, Math.round((VIEW * VIEW) / content));
+            const tt = Math.round((top / content) * VIEW);
+            view = `<div class="b-view" style="height:${VIEW}px"><div class="b-inner" style="transform:translateY(-${top}px)">${html}</div><span class="o-thumb" style="--t:${tt + 2}px;--h:${th}px"></span></div>`;
+          } else {
+            view = `<div class="b-view"><div class="b-inner" style="padding-right:3px">${html}</div></div>`;
+          }
+          return R.window(ctx, f, view);
+        }
+
+        function render(state, ctx) {
+          switch (state) {
+            case "fresh":
+              return report(ctx, R.fight("basilus"));
+            case "scrolled":
+              return report(ctx, R.fight("basilus"), { scroll: 400 });
+            case "folded":
+              return report(ctx, R.fight("basilus"), { folded: ["damage", "healing"], hoverSec: "healing" });
+            case "hover":
+              return report(ctx, R.fight("basilus"), { hover: ["damage", "Korrinth"] });
+            case "focus":
+              return report(ctx, R.fight("basilus"), { scroll: 150, focusSec: "healing" });
+            case "heal-none":
+              return report(ctx, R.fight("basilus"), { scroll: 190, hover: ["healing", "Saebrin"] });
+            case "deaths-none":
+              return report(ctx, R.fight("basilus", { deaths: "none" }), { scroll: 999 });
+            case "deaths-several":
+              return report(ctx, R.fight("basilus", { deaths: "several" }), { scroll: 999, deathHover: 2 });
+            case "many":
+              return report(ctx, R.fight("tassin"), { scroll: 0 });
+            case "taken-empty":
+              return report(ctx, R.fight("tassin"), { scroll: 900 });
+            case "long":
+              return report(R.withServer(ctx), R.fight("superbia"));
+            case "ended":
+              return report(ctx, R.fight("basilus", { outcome: "ended", deaths: "none" }));
+            case "old":
+              return report(ctx, R.fight("basilus", { old: true }), { scroll: 0 });
+            case "player":
+              return R.playerState(ctx, R.fight("basilus"), "Mirelle");
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "fresh", title: "Fresh report", sub: "Basilus the False defeated; the report at the top" },
+            { id: "scrolled", title: "Scrolled down", sub: "Damage taken and Deaths" },
+            { id: "folded", title: "Sections folded", sub: "Damage and Healing folded; the pointer on Healing's label" },
+            { id: "hover", title: "Pointer on a row", sub: "Korrinth in Damage" },
+            { id: "focus", title: "Keyboard focus on a section label", sub: "Healing; Space or Enter folds it" },
+            { id: "heal-none", title: "A player with no heals", sub: "Saebrin at the end of Healing with \"—\" (pointer on his row)" },
+            { id: "deaths-none", title: "Nobody died", sub: "scrolled to the end" },
+            { id: "deaths-several", title: "Several deaths", sub: "four deaths, Saebrin twice; pointer on one" },
+            { id: "many", title: "Many players", sub: "14 on a field boss: every section has 14 rows" },
+            { id: "taken-empty", title: "A player with no damage taken", sub: "Tyrant Tassin, scrolled to the end of Damage taken: Ferelith took nothing" },
+            { id: "long", title: "Long names", sub: "long boss and player names with server tags" },
+            { id: "ended", title: "Fight ended, may resume", sub: "from the provisional summary" },
+            { id: "old", title: "A fight saved before this change", sub: "from History: three sections say Not recorded" },
+            { id: "player", title: "A player opened", sub: "Mirelle; every state is on the Player details page" },
+          ],
+          controls: ["alpha", "scale", "mask", "server"],
+          tileMin: 580,
+          stageMin: 560,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

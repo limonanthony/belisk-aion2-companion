@@ -1450,6 +1450,70 @@ one reminder.
   and meter where they sit) and fails if it is activatable or focused,
   overlaps the meter, sits off its gap or edge, or takes clicks while locked.
 
+## Fight report results (TASK-15.3, TASK-15.4)
+
+The approved end-of-fight report for boss fights
+(`docs/gpui-mockups/approved/report.html`, the summary states of `meter.html`,
+the boss records of `history.html`, values in `tokens.md` "Fight report").
+
+- **Data.** The core's `FightReport` (`crates/core/src/report/fight_report.rs`).
+  Healing counts only what `HealKind::counts_as_healing` accepts (direct heals
+  and heals over time; life drain and regeneration on damaging hits are flat
+  stat recovery and are left out). The filter sits in `player_report`, so a
+  player's healing, the party total and the Healing tab agree.
+- **Getting a report onto the UI thread.** The summary card's button emits
+  `ReportRequest::OnMeter { target_id }` from the meter view; History's report
+  button emits `ReportRequest::Saved(record)`. `secondary/` subscribes to both
+  (`init` for the meter, `open_history` for History) and calls `open_report`:
+  a saved record becomes `FightReport::from_record` on the UI thread (pure, like
+  the detail window's history source); a live fight is `DpsMeter::fight_report`
+  run on GPUI's background executor, its result handed back to the UI thread,
+  so no window call ever comes from a meter thread. Without a meter (dev
+  captures) the report is built from the snapshot the overlay shows, with
+  nothing recorded. `show_report` opens `WindowKind::Report` or hands the report
+  to the open window: the same fight leaves it as it is, another fight replaces
+  it and returns to the table.
+- **Window** (`src/report/`): `data.rs` turns the report into what is drawn
+  (names masked, `ID:<n>` and "You" as elsewhere, players the game never named
+  left out when "Hide unknown players" is on, as History does; shades per
+  fight, most damage first); `model.rs` keeps the report frozen as asked for
+  and rebuilds on a language, settings or hide-unknown change; `view.rs` draws
+  the table (sort by a header, kept while the window is open, also across a
+  player's details), the deaths, and a player's details in place of the table
+  with "‹ Report". Hover is the element's enter and leave only. Keyboard
+  (accessibility tools): sort headers, rows and death rows are focusable
+  buttons, Up/Down move between rows, Enter opens, Left/Right switch tabs.
+- **History**: a `hp` crown before boss names, and a report button (with its
+  "Fight report" tooltip) before Delete on boss records only; mob records keep
+  both slots empty. The button is focusable.
+- **Summary card**: "Open the fight report", full width under the skills, on
+  the final and the provisional card; none while locked.
+- **Captures**: `--capture --fixtures` shoots `report-*.png` and `player-*.png`
+  (`capture_report.rs`, data in `fixtures.rs`), `summary-final-hover`,
+  `summary-party`, `summary-locked`, `history-11-report-hover`,
+  `history-12-report-focus`, `history-13-report-opened` and
+  `report-13-from-summary`, and drag-checks the report title.
+
+### Deviations from the mockups
+
+- The sort arrow is drawn at stroke 2 (the icon file's), not 2.5.
+- A fight saved before the report existed has no buff uptime: its Buffs tab
+  shows "--" for the time and share and an empty coverage bar.
+- The Healing and Damage taken tables share one scroll position.
+- The scrolling lists keep their 3 px of focus-ring room above and below
+  (GPUI collapses a list with negative vertical margins), so the player
+  table and skill tables sit 3 px lower than drawn; the sides match.
+
+### Checked
+
+`cargo test --workspace`: core 276 + 1 ignored (new: drain and regeneration
+left out of healing), app 452 (new: sorting by every column, the deaths under the table, sort kept across a
+player's details, row and death row open the player, tab kept for the next
+player, not-recorded columns cannot sort, keyboard rows/Enter/back and tabs,
+hover on enter and leave only, hide unknown players, report replacement; the
+summary card's button on final and provisional cards and not when locked;
+History's button on boss records only, by click and by keyboard).
+
 ## Effort
 
 Rough estimate, to be revised after phase 2:

@@ -59,6 +59,10 @@ pub enum Icon {
     Undo,
     Users,
     Languages,
+    Crown,
+    Skull,
+    ChevronLeft,
+    MousePointer,
 }
 
 impl Icon {
@@ -114,6 +118,10 @@ impl Icon {
             Self::Undo => "icons/undo-2.svg",
             Self::Users => "icons/users.svg",
             Self::Languages => "icons/languages.svg",
+            Self::Crown => "icons/crown.svg",
+            Self::Skull => "icons/skull.svg",
+            Self::ChevronLeft => "icons/chevron-left.svg",
+            Self::MousePointer => "icons/mouse-pointer.svg",
         }
     }
 }
@@ -178,6 +186,10 @@ static ASSETS: &[(&str, &[u8])] = embedded! {
     "icons/undo-2.svg" => "../assets/icons/undo-2.svg",
     "icons/users.svg" => "../assets/icons/users.svg",
     "icons/languages.svg" => "../assets/icons/languages.svg",
+    "icons/crown.svg" => "../assets/icons/crown.svg",
+    "icons/skull.svg" => "../assets/icons/skull.svg",
+    "icons/chevron-left.svg" => "../assets/icons/chevron-left.svg",
+    "icons/mouse-pointer.svg" => "../assets/icons/mouse-pointer.svg",
     "class/assassin.png" => "../assets/game/class/assassin.png",
     "class/chanter.png" => "../assets/game/class/chanter.png",
     "class/cleric.png" => "../assets/game/class/cleric.png",
@@ -279,6 +291,10 @@ mod tests {
             Icon::Undo,
             Icon::Users,
             Icon::Languages,
+            Icon::Crown,
+            Icon::Skull,
+            Icon::ChevronLeft,
+            Icon::MousePointer,
         ];
         for icon in icons {
             assert!(Assets.load(icon.path()).unwrap().is_some_and(|bytes| !bytes.is_empty()), "{icon:?}");

@@ -242,6 +242,7 @@ settings-overlay-mask-text = Shows Mi****e instead of the name, for streams and 
 settings-overlay-combat-power = Combat power
 settings-overlay-combat-power-text = Beside the name, where the game reported it.
 settings-overlay-total-damage = Total damage
+settings-overlay-total-damage-text = On the Target board. The Session board always shows it.
 settings-overlay-boss-fights = Boss fights
 settings-overlay-fight-summary = Fight summary
 settings-overlay-fight-summary-text = When a boss dies: your DPS and place, top skills and personal best. One click copies it.
@@ -314,6 +315,8 @@ settings-check-windivert-missing = Install Npcap, or put WinDivert.dll and WinDi
 settings-capture-recording = Recording
 settings-capture-record-unfamiliar = Record unfamiliar servers
 settings-capture-record-unfamiliar-text = The first two minutes on a server no profile matches. The newest five are kept and never leave this PC.
+settings-capture-record-every-session = Record every session
+settings-capture-record-every-session-text = Keeps this session's game traffic in 30-minute files; the newest are kept up to 2 GB. Files never leave this PC.
 settings-capture-packet-recording = Packet recording
 settings-capture-packet-recording-text = Writes this session's raw packets to a file, for protocol work.
 settings-capture-recording-progress =
@@ -326,6 +329,7 @@ settings-capture-start-recording = Start recording
 settings-capture-recordings = Recordings
 settings-capture-recordings-note = Replay runs one through the live meter, which has to be running.
 settings-capture-unfamiliar-server = unfamiliar server
+settings-capture-rolling-recording = whole session
 settings-capture-replaying = Replaying
 settings-capture-cancel-replay = Cancel replay
 settings-capture-replay = Replay
@@ -503,6 +507,7 @@ meter-summary-rank = Rank
 meter-summary-share = Share
 meter-summary-crit = Crit
 meter-summary-party = Party
+meter-summary-open-report = Open the fight report
 meter-best-first = First record
 meter-best-new = New personal best
 meter-best-behind = Best { $best }
@@ -546,6 +551,8 @@ history-delete-all-confirm =
         [one] Delete all { $count } record?
        *[other] Delete all { $count } records?
     }
+history-report = Fight report
+history-boss-record = Boss, { $name }
 
 ## Player detail
 
@@ -590,6 +597,53 @@ detail-target-buffs = Target buffs
 detail-buffs-up-now = { $count } up now
 detail-buff-up-now = Up now
 detail-buff-ended = Ended
+
+## Fight report
+
+report-title = Fight report
+report-healing = Healing
+report-damage-taken = Damage taken
+report-deaths = Deaths
+report-taken = Taken
+report-sort-by = Sort by { $column }
+report-open-player = { $name }, open details
+report-death-label = { $name } died at { $time }, killed by { $killer }, { $skill }
+report-time = Time
+report-killed-by = Killed by
+report-last-hit = Last hit
+report-by = by
+report-nobody-died = Nobody died
+report-deaths-not-recorded = Not recorded for this fight
+report-not-recorded-note = Healing, damage taken and deaths were not recorded for this fight: it was saved before the meter kept them. Damage, skills and buffs are complete.
+report-hint = Click a player for their skills, buffs, healing and damage taken
+report-unknown = Unknown
+
+report-back = Report
+report-tab-damage = Damage
+report-tab-buffs = Buffs
+report-tab-healing = Healing
+report-tab-taken = Damage taken
+report-multi-hit = Multi-hit
+report-multi-hit-damage = Multi-hit damage
+report-crits = Crits
+report-crit-rate = Crit %
+report-heals = Heals
+report-healed = Healed
+report-largest = Largest
+report-monster-skill = Monster skill
+report-buff-and-caster = Buff and caster
+report-up-for = Up for
+report-of-fight = of { $time }
+report-on = On { $name }
+report-died-at = Died at { $time }
+report-last-hit-amount = last hit { $amount }
+report-no-healing-title = No healing
+report-no-healing-line = { $name } cast no heals in this fight.
+report-no-taken-title = No damage taken
+report-no-taken-line = Nothing hit { $name } in this fight.
+report-not-recorded-title = Not recorded
+report-not-recorded-healing = This fight was saved before the meter kept healing.
+report-not-recorded-taken = This fight was saved before the meter kept damage taken.
 
 ## PvP
 

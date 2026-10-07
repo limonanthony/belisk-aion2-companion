@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fight report: player details</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="report.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Fight report proposals">
+        <a href="index.html">Fight report overview</a>
+        <a href="c.html">C, one table (chosen)</a>
+        <a href="player.html" aria-current="page">Player details</a>
+        <a href="entry.html">Opening the report</a>
+        <a href="a.html">A, tabs (not chosen)</a>
+        <a href="b.html">B, one scrolling report (not chosen)</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>Player details <small>approved 2026-10-07 (inside the report), kept as drawn for history; the approved version is <a href="../approved/report.html?states=p-damage,p-open,p-hover,p-back,p-buffs,p-healing,p-heal-none,p-died,p-taken,p-taken-none,p-focus,p-long,p-old">approved/report.html</a></small></h1>
+      <ul class="rationale">
+        <li>The approved <a href="../approved/detail.html">detail window</a>'s layout (520 px; identity, key figures, hit types, the skill table with a row that opens to every figure), <b>extended for the report</b>: the key figures add Healing, Damage taken and Deaths; the hit types show <b>how many</b> (665 critical hits) and the rate, "665 41.9%" (decided); the skill table adds a Crits column; buffs show <b>how long they were up, as m:ss</b> ("4:01", decided), and the share of the fight.</li>
+        <li>Four tabs under the figures: <b>Damage</b> (per skill), <b>Buffs</b> (on the player, and on the boss), <b>Healing</b> (per skill: heals, crits, amount; no overheal) and <b>Damage taken</b> (by monster skill: hits, largest hit, amount; per player only, decided). A player who died has the deaths under the figures: when, what killed them, the last hit.</li>
+        <li><b>Decided</b>: the details open <b>inside the report</b>, with "‹ Report" to go back, from a click on a player's row or their line under Deaths. Opening them in the existing detail window was not chosen; it stays as the last state, as history.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Opening</b>: a click on a player's row or death row in the report. The player view replaces the report in the same window and "‹ Report" returns to it, with the report's sort and scroll as they were.</li>
+        <li><b>Tabs</b> open on Damage; the tab is kept when you open the next player. Healing and Damage taken show their counts; with nothing to show the tab still opens, to an empty state that says so.</li>
+        <li><b>Damage</b>: sorted by damage. Hits, Crits (how many hits were critical), Crit %, Damage and share. A click on a row opens it (one at a time) to Perfect, Double, Front, Back, Parry and Multi-hit as count and rate, multi-hit damage, spec, min, max, average and total. Skills the game data has no icon for (Fire Spirit: Summon Meteor in the long-names state) show a quiet square, as today.</li>
+        <li><b>Buffs</b>: every buff that was on the player during the fight, then every debuff on the boss, each with its caster, a bar for the share of the fight, the time up as m:ss and the share. Longest first. "Up now" and "Ended" from the live detail window are dropped: the fight is over.</li>
+        <li><b>Healing</b>: what the player cast, by skill. Which effects count as heals (shields and life drain are the open question in TASK-15.2) is settled on a recording before this is built; the drawing assumes direct heals, heals over time and self-heals count.</li>
+        <li><b>Damage taken</b>: by monster skill, the monster's name beside it; bars in the health colour (<code>hp</code>, tokens.md). Hits, the largest hit, the amount and the share of this player's damage taken.</li>
+        <li><b>Deaths</b> of this player: a light <code>bad</code> plate under the figures, one line per death.</li>
+        <li><b>Keyboard</b> (only through accessibility tools: the overlay windows never take focus from the game): Tab reaches "‹ Report", the tabs (Left and Right switch), then the rows; Enter opens a skill row. Esc does not reach a non-activating window, so "‹ Report" is the way back.</li>
+      </ul>
+      <h2>Values proposed (not tokens yet)</h2>
+      <ul>
+        <li>Hit types: the count 13 px / 600 <code>text</code>, the rate 11 px / 500 <code>muted</code> 4 px after. Skill table columns Hits 40, Crits 40, Crit % 46, Damage 92 px.</li>
+        <li>Uptime: "4:01" (minutes and seconds, like the fight time) 13.5 / 600 with tabular figures, right-aligned in 62 px; the share 12 px <code>muted</code> in 40 px. Coverage bar 4 px as approved.</li>
+        <li>Deaths plate: <code>bad</code> at 0.10, 8 px radius, 6 × 10 px padding, 18 px lines; Lucide <code>skull</code> 12 px and "Died at 2:47" in <code>bad</code> / 600.</li>
+        <li>"‹ Report": the quiet text button (no fill; pointer over: <code>hot</code>), Lucide <code>chevron-left</code> 12 px.</li>
+        <li>Alignment (decided 2026-10-07, <a href="align.html">align.html</a>): the key figures and hit types keep label above value at the left of each cell, as the approved detail window; every table's figures and headers sit at the right of their column. A list that scrolls draws its figures inside the 8 px thumb gutter and its header ends 8 px earlier too (the Buffs tab always; the skill, Healing and Damage taken tables past 9 rows), so each header sits over its figures.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="report.js"></script>
+    <script>
+      (function () {
+        const R = Report;
+
+        function render(state, ctx) {
+          const basilus = R.fight("basilus");
+          const several = R.fight("basilus", { deaths: "several" });
+          switch (state) {
+            case "damage":
+              return R.playerState(ctx, basilus, "Mirelle");
+            case "open":
+              return R.playerState(ctx, basilus, "Mirelle", { expanded: 0 });
+            case "hover":
+              return R.playerState(ctx, basilus, "Mirelle", { hoverRow: 1 });
+            case "back":
+              return R.playerState(ctx, basilus, "Mirelle", { hoverBack: true });
+            case "buffs":
+              return R.playerState(ctx, basilus, "Mirelle", { tab: "buffs" });
+            case "healing":
+              return R.playerState(ctx, basilus, "Dovrek", { tab: "healing" });
+            case "heal-none":
+              return R.playerState(ctx, several, "Saebrin", { tab: "healing" });
+            case "died":
+              return R.playerState(ctx, several, "Saebrin", { tab: "damage" });
+            case "taken":
+              return R.playerState(ctx, basilus, "Quenna", { tab: "taken" });
+            case "taken-none":
+              return R.playerState(ctx, R.fight("tassin"), "Ferelith", { tab: "taken" });
+            case "focus":
+              return R.playerState(ctx, basilus, "Mirelle", { tab: "buffs", focusTab: "buffs" });
+            case "long":
+              return R.playerState(R.withServer(ctx), R.fight("superbia"), "Seraphinaveyllithaerinelle");
+            case "old":
+              return R.playerState(ctx, R.fight("basilus", { old: true }), "Mirelle");
+            case "detail":
+              return R.playerView(ctx, basilus, "Mirelle", { where: "detail" });
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "damage", title: "A player opened", sub: "Mirelle (you), Damage: per skill with hits, crits and crit rate" },
+            { id: "open", title: "A skill opened", sub: "Snipe: every hit type as count and rate, min, max, average" },
+            { id: "hover", title: "Pointer on a skill row", sub: "Gale Arrow: the bar lifts, the chevron brightens" },
+            { id: "back", title: "Pointer on \"‹ Report\"", sub: "back to the report, as it was left" },
+            { id: "buffs", title: "Buffs", sub: "up for how long as m:ss (\"4:01\") and the share of the fight; on the player, then on the boss" },
+            { id: "healing", title: "Healing", sub: "Dovrek, the cleric: per skill, heals, crits, amount" },
+            { id: "heal-none", title: "A player with no heals", sub: "Saebrin: the empty state; his two deaths under the figures" },
+            { id: "died", title: "A player who died", sub: "Saebrin, Damage: both deaths with what killed him and the last hit" },
+            { id: "taken", title: "Damage taken", sub: "Quenna, the templar: by monster skill" },
+            { id: "taken-none", title: "No damage taken", sub: "Ferelith on Tyrant Tassin joined late and was never hit" },
+            { id: "focus", title: "Keyboard focus on a tab", sub: "Buffs, chosen with the arrow keys" },
+            { id: "long", title: "Long names", sub: "a long player name and long skill names" },
+            { id: "old", title: "A fight saved before this change", sub: "Healing, Damage taken and Deaths were not recorded; their tabs are dimmed" },
+            { id: "detail", title: "Not chosen: the detail window", sub: "history mode, with the same extended content beside the report; kept as history" },
+          ],
+          controls: ["alpha", "scale", "mask"],
+          tileMin: 580,
+          stageMin: 640,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

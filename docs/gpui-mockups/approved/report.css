@@ -1,0 +1,773 @@
+/* The approved fight report (approved 2026-10-07): the report window and a
+ * player's details inside it, on top of shared.css and overlay.css. Values
+ * are in tokens.md, "Fight report"; a change here changes them too. The
+ * player-detail pieces (det-*, sk-*, bf-*) follow detail.html, extended.
+ *
+ * Alignment (decided 2026-10-07): the key-figure and hit-type plates keep
+ * label above value at the left of each cell; every table puts its figures
+ * and headers at the right of their column. */
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Regular.ttf") format("truetype");
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Medium.ttf") format("truetype");
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Bold.ttf") format("truetype");
+  font-weight: 700;
+}
+
+.ov.o {
+  --o-font: "Meter Barlow", "Barlow Semi Condensed", "Bahnschrift", sans-serif;
+  --rp-ring: rgba(243, 235, 225, 0.9);
+  font-stretch: normal;
+}
+
+.ov.o.rp {
+  width: 520px;
+}
+
+/* Lucide, single colour: the "you" weight is 600 (Barlow has no 650). */
+.o-row.is-you .o-name {
+  font-weight: 600;
+}
+
+/* ---- Report header: the window title row, then the boss block ---- */
+.rp-boss {
+  padding: 2px 4px 0;
+}
+
+.rp-boss-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.rp-boss-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.rp-time {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.rp-boss-sub {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+}
+
+.o-chip small {
+  color: var(--o-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ---- Key figures: label over value on one dark plate (detail.html) ---- */
+.det-figs {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--o-track);
+}
+
+.det-figs > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.det-figs span {
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.det-figs b {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.det-figs b.is-none {
+  color: var(--o-faint);
+}
+
+.det-figs.is-small {
+  margin-top: 4px;
+  padding: 6px 10px;
+}
+
+.det-figs.is-small b {
+  font-size: 13px;
+}
+
+/* A hit type's count with its rate after it ("665 41.9%"). */
+.det-figs.is-small b small {
+  margin-left: 4px;
+  color: var(--o-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ---- Rows: the meter's badge + bar, made clickable ---- */
+.rp .o-th > span:not(.grow) {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.rp .o-th .grow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The header's left edge sits on the names (badge 26 px + track inset and
+   icon 26 px); its right edge on the figures (track 9 px + the chevron slot
+   18 px + the scroll gutter 8 px). */
+.rp .o-th.is-players {
+  padding-left: 52px;
+  padding-right: 35px;
+}
+
+.rp .o-th.is-players.no-scroll {
+  padding-right: 27px;
+}
+
+.rp .o-track > :not(.o-fill) {
+  z-index: 1;
+}
+
+/* Pointer on a row: the track lifts by `soft`, the chevron shows. */
+.rp .o-row.is-hover .o-track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 5px;
+  background: rgba(255, 240, 225, 0.07);
+}
+
+.rp-go {
+  display: inline-flex;
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--o-muted);
+  visibility: hidden;
+}
+
+.rp-go .i {
+  width: 12px;
+  height: 12px;
+}
+
+.o-row.is-hover .rp-go,
+.o-row.is-focus .rp-go {
+  visibility: visible;
+}
+
+/* Keyboard focus: focus-ring, 2 px, 1 px outside the row, so it fits the
+   3 px gap between rows. */
+.o-row.is-focus,
+.o-tab.is-focus,
+.rp-death.is-focus {
+  outline: 2px solid var(--rp-ring);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+.o-tab.is-focus {
+  border-radius: 6px;
+}
+
+.o-tbtn.is-hot {
+  background: var(--o-hot);
+}
+
+.o-tab.is-off {
+  opacity: 0.4;
+}
+
+.rp-cell {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.rp-cell.is-side {
+  color: var(--o-muted);
+  font-size: 12.5px;
+}
+
+.rp-cell.is-none {
+  color: var(--o-faint);
+}
+
+/* Deaths beside a name: a skull and the count, in `bad`; zero is faint. */
+.rp-dead {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  color: var(--o-bad);
+  font-weight: 600;
+}
+
+.rp-dead .i {
+  width: 11px;
+  height: 11px;
+}
+
+.rp-dead.is-zero {
+  color: var(--o-faint);
+  font-weight: 500;
+}
+
+/* ---- Scrolling lists ---- */
+.rp-scroll {
+  position: relative;
+  overflow: hidden;
+  margin: -3px;
+  padding: 3px;
+}
+
+.rp-scroll.has-thumb {
+  padding-right: 11px;
+}
+
+.rp-scroll .o-thumb {
+  right: 4px;
+}
+
+/* ---- Deaths: a list of who, when and what killed them ---- */
+.rp-deaths {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rp-death {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 6px;
+  border-radius: 5px;
+  background: var(--o-track);
+}
+
+.rp-death.is-hover {
+  background: rgba(40, 36, 32, 0.6);
+}
+
+.rp-death .at {
+  width: 32px;
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.rp-death .who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 128px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.rp-death .who b {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.rp-death.is-you .who b {
+  font-weight: 600;
+}
+
+.rp-death .by {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rp-death .by .faint {
+  margin-right: 4px;
+  font-size: 11.5px;
+}
+
+.rp-death .by small {
+  margin-left: 5px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.rp-death .blow {
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.rp-death .blow small {
+  margin-left: 3px;
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+/* The Deaths section label's icon: 12 px in `faint`. */
+.o-sec .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+/* An empty section: one quiet line, not a full empty state. */
+.rp-quiet {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px;
+  color: var(--o-muted);
+  font-size: 12px;
+}
+
+.rp-quiet .i {
+  width: 12px;
+  height: 12px;
+}
+
+.rp-quiet.is-good {
+  color: var(--o-good);
+}
+
+/* Footer hint */
+.rp-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--o-faint);
+  text-overflow: ellipsis;
+}
+
+.rp-hint .i {
+  width: 12px;
+  height: 12px;
+}
+
+/* ---- Player details (detail.html, extended) ---- */
+.det-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.det-who img.cls {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 10px;
+}
+
+.det-who b {
+  overflow: hidden;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.det-who .srv {
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 12px;
+}
+
+.det-cp {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--o-muted);
+  font-size: 12px;
+}
+
+.det-cp img {
+  width: 14px;
+  height: 14px;
+}
+
+.det-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  padding: 0 4px;
+  overflow: hidden;
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.det-sub .i {
+  width: 12px;
+  height: 12px;
+}
+
+/* "‹ Report": the back button in the player view */
+.o-tbtn.rp-back {
+  flex-shrink: 0;
+  padding: 0 9px 0 6px;
+}
+
+/* Deaths of this player, under the figures */
+.rp-pdeaths {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(247, 168, 168, 0.1);
+}
+
+.rp-pdeaths > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  overflow: hidden;
+  color: var(--o-text);
+  font-size: 12px;
+}
+
+.rp-pdeaths .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-bad);
+}
+
+.rp-pdeaths b {
+  color: var(--o-bad);
+  font-weight: 600;
+}
+
+.rp-pdeaths .src {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rp-pdeaths small {
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.rp-pdeaths .grow + small {
+  flex-shrink: 0;
+}
+
+.rp-ptabs {
+  margin-top: 8px;
+}
+
+.sk .o-track,
+.sk .o-row {
+  height: 24px;
+}
+
+.sk-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+
+/* The game data has no icon for this skill: a quiet square (detail/view.rs). */
+.sk-icon.is-none {
+  display: inline-block;
+  background: rgba(255, 240, 225, 0.1);
+}
+
+.c-n {
+  width: 40px;
+}
+
+.c-p {
+  width: 46px;
+}
+
+.c-t {
+  width: 92px;
+}
+
+.c-t small {
+  margin-left: 4px;
+  color: var(--o-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.c-chev {
+  width: 14px;
+  color: var(--o-faint);
+}
+
+.c-chev .i {
+  width: 12px;
+  height: 12px;
+}
+
+/* Pointer on a skill row: the chevron brightens to `text`. */
+.sk .o-row.is-hover .c-chev {
+  color: var(--o-text);
+}
+
+/* Header edges: the skill icon on the left; on the right the chevron slot
+   and the scroll gutter 8 px, as the player table. */
+.rp .o-th.is-skills {
+  padding-left: 30px;
+  padding-right: 17px;
+}
+
+.rp .o-th.is-skills.no-scroll {
+  padding-right: 9px;
+}
+
+.sk-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 0;
+  margin: 3px 0 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 240, 225, 0.05);
+}
+
+.sk-more > div {
+  display: flex;
+  width: 25%;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sk-more span {
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.sk-more b {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sk-more b small {
+  margin-left: 4px;
+  color: var(--o-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.spec {
+  display: inline-flex;
+  gap: 3px;
+  padding-top: 2px;
+}
+
+.spec i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: rgba(255, 240, 225, 0.16);
+}
+
+.spec i.on {
+  background: var(--o-cream);
+}
+
+/* Buff uptime rows (detail.html's buff rows, with the time up) */
+.bf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 2px 4px 4px;
+}
+
+.bf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bf > img {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 5px;
+}
+
+.bf-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bf-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bf-line .nm {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.bf-line .by {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--o-muted);
+  font-size: 11px;
+}
+
+.bf-line .by img {
+  width: 12px;
+  height: 12px;
+  border-radius: 6px;
+}
+
+.bf-bar {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--o-track);
+}
+
+.bf-bar .o-fill {
+  border-radius: 2px;
+}
+
+/* Uptime as m:ss ("4:01"), then the share of the fight */
+.bf-up {
+  width: 62px;
+  flex-shrink: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.bf-cov {
+  width: 40px;
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+/* The buff rows always scroll inside the 8 px thumb gutter, so the header
+   ends 8 px earlier too: "Up for" and "of 5:12" over their figures. */
+.bf-th {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  padding: 0 12px 0 4px;
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.bf-th .h-up {
+  width: 62px;
+  text-align: right;
+}
+
+.bf-th .h-cov {
+  width: 40px;
+  text-align: right;
+}
+
+.bf-sec {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  margin-top: 4px;
+  padding: 0 4px;
+  color: var(--o-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bf-sec:first-child {
+  margin-top: 0;
+}
+
+.bf-sec .o-count {
+  font-size: 11px;
+}
+
+
+/* The 6 px between the key figures and the player table. */
+.rp-gap {
+  height: 6px;
+}
+
+/* The deaths list header: Time over the 32 px time column, Player over the
+   names (after the 16 px class icon and its 6 px gap), Last hit at the end. */
+.rp .o-th.rp-dhead {
+  padding-left: 6px;
+}
+
+.rp .o-th.rp-dhead > .h-at {
+  width: 32px;
+}
+
+.rp .o-th.rp-dhead > span.h-who {
+  width: 128px;
+  padding-left: 22px;
+  text-align: left;
+}
+
+/* The Damage taken tab has no skill icon: its header starts on the names. */
+.rp .o-th.is-skills.is-taken {
+  padding-left: 13px;
+}

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fight report A: tabs</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="report.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Fight report proposals">
+        <a href="index.html">Fight report overview</a>
+        <a href="c.html">C, one table (chosen)</a>
+        <a href="player.html">Player details</a>
+        <a href="entry.html">Opening the report</a>
+        <a href="a.html" aria-current="page">A, tabs (not chosen)</a>
+        <a href="b.html">B, one scrolling report (not chosen)</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>A, tabs: Damage, Healing, Damage taken, Deaths <small>not chosen: C, one table, was chosen on 2026-10-07; kept as exploration history</small></h1>
+      <ul class="rationale">
+        <li><b>Not chosen.</b> The user chose <a href="c.html">C, one table</a>: "the table shows more infos without clicking". This page is kept as it was drawn, as the history of the choice.</li>
+        <li>The same 520 px window, header and key figures as B and C. Under them, <b>four tabs</b> (the approved segmented control): each is a ranked list of bars, like the meter's Target board, for one measure.</li>
+        <li><b>Damage</b>: damage, DPS and share. <b>Healing</b>: healed, healing per second and share; players who cast no heal stay at the end with "—". <b>Damage taken</b>: what each player took, then the party's damage taken <b>by monster skill</b>. <b>Deaths</b>: who, when (mm:ss), killed by what, the last hit; the tab shows the count.</li>
+        <li>A click on a player in any tab opens their details inside the report.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li>The report opens on Damage; the tab is kept while the window lives. Each tab's list is sorted by its own measure; ranks and bars follow it.</li>
+        <li>Pointer on a row: the bar lifts by <code>soft</code> and a chevron appears at its end (enter and leave only). A click opens the player.</li>
+        <li>Keyboard (only through accessibility tools: the overlay windows never take focus from the game): Tab reaches the tabs (Left and Right switch), then the rows (Up and Down move, Enter opens). The ring: <code>focus-ring</code>, 2 px, 1 px outside.</li>
+        <li>A fight saved before this change: Healing, Damage taken and Deaths are dimmed and cannot be opened; a note says why.</li>
+        <li>Compared with C: one measure at a time, with more room for it (share column, the party's damage by source), but three of the four answers are a click away.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="report.js"></script>
+    <script>
+      (function () {
+        const R = Report;
+        const { compact, p1, int } = R.fmt;
+        const icon = R.icon;
+
+        const MEASURES = {
+          damage: { key: "dmg", total: "total", cols: [["Damage", 56, (p) => p.dmg, "strong"], ["DPS", 50, (p) => p.dps, "side"]] },
+          healing: { key: "heal", total: "healTotal", cols: [["Healed", 56, (p) => p.heal, "strong"], ["Per second", 56, (p) => p.heal / p.secs, "side"]] },
+          taken: { key: "taken", total: "takenTotal", cols: [["Taken", 56, (p) => p.taken, "strong"], ["Per second", 56, (p) => p.taken / p.secs, "side"]] },
+        };
+
+        function tabs(f, on, s = {}) {
+          const n = f.deathList.length;
+          const t = (id, label, extra) =>
+            `<span class="o-tab${on === id ? " is-on" : ""}${s.focusTab === id ? " is-focus" : ""}${f.old && id !== "damage" ? " is-off" : ""}" role="tab" aria-selected="${on === id}">${label}${extra || ""}</span>`;
+          return `<div class="o-tabs" role="tablist" style="margin-top:8px">${t("damage", "Damage")}${t("healing", "Healing")}${t("taken", "Damage taken")}${t("deaths", "Deaths", f.old ? "" : `<small>${n}</small>`)}</div>`;
+        }
+
+        /* l: { hover, focus, maxRows, scrollTop } */
+        function list(ctx, f, tab, l = {}) {
+          const m = MEASURES[tab];
+          const sorted = f.players.map((p) => ({ ...p, secs: f.secs })).sort((a, b) => b[m.key] - a[m.key] || b.dmg - a.dmg);
+          const top = sorted[0][m.key] || 1;
+          const scrolls = l.maxRows && sorted.length > l.maxRows;
+          const head = `<div class="o-th" style="padding-left:52px;padding-right:${scrolls ? 8 : 0}px"><span class="grow">Player<span class="faint">${sorted.length}</span></span>${m.cols
+            .map(([label, w], i) => `<span class="${i === 0 ? "is-sort" : ""}" style="width:${w}px">${label}${i === 0 ? icon("arrowDown") : ""}</span>`)
+            .join("")}<span style="width:20px"></span><span style="width:38px">Share</span></div>`;
+          const shown = scrolls ? sorted.slice(l.scrollTop || 0) : sorted;
+          const rows = shown
+            .map((p) => {
+              const v = p[m.key];
+              const cells = m.cols
+                .map(([, w, get, kind]) => {
+                  const x = get(p);
+                  return x ? `<span class="rp-cell ${kind === "strong" ? "o-strong" : "is-side"}" style="width:${w}px">${compact(x)}</span>` : `<span class="rp-cell is-none" style="width:${w}px">—</span>`;
+                })
+                .join("");
+              return R.playerRow(ctx, p, {
+                rank: sorted.indexOf(p) + 1,
+                scale: v / top,
+                hover: l.hover === p.name,
+                focus: l.focus === p.name,
+                cells,
+                after: `<span class="o-pc">${v ? R.fmt.p1(v / f[m.total]) : ""}</span>`,
+              });
+            })
+            .join("");
+          const thumbTop = scrolls ? Math.round(((l.scrollTop || 0) / sorted.length) * (l.maxRows * 25)) : 0;
+          return head + R.scroll(`<div class="o-rows">${rows}</div>`, { rows: sorted.length, maxRows: l.maxRows, thumbTop });
+        }
+
+        function sources(f) {
+          const all = R.partySources(f).slice(0, 6);
+          const head = `<div class="o-th" style="padding-left:8px;padding-right:0"><span class="grow">Monster skill</span><span style="width:62px">Players</span><span style="width:44px">Hits</span><span style="width:56px">Damage</span><span style="width:46px">Share</span></div>`;
+          return `<div class="o-sec" style="margin-top:8px">Damage taken by source<span class="o-count">top 6 of ${R.partySources(f).length}</span></div>${head}${R.sourceRows(all, f.takenTotal)}`;
+        }
+
+        function body(ctx, f, tab, l = {}) {
+          if (f.old && tab !== "damage") tab = "damage";
+          let inner = "";
+          if (tab === "deaths") {
+            inner = f.deathList.length
+              ? `<div style="height:2px"></div>${R.deathHead()}${R.deathRows(ctx, f, l)}`
+              : `<div class="o-empty"><strong>Nobody died</strong>Everyone was still standing when ${R.fmt.esc(f.boss)} fell.</div>`;
+          } else {
+            inner = list(ctx, f, tab, l);
+            if (tab === "taken" && l.sources) inner += sources(f);
+          }
+          return tabs(f, tab, l) + inner;
+        }
+
+        const report = (ctx, f, tab, l) => R.window(ctx, f, body(ctx, f, tab, l));
+
+        function render(state, ctx) {
+          switch (state) {
+            case "fresh":
+              return report(ctx, R.fight("basilus"), "damage");
+            case "hover":
+              return report(ctx, R.fight("basilus"), "damage", { hover: "Korrinth" });
+            case "focus":
+              return report(ctx, R.fight("basilus"), "healing", { focusTab: "healing" });
+            case "healing":
+              return report(ctx, R.fight("basilus"), "healing", { focus: "Saebrin" });
+            case "taken":
+              return report(ctx, R.fight("basilus"), "taken", { sources: true });
+            case "taken-empty":
+              return report(ctx, R.fight("tassin"), "taken", { maxRows: 8, scrollTop: 6 });
+            case "deaths-none":
+              return report(ctx, R.fight("basilus", { deaths: "none" }), "deaths");
+            case "deaths-several":
+              return report(ctx, R.fight("basilus", { deaths: "several" }), "deaths", { hover: 2 });
+            case "many":
+              return report(ctx, R.fight("tassin"), "damage", { maxRows: 8 });
+            case "long":
+              return report(R.withServer(ctx), R.fight("superbia"), "damage");
+            case "ended":
+              return report(ctx, R.fight("basilus", { outcome: "ended", deaths: "none" }), "damage");
+            case "old":
+              return report(ctx, R.fight("basilus", { old: true }), "damage");
+            case "player":
+              return R.playerState(ctx, R.fight("basilus"), "Mirelle");
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "fresh", title: "Fresh report", sub: "Basilus the False defeated, six players; the Damage tab" },
+            { id: "hover", title: "Pointer on a row", sub: "Korrinth: the bar lifts, the chevron shows" },
+            { id: "focus", title: "Keyboard focus on a tab", sub: "Healing focused and chosen with the arrow keys" },
+            { id: "healing", title: "Healing, a player with no heals", sub: "Saebrin at the end with \"—\" (keyboard focus on his row)" },
+            { id: "taken", title: "Damage taken", sub: "per player, then the party's damage by monster skill" },
+            { id: "taken-empty", title: "A player with no damage taken", sub: "Tyrant Tassin, scrolled down: Ferelith took nothing" },
+            { id: "deaths-none", title: "Deaths: nobody died", sub: "the empty state" },
+            { id: "deaths-several", title: "Deaths: several", sub: "four deaths, Saebrin twice; pointer on one" },
+            { id: "many", title: "Many players", sub: "14 on a field boss; the list scrolls past 8 rows" },
+            { id: "long", title: "Long names", sub: "long boss and player names with server tags" },
+            { id: "ended", title: "Fight ended, may resume", sub: "from the provisional summary" },
+            { id: "old", title: "A fight saved before this change", sub: "from History: Healing, Damage taken and Deaths dimmed" },
+            { id: "player", title: "A player opened", sub: "Mirelle; every state is on the Player details page" },
+          ],
+          controls: ["alpha", "scale", "mask", "server"],
+          tileMin: 580,
+          stageMin: 560,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

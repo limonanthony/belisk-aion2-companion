@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fight report: opening it</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="report.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Fight report proposals">
+        <a href="index.html">Fight report overview</a>
+        <a href="c.html">C, one table (chosen)</a>
+        <a href="player.html">Player details</a>
+        <a href="entry.html" aria-current="page">Opening the report</a>
+        <a href="a.html">A, tabs (not chosen)</a>
+        <a href="b.html">B, one scrolling report (not chosen)</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>Opening the report <small>approved 2026-10-07 with the crown, kept as drawn for history; the approved versions are the summary states of <a href="../approved/meter.html?states=final,final-hover,provisional,summary-party,summary-fr,summary-locked">approved/meter.html</a> and <a href="../approved/history.html">approved/history.html</a></small></h1>
+      <ul class="rationale">
+        <li><b>Decided</b>: the approved <a href="../approved/meter.html?states=final,provisional">fight summary card</a> (310 px, after a boss fight) gets <b>a full-width "Open the fight report" button under the skills</b>, on the final card and on the provisional "Fight ended, may resume" card. "Report" beside Copy (2) and a tool button in the header (3) were not chosen; they stay at the end of this page as history.</li>
+        <li>Boss fights only: the summary card is shown for bosses, so every summary gets the button; other fights never do.</li>
+        <li><b>Decided</b>: the approved <a href="../approved/history.html">fight history</a> gets a report button on each <b>boss</b> record, and only there. "Fight report" only inside an opened record was not chosen.</li>
+        <li><b>The open pick</b>: boss records get a small icon before the boss's name, so they stand out from mob records. Two candidates, side by side: <b>a crown</b> (recommended) and <b>a skull</b>; the "Boss icon" control above switches every History state. The crown, because the report already uses the skull for deaths (the Deaths column, the deaths list, a player's death plate): a skull on a record could read as "someone died in this fight".</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Open the fight report</b> opens the report window for that fight (one report window at a time, like the other windows: a second click brings it forward; a report for another fight replaces it). The summary card stays; × on the card still returns to the meter.</li>
+        <li><b>Why the wide button</b> (decided): it is the one next step after a boss fight, so it gets a labelled, full-width target; the card grows by 32 px, only while the summary shows. Beside Copy it crowded the footer (in French Copy had to lose its label); in the header it was an unlabelled icon, easy to miss.</li>
+        <li><b>Locked</b> (click-through): no report button, no Copy, no ×, as today. Unlock, or open the report from History.</li>
+        <li><b>Fight ended</b> (provisional): the button is offered too; the report shows the fight as the meter has it, with the yellow chip.</li>
+        <li><b>History</b>: the report button and the boss icon are on records of boss fights only (the record knows whether its target was a boss). Mob records keep both empty slots, so every name starts at the same edge and the dates line up. Records saved before this change still open a report, with Healing, Damage taken and Deaths marked "not recorded".</li>
+      </ul>
+      <h2>Values proposed (not tokens yet)</h2>
+      <ul>
+        <li>The button: 24 px tall, 7 px radius, <code>soft</code> fill (pointer over: <code>hot</code>), Lucide <code>file-text</code> 12 px and 12 px / 600 text, centred, 8 px under the skills.</li>
+        <li>History report button: the 20 px record button (as Delete), Lucide <code>file-text</code> 12 px, tooltip "Fight report"; pointer over: <code>soft</code>, <code>text</code>.</li>
+        <li>Boss icon: Lucide <code>crown</code> (or <code>skull</code>) 12 px at stroke 2, in <code>hp</code> (<code>#e8735f</code>, the boss gauge's colour: the meter's one boss colour), in a 12 px slot at the record's left edge, 5 px before the name; the name keeps its ellipsis. Not a button, no tooltip; the record's accessible name starts with "Boss,". Neither icon is in <code>crates/app/assets/icons/</code> yet; the chosen one would be added from Lucide.</li>
+        <li>Not chosen, kept as history: "Report" in the footer's text buttons, 4 px apart; the meter's 22 px tool button in the header with tooltip "Fight report"; "Fight report" as a small text button on an opened record's hint line.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="report.js"></script>
+    <script>
+      (function () {
+        const R = Report;
+        const icon = R.icon;
+        const { compact, int, time, esc } = R.fmt;
+
+        const dbtn = (name, label, extra = "") => `<span class="d-btn${extra}" role="button" title="${label}" aria-label="${label}">${icon(name)}</span>`;
+
+        function gauge(hp) {
+          let segs = "";
+          for (let i = 0; i < 10; i++) {
+            const fill = Math.max(0, Math.min(1, hp * 10 - i));
+            segs += `<span class="d-seg"><i style="width:${(fill * 100).toFixed(0)}%"></i></span>`;
+          }
+          return `<div class="d-gauge">${segs}<span class="d-hpv">${(hp * 100).toFixed(0)}%</span></div>`;
+        }
+
+        const FR = { party: "Groupe", damage: "Dégâts", report: "Rapport", copy: "Copier", defeated: "Vaincu", rank: "Rang", share: "Part", crit: "Crit.", best: "Nouveau record", open: "Ouvrir le rapport de combat" };
+        const EN = { party: "Party", damage: "Damage", report: "Report", copy: "Copy", defeated: "Defeated", rank: "Rank", share: "Share", crit: "Crit", best: "New personal best", open: "Open the fight report" };
+
+        /* s: { entry: "footer" | "wide" | "header", final, personal, locked, hover, fr, copyIcon } */
+        function summary(ctx, s) {
+          const f = R.fight("basilus");
+          const you = f.players.find((p) => p.you);
+          const L = s.fr ? FR : EN;
+          const final = s.final !== false;
+          const personal = s.personal !== false;
+          const reportBtn = `<span class="d-tbtn${s.hover ? " is-hot" : ""}" role="button">${icon("fileText")}${L.report}</span>`;
+          const copyBtn = s.copyIcon ? dbtn("copy", L.copy) : `<span class="d-tbtn" role="button">${icon("copy")}${L.copy}</span>`;
+          const head = `<div class="d-head" style="padding-left:0">
+  <span class="d-out ${final ? "is-final" : "is-quiet"}">${icon(final ? "check" : "hourglass")}${final ? L.defeated : "Fight ended"}${final ? "" : " <small>may resume</small>"}</span>
+  <span class="grow"></span>
+  <span class="d-time">${time(final ? f.secs : 287)}</span>
+  ${!s.locked && s.entry === "header" ? dbtn("fileText", "Fight report", s.hover ? " is-hot" : "") : ""}${s.locked ? "" : dbtn("close", "Back to the meter")}
+</div>`;
+          const skills = [["Snipe", 0.263], ["Gale Arrow", 0.189], ["Rapid Fire", 0.147]];
+          const hero = personal
+            ? `<div class="d-sum-hero"><span class="d-big">${compact(you.dps)}<small>DPS</small></span><span class="d-kv"><p><span class="d-label">${L.rank}</span><span class="d-val">${you.rank}/${f.players.length}</span></p><p><span class="d-label">${L.share}</span><span class="d-val">22.0%</span></p><p><span class="d-label">${L.crit}</span><span class="d-val">42%</span></p></span></div>`
+            : `<div class="d-sum-hero"><span class="d-big">${compact(f.total / f.secs)}<small>Party DPS</small></span><span class="d-kv"><p><span class="d-label">Players</span><span class="d-val">${f.players.length}</span></p></span></div>`;
+          const pb = personal ? (final ? `<div class="d-pb is-new">${icon("award")}<span class="grow">${L.best}</span>+6.1%</div>` : `<div class="d-pb is-behind">${icon("down")}<span class="grow">Best 51.7K</span>−6.8%</div>`) : "";
+          const rows = personal
+            ? `<div class="d-rows">${skills.map(([n, sh]) => `<div class="d-row"><span class="d-track" style="--rgb:${R.CLASS_RGB.ranger}"><span class="d-fill" style="width:${((sh / skills[0][1]) * 100).toFixed(1)}%"></span><span class="d-name">${n}</span><span class="d-val">${Math.round(sh * 100)}%</span></span></div>`).join("")}</div>`
+            : "";
+          const wide = !s.locked && s.entry === "wide" ? `<div class="d-wide${s.hover ? " is-hot" : ""}" role="button">${icon("fileText")}${L.open}</div>` : "";
+          const acts = s.locked ? "" : s.entry === "footer" ? `<span class="d-acts">${reportBtn}${copyBtn}</span>` : `<span class="d-acts">${copyBtn}</span>`;
+          const figs = personal
+            ? `<span class="d-label">${L.party}</span><span class="d-val">${compact(f.total / f.secs)}</span><span class="d-label">${L.damage}</span><span class="d-val">${compact(you.dmg)}</span>`
+            : `<span class="d-label">${L.damage}</span><span class="d-val">${compact(f.total)}</span>`;
+          const tip = s.hover && s.entry === "header" ? `<div class="rp-tip" style="top:32px;right:30px">Fight report</div>` : "";
+          return `<div class="ov d">${head}${final ? "" : gauge(0.183)}<div class="d-sum"${final ? ' style="padding-top:7px"' : ""}><div class="d-sum-name">${esc(f.boss)}</div><div class="d-sum-where">${esc(f.place)}</div>${hero}${pb}${rows}${wide}</div><div class="d-foot">${figs}${acts}</div>${tip}</div>`;
+        }
+
+        // ---- History ---------------------------------------------------------------
+
+        const RECORDS = [
+          { target: "Basilus the False", when: "Today 21:42", main: "Mirelle", players: 6, dmg: 68.39e6, secs: 312, boss: true },
+          { target: "Forbidden Hexbeast Griosa", when: "Today 21:31", main: "Mirelle", players: 6, dmg: 52.1e6, secs: 243, boss: true },
+          { target: "Corrupted Daeva Executioner", when: "Today 21:24", main: "Mirelle", players: 6, dmg: 3.2e6, secs: 21, boss: false },
+          { target: "Willful Turgen", when: "Today 21:20", main: "Mirelle", players: 6, dmg: 41.7e6, secs: 208, boss: true },
+          { target: "Corrupted Daeva Elite Sorcerer", when: "Today 21:12", main: "Mirelle", players: 6, dmg: 2.4e6, secs: 17, boss: false },
+          { target: "Tyrant Tassin", when: "Today 20:58", main: "Mirelle", players: 14, dmg: 160.46e6, secs: 401, boss: true },
+          { target: "Basilus the False", when: "Yesterday 22:05", main: "Mirelle", players: 6, dmg: 64.8e6, secs: 337, boss: true },
+        ];
+
+        const hbtn = (name, label, extra = "") => `<span class="o-btn${extra}" role="button" title="${label}" aria-label="${label}">${icon(name)}</span>`;
+
+        /* h: { option: "row" | "inside", open (index), hover (index), focus (index),
+         *      icon: "crown" | "skull" (else the "Boss icon" control) } */
+        function history(ctx, h) {
+          const f = R.fight("basilus");
+          const bossIcon = h.icon || (ctx.v || {}).bossIcon || "crown";
+          const recs = RECORDS.map((r, i) => {
+            const isOpen = h.open === i;
+            let rep = "";
+            if (h.option === "row") rep = r.boss ? hbtn("fileText", "Fight report", `${h.hover === i ? " is-hot" : ""}${h.focus === i ? " is-focus" : ""}`) : `<span style="width:20px;flex-shrink:0"></span>`;
+            const tip = h.option === "row" && h.hover === i ? `<div class="rp-tip" style="top:23px;right:22px">Fight report</div>` : "";
+            const mark = r.boss ? `<span class="rec-boss" role="img" aria-label="Boss">${icon(bossIcon)}</span>` : `<span class="rec-boss"></span>`;
+            const top = `<div class="rec-top" style="position:relative">${mark}<span class="tgt">${esc(r.target)}</span><span class="when">${r.when}</span>${rep}${hbtn("trash", "Delete this record")}${tip}</div>`;
+            const meta = `<div class="rec-meta"><span class="main">${icon("user")}${R.nm(ctx, r.main)}</span><span>${r.players} players</span><span><b>${compact(r.dmg)}</b> damage</span><span>${time(r.secs)}</span></div>`;
+            let players = "";
+            if (isOpen) {
+              const top1 = f.players[0].dmg;
+              const inside = h.option === "inside" ? `<span class="grow"></span><span class="o-tbtn is-small${h.hover === "inside" ? " is-hot" : ""}" role="button">${icon("fileText")}Fight report</span>` : "";
+              players = `<div class="rec-players"><div class="hint">${icon("external")}Click a player to open their details from this record${inside}</div><div class="o-rows">${f.players
+                .map(
+                  (p, n) => `<div class="o-row${p.you ? " is-you" : ""}"><span class="o-rk">${n + 1}</span><span class="o-track" style="--rgb:${p.rgb}"><span class="o-fill" style="width:${((p.dmg / top1) * 100).toFixed(1)}%"></span><img class="o-icon" src="${p.icon}" alt=""><span class="o-name">${R.nm(ctx, p.name)}</span><span class="o-num muted" style="font-size:11.5px">${compact(p.dmg)}</span><span class="o-num o-strong">${compact(p.dps)}</span></span><span class="o-pc">${R.fmt.p1(p.dmg / f.total)}</span></div>`
+                )
+                .join("")}</div></div>`;
+            }
+            return `<div class="rec${isOpen ? " is-open" : ""}">${top}${meta}${players}</div>`;
+          });
+          const limit = h.open != null ? 3 : RECORDS.length;
+          return `<div class="ov o his"><div class="o-head"><span class="o-title">${icon("history")}Fight history</span><span class="o-count">14 records</span><span class="grow"></span>${hbtn("close", "Close")}</div>
+<div class="filters"><label class="o-select"><span>Target</span><span class="o-input"><span class="val">All targets</span>${icon("chevronDown")}</span></label><label class="o-select"><span>Player</span><span class="o-input"><span class="val">All players</span>${icon("chevronDown")}</span></label></div>
+<div class="o-scroll has-thumb" style="overflow:visible">${recs.slice(0, limit).join("")}<span class="o-thumb" style="--t:2px;--h:90px"></span></div>
+<div class="o-foot"><span class="faint">Saved when you reset the meter</span><span class="grow"></span><span class="o-tbtn is-quiet" role="button">${icon("trash")}Delete all</span></div></div>`;
+        }
+
+        function render(state, ctx) {
+          switch (state) {
+            case "wide":
+              return summary(ctx, { entry: "wide" });
+            case "wide-hover":
+              return summary(ctx, { entry: "wide", hover: true });
+            case "wide-ended":
+              return summary(ctx, { entry: "wide", final: false });
+            case "wide-party":
+              return summary(ctx, { entry: "wide", personal: false });
+            case "wide-fr":
+              return summary(ctx, { entry: "wide", fr: true });
+            case "locked":
+              return summary(ctx, { entry: "wide", locked: true });
+            case "footer":
+              return summary(ctx, { entry: "footer", hover: true });
+            case "footer-fr":
+              return summary(ctx, { entry: "footer", fr: true, copyIcon: true });
+            case "header":
+              return summary(ctx, { entry: "header", hover: true });
+            case "his-crown":
+              return history(ctx, { option: "row", icon: "crown" });
+            case "his-skull":
+              return history(ctx, { option: "row", icon: "skull" });
+            case "his-row-hover":
+              return history(ctx, { option: "row", hover: 0 });
+            case "his-row-focus":
+              return history(ctx, { option: "row", focus: 6 });
+            case "his-inside":
+              return history(ctx, { option: "inside", open: 0, hover: "inside" });
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "wide", title: "Open the fight report (chosen)", sub: "a full-width button under the skills; Basilus the False defeated" },
+            { id: "wide-hover", title: "Pointer on it", sub: "the button lights (hot); a click opens the report window" },
+            { id: "wide-ended", title: "Fight ended, may resume", sub: "the provisional card offers the report too (chosen)" },
+            { id: "wide-party", title: "Party summary", sub: "the game has not named you, or you did not hit the boss" },
+            { id: "wide-fr", title: "In French", sub: "\"Ouvrir le rapport de combat\" fits with room to spare" },
+            { id: "locked", title: "Locked (click-through)", sub: "no report button, Copy or ×, as today" },
+            { id: "his-crown", title: "History, boss icon candidate 1: crown (recommended)", sub: "before each boss's name; the two mob records have none, and no report button" },
+            { id: "his-skull", title: "History, boss icon candidate 2: skull", sub: "the same records; the report also draws the skull for deaths" },
+            { id: "his-row-hover", title: "History: pointer on the report button", sub: "tooltip \"Fight report\"; boss icon from the control above" },
+            { id: "his-row-focus", title: "History: keyboard focus on a record's report button", sub: "yesterday's Basilus, saved before this change: its report says what was not recorded" },
+            { id: "footer", title: "Not chosen: Report beside Copy in the footer", sub: "pointer on Report; no extra height, but the footer is full" },
+            { id: "footer-fr", title: "Not chosen: beside Copy, in French", sub: "Rapport and Copier do not both fit: Copy loses its label" },
+            { id: "header", title: "Not chosen: a tool button in the header", sub: "beside ×, with its tooltip; smallest change, least visible" },
+            { id: "his-inside", title: "Not chosen: History, only inside an opened record", sub: "\"Fight report\" on the hint line; pointer on it" },
+          ],
+          controls: ["alpha", "scale", "mask"],
+          variants: [
+            {
+              key: "bossIcon",
+              label: "Boss icon",
+              def: "crown",
+              options: [
+                { value: "crown", label: "crown" },
+                { value: "skull", label: "skull" },
+              ],
+            },
+          ],
+          tileMin: 400,
+          stageMin: 440,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

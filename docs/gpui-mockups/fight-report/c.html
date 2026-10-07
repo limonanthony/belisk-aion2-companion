@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fight report C: one table, every figure</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="report.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Fight report proposals">
+        <a href="index.html">Fight report overview</a>
+        <a href="c.html" aria-current="page">C, one table (chosen)</a>
+        <a href="player.html">Player details</a>
+        <a href="entry.html">Opening the report</a>
+        <a href="a.html">A, tabs (not chosen)</a>
+        <a href="b.html">B, one scrolling report (not chosen)</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>C, one table, every figure <small>approved 2026-10-07, kept as drawn for history; the approved version is <a href="../approved/report.html">approved/report.html</a></small></h1>
+      <ul class="rationale">
+        <li>A new 520 px window, the same card, header, opacity, content scale and Barlow face as the detail and history windows. The header names the fight: "Fight report", the outcome, the boss, where, when and how long; then the party's key figures on one plate.</li>
+        <li><b>One row per player with everything on it</b>: Damage, DPS, Healing, Damage taken (Taken) and Deaths. A click on a column header sorts by it; the bar and the rank follow the sorted column, so the table answers "who did the most damage", "who healed", "who took the hits" with one click each. A player with nothing in a column shows "—" and no bar; the name stays.</li>
+        <li><b>Deaths</b> are listed under the table: when (mm:ss into the fight), who, which monster and skill killed them, and the last hit. Nobody died: one green line.</li>
+        <li><b>A click on a player</b> (their row, or their line under Deaths) opens their details inside this window, with "‹ Report" to come back (decided): per-skill damage with crit counts, every hit type as count and rate, buff uptime as m:ss ("4:01"), their heals per skill and the damage they took by source.</li>
+        <li>Damage taken by source is per player only, in their details (decided); the report has no party-wide section for it.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Sorting</b> (decided). Damage by default. A click on another header sorts by it, highest first (Deaths: most deaths first, then damage); the active header is <code>text</code> with a down arrow, the others are underlined at 0.25 (the approved sorting pattern). The sort is kept while the window is open. Damage and DPS are both shown because players who joined late have a high DPS on a low damage.</li>
+        <li><b>Rows</b> are the meter's bars: rank badge (cream for you), class icon, name, the figures; the sorted column is <code>text</code> 13.5 / 600, the others <code>muted</code> 12.5. Bars use the player's class shade, scaled to the top value of the sorted column (floor 6%, none at zero).</li>
+        <li><b>Pointer on a row</b>: the bar lifts by <code>soft</code> and a chevron appears at its end, on enter and leave only, never on movement inside it. A click opens that player. Death rows do the same.</li>
+        <li><b>Keyboard</b>: like the other overlay windows, the report never takes focus from the game (non-activating), so the keyboard reaches it only through accessibility tools, as with the to-do window. Order: header sort buttons, rows, death rows; Up and Down move between rows; Enter opens the player. The ring: <code>focus-ring</code>, 2 px, 1 px outside the row. Every row is a button named "Saebrin, open details".</li>
+        <li><b>Many players</b>: the table scrolls past 8 rows with the 3 px thumb; the deaths list stays under it.</li>
+        <li><b>Fights saved before this change</b> (opened from History) have no healing, damage taken or deaths: those columns show "--", cannot be sorted, and a note says why. Damage, skills and buffs are complete.</li>
+        <li><b>Fight ended</b> (the boss went quiet, may resume): the report shows what the meter has, with the yellow chip; if the fight resumes, the report window keeps the figures it opened with and the next summary offers a new report.</li>
+      </ul>
+      <h2>Values proposed (not tokens yet)</h2>
+      <ul>
+        <li>Window 520 px; columns Damage 54, DPS 46, Healing 52, Taken 50, Deaths 40 px, 6 px apart; the name keeps about 150 px (measured: a 26-character name and a server tag) before the ellipsis, about 105 px (17 characters) in a death row. Chevron slot 12 px at the bar's end, kept on every row so nothing shifts.</li>
+        <li>Death rows 24 px on <code>track</code>, 5 px radius: time 12.5 / 600 <code>muted</code> right-aligned in 32 px, player 128 px, "by" in <code>faint</code>, the monster in <code>text</code> and its skill in <code>muted</code> 11.5, the last hit 12 px <code>muted</code>. Deaths in a row: Lucide <code>skull</code> 11 px and the count in <code>bad</code>; zero in <code>faint</code>.</li>
+        <li>Lucide icons: <code>file-text</code> (title), <code>skull</code>, <code>chevron-right</code>, <code>chevron-left</code> (back), <code>mouse-pointer</code> (footer hint). <code>file-text</code> is already in <code>crates/app/assets/icons/</code>; the others would be added from Lucide.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="report.js"></script>
+    <script>
+      (function () {
+        const R = Report;
+        const { compact } = R.fmt;
+        const icon = R.icon;
+
+        const COLS = [
+          { key: "dmg", label: "Damage", w: 54 },
+          { key: "dps", label: "DPS", w: 46 },
+          { key: "heal", label: "Healing", w: 52 },
+          { key: "taken", label: "Taken", w: 50 },
+          { key: "deaths", label: "Deaths", w: 40 },
+        ];
+
+        const val = (p, k) => (k === "deaths" ? p.deaths.length : p[k]);
+
+        function cell(f, p, c, sorted) {
+          const cls = `rp-cell ${sorted ? "o-strong" : "is-side"}`;
+          const style = `style="width:${c.w}px"`;
+          if (f.old && !["dmg", "dps"].includes(c.key)) return `<span class="${cls} is-none" ${style}>--</span>`;
+          if (c.key === "deaths") {
+            const n = p.deaths.length;
+            return `<span class="${cls}" ${style}><span class="rp-dead${n ? "" : " is-zero"}">${n ? icon("skull") : ""}${n}</span></span>`;
+          }
+          const v = p[c.key];
+          if (!v) return `<span class="${cls} is-none" ${style}>—</span>`;
+          return `<span class="${cls}" ${style}>${compact(v)}</span>`;
+        }
+
+        /* t: { sort, hover (name), focus (name), maxRows, scrollTop (rows) } */
+        function table(ctx, f, t = {}) {
+          const sort = t.sort || "dmg";
+          const list = f.players.slice().sort((a, b) => val(b, sort) - val(a, sort) || b.dmg - a.dmg);
+          const top = Math.max(...list.map((p) => val(p, sort))) || 1;
+          const scrolls = t.maxRows && list.length > t.maxRows;
+          const recorded = (k) => !f.old || k === "dmg" || k === "dps";
+          const head = `<div class="o-th is-players${scrolls ? "" : " no-scroll"}"><span class="grow">Player<span class="faint">${list.length}</span></span>${COLS.map((c) => {
+            const on = c.key === sort;
+            return `<span class="${on ? "is-sort" : recorded(c.key) ? "can-sort" : ""}" style="width:${c.w}px" role="button">${c.label}${on ? icon("arrowDown") : ""}</span>`;
+          }).join("")}</div>`;
+          const shown = scrolls ? list.slice(t.scrollTop || 0) : list;
+          const rows = shown
+            .map((p) =>
+              R.playerRow(ctx, p, {
+                rank: list.indexOf(p) + 1,
+                scale: val(p, sort) / top,
+                hover: t.hover === p.name,
+                focus: t.focus === p.name,
+                cells: COLS.map((c) => cell(f, p, c, c.key === sort)).join(""),
+              })
+            )
+            .join("");
+          const thumbTop = scrolls ? Math.round(((t.scrollTop || 0) / list.length) * (t.maxRows * 25)) : 0;
+          return head + R.scroll(`<div class="o-rows">${rows}</div>`, { rows: list.length, maxRows: t.maxRows, thumbTop });
+        }
+
+        function deaths(ctx, f, d = {}) {
+          const n = f.deathList.length;
+          const sec = `<div class="o-sec">${icon("skull")}Deaths<span class="o-count">${f.old ? "" : n}</span></div>`;
+          if (f.old) return `${sec}<div class="rp-quiet">Not recorded for this fight</div>`;
+          if (!n) return `${sec}${R.noDeaths()}`;
+          return `${sec}${R.deathHead()}${R.deathRows(ctx, f, d)}`;
+        }
+
+        const report = (ctx, f, t, d) => R.window(ctx, f, `<div style="height:6px"></div>${table(ctx, f, t)}${deaths(ctx, f, d)}`);
+
+        function render(state, ctx) {
+          switch (state) {
+            case "fresh":
+              return report(ctx, R.fight("basilus"));
+            case "sort-heal":
+              return report(ctx, R.fight("basilus"), { sort: "heal" });
+            case "sort-taken":
+              return report(ctx, R.fight("basilus"), { sort: "taken" });
+            case "hover":
+              return report(ctx, R.fight("basilus"), { hover: "Korrinth" });
+            case "focus":
+              return report(ctx, R.fight("basilus"), { focus: "Saebrin" });
+            case "deaths-none":
+              return report(ctx, R.fight("basilus", { deaths: "none" }));
+            case "deaths-several":
+              return report(ctx, R.fight("basilus", { deaths: "several" }), { sort: "deaths" }, { hover: 2 });
+            case "many":
+              return report(ctx, R.fight("tassin"), { maxRows: 8 });
+            case "taken-empty":
+              return report(ctx, R.fight("tassin"), { sort: "taken", maxRows: 8, scrollTop: 6 });
+            case "long":
+              return report(R.withServer(ctx), R.fight("superbia"));
+            case "ended":
+              return report(ctx, R.fight("basilus", { outcome: "ended", deaths: "none" }));
+            case "old":
+              return report(ctx, R.fight("basilus", { old: true }));
+            case "player":
+              return R.playerState(ctx, R.fight("basilus"), "Mirelle");
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "fresh", title: "Fresh report", sub: "Basilus the False defeated, six players, sorted by damage, one death" },
+            { id: "sort-heal", title: "Sorted by healing", sub: "the bars and ranks follow Healing; Saebrin cast no heals: \"—\", no bar, name kept" },
+            { id: "sort-taken", title: "Sorted by damage taken", sub: "the templar on top" },
+            { id: "hover", title: "Pointer on a row", sub: "Korrinth: the bar lifts, the chevron shows; a click opens his details" },
+            { id: "focus", title: "Keyboard focus on a row", sub: "Saebrin: the ring around the row; Enter opens, Up and Down move" },
+            { id: "deaths-none", title: "Nobody died", sub: "one green line instead of the list" },
+            { id: "deaths-several", title: "Several deaths", sub: "sorted by Deaths; Saebrin died twice; pointer on a death row" },
+            { id: "many", title: "Many players", sub: "Tyrant Tassin, a field boss with 14 players: the table scrolls past 8 rows" },
+            { id: "taken-empty", title: "A player with no damage taken", sub: "sorted by Taken, scrolled down: Ferelith joined late and took nothing (\"—\", no heals either)" },
+            { id: "long", title: "Long names", sub: "a long boss name and long player names with server tags: ellipses, figures never move" },
+            { id: "ended", title: "Fight ended, may resume", sub: "opened from the provisional summary (decided: offered there too)" },
+            { id: "old", title: "A fight saved before this change", sub: "opened from History: healing, damage taken and deaths were not recorded" },
+            { id: "player", title: "A player opened", sub: "Mirelle, inside the report with \"‹ Report\"; see the Player details page for every state" },
+          ],
+          controls: ["alpha", "scale", "mask", "server"],
+          tileMin: 580,
+          stageMin: 560,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

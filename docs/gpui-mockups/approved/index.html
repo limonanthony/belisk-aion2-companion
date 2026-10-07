@@ -119,6 +119,7 @@
         <a href="pvp.html">PvP overlay</a>
         <a href="detail.html">Player detail</a>
         <a href="history.html">Fight history</a>
+        <a href="report.html">Fight report</a>
         <a href="reminders.html">Reminder card</a>
         <a href="todos.html">To-do window</a>
       </nav>
@@ -168,11 +169,13 @@
         <div>
           <h2><a href="meter.html">Meter overlay</a></h2>
           <p>Validated in rounds 1 and 2 (direction D2, bar end d, rank b, combat power at 0.82) and round 4 (layout D). Two boards chosen by themselves: Session in the open world, Target on a boss, with a Session | Target switch in the always-on footer to pin either. The target's name on top; under the pointer the tools take the time's place at top right.</p>
-          <p>States: Session at rest, pointer over, switch hover, Copy; Target with and without a personal best, pointer over, locked; pinned both ways; not identified yet; long boss name; waiting; capsule on Session, on a boss and waiting; both fight summaries. Live controls: background opacity, content scale, rows, mask names, server, total damage, combat power, contribution or share.</p>
+          <p>States: Session at rest, pointer over, switch hover, Copy; Target with and without a personal best, pointer over, locked; pinned both ways; not identified yet; long boss name; waiting; capsule on Session, on a boss and waiting; the fight summaries (defeated, pointer on the report button, fight ended, party, French, locked). Live controls: background opacity, content scale, rows, mask names, server, total damage, combat power, contribution or share.</p>
+          <p>Added 2026-10-07 with the fight report: "Open the fight report", a full-width button under the skills on every summary card (also "Fight ended, may resume"); none while locked.</p>
         </div>
         <div class="frames">
           <iframe title="Meter, Session, pointer over" src="meter.html?embed&amp;scenes=bright&amp;states=session-pointer" height="360"></iframe>
           <iframe title="Meter, Target, locked" src="meter.html?embed&amp;scenes=dark&amp;states=locked" height="360"></iframe>
+          <iframe title="Meter, fight summary with the report button" src="meter.html?embed&amp;scenes=dark&amp;states=final" height="420"></iframe>
         </div>
       </section>
 
@@ -200,11 +203,24 @@
       <section class="screen">
         <div>
           <h2><a href="history.html">Fight history</a></h2>
-          <p>Validated in round 2. Two lines per record; deleting one or all asks first on the button itself, with Cancel. States: empty, records, filtering, record opened, deleting one, deleting all, after deleting all.</p>
+          <p>Validated in round 2. Two lines per record; deleting one or all asks first on the button itself, with Cancel. Added 2026-10-07 with the fight report: boss records have a crown before the boss's name and a report button before Delete; mob records keep both slots empty. States: empty, records, filtering, record opened, deleting one, deleting all, pointer on a report button, keyboard focus on one, after deleting all.</p>
         </div>
         <div class="frames">
           <iframe title="History, record opened" src="history.html?embed&amp;scenes=bright&amp;states=open" height="560"></iframe>
           <iframe title="History, deleting one record" src="history.html?embed&amp;scenes=dark&amp;states=del-one" height="560"></iframe>
+          <iframe title="History, pointer on a report button" src="history.html?embed&amp;scenes=dark&amp;states=report-hover" height="560"></iframe>
+        </div>
+      </section>
+
+      <section class="screen">
+        <div>
+          <h2><a href="report.html">Fight report</a></h2>
+          <p>Validated 2026-10-07. Boss fights only: opened from "Open the fight report" on the summary card or a boss record's report button in History. Its own 520 px overlay window: "Fight report", the outcome, the boss, where, when, players and time, the party's key figures, then one row per player with Damage, DPS, Healing, Taken and Deaths. A click on a header sorts by it (Damage first, kept while the window is open); the deaths are listed under the table.</p>
+          <p>A click on a player (or their death) opens their details inside the window, with "‹ Report" back: damage per skill with crits, every hit type as count and rate, buff uptime as m:ss, heals per skill, damage taken by monster skill, their deaths. Plates keep figures left, tables right. Fights saved before the report existed say "not recorded" for Healing, Taken and Deaths. States: the report sorted three ways, pointer and keyboard on a row, no deaths and several, 14 players, long names, fight ended, not recorded; then every player-details tab and state.</p>
+        </div>
+        <div class="frames">
+          <iframe title="Fight report, several deaths" src="report.html?embed&amp;scenes=dark&amp;states=deaths-several" height="560"></iframe>
+          <iframe title="Fight report, a skill opened in a player's details" src="report.html?embed&amp;scenes=bright&amp;states=p-open" height="680"></iframe>
         </div>
       </section>
 
@@ -245,6 +261,7 @@
           <li>Main window: opaque canvas <code>#141210</code>, sidebar and title bar <code>#0e0c0b</code>, groups <code>#1b1815</code> with 10 px radius; one cream primary button (<code>#f3ebe1</code> on <code>#17120d</code>) per view; cream switches and sliders.</li>
           <li>Reminder card: the meter's card at the meter's width (220 px over the capsule), 6 px above it; bell header, 13 px event names, 11.5 px facts, a 2 px time-left line; 150 ms fades, 30 s, paused under the pointer.</li>
           <li>To-do window: the overlay card at 370 px; 26 px rows 2 px apart with a 12 px gutter so names line up under the section labels; done is a 1 px line through the name in <code>muted</code>; a 20 px check and × at the row's end under the pointer only; counts as a 46 px figure between two 20 px arrows; a full amount's row on <code>rgba(242, 198, 109, 0.12)</code>.</li>
+          <li>Fight report: the overlay card at 520 px (the detail window's); one player table with 54/46/52/50/40 px figure columns 6 px apart, the sorted one <code>text</code> 13.5 / 600, the others <code>muted</code> 12.5; 24 px death rows on <code>track</code>; figures left on plates and right in tables; "--" in <code>faint</code> for what was not recorded. On the summary card a 24 px full-width <code>soft</code> button; in History a 12 px Lucide <code>crown</code> in <code>hp</code> and a 20 px report button on boss records.</li>
         </ul>
       </section>
 
@@ -253,6 +270,7 @@
         <ul>
           <li>Clear cache (Settings, About): what exactly is reset and what is kept depends on the Rust storage; the dialog's copy follows that.</li>
           <li>WinDivert is bundled but no licence text for it is in the repository; the About credits name it without a licence until one is added.</li>
+          <li>Fight report: which effects count as heals (shields, life drain) and whether a death can be tied to the hit before it are checked on a recording with a healer before they are built.</li>
         </ul>
       </section>
     </div>

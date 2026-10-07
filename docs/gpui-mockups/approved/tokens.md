@@ -9,9 +9,12 @@ and Target boards), [pvp.html](pvp.html),
 [settings.html](settings.html) (round 3), [reminders.html](reminders.html)
 and the Reminders section of settings.html (2026-10-05), and
 [todos.html](todos.html) and the To-dos section of settings.html
-(2026-10-06). The shared overlay classes live in [overlay.css](overlay.css),
-the main-window components in [app.css](app.css). Later rounds extend this
-file only with values the user has approved.
+(2026-10-06), and [report.html](report.html) with the summary card's
+report button in meter.html and the boss records in history.html
+(2026-10-07). The shared overlay classes live in [overlay.css](overlay.css),
+the fight report's in [report.css](report.css), the main-window components
+in [app.css](app.css). Later rounds extend this file only with values the
+user has approved.
 
 Colours are sRGB. `a` is the user's background opacity (0–255 in Settings,
 default 150, so `a = 150/255 ≈ 0.59`).
@@ -60,8 +63,8 @@ default 150, so `a = 150/255 ≈ 0.59`).
 | `you-rim` | `rgba(255, 246, 236, 0.45)`, 1 px inside the track | Your bar |
 | `good` | `#86e3a8` | Ahead of PB, defeated, good ping, live, success notes |
 | `warn` | `#f2c66d` | Fight ended (provisional), history mode |
-| `bad` | `#f7a8a8` | Behind PB, delete confirmation |
-| `hp` | `#e8735f` | Boss gauge fill; health bars as a 0.16 → 0.55 gradient |
+| `bad` | `#f7a8a8` | Behind PB, delete confirmation, deaths in the fight report (at 0.10 for a player's deaths plate) |
+| `hp` | `#e8735f` | Boss gauge fill; health bars and the fight report's damage-taken bars as a 0.16 → 0.55 gradient; the crown on boss records in History |
 | `gauge-empty` | `rgba(255, 240, 225, 0.12)` | Empty gauge segment |
 | `pb-new` | `rgba(250, 204, 21, 0.17)` bg, `#fde68a` text | New personal best chip |
 | `chip-good` / `chip-warn` / `chip-bad` | `good`, `warn`, `bad` at 0.13–0.14 bg | Status chips and notes |
@@ -148,7 +151,7 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
 | Element | Value |
 |---|---|
 | Card padding | 8 px sides and top, 6 px bottom (windows: 6 px top, 8 px bottom) |
-| Widths | meter 310 px (340 with total damage); PvP 340; history 370; detail 520 |
+| Widths | meter 310 px (340 with total damage); PvP 340; history 370; detail 520; fight report 520 |
 | Row gap | 3 px |
 | Badge to bar | 3 px margin + 5 px row gap = 8 px, matching the card's 8 px inset |
 | Inside a bar | 4 px left, 9 px right, 6 px between icon, name and figures |
@@ -235,6 +238,8 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
   card is up.
 - The to-do window's check and × appear and go at once, with no fade, on the
   row's pointer enter and leave only; nothing in that window animates.
+- The fight report's row lift and chevron appear on the row's pointer enter
+  and go on leave, never on movement inside the row.
 - Frames are drawn only on a snapshot or while a tween runs.
 
 ## Reminder card
@@ -311,6 +316,119 @@ footer.
   character in game.
 - **Focus**: the window never activates, except while a field takes the
   keyboard (an amount, the new to-do's name), as the PvP name field does.
+
+## Fight report
+
+The end-of-fight report for boss fights ([report.html](report.html)),
+approved on 2026-10-07: one table with every figure, a player's details
+inside the same window, opened from the boss summary card
+([meter.html](meter.html), "Summary" states) and from boss records in
+[history.html](history.html). Boss fights only; other fights never offer
+it. It uses the overlay values above: `card` at the user's opacity,
+`card-border`, no shadow, Barlow Semi Condensed, the meter's content scale,
+the window header and footer, the meter's bars and rank badges.
+
+### Report window
+
+| Element | Value |
+|---|---|
+| Window | 520 px wide (the detail window's); card padding 6 px top, 8 px sides and bottom. Height hugs the content; the player table scrolls past 8 rows, the deaths list stays under it. All times the content scale |
+| Header | The 28 px window header: Lucide `file-text` 13 px in `muted`, "Fight report" 13.5 px / 600; the outcome chip pushed right (20 px pill, 11.5 px / 600: `chip-good` "Defeated" with Lucide `check`, or `chip-warn` "Fight ended" with Lucide `hourglass` and "may resume" 11 px / 500 `muted`); the close tool button (22 px) flush right |
+| Boss block | 4 px inset, 2 px above: the boss 14.5 px / 600, cut off with an ellipsis; the fight time 14 px / 600 at the end, never cut. Under it, 3 px apart, one line 11.5 px `muted`: where (with the difficulty), when, "6 players", joined by " · " (a field boss has no place) |
+| Key figures | The detail window's plate: 6 px above, `track`, 8 px radius, 7 × 10 px padding; five equal cells 4 px apart, Damage, Party DPS, Healing, Damage taken, Deaths; label 11 px `faint` above the value 16 px / 600, 4 px apart, both at the left of the cell |
+| Player table header | 6 px under the plate; the 20 px table header, 11 px / 500 `faint`: "Player" and the count in `faint` 6 px after, starting on the names (52 px in); the five column labels over their figures, right-aligned, ending 27 px from the right (35 px while the table scrolls) |
+| Columns | Damage 54, DPS 46, Healing 52, Taken 50, Deaths 40 px, 6 px apart, figures right-aligned; the name keeps the rest (about 150 px: a 26-character name with a server tag) and is cut off with an ellipsis |
+| Sorting | A click on a column header sorts by it, highest first (Deaths: most deaths, then damage). Active header `text` / 600 with Lucide `arrow-down` 10 px at stroke 2.5, 2 px after; the other sortable headers underlined at `rgba(255, 246, 236, 0.25)`, 3 px offset. Damage by default; the sort is kept while the window is open, also across a player's details |
+| Player row | The meter's row: 22 px, 3 px apart; the 18 px rank badge (`you-badge` for you) with 8 px to the bar; the track (4 px left, 9 px right inset), 16 px class icon, the name 13 px / 500 (you 600; with "Server" on, the tag 11 px `muted` 5 px after), the five figures, the 12 px chevron slot. Bar: the player's class shade, scaled to the top value of the sorted column, floor 6%; no bar at zero. Rank follows the sorted column |
+| Figures | Sorted column `text` 13.5 px / 600; the others `muted` 12.5 px / 500. Nothing in a column: "—" in `faint`, no bar, the name kept. Deaths: Lucide `skull` 11 px and the count in `bad` / 600, 3 px apart; zero "0" in `faint` / 500 |
+| Pointer on a row | Enter: a `rgba(255, 240, 225, 0.07)` layer over the whole track (fill included), 5 px radius, and Lucide `chevron-right` 12 px in `muted` in the chevron slot; leave: both go. Never on movement inside the row. The chevron slot is kept on every row, so nothing shifts. The whole row is the click target |
+| Scrolling | Past 8 rows the table is 197 px tall (8 rows) and scrolls with the 3 px `scroll-thumb`, 4 px from the right; the rows' right edge and the header's end move 8 px left (an 8 px gutter for the thumb), so each label stays over its figures. A list too short to scroll has no gutter. 3 px of room around the rows so a focus ring is never clipped |
+| Deaths section | The section label (24 px, 6 px above): Lucide `skull` 12 px `faint`, "Deaths" 12 px / 600 `muted`, the count 11 px `faint`. Then a 20 px header: "Time" right-aligned over the times, "Player" over the names, "Killed by", "Last hit" at the end |
+| Death row | 24 px, 3 px apart, `track`, 5 px radius, 6 px left and 9 px right inset, 6 px gaps: the time into the fight (m:ss) 12.5 px / 600 `muted`, right-aligned in 32 px; 128 px for the 16 px class icon and the name 13 px / 500 (you 600, ellipsis); "by" 11.5 px `faint`, 4 px, the monster 13 px `text`, its skill 11.5 px `muted` 5 px after, cut off with an ellipsis; the last hit 12 px `muted` at the end, right-aligned. In fight order. Pointer on it (enter and leave only): `rgba(40, 36, 32, 0.60)`; a click opens that player |
+| Nobody died | One 24 px line, 6 px inset: Lucide `check` 12 px and "Nobody died" 12 px in `good` |
+| Footer | The 26 px window footer: Lucide `mouse-pointer` 12 px and "Click a player for their skills, buffs, healing and damage taken", 11.5 px `faint`, 5 px apart |
+| Focus ring | `focus-ring`, 2 px, 1 px outside the row or death row (6 px radius), so it fits the 3 px gap |
+
+### Player details
+
+| Element | Value |
+|---|---|
+| Place | Inside the report window, replacing the report; opened by a click on a player's row or death row |
+| Header | The 28 px header with no left inset: "‹ Report", the quiet text button (22 px pill, no fill, 6 px left and 9 px right padding, Lucide `chevron-left` 12 px, "Report" 12 px / 600 `muted`; pointer over: `hot` fill); the 20 px class icon (10 px radius), the name 14.5 px / 600 (ellipsis), the server 12 px `muted`, 7 px apart; combat power with its 14 px icon, 12 px `muted`; the close tool button flush right |
+| Fight line | 18 px, 4 px inset, 6 px gaps, 11.5 px `muted`: Lucide `file-text` 12 px, the boss, a `faint` "·", when, "·", the fight time |
+| Key figures | The report's plate: Damage, DPS, Healing, Damage taken, Deaths; a zero ("0") in `faint` |
+| Hit types | A second plate 4 px under it, 6 × 10 px padding: Critical, Back, Front, Double, Perfect, Parry, Multi-hit; label 11 px `faint`, the count 13 px / 600 `text` and the rate 11 px / 500 `muted` 4 px after ("665 41.9%"), at the left of each cell |
+| Deaths plate | Only for a player who died: 4 px under the hit types, `bad` at 0.10 (`rgba(247, 168, 168, 0.10)`), 8 px radius, 6 × 10 px padding, 18 px lines 3 px apart, 12 px: Lucide `skull` 12 px and "Died at 2:47" in `bad` / 600, the monster in `text` and "· its skill" in `muted` (ellipsis), "last hit 52.3K" 11.5 px `muted` at the end |
+| Tabs | The segmented tabs, 8 px above: Damage, Buffs, Healing, Damage taken, each with its count 11 px `faint`. Opens on Damage; the tab is kept when the next player opens. Not recorded: Healing and Damage taken at 0.4 opacity, no count |
+| Damage tab | Header: "Skill" and the count, then Hits 40, Crits 40, Crit % 46, Damage 92 px (active, with the arrow) and a 14 px chevron column; starts 30 px in, ends 9 px from the right (17 px while it scrolls). Rows 24 px, 3 px apart, the player's class colour; 18 px skill icon (4 px radius; none in the game data: a quiet `rgba(255, 240, 225, 0.10)` square), the name, Hits and Crits and Crit % `muted`, Damage 13.5 px / 600 with its share 11 px / 500 `muted` 4 px after, Lucide `chevron-down` 12 px in `faint` (`text` under the pointer). Sorted by damage; scrolls past 9 rows (an opened row counts as 4) |
+| Opened skill row | One at a time; the expanded-row block (6 px radius, `rgba(255, 240, 225, 0.05)`, 8 × 10 px padding, 3 px above, 2 px below), four columns, 8 px between lines: Perfect, Double, Front, Back, Parry, Multi-hit as count and rate, Multi-hit damage, Spec, Min, Max, Average, Total; label 11 px `faint`, value 12.5 px / 600. Spec: five 7 px squares, 2 px radius, 3 px apart, taken in cream, free at `rgba(255, 240, 225, 0.16)`. The chevron turns to `chevron-up` |
+| Buffs tab | Header 20 px, 11 px `faint`, 4 px left and 12 px right inset: "Buff and caster", "Up for" over 62 px and "of 5:12" over 40 px, right-aligned. The list always scrolls (286 px) with the thumb: "On Mirelle", then "On Basilus the False" (24 px labels, 12 px / 600 `muted`, count 11 px `faint`). Rows 7 px apart: 24 px buff icon (5 px radius), the name 13 px / 500 (ellipsis), the caster 11 px `muted` after a 12 px class icon; under them the 4 px coverage bar (2 px radius, `track`, the caster's class gradient); then the time up as m:ss ("4:01") 13.5 px / 600 right-aligned in 62 px and the share of the fight 12 px `muted` right-aligned in 40 px. Longest first |
+| Healing tab | The Damage tab's table: Heals 40, Crits 40, Crit % 46, Healed 92 px; no chevron (its slot kept). No overheal |
+| Damage taken tab | The table without icons (plain track, 8 px left inset; header 13 px in): the monster skill, the monster 11 px `muted` 5 px after; Hits 40, Largest 46, Damage 92 px with the share of this player's damage taken. Bars in `hp`, `rgba(232, 115, 95, 0.16 → 0.55)` |
+| Empty tab | The empty state: "No healing" / "No damage taken" 14 px / 600, then one `muted` sentence ("Saebrin cast no heals in this fight.", "Nothing hit Ferelith in this fight.") |
+| Focus ring | As in the report: 2 px, 1 px outside the tab or row, 6 px radius |
+
+### Not recorded
+
+Fights saved before the report existed have no healing, damage taken or
+deaths. The report still opens (from History):
+
+- The plates show "--" in `faint` for Healing, Damage taken and Deaths.
+- The table's Healing, Taken and Deaths cells show "--" in `faint`; their
+  headers are plain `faint`, not underlined, and cannot be clicked.
+- The overlay note under the plate (6 px above, Lucide `info`): "Healing,
+  damage taken and deaths were not recorded for this fight: it was saved
+  before the meter kept them. Damage, skills and buffs are complete."
+- Deaths: the label without a count, then the quiet line "Not recorded for
+  this fight" in `muted`.
+- Player details: the same "--", the note 4 px above the tabs, Healing and
+  Damage taken tabs dimmed, opening to "Not recorded / This fight was saved
+  before the meter kept healing." (or "damage taken").
+
+### Figure alignment
+
+Plates left, tables right (decided 2026-10-07). The key-figure and hit-type
+plates keep label above value at the left of each cell, as the detail
+window does. Every table puts its figures and its headers at the right of
+each column, so decimal points and the K and M suffixes line up: the player
+table, the deaths list's time and last hit, the skill, Healing and Damage
+taken tables, and the Buffs tab's "Up for" and share. Names, skill names,
+icons, rank badges, bars and chevrons stay where they are. A header always
+sits over its figures: a list that scrolls has the 8 px thumb gutter in its
+rows and its header; a list that does not scroll has neither.
+
+### Opening it
+
+| Element | Value |
+|---|---|
+| Summary card button | "Open the fight report" (French "Ouvrir le rapport de combat"): full width under the skills (under the hero on the party card), 8 px above; 24 px tall, 7 px radius, `soft` fill (pointer over: `hot`), Lucide `file-text` 12 px and 12 px / 600 `text`, centred, 6 px apart. On the final and the provisional ("Fight ended, may resume") card, personal or party. Makes the summary card 32 px taller. Locked (click-through): no button, as no Copy and no × |
+| History report button | On boss records only, before Delete (6 px apart): the 20 px record button, 7 px radius, Lucide `file-text` 12 px in `muted`; pointer over: `soft` fill, `text`, and the tooltip "Fight report" under it (one line, 11.5 px / 500 `text`, 4 × 8 px padding, 6 px radius, `popover` colours). Mob records keep the 20 px slot empty |
+| Crown | Boss records only: Lucide `crown` 12 px at stroke 2 in `hp` (`#e8735f`), in a 12 px slot at the record's left edge, 5 px before the name; the name keeps its ellipsis. Not a button, no tooltip; the record's accessible name starts with "Boss,". Mob records keep the empty slot, so every name starts at the same edge |
+
+- **Window**: an overlay window of its own like History and the detail
+  window (transparent, no-activate, tool window). One report window at a
+  time: opening it again brings it forward; a report for another fight
+  replaces it. The summary card stays; × on the card still returns to the
+  meter.
+- **Fight ended, may resume**: the report shows what the meter has, with the
+  `chip-warn` outcome; if the fight resumes, the window keeps the figures it
+  opened with and the next summary offers a new report.
+- **Back**: "‹ Report" returns to the report with its sort and scroll as they
+  were. Esc does not reach a non-activating window.
+- **Keyboard** (accessibility tools only): report: the sort headers, the
+  rows, the death rows; Up and Down move, Enter opens; each row is a button
+  named "Saebrin, open details", a death row "Saebrin died at 2:47, killed by
+  Basilus the False, Sword Aura Blast". Player details: "‹ Report", the tabs
+  (Left and Right), the rows; Enter opens a skill row.
+- **Icons**: Lucide `file-text` is in `crates/app/assets/icons/` already;
+  `crown`, `skull`, `chevron-left` and `mouse-pointer` are added from Lucide
+  (ISC) when the report is built, with their `assets.rs` entries, as the
+  other icons were. `chevron-right`, `chevron-down`, `chevron-up`,
+  `arrow-down`, `check`, `hourglass`, `info`, `x` are there already.
+- To confirm on a recording before building: which effects count as heals
+  (shields, life drain such as Blood Absorption; the drawing counts direct
+  heals, heals over time and self-heals), and that a death can be tied to
+  the hit before it.
 
 ## Main window (GPUI Kit)
 
@@ -447,3 +565,11 @@ pinned version before planning.
   list's maximum height. A done name is drawn with `StrikethroughStyle`; the
   check and × are drawn on every row and their visibility changes on the
   row's hover enter and leave (`on_hover`), never on mouse move.
+- The fight report is an overlay window with the meter's styles
+  (transparent, no-activate, tool window), 520 px wide and sized to its
+  content. The row lift and chevron change on the row's hover enter and
+  leave (`on_hover`), never on mouse move; the chevron is drawn on every row
+  and only its visibility changes. The player table and every list that can
+  overflow scroll inside the window with the thumb gutter; the player
+  details replace the report's content in the same window, and the report's
+  sort and scroll are kept while they show.

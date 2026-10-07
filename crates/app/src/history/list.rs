@@ -33,6 +33,8 @@ pub struct RecordRow {
     pub damage: u64,
     /// First hit anyone landed to the last; zero when unknown.
     pub duration_secs: f64,
+    /// A boss fight: it has a fight report.
+    pub is_boss: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -155,8 +157,10 @@ impl HistoryList {
         }
     }
 
-    /// The players of one record, most damage first.
-    pub fn players(&self, id: &str) -> Vec<PlayerLine> {
+    /// The players of one record, most damage first. With `hide_unknown_players`
+    /// the ones the game never named are left out, except the record's own
+    /// player; the record and every share stay as saved.
+    pub fn players(&self, id: &str, hide_unknown_players: bool) -> Vec<PlayerLine> {
         let Some(record) = self.record(id) else {
             return Vec::new();
         };
@@ -164,6 +168,11 @@ impl HistoryList {
         let mut players: Vec<PlayerLine> = record
             .player_stats
             .values()
+            .filter(|stat| {
+                !hide_unknown_players
+                    || !stat.actor_name.trim().is_empty()
+                    || record.combat_infos.main_actor_id == Some(stat.actor_id)
+            })
             .map(|stat| PlayerLine {
                 actor_id: stat.actor_id,
                 name: if stat.actor_name.trim().is_empty() {
@@ -252,6 +261,7 @@ impl RecordRow {
             player_count: named_players.len(),
             damage: record.total_damage,
             duration_secs: duration_secs(record),
+            is_boss: record.target_info.as_ref().is_some_and(|target| target.is_boss),
         }
     }
 }
@@ -323,6 +333,7 @@ mod tests {
             player_skill_stats: HashMap::new(),
             player_stats: players.iter().map(|&(id, name, damage)| (id, player(id, name, damage))).collect(),
             use_buffs_by_target: HashMap::new(),
+            ledger: None,
             created_at: at,
         }
     }
@@ -439,11 +450,23 @@ mod tests {
     #[test]
     fn a_records_players_are_sorted_by_damage_with_ids_for_the_unnamed() {
         let list = list();
-        let players = list.players("old");
+        let players = list.players("old", false);
 
         assert_eq!(players.iter().map(|player| player.name.as_str()).collect::<Vec<_>>(), vec!["Mirelle", "ID:2"]);
         assert_eq!(players[0].class, Some(PlayerClass::Ranger));
-        assert!(list.players("missing").is_empty());
+        assert!(list.players("missing", false).is_empty());
+    }
+
+    #[test]
+    fn hiding_unknown_players_leaves_the_unnamed_out_of_an_opened_record_but_not_the_record() {
+        let list = list();
+
+        let players = list.players("old", true);
+
+        assert_eq!(players.iter().map(|player| player.name.as_str()).collect::<Vec<_>>(), vec!["Mirelle"]);
+        assert_eq!(players[0].share, 0.5, "shares stay as saved");
+        assert_eq!(list.record("old").unwrap().player_stats.len(), 2, "the record keeps everyone");
+        assert_eq!(list.players("old", false).len(), 2, "switching it off lists them again");
     }
 
     #[test]
@@ -453,7 +476,7 @@ mod tests {
         let mut list = HistoryList::default();
         list.set_records(vec![own]);
 
-        let players = list.players("own");
+        let players = list.players("own", true);
 
         assert_eq!(players.iter().map(|player| player.name.as_str()).collect::<Vec<_>>(), vec!["Mirelle", "You"]);
         assert!(players[1].you && !players[1].named);

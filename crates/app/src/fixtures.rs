@@ -88,6 +88,18 @@ pub fn unidentified() -> CombatSnapshot {
     indexed(snapshot)
 }
 
+/// The sample boss fight where every other player is not named yet, so the
+/// Target board has ID rows unless unknown players are hidden.
+pub fn boss_with_unknown_players() -> CombatSnapshot {
+    let mut snapshot = boss_fight(221.0, 624);
+    for (index, player) in snapshot.last_target_all_players_overview_stats.iter_mut().enumerate() {
+        if player.actor_id != YOUR_ID && index % 2 == 1 {
+            player.actor_name.clear();
+        }
+    }
+    indexed(snapshot)
+}
+
 /// The sample boss fight under a name too long for the header.
 pub fn long_boss_fight(secs: f64, hp: u32) -> CombatSnapshot {
     let mut snapshot = boss_fight(secs, hp);
@@ -391,11 +403,12 @@ pub fn history_records() -> Vec<HistoryRecord> {
                     (id, stat)
                 })
                 .collect();
+            let is_boss = boss != "Thornback Boar";
             let target = TargetInfo {
                 id: target_id,
-                target_mob_code: Some(BOSS_MOB),
+                target_mob_code: Some(if is_boss { BOSS_MOB } else { MOB_CODE }),
                 target_name: Some(boss.to_string()),
-                is_boss: true,
+                is_boss,
                 current_hp: Some(0),
                 max_hp: Some(1_000),
                 target_start_time: HashMap::from([(YOUR_ID, 1_000.0)]),
@@ -414,8 +427,482 @@ pub fn history_records() -> Vec<HistoryRecord> {
                 player_skill_stats: HashMap::from([(YOUR_ID, detail_skill_table(1))]),
                 player_stats: players,
                 use_buffs_by_target: boss_snapshot.use_buffs_by_target,
+                ledger: None,
                 created_at: NOW - index as u64 * 5_400_000,
             }
         })
         .collect()
+}
+
+// ---- Fight reports (docs/gpui-mockups/approved/report.html) ----
+//
+// Bosses, monsters, the dungeon, servers and skills are game data; which
+// monster used which skill, the players and every figure are invented, as
+// in the approved mockup.
+
+/// Which of the approved mockup's fights.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ReportFight {
+    /// Basilus the False in Fallen Guardian's City (Hard), six players.
+    Basilus,
+    /// Tyrant Tassin, a field boss with fourteen players.
+    Tassin,
+    /// Superbia with long player names.
+    Superbia,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ReportDeaths {
+    /// The fight's own: one for Basilus, two on Tassin, one on Superbia.
+    Usual,
+    Nobody,
+    /// Four on Basilus, Saebrin twice.
+    Several,
+}
+
+#[derive(Clone, Copy)]
+pub struct ReportFixture {
+    pub fight: ReportFight,
+    pub deaths: ReportDeaths,
+    /// The boss lived: "Fight ended, may resume".
+    pub ended: bool,
+    /// Saved before the meter kept healing, damage taken and deaths.
+    pub old: bool,
+}
+
+impl ReportFixture {
+    pub const fn of(fight: ReportFight) -> Self {
+        Self { fight, deaths: ReportDeaths::Usual, ended: false, old: false }
+    }
+}
+
+const REPORT_BOSS_ID: u32 = 80_001;
+
+/// (name, class, server, combat power, damage, healing, damage taken, you)
+type Member = (&'static str, &'static str, &'static str, u64, f64, f64, f64, bool);
+
+const PARTY: [Member; 6] = [
+    ("Vaelith", "Sorcerer", "1001", 41_820, 19.11e6, 0.15e6, 1.35e6, false),
+    ("Mirelle", "Ranger", "1002", 38_904, 15.04e6, 0.21e6, 0.962e6, true),
+    ("Korrinth", "Gladiator", "1001", 40_112, 12.44e6, 0.62e6, 2.91e6, false),
+    ("Saebrin", "Assassin", "1003", 36_455, 10.8e6, 0.0, 1.88e6, false),
+    ("Quenna", "Templar", "1001", 39_670, 6.96e6, 0.84e6, 7.42e6, false),
+    ("Dovrek", "Cleric", "1002", 33_880, 4.04e6, 6.12e6, 1.12e6, false),
+];
+
+const FIELD: [Member; 14] = [
+    ("Kaedric", "Gladiator", "1003", 42_310, 24.6e6, 0.94e6, 9.8e6, false),
+    ("Vaelith", "Sorcerer", "1001", 41_820, 22.9e6, 0.12e6, 2.1e6, false),
+    ("Mirelle", "Ranger", "1002", 38_904, 18.4e6, 0.18e6, 1.4e6, true),
+    ("Pellam", "Ranger", "1003", 37_120, 15.2e6, 0.09e6, 1.7e6, false),
+    ("Korrinth", "Gladiator", "1001", 40_112, 14.7e6, 0.71e6, 4.2e6, false),
+    ("Tobiah", "Elementalist", "1002", 35_020, 13.9e6, 0.11e6, 1.9e6, false),
+    ("Saebrin", "Assassin", "1003", 36_455, 12.8e6, 0.0, 3.1e6, false),
+    ("Brannoc", "Templar", "1001", 37_450, 9.6e6, 1.21e6, 11.4e6, false),
+    ("Quenna", "Templar", "1001", 39_670, 8.1e6, 0.98e6, 8.7e6, false),
+    ("Ilyrae", "Chanter", "1003", 34_210, 6.4e6, 3.42e6, 2.6e6, false),
+    ("Ysolde", "Chanter", "1001", 33_940, 5.1e6, 2.88e6, 2.2e6, false),
+    ("Dovrek", "Cleric", "1002", 33_880, 4.6e6, 7.94e6, 1.8e6, false),
+    ("Nalla", "Cleric", "1002", 30_420, 3.2e6, 6.31e6, 2.4e6, false),
+    ("Ferelith", "Elementalist", "1003", 35_980, 0.96e6, 0.0, 0.0, false),
+];
+
+/// Longer than real names, so the ellipsis shows.
+const LONG_NAMES: [Member; 6] = [
+    ("Seraphinaveyllithaerinelle", "Elementalist", "1001", 41_210, 17.62e6, 0.08e6, 1.21e6, false),
+    ("Mirelle", "Ranger", "1002", 38_904, 14.11e6, 0.19e6, 0.88e6, true),
+    ("Vexmorradunelle", "Assassin", "1003", 36_980, 12.37e6, 0.0, 2.02e6, false),
+    ("Thornwallowbrandethor", "Templar", "1001", 40_350, 7.45e6, 0.92e6, 6.84e6, false),
+    ("Aurelindoravaine", "Chanter", "1003", 35_110, 6.02e6, 3.11e6, 1.64e6, false),
+    ("Kassiopheliandrael", "Cleric", "1002", 34_470, 3.86e6, 5.74e6, 1.33e6, false),
+];
+
+/// (skill, share of the player's damage, hits)
+fn class_skills(class: &str) -> &'static [(u32, f64, u32)] {
+    match class {
+        "Ranger" => &[
+            (14_020_000, 0.263, 188),
+            (14_110_000, 0.189, 342),
+            (14_270_000, 0.147, 516),
+            (14_040_000, 0.115, 44),
+            (14_080_000, 0.092, 96),
+            (14_090_000, 0.068, 71),
+            (14_100_000, 0.053, 58),
+            (14_060_000, 0.041, 39),
+            (14_220_000, 0.02, 22),
+            (100_001, 0.012, 211),
+        ],
+        "Sorcerer" => &[
+            (15_060_000, 0.24, 61),
+            (15_210_000, 0.2, 288),
+            (15_040_000, 0.16, 94),
+            (15_250_000, 0.13, 27),
+            (15_120_000, 0.11, 66),
+            (15_030_000, 0.09, 112),
+            (15_090_000, 0.07, 73),
+        ],
+        "Gladiator" => &[
+            (11_040_000, 0.25, 141),
+            (11_010_000, 0.21, 233),
+            (11_090_000, 0.17, 96),
+            (11_100_000, 0.15, 38),
+            (11_050_000, 0.12, 77),
+            (11_020_000, 0.1, 164),
+        ],
+        "Assassin" => &[
+            (13_070_000, 0.27, 118),
+            (13_350_000, 0.2, 42),
+            (13_040_000, 0.16, 301),
+            (13_060_000, 0.13, 37),
+            (13_210_000, 0.11, 88),
+            (13_050_000, 0.08, 129),
+            (13_160_000, 0.05, 402),
+        ],
+        "Templar" => &[(12_090_000, 0.29, 74), (12_100_000, 0.23, 118), (12_240_000, 0.19, 41), (12_010_000, 0.17, 247), (12_060_000, 0.12, 63)],
+        "Cleric" => &[(17_060_000, 0.32, 206), (17_040_000, 0.23, 48), (17_010_000, 0.18, 61), (17_070_000, 0.14, 52), (17_050_000, 0.13, 34)],
+        "Chanter" => &[
+            (18_050_000, 0.26, 102),
+            (18_010_000, 0.22, 248),
+            (18_070_000, 0.19, 87),
+            (18_040_000, 0.14, 53),
+            (18_210_000, 0.11, 39),
+            (18_300_000, 0.08, 21),
+        ],
+        _ => &[
+            (16_240_000, 0.24, 36),
+            (16_001_301, 0.19, 22),
+            (16_020_000, 0.16, 91),
+            (16_040_000, 0.14, 77),
+            (16_710_000, 0.11, 140),
+            (16_010_000, 0.09, 118),
+            (16_210_000, 0.07, 64),
+        ],
+    }
+}
+
+/// (skill, share of the player's healing, heals, over time)
+fn class_heals(class: &str) -> &'static [(u32, f64, u32, bool)] {
+    match class {
+        "Cleric" => &[
+            (17_100_000, 0.377, 58, false),
+            (17_120_000, 0.239, 24, false),
+            (17_090_000, 0.176, 212, true),
+            (17_320_000, 0.121, 96, true),
+            (17_270_000, 0.087, 3, false),
+        ],
+        "Chanter" => &[(18_170_000, 0.48, 40, false), (18_120_000, 0.31, 22, true), (18_710_000, 0.21, 8, false)],
+        "Templar" => &[(12_230_000, 0.61, 14, false), (12_250_000, 0.39, 9, false)],
+        "Gladiator" => &[(11_120_000, 1.0, 31, false)],
+        "Ranger" => &[(14_790_000, 1.0, 6, false)],
+        "Sorcerer" => &[(15_160_000, 1.0, 4, false)],
+        "Elementalist" => &[(16_790_000, 1.0, 3, false)],
+        _ => &[],
+    }
+}
+
+/// The boss and its monsters: (code, name), then (monster index, skill, typical hit).
+struct Arena {
+    boss: (u32, &'static str),
+    monsters: &'static [(u32, &'static str)],
+    sources: &'static [(usize, u32, u64)],
+    /// Share of a tank's, a melee's and a ranged player's damage taken, per source.
+    weights: [&'static [f64]; 3],
+    secs: f64,
+}
+
+fn arena(fight: ReportFight) -> Arena {
+    match fight {
+        ReportFight::Basilus => Arena {
+            boss: (2_301_723, "Basilus the False"),
+            monsters: &[(2_301_723, "Basilus the False"), (2_301_726, "Corrupted Daeva Executioner"), (2_301_731, "Corrupted Daeva Elite Sorcerer")],
+            sources: &[
+                (0, 1_000_010, 16_900),
+                (0, 1_217_100, 47_800),
+                (0, 1_800_250, 58_200),
+                (0, 1_216_520, 39_400),
+                (0, 1_501_490, 96_000),
+                (1, 1_223_840, 28_700),
+                (1, 1_000_020, 7_800),
+                (2, 1_226_600, 29_600),
+            ],
+            weights: [
+                &[0.42, 0.22, 0.16, 0.08, 0.05, 0.0, 0.07, 0.0],
+                &[0.06, 0.26, 0.18, 0.19, 0.08, 0.13, 0.05, 0.05],
+                &[0.0, 0.245, 0.0, 0.43, 0.1, 0.0, 0.073, 0.152],
+            ],
+            secs: 312.0,
+        },
+        ReportFight::Tassin => Arena {
+            boss: (2_700_691, "Tyrant Tassin"),
+            monsters: &[(2_700_691, "Tyrant Tassin")],
+            sources: &[(0, 1_000_100, 21_400), (0, 1_228_680, 82_000), (0, 1_216_630, 61_500), (0, 1_216_760, 34_800)],
+            weights: [&[0.55, 0.2, 0.15, 0.1], &[0.2, 0.35, 0.3, 0.15], &[0.0, 0.4, 0.6, 0.0]],
+            secs: 401.0,
+        },
+        ReportFight::Superbia => Arena {
+            boss: (2_101_279, "Superbia, Sacred Beast of Life"),
+            monsters: &[(2_101_279, "Superbia, Sacred Beast of Life")],
+            sources: &[(0, 1_215_970, 24_800), (0, 1_224_320, 12_600), (0, 1_220_880, 41_300), (0, 1_000_110, 15_200)],
+            weights: [&[0.5, 0.2, 0.1, 0.2], &[0.3, 0.3, 0.2, 0.2], &[0.05, 0.5, 0.45, 0.0]],
+            secs: 287.0,
+        },
+    }
+}
+
+/// (seconds into the fight, who, monster index, skill, last hit)
+fn arena_deaths(fight: ReportFight, deaths: ReportDeaths) -> &'static [(f64, &'static str, usize, u32, u64)] {
+    match (fight, deaths) {
+        (_, ReportDeaths::Nobody) => &[],
+        (ReportFight::Basilus, ReportDeaths::Usual) => &[(167.0, "Saebrin", 0, 1_217_100, 52_310)],
+        (ReportFight::Basilus, ReportDeaths::Several) => &[
+            (167.0, "Saebrin", 0, 1_217_100, 52_310),
+            (245.0, "Vaelith", 1, 1_223_840, 31_840),
+            (298.0, "Saebrin", 0, 1_800_250, 61_200),
+            (301.0, "Dovrek", 0, 1_501_490, 98_400),
+        ],
+        (ReportFight::Tassin, _) => &[(133.0, "Saebrin", 0, 1_228_680, 88_400), (287.0, "Pellam", 0, 1_216_630, 71_200)],
+        (ReportFight::Superbia, _) => &[(214.0, "Seraphinaveyllithaerinelle", 0, 1_220_880, 44_100)],
+    }
+}
+
+/// (buff, caster, seconds up): on every player, then on the boss.
+const BUFFS_ON_PLAYERS: [(u32, &str, f64); 7] = [
+    (17_720_000, "Dovrek", 287.0),
+    (12_450_000, "Quenna", 241.0),
+    (14_710_000, "Mirelle", 198.0),
+    (14_720_000, "Mirelle", 126.0),
+    (17_430_000, "Dovrek", 94.0),
+    (14_220_000, "Mirelle", 61.0),
+    (17_410_000, "Dovrek", 38.0),
+];
+const BUFFS_ON_BOSS: [(u32, &str, f64); 4] =
+    [(14_090_000, "Mirelle", 264.0), (11_140_000, "Korrinth", 172.0), (12_270_000, "Quenna", 149.0), (17_080_000, "Dovrek", 88.0)];
+
+/// A boss fight as History saves it, with what the report reads.
+pub fn report_record(fixture: ReportFixture) -> HistoryRecord {
+    use meter_core::report::events::HealKind;
+    use meter_core::report::ledger::{
+        BuffUptime, FightLedger, FightWindow, HealSkill, KillerKind, LedgerDeath, LedgerKiller, LedgerLastHit, LedgerPlayer,
+        TakenSkill,
+    };
+
+    let arena = arena(fixture.fight);
+    let roster: &[Member] = match fixture.fight {
+        ReportFight::Basilus => &PARTY,
+        ReportFight::Tassin => &FIELD,
+        ReportFight::Superbia => &LONG_NAMES,
+    };
+    let id_of = |name: &str| roster.iter().position(|member| member.0 == name).map(|index| index as u32 + 1);
+    let you = roster.iter().position(|member| member.7).map_or(1, |index| index as u32 + 1);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |since| since.as_secs_f64());
+    let started_at = now - arena.secs - 90.0;
+    let window = FightWindow { started_at, ended_at: started_at + arena.secs };
+
+    let mut player_stats = HashMap::new();
+    let mut player_skill_stats = HashMap::new();
+    let mut actor_infos = HashMap::new();
+    let mut ledger_players = Vec::new();
+    for (index, &(name, class, server, power, damage, healing, taken, _)) in roster.iter().enumerate() {
+        let id = index as u32 + 1;
+        let mut totals: HashMap<String, u32> = HashMap::new();
+        let mut hits = 0;
+        let skills: HashMap<u32, SkillStats> = class_skills(class)
+            .iter()
+            .enumerate()
+            .map(|(order, &(code, share, count))| {
+                let rate = |base: f64, step: f64| (f64::from(count) * (base + step * ((order % 4) as f64))).round() as u32;
+                let mut special = vec![
+                    ("CRITICAL", rate(0.36, 0.03)),
+                    ("BACK", rate(0.08, 0.015)),
+                    ("FRONT", rate(0.05, 0.01)),
+                    ("PARRY", rate(0.0, 0.005)),
+                    ("PERFECT", rate(0.02, 0.008)),
+                    ("DOUBLE", rate(0.04, 0.01)),
+                ];
+                let total = (damage * share) as u64;
+                if order % 3 == 1 {
+                    special.push(("MULTIHIT", rate(0.06, 0.03)));
+                    special.push(("MULTIHITDMG", (total / 9) as u32));
+                }
+                hits += count;
+                for (kind, value) in &special {
+                    if *kind != "MULTIHITDMG" {
+                        *totals.entry(kind.to_string()).or_default() += value;
+                    }
+                }
+                let average = total / u64::from(count);
+                let stats = SkillStats {
+                    counts: count,
+                    total_damage: total,
+                    min_damage: average * 37 / 100,
+                    max_damage: average * 26 / 10,
+                    special_counts: special.into_iter().map(|(kind, value)| (kind.to_string(), value)).collect(),
+                };
+                (code, stats)
+            })
+            .collect();
+        let spec = class_skills(class)
+            .iter()
+            .enumerate()
+            .map(|(order, &(code, ..))| (code, (1..=5u32).filter(|slot| (order as u32 + slot) % 3 == 0).collect()))
+            .collect();
+        actor_infos.insert(
+            id,
+            ActorInfo {
+                id,
+                actor_name: Some(name.to_string()),
+                actor_server_id: Some(server.to_string()),
+                actor_class: Some(class.to_string()),
+                combat_power: Some(power),
+                actor_skill_spec: spec,
+            },
+        );
+        player_skill_stats.insert(id, skills);
+        player_stats.insert(
+            id,
+            PlayerOverviewStat {
+                actor_id: id,
+                actor_name: name.to_string(),
+                actor_server_id: server.to_string(),
+                actor_class: class.to_string(),
+                combat_power: Some(power),
+                counts: hits,
+                total_damage: damage as u64,
+                min_damage: 1,
+                max_damage: 1,
+                special_counts: totals,
+                dps: damage / arena.secs,
+                damage_share: 0.0,
+                damage_contribution: 0.0,
+            },
+        );
+        let role = match class {
+            "Templar" => 0,
+            "Gladiator" | "Assassin" | "Chanter" => 1,
+            _ => 2,
+        };
+        let mut damage_taken: Vec<TakenSkill> = arena
+            .sources
+            .iter()
+            .zip(arena.weights[role])
+            .filter(|(_, weight)| **weight > 0.0 && taken > 0.0)
+            .map(|(&(monster, skill, hit), weight)| {
+                let amount = (taken * weight) as u64;
+                let (code, monster_name) = arena.monsters[monster];
+                TakenSkill {
+                    monster_code: Some(code),
+                    monster_name: Some(monster_name.to_string()),
+                    skill_code: skill,
+                    hits: (amount / hit).max(1) as u32,
+                    largest: hit * 16 / 10,
+                    amount,
+                }
+            })
+            .collect();
+        damage_taken.sort_by(|a, b| b.amount.cmp(&a.amount));
+        let heals: &[(u32, f64, u32, bool)] = if healing > 0.0 { class_heals(class) } else { &[] };
+        ledger_players.push(LedgerPlayer {
+            actor_id: id,
+            actor_name: name.to_string(),
+            actor_server_id: server.to_string(),
+            actor_class: class.to_string(),
+            healing: heals
+                .iter()
+                .map(|&(code, share, count, over_time)| HealSkill {
+                    skill_code: code,
+                    kind: if over_time { HealKind::OverTime } else { HealKind::Direct },
+                    heals: count,
+                    crits: count * 35 / 100,
+                    amount: (healing * share) as u64,
+                })
+                .collect(),
+            damage_taken,
+        });
+    }
+
+    let deaths = arena_deaths(fixture.fight, fixture.deaths)
+        .iter()
+        .filter_map(|&(at_secs, who, monster, skill, hit)| {
+            let (code, monster_name) = arena.monsters[monster];
+            Some(LedgerDeath {
+                at_secs,
+                actor_id: id_of(who)?,
+                killer: LedgerKiller { kind: KillerKind::Monster, name: Some(monster_name.to_string()), monster_code: Some(code) },
+                skill_code: skill,
+                last_hit: Some(LedgerLastHit {
+                    monster_code: Some(code),
+                    monster_name: Some(monster_name.to_string()),
+                    skill_code: skill,
+                    amount: hit,
+                }),
+            })
+        })
+        .collect();
+    let buff = |target: u32, (code, caster, secs): (u32, &str, f64)| {
+        id_of(caster).map(|caster| (target, caster, code, secs))
+    };
+    let buffs: Vec<(u32, u32, u32, f64)> = (1..=roster.len() as u32)
+        .flat_map(|target| BUFFS_ON_PLAYERS.iter().filter_map(move |&entry| buff(target, entry)))
+        .chain(BUFFS_ON_BOSS.iter().filter_map(|&entry| buff(REPORT_BOSS_ID, entry)))
+        .collect();
+
+    let ledger = (!fixture.old).then(|| FightLedger {
+        window,
+        players: ledger_players,
+        deaths,
+        buffs: buffs
+            .iter()
+            .map(|&(target_id, caster_id, skill_code, secs)| BuffUptime { target_id, caster_id, skill_code, uptime_ms: (secs * 1000.0) as u64 })
+            .collect(),
+    });
+    let mut use_buffs_by_target: HashMap<u32, Vec<BuffSummary>> = HashMap::new();
+    for &(target_id, actor_id, skill_code, secs) in &buffs {
+        use_buffs_by_target.entry(target_id).or_default().push(BuffSummary {
+            target_id,
+            actor_id,
+            skill_code,
+            coverage: secs / arena.secs,
+            active: false,
+            last_start_ms: 0,
+            last_end_ms: 0,
+        });
+    }
+
+    let total_damage = roster.iter().map(|member| member.4 as u64).sum();
+    HistoryRecord {
+        id: format!("{REPORT_BOSS_ID}-report"),
+        target_id: REPORT_BOSS_ID,
+        total_damage,
+        target_info: Some(TargetInfo {
+            id: REPORT_BOSS_ID,
+            target_mob_code: Some(arena.boss.0),
+            target_name: Some(arena.boss.1.to_string()),
+            is_boss: true,
+            current_hp: Some(if fixture.ended { 183 } else { 0 }),
+            max_hp: Some(1_000),
+            target_start_time: HashMap::from([(you, window.started_at)]),
+            target_last_time: HashMap::from([(you, window.ended_at)]),
+        }),
+        combat_infos: CombatInfos {
+            actor_infos,
+            target_infos: HashMap::new(),
+            main_actor_id: Some(you),
+            main_actor_name: Some(YOU.to_string()),
+            last_target_by_main_actor: Some(REPORT_BOSS_ID),
+            last_target: Some(REPORT_BOSS_ID),
+            time_now: window.ended_at,
+        },
+        player_skill_stats,
+        player_stats,
+        use_buffs_by_target,
+        ledger,
+        created_at: (window.ended_at * 1000.0) as u64,
+    }
+}
+
+/// The report of [`report_record`].
+pub fn fight_report(fixture: ReportFixture) -> meter_core::report::fight_report::FightReport {
+    meter_core::report::fight_report::FightReport::from_record(&report_record(fixture)).expect("the fixture is a boss fight")
 }

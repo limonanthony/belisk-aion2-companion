@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fight report: figure alignment</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="report.css" />
+    <style>
+      /* 570 px tiles: three per row instead of the usual two. */
+      main.scenes {
+        max-width: 1860px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Fight report proposals">
+        <a href="index.html">Fight report overview</a>
+        <a href="c.html">C, one table (chosen)</a>
+        <a href="player.html">Player details</a>
+        <a href="align.html" aria-current="page">Figure alignment (decided)</a>
+        <a href="entry.html">Opening the report</a>
+        <a href="a.html">A, tabs (not chosen)</a>
+        <a href="b.html">B, one scrolling report (not chosen)</a>
+        <a href="../approved/index.html">Approved screens</a>
+      </nav>
+      <h1>Figure alignment: plates left, tables right <small>decided 2026-10-07; kept as history</small></h1>
+      <ul class="rationale">
+        <li><b>Decided 2026-10-07: plates left, tables right.</b> The user: "it looked better when it was aligned start + table aligned end". The key-figure and hit-type plates keep label above value at the <b>start</b> (left) of each cell, as the approved detail window does; every table puts its figures and headers at the <b>end</b> (right) of each column: the report's player table, the deaths list's time and last hit, the skill table, the Healing and Damage taken tabs and the Buffs tab's "Up for" and "of 5:12". <a href="c.html">c.html</a> and <a href="player.html">player.html</a> already draw it.</li>
+        <li><b>The Alignment control switches the whole page</b> (every state below, also <code>?align=chosen|start|center|end</code>). <b>Plates left, tables right (chosen)</b> is the default. The three not chosen apply <b>one</b> rule to every figure, plates and tables alike: <b>All start</b> (everything left), <b>All center</b>, <b>All end</b> (everything right; recommended before the decision, so each window would follow one rule).</li>
+        <li>Names, skill names, class and skill icons, rank badges, bars and the chevrons do not move. Every state draws Basilus the False: the report fresh (sorted by damage) with Mirelle's details on the Damage tab under it, Mirelle's Buffs tab, Dovrek's Healing tab, Quenna's Damage taken tab, and the report after several deaths.</li>
+        <li>Draw one state alone with <code>?states=pair</code>, <code>buffs</code>, <code>healing</code>, <code>taken</code> or <code>deaths</code>, together with <code>?align=</code>.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>What moves</h2>
+      <ul>
+        <li><b>Table columns</b>: each figure and its header sit at the start, centre or end of the column's fixed width (report: Damage 54, DPS 46, Healing 52, Taken 50, Deaths 40 px; skills: Hits 40, Crits 40, Crit % 46, Damage 92 px, the same widths on the Healing tab, and Hits 40, Largest 46, Damage 92 px on the Damage taken tab; buffs: Up for 62, share 40 px). The sorted header's arrow moves with its label. A figure with its share ("28.4K 26.3%") moves as one piece. Chosen: end.</li>
+        <li><b>Deaths list</b>: the time in its 32 px column and the last hit. The last hit has no fixed width in c.html (it hugs the right edge); here it gets 46 px in every variant so its alignment shows. Player, "by", the monster and its skill stay left. Chosen: end.</li>
+        <li><b>Plates</b>: the five key figures (report: Damage, Party DPS, Healing, Damage taken, Deaths; player: Damage, DPS, Healing, Damage taken, Deaths) and the seven hit types (Critical, Back, Front, Double, Perfect, Parry, Multi-hit) keep their equal cells; the label and the value under it move together to the cell's start, centre or end. Chosen: start.</li>
+        <li><b>Headers over their figures</b>: a list that scrolls draws its figures inside the 8 px thumb gutter, so its header ends 8 px earlier too; a list too short to scroll has no gutter and neither has its header. Fixed with the decision in player.html and here (the Buffs tab's "Up for" and "of 5:12" sat 8 px right of their figures; the Healing and Damage taken tabs' headers, and a short Damage tab's, sat 8 px left of theirs).</li>
+        <li>Not drawn: a skill row opened to every hit type (the small plate inside the table) would follow the same rule as the plates.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="report.js"></script>
+    <script>
+      (function () {
+        const R = Report;
+        const { compact } = R.fmt;
+        const icon = R.icon;
+
+        // The report table of c.html (fresh state: sorted by damage), copied.
+        const COLS = [
+          { key: "dmg", label: "Damage", w: 54 },
+          { key: "dps", label: "DPS", w: 46 },
+          { key: "heal", label: "Healing", w: 52 },
+          { key: "taken", label: "Taken", w: 50 },
+          { key: "deaths", label: "Deaths", w: 40 },
+        ];
+
+        function cell(p, c, sorted) {
+          const cls = `rp-cell ${sorted ? "o-strong" : "is-side"}`;
+          const style = `style="width:${c.w}px"`;
+          if (c.key === "deaths") {
+            const n = p.deaths.length;
+            return `<span class="${cls}" ${style}><span class="rp-dead${n ? "" : " is-zero"}">${n ? icon("skull") : ""}${n}</span></span>`;
+          }
+          const v = p[c.key];
+          if (!v) return `<span class="${cls} is-none" ${style}>—</span>`;
+          return `<span class="${cls}" ${style}>${compact(v)}</span>`;
+        }
+
+        function table(ctx, f) {
+          const list = f.players.slice().sort((a, b) => b.dmg - a.dmg);
+          const top = list[0].dmg;
+          const head = `<div class="o-th is-players no-scroll"><span class="grow">Player<span class="faint">${list.length}</span></span>${COLS.map((c, i) => `<span class="${i === 0 ? "is-sort" : "can-sort"}" style="width:${c.w}px" role="button">${c.label}${i === 0 ? icon("arrowDown") : ""}</span>`).join("")}</div>`;
+          const rows = list
+            .map((p, i) => R.playerRow(ctx, p, { rank: i + 1, scale: p.dmg / top, cells: COLS.map((c, j) => cell(p, c, j === 0)).join("") }))
+            .join("");
+          return head + R.scroll(`<div class="o-rows">${rows}</div>`, { rows: list.length });
+        }
+
+        // The deaths header with classes instead of c.html's inline styles,
+        // so each variant can place the time and the last hit.
+        const deathHead = () =>
+          `<div class="o-th al-dhead"><span class="h-at">Time</span><span class="h-who">Player</span><span class="grow">Killed by</span><span class="h-blow">Last hit</span></div>`;
+
+        function deaths(ctx, f) {
+          return `<div class="o-sec">${icon("skull")}Deaths<span class="o-count">${f.deathList.length}</span></div>${deathHead()}${R.deathRows(ctx, f)}`;
+        }
+
+        const report = (ctx, f) => R.window(ctx, f, `<div style="height:6px"></div>${table(ctx, f)}${deaths(ctx, f)}`);
+
+        // Every state follows the Alignment control (default the chosen mix, or ?align=).
+        function render(state, ctx) {
+          const al = (ctx.v || {}).align || "chosen";
+          const f = R.fight("basilus");
+          let html = "";
+          if (state === "pair") html = report(ctx, f) + R.playerState(ctx, f, "Mirelle");
+          if (state === "buffs") html = R.playerState(ctx, f, "Mirelle", { tab: "buffs" });
+          if (state === "healing") html = R.playerState(ctx, f, "Dovrek", { tab: "healing" });
+          if (state === "taken") html = R.playerState(ctx, f, "Quenna", { tab: "taken" });
+          if (state === "deaths") html = report(ctx, R.fight("basilus", { deaths: "several" }));
+          return `<div class="al al-${al}">${html}</div>`;
+        }
+
+        Kit.mount({
+          states: [
+            { id: "pair", title: "Report and player details (Damage tab)", sub: "the report fresh, sorted by damage; under it Mirelle's key figures, hit types and skill table" },
+            { id: "buffs", title: "Buffs tab", sub: "Mirelle: \"Up for\" and the share of the fight" },
+            { id: "healing", title: "Healing tab", sub: "Dovrek, the cleric: Heals, Crits, Crit % and Healed" },
+            { id: "taken", title: "Damage taken tab", sub: "Quenna, the templar: Hits, Largest and Damage" },
+            { id: "deaths", title: "Several deaths", sub: "the report's deaths list: the time and the last hit" },
+          ],
+          controls: ["alpha", "scale", "mask"],
+          variants: [
+            {
+              key: "align",
+              label: "Alignment",
+              def: "chosen",
+              options: [
+                { value: "chosen", label: "Plates left, tables right" },
+                { value: "start", label: "All start" },
+                { value: "center", label: "All center" },
+                { value: "end", label: "All end" },
+              ],
+            },
+          ],
+          tileMin: 570,
+          stageMin: 560,
+          render,
+        });
+
+        // Kit marks the default "(recommended)"; here the default is the decision.
+        const chosen = document.querySelector('#v-align option[value="chosen"]');
+        if (chosen) chosen.textContent = "Plates left, tables right (chosen)";
+      })();
+    </script>
+  </body>
+</html>

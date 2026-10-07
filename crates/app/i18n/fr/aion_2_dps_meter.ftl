@@ -259,6 +259,7 @@ settings-overlay-mask-text = Affiche Mi****e au lieu du nom, pour les streams et
 settings-overlay-combat-power = Puissance de combat
 settings-overlay-combat-power-text = À côté du nom, quand le jeu l'a indiquée.
 settings-overlay-total-damage = Dégâts totaux
+settings-overlay-total-damage-text = Sur le tableau Cible. Le tableau Session l'affiche toujours.
 settings-overlay-boss-fights = Combats de boss
 settings-overlay-fight-summary = Résumé du combat
 settings-overlay-fight-summary-text = À la mort d'un boss : votre DPS et votre rang, vos meilleures compétences et votre record perso. Un clic le copie.
@@ -331,6 +332,8 @@ settings-check-windivert-missing = Installez Npcap, ou placez WinDivert.dll et W
 settings-capture-recording = Enregistrement
 settings-capture-record-unfamiliar = Enregistrer les serveurs inconnus
 settings-capture-record-unfamiliar-text = Les deux premières minutes sur un serveur qu'aucun profil ne reconnaît. Les cinq plus récents sont gardés et ne quittent jamais ce PC.
+settings-capture-record-every-session = Enregistrer chaque session
+settings-capture-record-every-session-text = Garde le trafic de jeu de cette session dans des fichiers de 30 minutes ; les plus récents sont conservés jusqu'à 2 Go. Les fichiers ne quittent jamais ce PC.
 settings-capture-packet-recording = Enregistrement des paquets
 settings-capture-packet-recording-text = Écrit les paquets bruts de cette session dans un fichier, pour l'étude du protocole.
 settings-capture-recording-progress =
@@ -343,6 +346,7 @@ settings-capture-start-recording = Démarrer l'enregistrement
 settings-capture-recordings = Enregistrements
 settings-capture-recordings-note = Rejouer en fait passer un dans le compteur en direct, qui doit tourner.
 settings-capture-unfamiliar-server = serveur inconnu
+settings-capture-rolling-recording = session complète
 settings-capture-replaying = Relecture
 settings-capture-cancel-replay = Annuler la relecture
 settings-capture-replay = Rejouer
@@ -517,6 +521,7 @@ meter-summary-rank = Rang
 meter-summary-share = Part
 meter-summary-crit = Crit.
 meter-summary-party = Groupe
+meter-summary-open-report = Ouvrir le rapport de combat
 meter-best-first = Premier record
 meter-best-new = Nouveau record perso
 meter-best-behind = Record { $best }
@@ -560,6 +565,8 @@ history-delete-all-confirm =
         [one] Supprimer { $count } enregistrement ?
        *[other] Supprimer les { $count } enregistrements ?
     }
+history-report = Rapport de combat
+history-boss-record = Boss, { $name }
 
 ## Player detail
 
@@ -608,6 +615,53 @@ detail-buffs-up-now =
     }
 detail-buff-up-now = Actif
 detail-buff-ended = Terminé
+
+## Fight report
+
+report-title = Rapport de combat
+report-healing = Soins
+report-damage-taken = Dégâts subis
+report-deaths = Morts
+report-taken = Subis
+report-sort-by = Trier par { $column }
+report-open-player = { $name }, ouvrir les détails
+report-death-label = { $name } est mort à { $time }, tué par { $killer }, { $skill }
+report-time = Temps
+report-killed-by = Tué par
+report-last-hit = Dernier coup
+report-by = par
+report-nobody-died = Personne n'est mort
+report-deaths-not-recorded = Non enregistré pour ce combat
+report-not-recorded-note = Les soins, les dégâts subis et les morts n'ont pas été enregistrés pour ce combat : il a été sauvegardé avant que le compteur ne les garde. Les dégâts, les compétences et les buffs sont complets.
+report-hint = Cliquez sur un joueur pour ses compétences, buffs, soins et dégâts subis
+report-unknown = Inconnu
+
+report-back = Rapport
+report-tab-damage = Dégâts
+report-tab-buffs = Buffs
+report-tab-healing = Soins
+report-tab-taken = Dégâts subis
+report-multi-hit = Multi-coups
+report-multi-hit-damage = Dégâts multi-coups
+report-crits = Crit.
+report-crit-rate = % crit.
+report-heals = Soins
+report-healed = Soigné
+report-largest = Max
+report-monster-skill = Compétence du monstre
+report-buff-and-caster = Buff et lanceur
+report-up-for = Actif
+report-of-fight = sur { $time }
+report-on = Sur { $name }
+report-died-at = Mort à { $time }
+report-last-hit-amount = dernier coup { $amount }
+report-no-healing-title = Aucun soin
+report-no-healing-line = { $name } n'a lancé aucun soin pendant ce combat.
+report-no-taken-title = Aucun dégât subi
+report-no-taken-line = Rien n'a touché { $name } pendant ce combat.
+report-not-recorded-title = Non enregistré
+report-not-recorded-healing = Ce combat a été sauvegardé avant que le compteur ne garde les soins.
+report-not-recorded-taken = Ce combat a été sauvegardé avant que le compteur ne garde les dégâts subis.
 
 ## PvP
 

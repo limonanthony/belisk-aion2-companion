@@ -90,6 +90,14 @@
     zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
     skull:
       '<circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/>',
+    fileText:
+      '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+    chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+    mousePointer:
+      '<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>',
+    // The boss-record mark in History (fight report, approved 2026-10-07).
+    crown:
+      '<path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"/><path d="M5 21h14"/>',
   };
 
   function icon(name, cls) {
@@ -234,12 +242,14 @@
 
   // ---- History --------------------------------------------------------------
 
+  // Boss records get the crown and a report button in History; `mob` marks a
+  // record whose target was not a boss (fight report, approved 2026-10-07).
   const HISTORY = [
     { target: "Veilwarden Orsikh", when: "Today 21:42", main: "Mirelle", players: 8, dmg: 65.9e6, secs: 248 },
     { target: "Veilwarden Orsikh", when: "Today 21:18", main: "Mirelle", players: 8, dmg: 61.2e6, secs: 262 },
     { target: "Ashmaw the Hollow", when: "Today 20:55", main: "Mirelle", players: 6, dmg: 38.4e6, secs: 191 },
     { target: "Tidecaller Vennis", when: "Today 20:31", main: "Saebrin", players: 4, dmg: 21.7e6, secs: 166 },
-    { target: "Unknown target #4412", when: "Today 20:12", main: "Saebrin", players: 1, dmg: 0.42e6, secs: 38 },
+    { target: "Unknown target #4412", when: "Today 20:12", main: "Saebrin", players: 1, dmg: 0.42e6, secs: 38, mob: true },
     { target: "Veilwarden Orsikh", when: "Yesterday 22:07", main: "Mirelle", players: 8, dmg: 58.8e6, secs: 281 },
     { target: "Ashmaw the Hollow", when: "Yesterday 21:40", main: "Mirelle", players: 6, dmg: 36.1e6, secs: 204 },
     { target: "Tidecaller Vennis", when: "Yesterday 21:02", main: "Saebrin", players: 4, dmg: 20.3e6, secs: 171 },

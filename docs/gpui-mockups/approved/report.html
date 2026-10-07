@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Approved: fight report</title>
+    <link rel="stylesheet" href="shared.css" />
+    <link rel="stylesheet" href="overlay.css" />
+    <link rel="stylesheet" href="report.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Approved screens">
+        <a href="index.html">Approved screens</a>
+        <a href="meter.html?states=final,final-hover,provisional,summary-party,summary-fr,summary-locked">Fight summary</a>
+        <a href="report.html" aria-current="page">Fight report</a>
+        <a href="report.html?states=p-damage,p-open,p-hover,p-back,p-buffs,p-healing,p-heal-none,p-died,p-taken,p-taken-none,p-focus,p-long,p-old">Player details</a>
+        <a href="history.html">Fight history</a>
+        <a href="detail.html">Player detail</a>
+      </nav>
+      <h1>Fight report <small>approved 2026-10-07 (one table, every figure; player details inside the report)</small></h1>
+      <ul class="rationale">
+        <li>After a <b>boss fight</b>, "Open the fight report" on the <a href="meter.html?states=final,provisional">summary card</a>, or the report button on a boss record in <a href="history.html?states=list">History</a>, opens a 520 px overlay window: the detail window's card, header and key-figure plate, the same opacity, content scale and Barlow face. Other fights have no report.</li>
+        <li>The header names the fight: "Fight report", the outcome chip and ×; the boss, where, when, how many players and the fight time. Then Damage, Party DPS, Healing, Damage taken and Deaths on one plate.</li>
+        <li><b>One row per player with every figure</b>: Damage, DPS, Healing, Taken (damage taken) and Deaths, on the meter's bars and rank badges (cream for you). A click on a column header sorts by it; the bars and ranks follow the sorted column. Damage first; the sort is kept while the window is open. The deaths are listed under the table.</li>
+        <li><b>A click on a player</b> (their row, or their line under Deaths) opens their details inside the window, with "‹ Report" to come back: damage per skill with crit counts, every hit type as count and rate ("665 41.9%"), buff uptime as m:ss ("4:01"), their heals per skill, the damage they took by monster skill and their deaths.</li>
+        <li>Figures: the plates keep label above value at the left of each cell; every table puts its figures and headers at the right of their column. Values are in <a href="tokens.md">tokens.md</a>, "Fight report". Game names are data (Basilus the False in Fallen Guardian's City, Tyrant Tassin, Superbia, the class and monster skills); which monster used which skill, the players and every figure are invented.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour: the report</h2>
+      <ul>
+        <li><b>Window.</b> An overlay window of its own like History and the detail window: transparent, tool window, never activates. One report window at a time: a second "Open the fight report" brings it forward; a report for another fight replaces it. × closes it. The summary card stays where it was.</li>
+        <li><b>Sorting.</b> Damage by default. A click on another header sorts by it, highest first (Deaths: most deaths first, then damage). The active header is <code>text</code> / 600 with a down arrow, the others are underlined at 0.25 (the approved sorting pattern). The sort is kept while the window is open, also across opening a player and coming back. Damage and DPS are both shown because players who joined late have a high DPS on a low damage.</li>
+        <li><b>Rows.</b> Rank badge (cream for you), class icon, name (and the server tag when the overlay shows servers), the five figures. The sorted column is <code>text</code> 13.5 / 600, the others <code>muted</code> 12.5. The bar uses the player's class shade, scaled to the top value of the sorted column (floor 6%, no bar at zero). Nothing in a column: "—" and no bar; the name stays.</li>
+        <li><b>Pointer on a row.</b> The bar lifts by <code>soft</code> and a chevron shows at its end, on enter and leave only, never on movement inside the row. A click opens that player. Death rows do the same (their plate lightens).</li>
+        <li><b>Deaths.</b> Under the table, in fight order: when (m:ss into the fight), who, "by" the monster and its skill, the last hit. Nobody died: one green line, "Nobody died". In the table: Lucide <code>skull</code> and the count in <code>bad</code>, zero in <code>faint</code>.</li>
+        <li><b>Many players.</b> The table scrolls past 8 rows with the 3 px thumb; its header ends 8 px earlier so it stays over the figures. The deaths list stays under it.</li>
+        <li><b>Fight ended, may resume.</b> Opened from the provisional summary: the report shows what the meter has, with the yellow chip. If the fight resumes, the window keeps the figures it opened with and the next summary offers a new report.</li>
+        <li><b>Fights saved before the report existed</b> (opened from History) have no healing, damage taken or deaths: those plate figures and columns show "--" in <code>faint</code>, cannot be sorted, Deaths says "Not recorded for this fight", and a note says why. Damage, skills and buffs are complete.</li>
+      </ul>
+
+      <h2>Behaviour: a player's details</h2>
+      <ul>
+        <li><b>Opening.</b> A click on a player's row or death row. The player view replaces the report in the same window; "‹ Report" returns to the report with its sort and scroll as they were. Pointer on "‹ Report": <code>hot</code>.</li>
+        <li><b>Figures.</b> Damage, DPS, Healing, Damage taken, Deaths on the plate (zero in <code>faint</code>), then the hit types as count and rate: Critical, Back, Front, Double, Perfect, Parry, Multi-hit. A player who died has each death on a light <code>bad</code> plate under the figures.</li>
+        <li><b>Tabs.</b> Damage, Buffs, Healing and Damage taken, each with its count; they open on Damage, and the tab is kept when you open the next player. With nothing to show a tab still opens, to an empty state that says so.</li>
+        <li><b>Damage.</b> Per skill, sorted by damage: Hits, Crits (how many hits were critical), Crit %, Damage and its share. A click on a row opens it (one at a time) to Perfect, Double, Front, Back, Parry and Multi-hit as count and rate, multi-hit damage, spec, min, max, average and total. Pointer on a row: the bar lifts, the chevron brightens. Skills the game data has no icon for show the quiet square.</li>
+        <li><b>Buffs.</b> Every buff on the player during the fight, then every debuff on the boss, longest first: the caster, a coverage bar in the caster's class colour, the time up as m:ss and the share of the fight. "Up now" and "Ended" from the live detail window are not shown: the fight is over.</li>
+        <li><b>Healing.</b> What the player cast, by skill: heals, crits, crit %, amount healed and share. No overheal.</li>
+        <li><b>Damage taken.</b> By monster skill with the monster's name beside it, bars in the health colour (<code>hp</code>): hits, the largest hit, the amount and the share of this player's damage taken. Per player only; the report has no party-wide list.</li>
+        <li><b>Keyboard</b> (only through accessibility tools: the overlay windows never take focus from the game). Report: the sort headers, the rows, the death rows; Up and Down move between rows, Enter opens the player; every row is a button named "Saebrin, open details". Player view: "‹ Report", the tabs (Left and Right switch), then the rows; Enter opens a skill row. Esc does not reach a non-activating window, so "‹ Report" is the way back. The ring: <code>focus-ring</code>, 2 px, 1 px outside.</li>
+      </ul>
+
+      <h2>Values</h2>
+      <ul>
+        <li>In <a href="tokens.md">tokens.md</a>, "Fight report": the 520 px window, the column widths, the sorted and side figures, the death rows, the hit types' count and rate, the uptime columns, the "not recorded" state, the alignment rule and the scroll gutter; the summary card's button and History's report button and crown are there too.</li>
+      </ul>
+
+      <h2>To confirm during implementation</h2>
+      <ul>
+        <li>Which effects count as heals (shields, life drain such as Blood Absorption) is checked on a recording with a healer; the drawing assumes direct heals, heals over time and self-heals count.</li>
+        <li>The last hit before a death assumes the meter can tie the death to the hit before it; confirmed on a recording.</li>
+      </ul>
+    </section>
+
+    <script src="kit.js"></script>
+    <script src="report.js"></script>
+    <script>
+      (function () {
+        const R = Report;
+
+        function render(state, ctx) {
+          const basilus = R.fight("basilus");
+          const several = R.fight("basilus", { deaths: "several" });
+          switch (state) {
+            // ---- The report ----
+            case "fresh":
+              return R.report(ctx, basilus);
+            case "sort-heal":
+              return R.report(ctx, basilus, { sort: "heal" });
+            case "sort-taken":
+              return R.report(ctx, basilus, { sort: "taken" });
+            case "hover":
+              return R.report(ctx, basilus, { hover: "Korrinth" });
+            case "focus":
+              return R.report(ctx, basilus, { focus: "Saebrin" });
+            case "deaths-none":
+              return R.report(ctx, R.fight("basilus", { deaths: "none" }));
+            case "deaths-several":
+              return R.report(ctx, several, { sort: "deaths" }, { hover: 2 });
+            case "many":
+              return R.report(ctx, R.fight("tassin"), { maxRows: 8 });
+            case "taken-empty":
+              return R.report(ctx, R.fight("tassin"), { sort: "taken", maxRows: 8, scrollTop: 6 });
+            case "long":
+              return R.report(R.withServer(ctx), R.fight("superbia"));
+            case "ended":
+              return R.report(ctx, R.fight("basilus", { outcome: "ended", deaths: "none" }));
+            case "old":
+              return R.report(ctx, R.fight("basilus", { old: true }));
+            // ---- A player's details ----
+            case "p-damage":
+              return R.playerView(ctx, basilus, "Mirelle");
+            case "p-open":
+              return R.playerView(ctx, basilus, "Mirelle", { expanded: 0 });
+            case "p-hover":
+              return R.playerView(ctx, basilus, "Mirelle", { hoverRow: 1 });
+            case "p-back":
+              return R.playerView(ctx, basilus, "Mirelle", { hoverBack: true });
+            case "p-buffs":
+              return R.playerView(ctx, basilus, "Mirelle", { tab: "buffs" });
+            case "p-healing":
+              return R.playerView(ctx, basilus, "Dovrek", { tab: "healing" });
+            case "p-heal-none":
+              return R.playerView(ctx, several, "Saebrin", { tab: "healing" });
+            case "p-died":
+              return R.playerView(ctx, several, "Saebrin", { tab: "damage" });
+            case "p-taken":
+              return R.playerView(ctx, basilus, "Quenna", { tab: "taken" });
+            case "p-taken-none":
+              return R.playerView(ctx, R.fight("tassin"), "Ferelith", { tab: "taken" });
+            case "p-focus":
+              return R.playerView(ctx, basilus, "Mirelle", { tab: "buffs", focusTab: "buffs" });
+            case "p-long":
+              return R.playerView(R.withServer(ctx), R.fight("superbia"), "Seraphinaveyllithaerinelle");
+            case "p-old":
+              return R.playerView(ctx, R.fight("basilus", { old: true }), "Mirelle");
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "fresh", title: "Report", sub: "Basilus the False defeated, six players, sorted by damage, one death" },
+            { id: "sort-heal", title: "Sorted by healing", sub: "the bars and ranks follow Healing; Saebrin cast no heals: \"—\", no bar, name kept" },
+            { id: "sort-taken", title: "Sorted by damage taken", sub: "the templar on top" },
+            { id: "hover", title: "Pointer on a row", sub: "Korrinth: the bar lifts, the chevron shows; a click opens his details" },
+            { id: "focus", title: "Keyboard focus on a row", sub: "Saebrin: the ring around the row; Enter opens, Up and Down move" },
+            { id: "deaths-none", title: "Nobody died", sub: "one green line instead of the list" },
+            { id: "deaths-several", title: "Several deaths", sub: "sorted by Deaths; Saebrin died twice; pointer on a death row" },
+            { id: "many", title: "Many players", sub: "Tyrant Tassin, a field boss with 14 players: the table scrolls past 8 rows" },
+            { id: "taken-empty", title: "A player with no damage taken", sub: "sorted by Taken, scrolled down: Ferelith joined late and took nothing (\"—\", no heals either)" },
+            { id: "long", title: "Long names", sub: "a long boss name and long player names with server tags: ellipses, figures never move" },
+            { id: "ended", title: "Fight ended, may resume", sub: "opened from the provisional summary: the yellow chip" },
+            { id: "old", title: "A fight saved before the report existed", sub: "opened from History: healing, damage taken and deaths were not recorded" },
+            { id: "p-damage", title: "A player opened", sub: "Mirelle (you), Damage: per skill with hits, crits and crit rate" },
+            { id: "p-open", title: "A skill opened", sub: "Snipe: every hit type as count and rate, min, max, average" },
+            { id: "p-hover", title: "Pointer on a skill row", sub: "Gale Arrow: the bar lifts, the chevron brightens" },
+            { id: "p-back", title: "Pointer on \"‹ Report\"", sub: "back to the report, as it was left" },
+            { id: "p-buffs", title: "Buffs", sub: "up for how long as m:ss (\"4:01\") and the share of the fight; on the player, then on the boss" },
+            { id: "p-healing", title: "Healing", sub: "Dovrek, the cleric: per skill, heals, crits, amount" },
+            { id: "p-heal-none", title: "A player with no heals", sub: "Saebrin: the empty state; his two deaths under the figures" },
+            { id: "p-died", title: "A player who died", sub: "Saebrin, Damage: both deaths with what killed him and the last hit" },
+            { id: "p-taken", title: "Damage taken", sub: "Quenna, the templar: by monster skill" },
+            { id: "p-taken-none", title: "No damage taken", sub: "Ferelith on Tyrant Tassin joined late and was never hit" },
+            { id: "p-focus", title: "Keyboard focus on a tab", sub: "Buffs, chosen with the arrow keys" },
+            { id: "p-long", title: "Long names", sub: "a long player name and long skill names (and a skill without an icon)" },
+            { id: "p-old", title: "A fight saved before the report existed", sub: "Healing, Damage taken and Deaths were not recorded; their tabs are dimmed" },
+          ],
+          controls: ["alpha", "scale", "mask", "server"],
+          tileMin: 580,
+          stageMin: 640,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>
