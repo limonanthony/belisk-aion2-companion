@@ -577,8 +577,9 @@
         <a href="reminders.html" aria-current="page">Reminder card</a>
         <a href="settings.html?states=reminders,reminders:off,reminders:test">Settings, Reminders</a>
       </nav>
-      <h1>Reminder card <small>approved 2026-10-05</small></h1>
+      <h1>Reminder card <small>approved 2026-10-05; placement while the meter is closed approved 2026-10-08</small></h1>
       <ul class="rationale">
+        <li><b>Changed 2026-10-08</b> (hub round, <a href="../hub/README.md">hub/</a>): the meter is now a tool the user opens from the <a href="toolbar.html">toolbar</a>. While the meter is closed the card sits 6 px under the toolbar, left edges aligned (above it when the toolbar is low on the screen), at 310 px (<a href="toolbar.html?states=reminder">toolbar.html, "A reminder while the meter is closed"</a>); while the meter is open, as drawn here. The toolbar's bell lists the next reminders and pauses them.</li>
         <li>Its own small overlay window just above the meter (just below it when the meter sits at the top of the screen), on the meter's left edge and at its width; same translucent card, opacity and content scale as the meter. It never takes focus.</li>
         <li>A quiet header says when ("In 1 min · 16:00"); under it, each event's name in bold and one line of fact from the game data. Events at the same minute share one card and one sound, the rarer event first.</li>
         <li>It goes by itself after 30 s; a thin line at the bottom drains over those 30 s. Unlocked, a click anywhere on the card, or its ×, dismisses it; locked, it is click-through and simply runs out. All names and figures are invented except the event facts (from the game client's tables).</li>

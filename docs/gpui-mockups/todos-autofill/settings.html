@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-dos filled from the game: Settings, To-dos (TASK-20.2)</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../approved/app.css" />
+    <link rel="stylesheet" href="autofill.css" />
+    <style>
+      /* Copied from ../approved/settings.html (the To-dos section's styles),
+         unchanged. */
+      .sel-wrap {
+        position: relative;
+      }
+
+      .row-ctl .badge {
+        margin-right: 2px;
+      }
+
+      .sel.is-hour {
+        min-width: 130px;
+      }
+
+      /* A value the meter works out, not a control (the weekly reset). */
+      .ro {
+        color: var(--a-muted);
+        font-family: var(--a-display);
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+
+      .dlg p + p {
+        margin-top: 6px;
+      }
+
+      .dlg-actions .btn.is-focus {
+        outline: 2px solid rgba(243, 235, 225, 0.9);
+        outline-offset: 3px;
+      }
+
+      /* Proposed: a quiet note under the membership description when the
+         game shows more than the cap without membership (the approved
+         field message, in the description's colour, Lucide info). */
+      .row-desc .field-msg {
+        align-items: flex-start;
+        margin-top: 5px;
+        color: var(--a-muted);
+      }
+
+      .row-desc .field-msg .i {
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+
+      .row-desc .field-msg b {
+        color: var(--a-text);
+        font-weight: 600;
+      }
+
+      /* Mockup only: an option drawn for discussion, not recommended. */
+      .mk-opt {
+        outline: 1px dashed rgba(143, 184, 255, 0.85);
+        outline-offset: 4px;
+        border-radius: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="To-dos filled from the game">
+        <a href="../hub/index.html">Hub round: all pages</a>
+        <a href="../approved/todos.html">Approved to-do window</a>
+        <a href="../approved/settings.html?states=todos">Approved Settings, To-dos</a>
+        <a href="index.html">From the game: to-do window</a>
+        <a href="settings.html" aria-current="page">From the game: Settings, To-dos</a>
+      </nav>
+      <h1>Settings, To-dos, with values from the game <small>proposal for TASK-20.2, 2026-10-08, not approved yet</small></h1>
+      <ul class="rationale">
+        <li>The approved To-dos section, changed only where the game's values need it. Tags: <span class="dec is-agreed">Agreed</span> on 2026-10-07, <span class="dec is-proposed">Proposed</span> for you to accept or change, <span class="dec is-open">Open</span> for you to decide. <a href="README.md">README.md</a> lists every decision.</li>
+        <li>Nothing else in Settings changes. The daily reset hour stays a setting until the hour is checked in game.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Changes</h2>
+      <ul>
+        <li><span class="dec is-agreed">Agreed</span> <b>Membership</b> picks the membership cap of every ticket that has one: "Higher caps on every character: Odyle Energy 840 instead of 560, Shugo Festival keys 21 instead of 12." Still one switch for every character, off by default.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Membership off again</b> keeps every value: a number above the cap is normal now, so nothing is cut (approved: an amount above 560 was cut to 560).</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>A hint when the game disagrees.</b> The game never says whether you have a membership, but a regular pool above the cap without it (18 Shugo keys with membership off) can only come from one. Then a quiet line under the description says so, until the switch is on. No dialog, no automatic switch.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Lead</b>: one more sentence, "Counts and amounts fill from the game when you log in while Kisk runs." <span class="dec is-agreed">Agreed</span> (hub round) its first sentence becomes "The to-do window, opened from the toolbar."</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Start over</b> empties what you typed; values from the game stay (they are the game's, and come back at each login anyway). The description says "every count and amount you typed"; the dialog adds "Values from the game stay."</li>
+        <li><span class="dec is-open">Open</span> <b>A switch to stop filling from the game</b>, drawn dashed in the last state. Recommended: leave it out; typing over a value already covers a wrong one, and the next login fixes it.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/app.js"></script>
+    <script>
+      (function () {
+        const { icon, C } = App;
+        const row = C.row;
+        const group = C.group;
+        const tag = (kind) => `<span class="dec is-${kind.toLowerCase()}">${kind}</span>`;
+        const head = (title, lead) => `<div class="h1">${title}</div>${lead ? `<p class="lead">${lead}</p>` : ""}`;
+
+        // The approved To-dos section (../approved/settings.html), with the
+        // changes this feature proposes.
+        function todos(st) {
+          const member = st !== "hint";
+          const hint =
+            st === "hint"
+              ? `<div class="field-msg">${icon("info")}<span>The game shows <b>18 Shugo Festival keys</b> on Mirelle, more than 12. Do you have a membership?</span></div>`
+              : "";
+          const memberDesc = `Higher caps on every character: Odyle Energy 840 instead of 560, Shugo Festival keys 21 instead of 12.${hint}`;
+          const source =
+            st === "switch"
+              ? `<div class="mk-opt">${group("From the game", row("Fill to-dos from the game", "At each login while Kisk runs. Duty Missions and Duty Commands stay yours to count.", C.sw(true)))}</div>`
+              : "";
+          return (
+            head("To-dos", "The to-do window, opened from the toolbar. Counts and amounts fill from the game when you log in while Kisk runs.") +
+            group(
+              "Resets",
+              row("Daily reset", "Reported, not confirmed. Check the countdown in game.", C.sel("09:00").replace('class="sel', 'class="sel is-hour')) +
+                row("Weekly reset", "This week's to-dos start over on Wednesday, at the daily reset hour.", `<span class="ro">Wednesday 09:00</span>`),
+              true
+            ) +
+            group("Recharges", row("Membership", memberDesc, C.sw(member))) +
+            source +
+            group(
+              "Default to-dos",
+              row("Hidden to-dos", "6 hidden, on 2 characters. Restoring the defaults keeps your own to-dos and all progress.", C.btn("Restore default to-dos", { ic: "reset" })) +
+                row("Start over", "Removes your own to-dos, brings back every hidden one and empties every count and amount you typed.", C.btn("Reset to-dos completely…", { kind: "danger" }))
+            )
+          );
+        }
+
+        function render(state, ctx) {
+          const st = state.split(":")[1];
+          const dialog =
+            st === "confirm"
+              ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-todos"><h3 id="dlg-todos">Reset the to-dos completely?</h3><p>On every character: your own to-dos (3) are removed, every hidden to-do comes back, and every count and amount you typed is emptied. Values from the game stay.</p><p>The reset hour and the membership stay. This cannot be undone.</p><div class="dlg-actions">${C.btn("Cancel").replace('class="btn', 'class="btn is-focus')}${C.btn("Reset to-dos", { kind: "danger" })}</div></div></div>`
+              : "";
+          return ctx.shell(ctx, "todos", todos(st), { meter: { tone: "live", label: `${ctx.t.running} · 12:41` }, overlayHtml: dialog });
+        }
+
+        const A = tag("Agreed");
+        const P = tag("Proposed");
+        const O = tag("Open");
+
+        App.mount({
+          states: [
+            { id: "todos", title: "To-dos", sub: `${A} Membership raises every ticket's cap, so its description names Shugo Festival keys too (shown on, as for you). ${P} one more sentence in the lead; Start over keeps the game's values` },
+            { id: "todos:hint", title: "Membership off, the game shows more", sub: `${P} the game shows 18 Shugo keys, more than 12: only a membership allows that, so a quiet line asks. Nothing switches by itself` },
+            { id: "todos:confirm", title: "Reset to-dos completely", sub: `${P} the approved dialog, Cancel focused; it now says the game's values stay` },
+            { id: "todos:switch", title: "Option: a switch to stop filling from the game", sub: `${O} drawn dashed for discussion; recommended: leave it out` },
+          ],
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

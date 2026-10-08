@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hub: the Resources window</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../todos-autofill/todos.css" />
+    <link rel="stylesheet" href="../todos-autofill/autofill.css" />
+    <link rel="stylesheet" href="meter.css" />
+    <link rel="stylesheet" href="hub.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Hub mockups">
+        <a href="index.html">Hub: all pages</a>
+        <a href="toolbar.html">Toolbar</a>
+        <a href="resources.html" aria-current="page">Resources window</a>
+        <a href="meter.html">Meter "…" menu</a>
+        <a href="prompt.html">First-open prompt</a>
+        <a href="settings.html">Settings, Overlay</a>
+        <a href="tray.html">Tray icon</a>
+        <a href="../todos-autofill/index.html">To-do window from the game</a>
+      </nav>
+      <h1>The Resources window <small>hub round, 2026-10-08, not approved yet</small></h1>
+      <ul class="rationale">
+        <li>Every resource the game fills, for the current character, in a floating window of its own: opened by a click on Odyle Energy or Shugo keys in the toolbar, or on "All resources" at the end of the warning's dropdown. The to-do window keeps its Recharges section too.</li>
+        <li>Built from the to-do window (<a href="../todos-autofill/index.html">filled from the game</a>): the same frame, character selector, source line, rows and display rules, so both windows always agree. Rows that have open data questions are drawn dashed and switch with the selector above, as in that round.</li>
+        <li>Tags: <span class="dec is-agreed">Agreed</span>, <span class="dec is-proposed">Proposed</span>, <span class="dec is-open">Open</span>; <a href="README.md">README.md</a> lists every decision. Values and times are invented; the clock is Monday 21:48, Mirelle logged in at 19:02, membership on.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><span class="dec is-agreed">Agreed</span> A full resources window, separate from the to-do window, which keeps its counts too.</li>
+        <li><span class="dec is-agreed">Agreed</span> Each row: the regular pool against its cap ("7/21"), the extra pool beside it when not zero ("+3"); above the cap is normal, never an error; "Full, spend by …" / "Full, being wasted" only when the regular pool is at its cap and a refill is coming. Membership (Settings, To-dos) picks the membership caps (Shugo keys 12 → 21, Odyle Energy 560 → 840). Shugo keys and Invasion keys are shared by the characters of a server ("Account").</li>
+        <li><span class="dec is-agreed">Agreed</span> Resources always stay up to date when the game sends them, whether the meter is open or not.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Rows</b>: the to-do window's Recharges rows, in the same order. Weekly entries (Unknown Fissure, Sanctuary…) stay to-dos: they are done or not, not a pool that refills.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Same data as the to-dos</b>: typing over a value, the pencil, the tooltip and "from yesterday's login" work here as proposed in the to-do round, and a change in one window shows in the other.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Frame</b>: the to-do window's 370 px, header with Lucide package and "Resources", the "2 full" chip, the character selector (follows the character in game; others can be looked at), the source line; no × slot on rows (nothing to hide). Footer: the daily reset, and which caps are in force ("Membership caps").</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Window</b>: an overlay window like the to-do window (no-activate, except while a field takes the keyboard); opens where you left it, one at a time; the toolbar's counts read lit while it is open, and a click on a count again closes it.</li>
+        <li><span class="dec is-open">Open</span> (data, as in the to-do round) Deus Research Base and Shattered Arkanis cap 4 or 14; whether a Conquest entry spends its dungeon's ticket or a shared pool.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="hub.js"></script>
+    <script>
+      (function () {
+        const { resources, snapshot, tag } = Hub;
+        const A = tag("Agreed");
+        const P = tag("Proposed");
+        const O = tag("Open");
+        const tipText = (a, b) => `${a}${b ? `<br><span class="faint">${b}</span>` : ""}`;
+
+        function render(state, ctx) {
+          const R = (o) => resources(ctx, o);
+          switch (state) {
+            case "live":
+              return R();
+            case "full":
+              return R({ g: snapshot({ odyle: { n: 840, x: 245 }, shugo: { n: 21, x: 3 }, invasion: { n: 2, x: 12 }, deus: { n: 2 }, arkanis: { n: 3 } }) });
+            case "hover":
+              return R({ hover: "shugo", tip: { id: "shugo", right: 4, text: tipText("From the game, live.", "+3 extra from items: they never refill and are not part of the 21.") } });
+            case "stale":
+              return R({ src: "stale", playing: false, g: snapshot({ odyle: { n: 245, x: 380 } }), hover: "odyle", tip: { id: "odyle", right: 4, text: tipText("125 at your login Sun 22:40.", "+120 since: eight refills of 15, estimated.") } });
+            case "typing":
+              return R({ edit: "shugo", editVal: "9" });
+            case "typed":
+              return R({ over: { shugo: 9 }, hover: "shugo", tip: { id: "shugo", right: 4, text: tipText("Typed by you. The game said 7.", "Its next value replaces yours: a spend, a refill or your next login.") } });
+            case "first":
+              return R({ who: { name: "Sefa", cls: "cleric", klass: "Cleric", server: "Lyss" }, playing: false, src: "none", g: {} });
+            case "memberOff":
+              return R({ member: false, g: snapshot({ shugo: { n: 18, x: 3 }, odyle: { n: 605, x: 380 } }) });
+            case "conquest":
+              return R({ openConquest: true });
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "live", title: "Filled from the game, live", sub: `${A} "7/21" and "+3"; Account on Shugo and Invasion keys. ${P} the to-do window's rows, frame and source line. ${O} Deus and Arkanis 4/4 are full only if their cap is 4 (dashed)` },
+            { id: "full", title: "Full, being wasted", sub: `${A} only when the regular pool is at its cap: Odyle 840/840 +245 and Shugo 21/21 +3 are full; Invasion keys 2/7 +12 (above the cap in all) is normal` },
+            { id: "hover", title: "Pointer on a value", sub: `${P} as in the to-do round: the figure reads as a field (a click types over it); the tooltip says where it comes from and what "+3" is` },
+            { id: "stale", title: "From yesterday's login", sub: `${P} Mirelle is not in game: the last values plus the refills the table knows since, said on the source line` },
+            { id: "typing", title: "Typing over a value", sub: `${A} a typed number may be above the cap. ${P} the approved field; × goes back to the game's value` },
+            { id: "typed", title: "After typing over it", sub: `${P} the pencil in the gutter; the game's next value replaces yours` },
+            { id: "first", title: "Before the first login is seen", sub: `${P} Sefa, alone on Lyss: dashes, and the source line says how to get values` },
+            { id: "memberOff", title: "Membership off, the game shows more", sub: `${A} above the cap is normal. ${P} 18 Shugo keys and 605 Odyle with the switch off: shown as they are, never full; the footer says which caps are in force` },
+            { id: "conquest", title: "Conquest, one ticket per dungeon", sub: `${O} drawn dashed: if each dungeon has its own ticket, a folding group as in the to-do window (switch above for one shared pool)` },
+          ],
+          controls: ["alpha", "scale", "mask"],
+          tileMin: 430,
+          stageMin: 480,
+          render,
+        });
+        Hub.mountOpenControls();
+      })();
+    </script>
+  </body>
+</html>

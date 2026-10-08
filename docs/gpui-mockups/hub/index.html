@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hub: Kisk as a multi-tool (mockups)</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../todos-autofill/autofill.css" />
+    <link rel="stylesheet" href="hub.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Hub mockups">
+        <a href="index.html" aria-current="page">Hub: all pages</a>
+        <a href="toolbar.html">Toolbar</a>
+        <a href="resources.html">Resources window</a>
+        <a href="meter.html">Meter "…" menu</a>
+        <a href="prompt.html">First-open prompt</a>
+        <a href="settings.html">Settings, Overlay</a>
+        <a href="tray.html">Tray icon</a>
+        <a href="../todos-autofill/index.html">To-do window from the game</a>
+      </nav>
+      <h1>Kisk as a multi-tool: the hub <small>one mockup round, 2026-10-08, not approved yet</small></h1>
+      <ul class="rationale">
+        <li>Kisk becomes a set of tools over the game, not only a DPS meter. At launch only a small floating toolbar opens; every tool (DPS meter, PvP meter, to-dos, fight history, reminders, settings) opens and closes from it, and it shows Odyle Energy and Shugo Festival keys, with a warning when other resources are full.</li>
+        <li>This round covers every screen that changes. Nothing is built before you approve it. Each state is tagged <span class="dec is-agreed">Agreed</span> (your decision, quoted in <a href="README.md">README.md</a>), <span class="dec is-proposed">Proposed</span> (for you to accept or change) or <span class="dec is-open">Open</span> (for you to decide).</li>
+        <li>Open the pages in a browser, no server needed. Each page has the real overlay settings (opacity, scale, mask) and the three game scenes; a state link below opens that state alone.</li>
+      </ul>
+    </header>
+
+    <main class="hb-index">
+      <h2>Pages <small>and their states</small></h2>
+      <ul>
+        <li>
+          <a href="toolbar.html">1. The toolbar</a>, the new hub.
+          <div class="states">
+            <a href="toolbar.html?states=launch">at launch</a> · <a href="toolbar.html?states=hover">pointer on a tool</a> · <a href="toolbar.html?states=open">meter and to-dos open</a> · <a href="toolbar.html?states=countTip">pointer on Odyle</a> · <a href="toolbar.html?states=shugoFull">Shugo keys full</a> · <a href="toolbar.html?states=warn">other resources full</a> · <a href="toolbar.html?states=warnOpen">the warning's dropdown</a> · <a href="toolbar.html?states=resOpen">Resources open</a> · <a href="toolbar.html?states=empty">no game value yet</a> · <a href="toolbar.html?states=bell">the bell's dropdown</a> · <a href="toolbar.html?states=paused">reminders paused</a> · <a href="toolbar.html?states=reminder">a reminder while the meter is closed</a> · <a href="toolbar.html?states=quit">pointer on quit</a> · <a href="toolbar.html?states=folded">folded</a> · <a href="toolbar.html?states=foldedWarn">folded, something full</a> · <a href="toolbar.html?states=low">low on the screen</a> · <a href="toolbar.html?states=fr">in French</a> · <a href="toolbar.html?states=frTip">in French, meter open</a> · <a href="toolbar.html?states=focus">keyboard focus</a> · <a href="toolbar.html?states=try">try it</a> · counts <a href="toolbar.html?labels=names">with names</a>
+          </div>
+        </li>
+        <li>
+          <a href="resources.html">2. The Resources window</a> (new).
+          <div class="states">
+            <a href="resources.html?states=live">live</a> · <a href="resources.html?states=full">full, being wasted</a> · <a href="resources.html?states=hover">pointer on a value</a> · <a href="resources.html?states=stale">from yesterday's login</a> · <a href="resources.html?states=typing">typing over a value</a> · <a href="resources.html?states=typed">after typing</a> · <a href="resources.html?states=first">before the first login</a> · <a href="resources.html?states=memberOff">membership off, the game shows more</a> · <a href="resources.html?states=conquest">Conquest per dungeon (open data)</a>
+          </div>
+        </li>
+        <li>
+          <a href="../todos-autofill/index.html">3. The to-do window filled from the game</a> (drawn earlier today, part of this round) and <a href="../todos-autofill/settings.html">Settings, To-dos</a>. Changed by this round only where the hub decides: it opens from the toolbar, no longer from the meter's "…"; the full-pool warning stays as drawn. Its own proposals and open questions are unchanged (<a href="../todos-autofill/README.md">its README</a>).
+        </li>
+        <li>
+          <a href="meter.html">4. The meter's "…" menu</a>.
+          <div class="states">
+            <a href="meter.html?states=mob">open world</a> · <a href="meter.html?states=boss">boss</a> · <a href="meter.html?states=corrected">after a correction</a> · <a href="meter.html?states=waiting">nothing hit yet</a> · <a href="meter.html?states=close">pointer on ×</a> · <a href="meter.html?states=today">today, for comparison</a>
+          </div>
+        </li>
+        <li>
+          <a href="prompt.html">5. The first-open prompt</a>.
+          <div class="states">
+            <a href="prompt.html?states=first">first open from the toolbar</a> · <a href="prompt.html?states=hover">pointer on Yes</a> · <a href="prompt.html?states=done">after Yes</a> · <a href="prompt.html?states=fr">in French</a> · <a href="prompt.html?states=capsule">capsule layout</a>
+          </div>
+        </li>
+        <li>
+          <a href="settings.html">6. Settings, Overlay</a>.
+          <div class="states">
+            <a href="settings.html?states=overlay">scrolled to Window</a> · <a href="settings.html?states=overlay:on">after Yes in the prompt</a> · <a href="settings.html?states=overlay:top">top of the page</a>
+          </div>
+        </li>
+        <li>
+          <a href="tray.html">7. The tray icon</a>: tooltip, menu (Show toolbar, Quit), pointer on Quit.
+        </li>
+      </ul>
+
+      <h2>Behaviour <small>annotated, not drawn</small></h2>
+      <ul>
+        <li><span class="dec is-agreed">Agreed</span> At launch only the toolbar opens (the meter too when Settings › Overlay › "Open the meter at launch" is on).</li>
+        <li><span class="dec is-agreed">Agreed</span> Capture always runs. Fights (damage, heals, damage taken, deaths, fight history) are tracked only while the meter is open. Resources always stay up to date when the game sends them.</li>
+        <li><span class="dec is-agreed">Agreed</span> Alt+CapsLock keeps locking the meter. Alt+Shift+CapsLock hides the toolbar and every open tool, and shows them again; the tray icon's "Show toolbar" too.</li>
+        <li><span class="dec is-agreed">Agreed</span> Closing the toolbar quits Kisk (the process ends). The tray icon's menu: Show toolbar, Quit.</li>
+        <li><span class="dec is-agreed">Agreed</span> The meter's "…" holds only the boss setting; History, To-dos, Settings and PvP are in the toolbar.</li>
+        <li><span class="dec is-proposed">Proposed</span> The toolbar, its dropdowns and tooltips never take the keyboard from the game, like the reminder card. Settings stays a normal window.</li>
+      </ul>
+
+      <h2>For you to answer <small>the full list is in <a href="README.md">README.md</a></small></h2>
+      <ul>
+        <li>Accept or change the <span class="dec is-proposed">Proposed</span> items (toolbar look and order, fold, quit without confirmation, the Resources window's rows and frame, the prompt as a card above the meter, the Settings rows).</li>
+        <li><span class="dec is-open">Open</span> What the Reminders bell does (drawn: a small list of the next reminders with Pause and Reminder settings; or open Settings › Reminders).</li>
+        <li><span class="dec is-open">Open</span> The PvP icon (drawn: Lucide crosshair, since the crossed swords are the DPS meter's).</li>
+        <li><span class="dec is-open">Open</span> Still open from the to-do round: premium keys above 21; a switch to stop filling from the game (recommended: no); arrows or none on game rows; "done / target" or "N left" on weekly rows; and the data questions (Deus/Arkanis cap, Conquest tickets).</li>
+      </ul>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hub: the first-open prompt</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../todos-autofill/todos.css" />
+    <link rel="stylesheet" href="../todos-autofill/autofill.css" />
+    <link rel="stylesheet" href="meter.css" />
+    <link rel="stylesheet" href="hub.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Hub mockups">
+        <a href="index.html">Hub: all pages</a>
+        <a href="toolbar.html">Toolbar</a>
+        <a href="resources.html">Resources window</a>
+        <a href="meter.html">Meter "…" menu</a>
+        <a href="prompt.html" aria-current="page">First-open prompt</a>
+        <a href="settings.html">Settings, Overlay</a>
+        <a href="tray.html">Tray icon</a>
+      </nav>
+      <h1>The first time the meter opens <small>hub round, 2026-10-08, not approved yet</small></h1>
+      <ul class="rationale">
+        <li>Kisk starts with the toolbar alone. The first time you open the meter from the toolbar, a small card asks whether the meter should open at every launch, and says where that setting lives: Settings › Overlay › "Open the meter at launch" (off by default). Two buttons; never asked again once answered.</li>
+        <li>The card is drawn like the reminder card (approved): its own small overlay window, 6 px above the meter, left edges aligned, the meter's width. Tags: <span class="dec is-agreed">Agreed</span>, <span class="dec is-proposed">Proposed</span>; <a href="README.md">README.md</a> lists every decision.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><span class="dec is-agreed">Agreed</span> Asked once, the first time the meter is opened from the toolbar, with the path to the setting. Off by default: without an answer the meter does not open at launch.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Yes, at launch</b> turns the setting on; the card shows a good note with the path for 4 s, then fades out (150 ms, as the reminder card). <b>Not now</b> closes it at once and leaves the setting off. Either answer is final: the card never comes back.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>No answer</b>: the card stays while the meter is open (no time-out); closing the meter without answering asks again the next time.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Window</b>: no-activate like the reminder card (the game keeps the keyboard), clickable even while the meter is locked. Placement as the reminder card: above the meter, below it when there is no room; 220 px over the capsule. A reminder that comes while the card is up stacks 6 px above it.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Copy</b>: "Open the meter at launch?" · "Kisk starts with the toolbar alone. Open the DPS meter each time Kisk starts?" · Lucide settings, then "Settings › Overlay › Open the meter at launch" with Lucide chevron-right between the steps. "Kisk" is the agreed name (TASK-23); elsewhere the app is renamed with that task.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="hub.js"></script>
+    <script>
+      (function () {
+        const { toolbar, meter, prompt, view, snapshot, CALM, tag } = Hub;
+        const A = tag("Agreed");
+        const P = tag("Proposed");
+        const bar = (ctx, o = {}) => toolbar(ctx, { v: view({ g: snapshot(CALM) }), lit: { meter: true }, ...o });
+        const capsule = `<div class="ov d is-capsule is-idle"><span style="font-weight:600">DPS Meter</span><span class="d-label">Standing by</span></div>`;
+
+        function render(state, ctx) {
+          switch (state) {
+            case "first":
+              return `<div class="hb-col is-wide">${bar(ctx)}<div class="hb-col">${prompt(ctx)}${meter(ctx, { board: "waiting" })}</div></div>`;
+            case "hover":
+              return `<div class="hb-col">${prompt(ctx, { hover: "yes" })}${meter(ctx, { board: "waiting" })}</div>`;
+            case "done":
+              return `<div class="hb-col">${prompt(ctx, { done: true })}${meter(ctx, { board: "waiting" })}</div>`;
+            case "fr":
+              return `<div class="hb-col">${prompt(ctx, { lang: "fr" })}${meter(ctx, { board: "waiting" })}</div>`;
+            case "capsule":
+              return `<div class="hb-col">${prompt(ctx, { narrow: true })}${capsule}</div>`;
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "first", title: "First open from the toolbar", sub: `${A} asked once, with the path to the setting; two buttons. ${P} a card above the meter, as the reminder card` },
+            { id: "hover", title: "Pointer on Yes", sub: `${P} the overlay text buttons: tonal for Yes, quiet for Not now; both hot under the pointer` },
+            { id: "done", title: "After Yes", sub: `${P} a good note with the path for 4 s, then the card fades out; never asked again` },
+            { id: "fr", title: "In French", sub: `${P} draft French (it goes through i18n): the path wraps to a second line; the buttons still fit` },
+            { id: "capsule", title: "Capsule layout", sub: `${P} 220 px over the capsule, as the reminder card` },
+          ],
+          controls: ["alpha", "scale"],
+          tileMin: 560,
+          stageMin: 360,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

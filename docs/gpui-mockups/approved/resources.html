@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Approved: Resources window</title>
+    <link rel="stylesheet" href="shared.css" />
+    <link rel="stylesheet" href="overlay.css" />
+    <link rel="stylesheet" href="todos.css" />
+    <link rel="stylesheet" href="hub.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Approved screens">
+        <a href="index.html">Approved screens</a>
+        <a href="toolbar.html">Toolbar</a>
+        <a href="resources.html" aria-current="page">Resources window</a>
+        <a href="todos.html">To-do window</a>
+        <a href="settings.html?states=todos,todos:hint">Settings, To-dos</a>
+      </nav>
+      <h1>Resources window <small>approved 2026-10-08 (the hub)</small></h1>
+      <ul class="rationale">
+        <li>Every resource the game fills, for the current character, in a floating window of its own: opened by a click on Odyle Energy or Shugo keys in the <a href="toolbar.html">toolbar</a>, or on "All resources" at the end of the warning's dropdown. The <a href="todos.html">to-do window</a> keeps its Recharges section too.</li>
+        <li>Built from the to-do window: the same frame, character selector, source line, rows and display rules, so both windows always agree. Values are in <a href="tokens.md">tokens.md</a>, "Hub" (Resources window) and "To-do window".</li>
+        <li><span class="mk-legend">Dashed</span>: to confirm in game, drawn with the build's default (the Deus Research Base and Shattered Arkanis cap of 4; Conquest dungeons as one ticket per dungeon). Values and times are invented; the clock is Monday 21:48, Mirelle logged in at 19:02, membership on.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Rows</b>: the to-do window's Recharges rows, in the same order. Weekly entries (Unknown Fissure, Sanctuary…) stay to-dos: they are done or not, not a pool that refills.</li>
+        <li><b>Display</b>: the regular pool against its cap ("7/21"), the extra pool beside it when not zero ("+3"); above the cap is normal, never an error; "Full, spend by …" / "Full, being wasted" only when the regular pool is at its cap and a refill is coming. Membership (Settings, To-dos) picks the membership caps (Shugo keys 12 → 21, Odyle Energy 560 → 840). Shugo keys and Invasion keys are shared by the characters of a server ("Account").</li>
+        <li><b>Always up to date</b>: resources follow the game's messages whether the meter is open or not.</li>
+        <li><b>Same data as the to-dos</b>: typing over a value, the pencil, the tooltips and "from yesterday's login" work here as in the to-do window, and a change in one window shows in the other.</li>
+        <li><b>Frame</b>: the to-do window's 370 px, a header with Lucide package and "Resources", the "2 full" chip, the character selector (follows the character in game; others can be looked at), the source line; no × slot on rows (nothing to hide). Footer: the daily reset, and which caps are in force ("Membership caps").</li>
+        <li><b>Window</b>: an overlay window like the to-do window (no-activate, except while a field takes the keyboard); opens where you left it, one at a time; the toolbar's counts read lit while it is open, and a click on a count closes it again.</li>
+        <li><b>To confirm in game</b>: the Deus Research Base and Shattered Arkanis cap (drawn: 4, the ticket table) and whether a Conquest entry spends its dungeon's ticket (drawn: six rows of 14, +2 a day) or a shared pool.</li>
+      </ul>
+    </section>
+
+    <script src="kit.js"></script>
+    <script src="hub.js"></script>
+    <script>
+      (function () {
+        const { resources, snapshot } = Hub;
+        const tipText = (a, b) => `${a}${b ? `<br><span class="faint">${b}</span>` : ""}`;
+
+        function render(state, ctx) {
+          const R = (o) => resources(ctx, o);
+          switch (state) {
+            case "live":
+              return R();
+            case "full":
+              return R({ g: snapshot({ odyle: { n: 840, x: 245 }, shugo: { n: 21, x: 3 }, invasion: { n: 2, x: 12 }, deus: { n: 2 }, arkanis: { n: 3 } }) });
+            case "hover":
+              return R({ hover: "shugo", tip: { id: "shugo", right: 4, text: tipText("From the game, live.", "+3 extra from items: they never refill and are not part of the 21.") } });
+            case "stale":
+              return R({ src: "stale", playing: false, g: snapshot({ odyle: { n: 245, x: 380 } }), hover: "odyle", tip: { id: "odyle", right: 4, text: tipText("125 at your login Sun 22:40.", "+120 since: eight refills of 15, estimated.") } });
+            case "typing":
+              return R({ edit: "shugo", editVal: "9" });
+            case "typed":
+              return R({ over: { shugo: 9 }, hover: "shugo", tip: { id: "shugo", right: 4, text: tipText("Typed by you. The game said 7.", "Its next value replaces yours: a spend, a refill or your next login.") } });
+            case "first":
+              return R({ who: { name: "Sefa", cls: "cleric", klass: "Cleric", server: "Lyss" }, playing: false, src: "none", g: {} });
+            case "memberOff":
+              return R({ member: false, g: snapshot({ shugo: { n: 18, x: 3 }, odyle: { n: 605, x: 380 } }) });
+            case "conquest":
+              return R({ openConquest: true });
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "live", title: "Filled from the game, live", sub: "\"7/21\" and \"+3\"; Account on Shugo and Invasion keys; the to-do window's rows, frame and source line. Deus and Arkanis 4/4 are full with the cap of 4 (to confirm in game, dashed)" },
+            { id: "full", title: "Full, being wasted", sub: "only when the regular pool is at its cap: Odyle 840/840 +245 and Shugo 21/21 +3 are full; Invasion keys 2/7 +12 (above the cap in all) is normal" },
+            { id: "hover", title: "Pointer on a value", sub: "the figure reads as a field (a click types over it); the tooltip says where it comes from and what \"+3\" is" },
+            { id: "stale", title: "From yesterday's login", sub: "Mirelle is not in game: the last values plus the refills the table knows since, said on the source line" },
+            { id: "typing", title: "Typing over a value", sub: "a typed number may be above the cap; × goes back to the game's value" },
+            { id: "typed", title: "After typing over it", sub: "the pencil in the gutter; the game's next value replaces yours" },
+            { id: "first", title: "Before the first login is seen", sub: "Sefa, alone on Lyss: dashes, and the source line says how to get values" },
+            { id: "memberOff", title: "Membership off, the game shows more", sub: "above the cap is normal: 18 Shugo keys and 605 Odyle with the switch off are shown as they are, never full; the footer says which caps are in force" },
+            { id: "conquest", title: "Conquest, one ticket per dungeon", sub: "to confirm in game (dashed): a folding group as in the to-do window, each dungeon 14, +2 a day" },
+          ],
+          controls: ["alpha", "scale", "mask"],
+          tileMin: 430,
+          stageMin: 480,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

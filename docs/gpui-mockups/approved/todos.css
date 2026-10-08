@@ -1,0 +1,1070 @@
+/* The approved to-do window (direction E, 2026-10-06; values from the
+   game approved 2026-10-08) on top of overlay.css. Values are in
+   tokens.md, "To-do window"; a change here changes them too. The
+   Resources window (hub.js) draws its rows with these classes. */
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Regular.ttf") format("truetype");
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Medium.ttf") format("truetype");
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+}
+
+@font-face {
+  font-family: "Meter Barlow";
+  src: url("../../../crates/app/assets/fonts/BarlowSemiCondensed-Bold.ttf") format("truetype");
+  font-weight: 700;
+}
+
+/* The shipped face, so widths match the GPUI build. */
+.ov.o {
+  --o-font: "Meter Barlow", "Barlow Semi Condensed", "Bahnschrift", sans-serif;
+  --t-ring: rgba(243, 235, 225, 0.9);
+  --t-warn-fill: rgba(242, 198, 109, 0.12);
+
+  font-stretch: normal;
+}
+
+.ov.o.td {
+  --d-press: rgba(255, 240, 225, 0.2);
+
+  width: 370px;
+}
+
+:where(.td) button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+:where(.td) button:disabled {
+  cursor: default;
+}
+
+/* Keyboard focus: focus-ring, 2 px, 1 px outside the control, so a
+   row's ring fits the 2 px gap between rows. Fields show focus with
+   their brighter border instead. */
+.td :focus {
+  outline: none;
+}
+
+.td :focus-visible,
+.td .t-fig.is-focus,
+.td .o-btn.is-focus {
+  outline: 2px solid var(--t-ring);
+  outline-offset: 1px;
+}
+
+.td input:focus-visible {
+  outline: none;
+}
+
+/* ---- Header ------------------------------------------------------- */
+.o-head .o-btn {
+  cursor: pointer;
+}
+
+.o-head .o-chip,
+.t-sec .o-chip {
+  height: 18px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.o-head .o-chip .i,
+.t-sec .o-chip .i {
+  width: 11px;
+  height: 11px;
+}
+
+/* ---- Character selector ------------------------------------------- */
+.t-char {
+  position: relative;
+  margin: 2px 0 6px;
+}
+
+.t-char .o-input {
+  gap: 6px;
+  height: 28px;
+  padding: 0 7px 0 6px;
+  cursor: pointer;
+}
+
+.t-char .o-input.is-focus {
+  border-color: rgba(255, 246, 236, 0.55);
+}
+
+.t-char img,
+.t-who img {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.t-char .nm {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.t-char .meta {
+  overflow: hidden;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+}
+
+.t-char .o-input > .i {
+  color: var(--o-muted);
+}
+
+.t-live {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--o-good);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.t-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+.t-char .o-menu {
+  top: 32px;
+  left: 0;
+  right: 0;
+}
+
+.t-who {
+  height: 30px;
+}
+
+.t-who b {
+  font-weight: 600;
+}
+
+.t-who .srv {
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.t-who .left {
+  margin-left: auto;
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.t-who .left.is-warn {
+  color: var(--o-warn);
+  font-weight: 600;
+}
+
+.t-menu-note {
+  padding: 4px 8px;
+  color: var(--o-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.o-menu-sep {
+  height: 1px;
+  margin: 4px;
+  background: rgba(255, 240, 225, 0.18);
+}
+
+/* ---- Sections ----------------------------------------------------- */
+.t-sec {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin-top: 6px;
+  padding: 0 6px 0 4px;
+  border-radius: 6px;
+  color: var(--o-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.t-sec:first-child {
+  margin-top: 0;
+}
+
+.td .t-sec:hover {
+  color: var(--o-text);
+}
+
+.t-sec > .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.t-sec .n {
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.t-sec .n.is-good {
+  color: var(--o-good);
+}
+
+.t-sec .at {
+  margin-left: auto;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.t-sec .at b {
+  color: var(--o-muted);
+  font-weight: 600;
+}
+
+/* ---- Rows ---------------------------------------------------------- */
+.t-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 26 px, 2 px apart; 4 px left inset, a 12 px gutter (a group's
+   chevron, a full amount's warning, else empty) and 6 px gaps, so
+   names start 22 px in, under the section labels. */
+.t-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 3px 0 4px;
+  border-radius: 6px;
+  cursor: default;
+}
+
+/* A group's rows start under its name. */
+.t-row.is-sub {
+  padding-left: 22px;
+}
+
+/* Only rows a click acts on light up (ticks and groups); on counts and
+   amounts the pointer brightens the arrows and brings the ×. */
+.t-row.is-tick,
+.t-row.is-group {
+  cursor: pointer;
+}
+
+.t-row.is-tick:hover,
+.t-row.is-group:hover,
+.t-row.is-tick.is-hover,
+.t-row.is-group.is-hover {
+  background: var(--o-soft);
+}
+
+.t-row.is-focus {
+  outline: 2px solid var(--t-ring);
+  outline-offset: 1px;
+}
+
+/* Keyboard focus on a row's button rings the whole row. */
+.td .t-row:has(> .t-main:focus-visible) {
+  outline: 2px solid var(--t-ring);
+  outline-offset: 1px;
+}
+
+.td .t-main:focus-visible {
+  outline: none;
+}
+
+/* Full, being wasted: the yellow row. */
+.t-row.is-waste,
+.t-row.is-waste:hover {
+  background: var(--t-warn-fill);
+}
+
+/* A hidden row listed by "Show": faded, only its put-back button bright. */
+.t-row.is-off > :not(.t-x) {
+  opacity: 0.42;
+}
+
+.t-gut {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 16px;
+  color: var(--o-faint);
+}
+
+.t-gut .i {
+  width: 12px;
+  height: 12px;
+}
+
+.t-gut.is-warn {
+  color: var(--o-warn);
+}
+
+/* The row's own button: everything but the check and the ×. */
+.t-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  align-self: stretch;
+  gap: 6px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.t-row.is-off .t-main {
+  cursor: default;
+}
+
+.t-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.t-name small {
+  margin-left: 5px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* "Yours" is a tag, not part of the name: never struck. */
+.t-name small.t-yours {
+  display: inline-block;
+}
+
+.t-acct {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.t-acct .i {
+  width: 11px;
+  height: 11px;
+}
+
+/* An amount nobody typed: quiet, and left out of every count and
+   warning. */
+.t-row.is-empty .t-name {
+  color: var(--o-muted);
+}
+
+/* Done: struck through and muted, in place. GPUI: StrikethroughStyle,
+   1 px, the text's own colour. */
+.t-row.is-done > .t-name,
+.t-row.is-done > .t-main > .t-name {
+  color: var(--o-muted);
+  text-decoration: line-through 1px;
+}
+
+.t-row.is-done .t-name small {
+  color: rgba(255, 246, 236, 0.36);
+}
+
+/* ---- Small buttons ------------------------------------------------- */
+.o-btn.is-sm {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+
+.o-btn.is-sm .i {
+  width: 12px;
+  height: 12px;
+}
+
+.o-tbtn.t-small {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+
+.o-tbtn.t-small .i {
+  width: 11px;
+  height: 11px;
+}
+
+/* The check (undo on a done row) at the end of a tick row, shown with
+   the × while the pointer is on the row or the row has keyboard
+   focus. It does what a click on the row does. */
+.o-btn.t-check {
+  background: var(--o-soft);
+  color: var(--o-text);
+  visibility: hidden;
+}
+
+.t-check .i {
+  stroke-width: 2.5;
+}
+
+.o-btn.t-check.is-undo {
+  background: none;
+  color: var(--o-muted);
+}
+
+.t-check.is-undo .i {
+  stroke-width: 2.25;
+}
+
+.o-btn.t-check:hover,
+.o-btn.t-check.is-hover {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+.o-btn.t-check.is-undo:hover,
+.o-btn.t-check.is-undo.is-hover {
+  background: var(--o-soft);
+}
+
+/* The × slot: 20 px on every row, empty until the pointer enters the
+   row, gone when it leaves (enter and leave only, never on moves
+   inside). */
+.t-x {
+  display: inline-flex;
+  flex-shrink: 0;
+  justify-content: center;
+  width: 20px;
+}
+
+.t-x .o-btn {
+  color: var(--o-muted);
+  visibility: hidden;
+}
+
+.t-x .o-btn:hover,
+.t-x .o-btn.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.t-row:hover .t-check,
+.t-row.is-hover .t-check,
+.t-row.is-focus .t-check,
+.t-row:focus-within .t-check,
+.t-row:hover .t-x .o-btn,
+.t-row.is-hover .t-x .o-btn,
+.t-row.is-focus .t-x .o-btn,
+.t-row:focus-within .t-x .o-btn,
+.t-x.is-on .o-btn {
+  visibility: visible;
+}
+
+/* Just after a hide, the row that slid under the pointer keeps its ×
+   (and check) back until the pointer moves: a double click hides one
+   row. */
+.td.is-still .t-row:hover .t-x:not(.is-on) .o-btn,
+.td.is-still .t-row:hover .t-check {
+  visibility: hidden;
+}
+
+/* A control's name: one line, under the control. */
+.t-tip {
+  position: absolute;
+  z-index: 6;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 236, 214, 0.14);
+  border-radius: 6px;
+  background: rgba(30, 26, 22, 0.98);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  color: var(--o-text);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+/* ---- Arrows and the figure ----------------------------------------- */
+.t-step {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1px;
+}
+
+.t-step .o-btn {
+  color: var(--o-muted);
+}
+
+.t-step .o-btn .i {
+  stroke-width: 2.25;
+}
+
+.t-row:hover .t-arrow:not(:disabled),
+.t-row.is-hover .t-arrow:not(:disabled) {
+  color: var(--o-text);
+}
+
+.t-step .o-btn:hover:not(:disabled),
+.t-step .o-btn.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.t-step .o-btn:active:not(:disabled),
+.t-step .o-btn.is-press {
+  background: var(--d-press);
+  color: var(--o-text);
+}
+
+.t-step .o-btn:disabled {
+  color: var(--o-faint);
+  opacity: 0.45;
+}
+
+.t-gap {
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.t-fig {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 46px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--o-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.t-fig small {
+  margin-left: 1px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.t-fig:hover,
+.t-fig.is-hover {
+  background: var(--o-soft);
+}
+
+.t-fig:active,
+.t-fig.is-press {
+  background: var(--d-press);
+}
+
+.t-row.is-done .t-fig {
+  color: var(--o-muted);
+}
+
+.t-row.is-waste .t-fig {
+  color: var(--o-warn);
+}
+
+.t-row.is-waste .t-fig small {
+  color: rgba(242, 198, 109, 0.7);
+}
+
+/* An amount's figure reads as a field: a click types, it does not add
+   one. */
+.t-fig.is-amt {
+  cursor: text;
+}
+
+.t-fig.is-amt:hover,
+.t-fig.is-amt.is-hover {
+  background: var(--o-track);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 225, 0.12);
+}
+
+.t-fig.is-blank {
+  color: var(--o-faint);
+  font-weight: 500;
+}
+
+.t-fig.is-fixed {
+  width: 26px;
+  cursor: default;
+}
+
+.t-fig.is-fixed:hover {
+  background: none;
+}
+
+.t-ghost .t-fig {
+  color: var(--o-muted);
+  cursor: default;
+}
+
+.t-ghost .t-fig:hover {
+  background: none;
+}
+
+.t-when {
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.t-when.is-warn {
+  color: var(--o-warn);
+  font-weight: 600;
+}
+
+/* Typing an amount: the field takes the arrows' place. */
+.t-field {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  width: 112px;
+  height: 22px;
+  padding: 0 1px 0 7px;
+  border: 1px solid rgba(255, 246, 236, 0.55);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.34);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.t-field .val,
+.t-field input {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+}
+
+.t-field input {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--o-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.t-field input::placeholder {
+  color: var(--o-faint);
+  font-weight: 500;
+}
+
+.t-field .o-caret {
+  margin-left: -3px;
+}
+
+.t-cap {
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.t-field .o-btn.is-sm {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+.t-field .o-btn:hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+/* ---- Groups, hidden rows, links ------------------------------------ */
+.t-sum {
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.t-sum.is-good {
+  color: var(--o-good);
+}
+
+.t-link {
+  color: var(--o-muted);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 246, 236, 0.25);
+  text-underline-offset: 3px;
+}
+
+.t-link:hover,
+.t-link.is-hover {
+  color: var(--o-text);
+}
+
+/* "2 hidden · Show" ends the section, under the names. */
+.t-hid {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 6px 0 22px;
+  color: var(--o-faint);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.t-hid.is-sub {
+  padding-left: 40px;
+}
+
+/* ---- Adding a to-do ------------------------------------------------ */
+.td .t-addline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  margin-top: 6px;
+  padding: 0 6px 0 4px;
+  border-radius: 6px;
+  color: var(--o-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.t-addline .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.td .t-addline:hover,
+.td .t-addline.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.t-addline:hover .i {
+  color: var(--o-muted);
+}
+
+/* The form, in the add line's place, on the expanded-row plate. */
+.t-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px;
+  border-radius: 6px;
+  background: rgba(255, 240, 225, 0.05);
+}
+
+.t-add-top,
+.t-add-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.t-add-row {
+  gap: 6px;
+}
+
+.t-add-top .o-input {
+  flex: 1;
+  min-width: 0;
+  margin-right: 2px;
+}
+
+.t-add-top .o-tbtn {
+  height: 22px;
+}
+
+.t-add-top > .o-btn:hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.t-add .o-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--o-text);
+  font: inherit;
+  font-weight: 500;
+}
+
+.t-add .o-input input::placeholder {
+  color: var(--o-faint);
+}
+
+.t-add .o-input:focus-within {
+  border-color: rgba(255, 246, 236, 0.55);
+}
+
+.t-add .o-input .o-caret + .ph {
+  margin-left: -6px;
+}
+
+.t-add .o-tbtn.is-disabled {
+  cursor: default;
+}
+
+.t-of {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--o-faint);
+  font-size: 11.5px;
+}
+
+.t-seg {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.t-seg button {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.t-seg button.is-on {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+/* ---- Notes --------------------------------------------------------- */
+.o-note.t-note {
+  margin: 0 0 6px;
+}
+
+/* "Removed Legion check-in. Undo": one line, Undo on the right. */
+.o-note.t-note.is-removed {
+  align-items: center;
+}
+
+.o-note .t-strong {
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+.o-note.is-good .t-strong {
+  color: var(--o-good);
+}
+
+.t-note .t-link {
+  margin-left: auto;
+  font-size: 11.5px;
+}
+
+/* ---- Scrolling ----------------------------------------------------- */
+/* 3 px of room around the rows so the focus ring is not clipped. */
+.t-scrollwrap {
+  position: relative;
+  margin: -3px;
+}
+
+.t-scroll {
+  position: relative;
+  padding: 3px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.t-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.t-scrollwrap.is-over .t-scroll {
+  padding-right: 11px;
+}
+
+.t-thumb {
+  display: none;
+  right: 4px;
+}
+
+.t-scrollwrap.is-over .t-thumb {
+  display: block;
+}
+
+/* ---- Footer -------------------------------------------------------- */
+.t-foot {
+  gap: 5px;
+}
+
+.t-foot > .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.t-foot b {
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+/* What a screen reader hears after a change; not drawn. */
+.t-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- Values from the game (approved 2026-10-08) ----------------------
+   Where the values come from: one line under the character selector.
+   The meter's hint line ("not identified yet"): 20 px, 4 px inset, a
+   12 px Lucide icon in faint, 11.5 px / 500 muted, cut off with an
+   ellipsis. */
+.g-src {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  margin: -2px 0 4px;
+  padding: 0 4px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.g-src > .i {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.g-src > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.g-src b {
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+.g-src .faint {
+  color: var(--o-faint);
+}
+
+/* A value from the game: the figure without arrows. The block keeps the
+   stepper's 88 px (20 + 1 + 46 + 1 + 20) so nothing else in the row
+   moves: a 14 px gap where the one-less arrow was, the 46 px figure, and
+   the extra pool in a 26 px slot after it ("+380" fits). */
+.g-step {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1px;
+}
+
+.g-step > .t-gap {
+  width: 14px;
+}
+
+/* A click types over it (Enter on the keyboard); it does not add one. */
+.t-fig.g-fig {
+  cursor: text;
+}
+
+.t-fig.g-fig:hover,
+.t-fig.g-fig.is-hover {
+  background: var(--o-track);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 225, 0.12);
+}
+
+/* "+3": the extra pool (items, rewards). Never refilled, never part of
+   the cap, never yellow. */
+.g-extra {
+  flex-shrink: 0;
+  width: 26px;
+  padding-left: 1px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.t-row.is-done .g-extra,
+.t-row.is-waste .g-extra {
+  color: var(--o-muted);
+}
+
+/* A game value you typed over: Lucide pencil in the gutter, faint. The
+   full warning wins the gutter when both apply. */
+.t-gut.is-typed {
+  color: var(--o-faint);
+}
+
+/* The field's ×, drawn under the pointer (static states). */
+.t-field .o-btn.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+/* Tooltips on a figure: the control tooltip, allowed two lines for the
+   source and time. */
+.t-tip.g-tip {
+  max-width: 250px;
+  white-space: normal;
+}
+
+.t-tip.g-tip .faint {
+  color: var(--o-faint);
+}
+
+.notes h3 {
+  margin: 14px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}

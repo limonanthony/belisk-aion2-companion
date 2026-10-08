@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-dos filled from the game: to-do window (TASK-20.2)</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="todos.css" />
+    <link rel="stylesheet" href="autofill.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="To-dos filled from the game">
+        <a href="../hub/index.html">Hub round: all pages</a>
+        <a href="../approved/todos.html">Approved to-do window</a>
+        <a href="../approved/settings.html?states=todos">Approved Settings, To-dos</a>
+        <a href="index.html" aria-current="page">From the game: to-do window</a>
+        <a href="settings.html">From the game: Settings, To-dos</a>
+      </nav>
+      <h1>To-dos filled from the game <small>proposal for TASK-20.2, 2026-10-08, not approved yet</small></h1>
+      <ul class="rationale">
+        <li>The approved window (direction E) is unchanged except where the game's values need it. When you log in while Kisk runs (the meter open or not), the game sends every ticket (the regular pool it refills and an extra pool from items), then each change as it happens. Caps and refill times are not sent: they come from the game's ticket table.</li>
+        <li>Each state is tagged <span class="dec is-agreed">Agreed</span> (settled with you on 2026-10-07), <span class="dec is-proposed">Proposed</span> (for you to accept or change) or <span class="dec is-open">Open</span> (a data question for your in-game comparison, drawn <span class="mk-legend">dashed</span> and switchable above; not decided here). <a href="README.md">README.md</a> lists every decision.</li>
+        <li>Two proposals have an alternative in the selectors above: whether a game value keeps the approved arrows, and how a weekly row reads (done of target, or entries left).</li>
+        <li>Membership is on in every state (your Shugo keys go to 21). Counts, times and characters are invented; the clock is Monday 21:48, Mirelle logged in at 19:02. The last state is a working window with buttons that play messages from the game; nothing is saved.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><span class="dec is-agreed">Agreed</span> <b>Two pools.</b> A recharge shows its regular pool against the cap ("7/21") and, when it is not zero, the extra pool beside it ("+3"). A total above the cap is normal: no error, no colour. "Full, being wasted" (or "Full, spend by …") lights only when the regular pool reaches its cap; extras never trigger it, and "Full in …" counts only the regular pool.</li>
+        <li><span class="dec is-agreed">Agreed</span> <b>Membership</b> (Settings, To-dos) picks the membership cap of every ticket: Shugo Festival keys 12 → 21, Odyle Energy 560 → 840.</li>
+        <li><span class="dec is-agreed">Agreed</span> <b>Typed numbers</b> may be above the cap; nothing cuts them.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Membership off, the game shows more.</b> A regular pool above the cap in force (18 Shugo keys with the switch off) can only come from a membership: the row shows it as it is, never full and without an estimate, and Settings, To-dos asks about the membership. Off again, nothing is cut.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Game or you.</b> A row the game fills has no arrows: the figure sits where a manual figure sits, the extra pool after it, in the same width as the arrows, so nothing else moves. Arrows stay on what you count yourself: Duty Missions, Duty Commands, your own to-dos, and every row before the game has filled it. The figure's tooltip says where it comes from. (Alternative in the selector: keep the arrows on game rows too.)</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Where the values come from</b>: one line under the character selector, the meter's hint-line style. "From the game, live · logged in at 19:02"; between sessions "From the game at login, Sun 22:40 · refills since estimated"; before any login "No game values yet. Log in with Sefa while Kisk runs."; for a new character on a server already seen "Tavrin not seen at login yet · Account rows from Mirelle".</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Between sessions</b> the window keeps each character's last game values and adds the refills the table knows since (daily +N at the reset, Odyle +15 every 3 h), up to the cap. Spends are never guessed. A weekly row seen before Wednesday's reset starts over at the reset.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Typing over a game value.</b> A click on the figure (Enter on the keyboard) opens the approved field with the regular pool in it. Enter keeps your number, above the cap too; Esc cancels. Your number takes the figure's place with a pencil in the gutter ("Typed by you. The game said 7."); the extra pool stays the game's. The game's next value for that ticket (a spend, a refill, an item, your next login) replaces it. In the field, × or an empty field goes back to the game's value at once.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>At login</b> the game's snapshot fills every row it covers and replaces what you typed there; a good note says so for 4 s.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Weekly rows.</b> The game sends the entries left. The row keeps the approved "done of target": done = target − left (Unknown Fissure 9 left of 14 reads 5/14), done (struck through) at 0 left; extra entries beside it ("+7"), which do not stop a row from being done. A final-boss tick (Abyssal Forge) is done when its ticket reaches 0. (Alternative in the selector: "9 left".)</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Shared by a server.</b> Shugo Festival keys, Invasion keys and the Unknown Fissure get the approved "Account" tag (today only Duty Missions have it); a login with any character of that server fills them for all of them.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>A typed total.</b> Before the game has filled a row, a typed number is your total (what the game shows), so it cannot tell regular from extra: at or above the cap the row counts as full, as approved. Once the game fills it, the split is exact.</li>
+        <li><span class="dec is-agreed">Agreed</span> <b>Shugo Festival keys</b>: cap 12 (21 with membership), +3 a day, extra pool up to 30 (today's row says 28 and +4). <span class="dec is-proposed">Proposed</span> the +3 (and Invasion keys' +1) at the daily reset, as the ticket table's daily clock says (16:00 KST = 09:00 here), instead of today's 16:00.</li>
+        <li><span class="dec is-open">Open</span> <b>Deus Research Base and Shattered Arkanis</b>: cap 4 (the ticket table) or 14 (our list today). With 4, the 4/4 seen on Mirelle is full.</li>
+        <li><span class="dec is-open">Open</span> <b>Conquest dungeons</b>: which ticket an entry spends. If each dungeon has its own (six tickets, 14, +2 a day), the row becomes a folding group like Sanctuary; if a shared pool, it stays one row with that pool's cap and refill (drawn: 21, +1 every 8 h).</li>
+        <li><span class="dec is-agreed">Agreed</span> (hub round, <a href="../hub/index.html">../hub/</a>) <b>Opening it</b>: the window opens from the toolbar's checklist icon, no longer from the meter's "…" menu, which keeps only the boss setting. The full-pool warning and the "1 full" chip stay as drawn ("That's good then !").</li>
+        <li>Unchanged from the approved window: sections, folding, ticks and the check, hiding and Show, adding your own, the footer, keyboard and focus.</li>
+      </ul>
+
+      <h2>Not decided by the mockup</h2>
+      <ul>
+        <li>Which of tickets 102 and 103 is Abandoned Balaur Fortress and which is Fafnium Laboratory (both 7, +1 a day, so nothing on screen changes), and the exact reset hour: data for your comparison in game.</li>
+        <li>Ordeal is mapped to its ticket by name only (probable).</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="autofill.js"></script>
+  </body>
+</html>

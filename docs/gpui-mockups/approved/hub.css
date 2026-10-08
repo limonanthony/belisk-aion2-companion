@@ -1,0 +1,757 @@
+/* The hub, approved 2026-10-08: the toolbar, its dropdowns and tooltips,
+   the Resources window's few additions, the first-open prompt, the reminder
+   card's place under the toolbar and the tray stand-in. Values are in
+   tokens.md, "Hub"; a change here changes them too. Loaded after
+   overlay.css and todos.css (which brings the bundled Barlow Semi
+   Condensed and the to-do window's rows); meter.css draws the meter. */
+
+/* ---- Stage helpers (page chrome) ---------------------------------------- */
+
+/* Windows drawn together on one stage, 6 px apart (the reminder card's
+   gap), left edges aligned. */
+.hb-col {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(6px * var(--scale));
+}
+
+.hb-col.is-wide {
+  gap: calc(14px * var(--scale));
+}
+
+/* Two windows side by side. */
+.hb-row {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(14px * var(--scale));
+}
+
+/* ---- Toolbar ---------------------------------------------------------------
+   An overlay card of its own (card at the user's opacity, card-border, no
+   shadow), one row: grip, the six tools, a rule, the counts and the
+   warning, a rule, fold and quit. 4 px padding, 12 px radius (the
+   card's 14 px reads as a pill at this height), 26 px buttons with 14 px
+   icons. */
+.ov.o.hb {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  cursor: default;
+}
+
+:where(.hb) button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.hb :focus {
+  outline: none;
+}
+
+.hb :focus-visible,
+.hb .is-focus {
+  outline: 2px solid rgba(243, 235, 225, 0.9);
+  outline-offset: 1px;
+}
+
+/* Grip: Lucide grip-vertical 12 px in faint; the whole bar's empty space
+   drags too. */
+.hb-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 26px;
+  color: var(--o-faint);
+  cursor: grab;
+}
+
+.hb-grip .i {
+  width: 12px;
+  height: 12px;
+}
+
+.hb-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* A tool: 26 x 26 px, 7 px radius, icon 14 px in muted.
+   Pointer over: soft fill, text. Open ("lit"): hot fill, text, and a
+   4 x 4 px dot 2 px above the bottom edge (the pin dot's size). */
+.hb-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  color: var(--o-muted);
+}
+
+.hb-btn .i {
+  width: 14px;
+  height: 14px;
+}
+
+.hb-btn:hover,
+.hb-btn.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.hb-btn.is-lit {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+.hb-btn.is-lit::after {
+  content: "";
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.hb-btn.is-lit .i {
+  margin-top: -3px;
+}
+
+/* Reminders paused: Lucide bell-off, faint. */
+.hb-btn.is-off {
+  color: var(--o-faint);
+}
+
+/* Fold and quit: 20 px wide, icon 12 px in faint. */
+.hb-btn.is-end {
+  width: 20px;
+  color: var(--o-faint);
+}
+
+.hb-btn.is-end .i {
+  width: 12px;
+  height: 12px;
+}
+
+.hb-btn.is-end:hover,
+.hb-btn.is-end.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+/* The rule between groups: the capsule's 1 px rule at 0.18, 16 px tall. */
+.hb-vr {
+  width: 1px;
+  height: 16px;
+  margin: 0 5px;
+  flex-shrink: 0;
+  background: rgba(255, 240, 225, 0.18);
+}
+
+.hb-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* A count: 26 px, 7 px radius, 7 px sides, 5 px gaps; icon 13 px muted;
+   the regular pool 12.5 px / 600, "/840" 11 px faint 1 px after, the extra
+   pool "+380" 11.5 px / 500 muted 3 px after. A click opens Resources. */
+.hb-count {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 7px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  color: var(--o-text);
+}
+
+.hb-count > .i {
+  color: var(--o-muted);
+}
+
+.hb-fig {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.hb-fig small {
+  margin-left: 1px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.hb-fig.is-blank {
+  color: var(--o-faint);
+  font-weight: 500;
+}
+
+.hb-x {
+  margin-left: -2px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.hb-count:hover,
+.hb-count.is-hover {
+  background: var(--o-soft);
+}
+
+/* Resources open: the counts read as its button, hot. */
+.hb-count.is-lit {
+  background: var(--o-hot);
+}
+
+/* Full and a refill coming: full-fill (warn at 0.12), the figure and icon
+   in warn, "/21" in warn at 0.7; the extra pool stays muted. Under the
+   pointer: warn at 0.20. */
+.hb-count.is-full,
+.hb-warn {
+  background: rgba(242, 198, 109, 0.12);
+}
+
+.hb-count.is-full > .i,
+.hb-count.is-full .hb-fig {
+  color: var(--o-warn);
+}
+
+.hb-count.is-full .hb-fig small {
+  color: rgba(242, 198, 109, 0.7);
+}
+
+.hb-count.is-full:hover,
+.hb-count.is-full.is-hover,
+.hb-warn:hover,
+.hb-warn.is-hover,
+.hb-warn.is-open {
+  background: rgba(242, 198, 109, 0.2);
+}
+
+/* The warning: Lucide triangle-alert 13 px and the number of other full
+   resources, 12.5 px / 600, in warn. Only while one is full. */
+.hb-warn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 7px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  color: var(--o-warn);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* Folded: grip, unfold, and the warning when anything is full. */
+.ov.o.hb.is-folded {
+  gap: 2px;
+}
+
+/* ---- Tooltips --------------------------------------------------------------
+   The to-do window's control tooltip (popover colours, 4 x 8 px, 6 px
+   radius, 11.5 px / 500), 6 px under the control; a second line in muted.
+   Its left edge on the control's (tools), or its right edge (counts, the
+   warning, fold and quit), so it stays over the bar. After 500 ms of
+   pointer over, as the meter's. */
+.hb-tip {
+  position: absolute;
+  z-index: 7;
+  top: calc(100% + 6px);
+  left: 0;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 236, 214, 0.14);
+  border-radius: 6px;
+  background: rgba(30, 26, 22, 0.98);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  color: var(--o-text);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.hb-tip span {
+  display: block;
+  color: var(--o-muted);
+}
+
+.hb-tip.is-on,
+.hb.is-live :hover > .hb-tip {
+  visibility: visible;
+}
+
+.hb.is-live :hover > .hb-tip {
+  transition: visibility 0s 500ms;
+}
+
+.hb-counts .hb-tip,
+.hb-btn.is-end .hb-tip {
+  right: 0;
+  left: auto;
+}
+
+/* ---- Dropdowns (the warning's, the bell's) ---------------------------------
+   The popover (9 px radius, 4 px padding, 26 px items), 6 px under the
+   button, its right edge on the button's. */
+.hb-drop.o-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 8;
+  width: 268px;
+  color: var(--o-text);
+  font-weight: 500;
+  text-align: left;
+}
+
+.hb-drop.is-left {
+  right: auto;
+  left: 0;
+}
+
+.hb-drop.is-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+/* Its label: 24 px, 8 px inset, 11 px / 500 faint. */
+.hb-drop-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.hb-drop .o-menu-item {
+  gap: 6px;
+  cursor: pointer;
+}
+
+.hb-drop .o-menu-item:hover,
+.hb-drop .o-menu-item.is-hot {
+  background: var(--o-hot);
+}
+
+.hb-drop .o-menu-item .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Figures right-aligned in fixed columns: "7/7" in 42 px, the refill time
+   in 74 px. */
+.hb-drop .o-menu-item .fig {
+  width: 42px;
+  color: var(--o-warn);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.hb-drop .o-menu-item .fig small {
+  color: rgba(242, 198, 109, 0.7);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.hb-drop .o-menu-item .when {
+  width: 74px;
+  color: var(--o-faint);
+  font-size: 11px;
+  text-align: right;
+}
+
+.hb-drop .o-menu-item .when b {
+  color: var(--o-muted);
+  font-weight: 600;
+}
+
+.hb-drop .o-menu-item .i {
+  width: 12px;
+  height: 12px;
+}
+
+.hb-drop .o-menu-item .lead {
+  display: inline-flex;
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.hb-drop .o-menu-sep {
+  height: 1px;
+  margin: 4px;
+  background: rgba(255, 240, 225, 0.18);
+}
+
+/* ---- Resources window ------------------------------------------------------
+   The to-do window's frame and rows (todos.css), at its
+   370 px; no × slot (nothing to hide), so names get 26 px more. */
+.ov.o.td.rs {
+  width: 370px;
+}
+
+.rs .t-list {
+  margin-top: 2px;
+}
+
+.rs .o-head .o-title .i {
+  color: var(--o-muted);
+}
+
+/* ---- The meter opened from the toolbar -----------------------------------
+   meter.css draws the card; this wrapper gives it the overlay text colours
+   and the content scale beside the toolbar and the prompt. */
+.hb-mwrap {
+  --o-soft: rgba(255, 240, 225, 0.08);
+  --o-hot: rgba(255, 240, 225, 0.13);
+  --o-text: rgba(255, 246, 236, 0.96);
+  --o-muted: rgba(255, 246, 236, 0.66);
+  --o-faint: rgba(255, 246, 236, 0.44);
+
+  position: relative;
+  z-index: 1;
+  width: max-content;
+  zoom: var(--scale);
+  font: 13px/1 "Meter Barlow", "Barlow Semi Condensed", "Bahnschrift", sans-serif;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hb-mwrap > .ov.d {
+  zoom: 1;
+}
+
+/* ---- First-open prompt -----------------------------------------------------
+   A card of its own, placed as the reminder card is (6 px above the meter,
+   left edges aligned; the meter's width; 220 px in the capsule layout).
+   Header as the reminder card's; body and path 23 px in, under the title. */
+.ov.o.hp {
+  width: 310px;
+  padding: 8px 8px 8px;
+  white-space: normal;
+}
+
+.ov.o.hp.is-narrow {
+  width: 220px;
+}
+
+.hp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding-left: 4px;
+  white-space: nowrap;
+}
+
+.hp-head > .i {
+  color: var(--o-muted);
+}
+
+.hp-title {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.hp-body {
+  margin-top: 3px;
+  padding: 0 4px 0 23px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 15px;
+}
+
+/* Where the setting lives: Lucide settings 12 px faint, then the path in
+   text with Lucide chevron-right 10 px faint between the steps. */
+.hp-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 4px;
+  margin-top: 6px;
+  padding: 0 4px 0 23px;
+  color: var(--o-text);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 15px;
+}
+
+.hp-path > .i {
+  width: 12px;
+  height: 12px;
+  margin-right: 1px;
+  color: var(--o-faint);
+}
+
+.hp-path .sep {
+  width: 10px;
+  height: 10px;
+  color: var(--o-faint);
+}
+
+.hp-path b {
+  font-weight: 600;
+}
+
+.hp-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+:where(.hp) button {
+  margin: 0;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.hp .o-tbtn:hover,
+.hp .o-tbtn.is-hover {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+.hp .o-note {
+  margin-top: 6px;
+}
+
+/* ---- Reminder card ---------------------------------------------------------
+   Copied from reminders.html (the card's classes), unchanged, so its place
+   under the toolbar can be judged; reminders.html is the source. */
+.ov.rm {
+  --r-text: rgba(255, 246, 236, 0.96);
+  --r-muted: rgba(255, 246, 236, 0.66);
+  --r-faint: rgba(255, 246, 236, 0.44);
+  --r-hot: rgba(255, 240, 225, 0.13);
+
+  position: relative;
+  zoom: var(--scale);
+  width: 310px;
+  padding: 8px 8px 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 236, 214, 0.1);
+  border-radius: 14px;
+  background: rgba(16, 14, 12, var(--bg-a));
+  color: var(--r-text);
+  font: 13px/1 "Meter Barlow", "Barlow Semi Condensed", "Bahnschrift", sans-serif;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.rm .i {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  stroke-width: 2;
+}
+
+.rm-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 0 0 4px;
+  margin-right: -2px;
+}
+
+.rm-head > .i {
+  color: var(--r-muted);
+}
+
+.rm-when {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.rm-dot {
+  color: var(--r-faint);
+}
+
+.rm-at {
+  color: var(--r-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.rm-ev {
+  margin-top: 4px;
+  padding-left: 23px;
+  padding-right: 4px;
+}
+
+.rm-ev + .rm-ev {
+  margin-top: 7px;
+}
+
+.rm-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 17px;
+  text-overflow: ellipsis;
+}
+
+.rm-detail {
+  overflow: hidden;
+  color: var(--r-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 15px;
+  text-overflow: ellipsis;
+}
+
+.rm-left {
+  height: 2px;
+  margin: 8px 4px 0;
+  overflow: hidden;
+  border-radius: 1px;
+  background: rgba(255, 240, 225, 0.12);
+}
+
+.rm-left i {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: rgba(255, 246, 236, 0.44);
+}
+
+/* ---- Tray (page chrome: Windows draws the tooltip and the menu) ------------
+   A Windows 11 taskbar corner in its dark theme, only so the menu can be
+   read in place. Not product styling: the menu is the system's. */
+.tray-stage {
+  position: relative;
+  min-height: 300px;
+}
+
+.tray-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  height: 48px;
+  padding: 0 12px;
+  background: rgba(32, 32, 32, 0.92);
+  color: #fff;
+  font: 12px/1.2 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+.tray-ic {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 40px;
+  border-radius: 4px;
+}
+
+.tray-ic.is-hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tray-ic img {
+  width: 16px;
+  height: 16px;
+}
+
+.tray-ic .i {
+  width: 16px;
+  height: 16px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.tray-clock {
+  margin-left: 8px;
+  text-align: right;
+}
+
+.tray-tip {
+  position: absolute;
+  bottom: 54px;
+  right: 92px;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: #2b2b2b;
+  color: #fff;
+  font: 12px/1.3 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+.tray-menu {
+  position: absolute;
+  bottom: 54px;
+  right: 70px;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: #2c2c2c;
+  color: #fff;
+  font: 13px/1.2 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+}
+
+.tray-menu div {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 4px;
+}
+
+.tray-menu div.is-hot {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tray-menu div.is-default {
+  font-weight: 600;
+}
+
+.tray-menu hr {
+  height: 1px;
+  margin: 4px 0;
+  border: 0;
+  background: rgba(255, 255, 255, 0.1);
+}

@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hub: the toolbar</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../todos-autofill/todos.css" />
+    <link rel="stylesheet" href="../todos-autofill/autofill.css" />
+    <link rel="stylesheet" href="meter.css" />
+    <link rel="stylesheet" href="hub.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Hub mockups">
+        <a href="index.html">Hub: all pages</a>
+        <a href="toolbar.html" aria-current="page">Toolbar</a>
+        <a href="resources.html">Resources window</a>
+        <a href="meter.html">Meter "…" menu</a>
+        <a href="prompt.html">First-open prompt</a>
+        <a href="settings.html">Settings, Overlay</a>
+        <a href="tray.html">Tray icon</a>
+        <a href="../todos-autofill/index.html">To-do window from the game</a>
+      </nav>
+      <h1>The toolbar <small>hub round, 2026-10-08, not approved yet</small></h1>
+      <ul class="rationale">
+        <li>The hub of Kisk: a small horizontal bar floating over the game. It opens alone at launch; every tool opens and closes from it. Like the reminder card it never takes the keyboard from the game (no-activate, tool window), and it is never click-through: Alt+CapsLock locks the meter only.</li>
+        <li>Left to right: the grip; DPS meter (crossed swords), PvP meter, To-dos, Fight history (crown), Reminders (bell), Settings; Odyle Energy and Shugo Festival keys; the warning when other resources are full; fold and quit. A lit tool (hot fill and a dot) is open; a click opens or closes it.</li>
+        <li>Tags: <span class="dec is-agreed">Agreed</span> (your words, quoted in <a href="README.md">README.md</a>), <span class="dec is-proposed">Proposed</span> (for you to accept or change), <span class="dec is-open">Open</span> (for you to decide). The <b>Counts</b> selector switches between icons only and icons with names. Values and times are invented; the clock is Monday 21:48.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><span class="dec is-agreed">Agreed</span> <b>Horizontal only</b>, because of the counts. <b>At launch only the toolbar opens</b>; the meter opens from its icon (or at launch, with Settings, Overlay, "Open the meter at launch").</li>
+        <li><span class="dec is-agreed">Agreed</span> <b>Counts</b>: Odyle Energy and Shugo Festival keys always shown, as the to-do window draws them: the regular pool against its cap ("7/21"), the extra pool beside it when not zero ("+3"); above the cap is normal. Amber when the regular pool is full and a refill is coming. A click on either opens the Resources window.</li>
+        <li><span class="dec is-agreed">Agreed</span> <b>The warning</b> ("2" with Lucide triangle-alert) shows only while other resources are full and a refill is coming; a click opens the list of them, ending with "All resources", which opens the Resources window.</li>
+        <li><span class="dec is-agreed">Agreed</span> <b>Hide everything</b>: Alt+Shift+CapsLock hides the toolbar and every open tool, and shows them again; the tray icon's "Show toolbar" too. Alt+CapsLock keeps locking the meter.</li>
+        <li><span class="dec is-agreed">Agreed</span> <b>Quit</b>: closing the toolbar quits Kisk (closing the main window ends the process).</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Focus</b>: the toolbar, its tooltips and dropdowns never take the keyboard. Its dropdowns are drawn inside its window, which grows downward while one is open (upward when the toolbar sits low on the screen), as the meter's "…" menu does. A dropdown closes on a click elsewhere in the toolbar, a second click on its button, or the pointer leaving the toolbar and the dropdown.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Pointer</b>: tools and counts light on pointer enter and go on leave, never on moves inside; tooltips after 500 ms, as the meter's.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Place</b>: the toolbar opens where you left it (top centre the first time), dragged by the grip or any empty part of the bar. Tools keep their own places.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Fold</b> (« at the end) leaves a small handle: the grip, unfold (») and, when anything is full (Odyle and Shugo keys included), the warning with that number.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>Quit</b> (× at the end, after fold) quits at once, with the tooltip "Quit Kisk / Closes every tool"; no confirmation.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>The meter's tooltip</b> says what closing it means: "Fights are tracked while it is open." Fights (damage, heals, damage taken, deaths, history) are tracked only while the meter is open; capture always runs and resources always stay up to date.</li>
+        <li><span class="dec is-open">Open</span> <b>Reminders (bell)</b>: there is no reminders window. Drawn: the bell opens a small list of the next reminders, "Pause reminders" (the bell turns to Lucide bell-off) and "Reminder settings". Alternative: the bell opens Settings, Reminders.</li>
+        <li><span class="dec is-open">Open</span> <b>PvP icon</b>: the crossed swords are the DPS meter's now, so PvP takes Lucide crosshair (its window's header would change to match). Say if you prefer another.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>The reminder card</b> sits above the meter while the meter is open (approved); while it is closed, 6 px under the toolbar, left edges aligned (above it when the toolbar is low on the screen).</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="hub.js"></script>
+    <script>
+      (function () {
+        const { toolbar, resources, meter, prompt, reminder, view, snapshot, CALM, tag } = Hub;
+        const A = tag("Agreed");
+        const P = tag("Proposed");
+        const O = tag("Open");
+
+        const calm = () => view({ g: snapshot(CALM) });
+        const warnV = () => view({ g: snapshot({ ...CALM, invasion: { n: 7 }, nightmare: { n: 14 } }) });
+
+        // ---- "Try it": a working toolbar (mock only, nothing is saved) ------
+        const TRY = { lit: {}, warnOpen: false, folded: false, asked: false, prompt: false, quit: false };
+        let lastCtx = null;
+
+        function tryHtml(ctx) {
+          const v = warnV();
+          const bar = toolbar(ctx, { v, lit: TRY.lit, warnOpen: TRY.warnOpen, folded: TRY.folded, labels: ctx.v.labels === "names", live: true });
+          const left = TRY.lit.meter ? `<div class="hb-col">${TRY.prompt ? prompt(ctx) : ""}${meter(ctx, { board: "waiting" })}</div>` : "";
+          const right = TRY.lit.resources ? resources(ctx, { g: v.g }) : "";
+          const note = TRY.quit ? `<div class="mk-sim" role="status"><b>Mockup only:</b> Kisk would quit here: every tool closes and the process ends. <button type="button" data-try="undo-quit">Start again</button></div>` : "";
+          const below = left || right ? `<div class="hb-row">${left}${right}</div>` : "";
+          return `<div class="hb-try hb-col is-wide">${TRY.quit ? "" : bar}${TRY.quit ? "" : below}${note}</div>`;
+        }
+
+        document.addEventListener("click", (e) => {
+          const box = e.target.closest(".hb-try");
+          if (!box) return;
+          const el = e.target.closest("[data-hb],[data-try],.hb-drop .o-menu-item,.hp .o-tbtn");
+          if (!el) return;
+          const key = el.dataset.hb;
+          if (el.matches(".hb-drop .o-menu-item")) {
+            TRY.warnOpen = false;
+            TRY.lit.resources = true;
+          } else if (el.matches(".hp .o-tbtn")) {
+            TRY.prompt = false;
+          } else if (el.dataset.try === "undo-quit") {
+            TRY.quit = false;
+            TRY.lit = {};
+          } else if (key === "warn") {
+            TRY.warnOpen = !TRY.warnOpen;
+          } else if (key === "res") {
+            TRY.lit.resources = !TRY.lit.resources;
+            TRY.warnOpen = false;
+          } else if (key === "fold") {
+            TRY.folded = true;
+            TRY.warnOpen = false;
+          } else if (key === "unfold") {
+            TRY.folded = false;
+          } else if (key === "quit") {
+            TRY.quit = true;
+          } else if (key) {
+            TRY.lit[key] = !TRY.lit[key];
+            TRY.warnOpen = false;
+            if (key === "meter" && TRY.lit.meter && !TRY.asked) {
+              TRY.asked = true;
+              TRY.prompt = true;
+            }
+            if (key === "meter" && !TRY.lit.meter) TRY.prompt = false;
+          }
+          box.outerHTML = tryHtml(lastCtx);
+        });
+
+        function render(state, ctx) {
+          lastCtx = ctx;
+          const labels = ctx.v.labels === "names";
+          const T = (o) => toolbar(ctx, { labels, ...o });
+          switch (state) {
+            case "launch":
+              return T({ v: calm() });
+            case "hover":
+              return T({ v: calm(), hover: "meter", tip: "meter" });
+            case "open":
+              return `<div class="hb-col">${T({ v: calm(), lit: { meter: true, todos: true } })}${meter(ctx, { board: "session" })}</div>`;
+            case "countTip":
+              return T({ v: calm(), hover: "odyle", tip: "odyle" });
+            case "shugoFull":
+              return T({ v: view({ g: snapshot({ ...CALM, shugo: { n: 21, x: 3 } }) }), hover: "shugo", tip: "shugo" });
+            case "warn":
+              return T({ v: warnV(), hover: "warn", tip: "warn" });
+            case "warnOpen":
+              return T({ v: warnV(), warnOpen: true, dropHot: "invasion" });
+            case "resOpen":
+              return `<div class="hb-col">${T({ v: view(), lit: { resources: true } })}${resources(ctx)}</div>`;
+            case "empty":
+              return T({ v: view({ g: {} }), hover: "shugo", tip: "shugo" });
+            case "bell":
+              return T({ v: calm(), lit: { reminders: true }, bellOpen: true });
+            case "paused":
+              return T({ v: calm(), bellOff: true, hover: "reminders", tip: "reminders" });
+            case "reminder":
+              return `<div class="hb-col">${T({ v: calm() })}${reminder()}</div>`;
+            case "quit":
+              return T({ v: calm(), hover: "quit", tip: "quit" });
+            case "folded":
+              return T({ v: calm(), folded: true });
+            case "foldedWarn":
+              return T({ v: view({ g: snapshot({ ...CALM, shugo: { n: 21, x: 3 }, invasion: { n: 7 } }) }), folded: true });
+            case "low":
+              return `<div style="padding-top:230px">${T({ v: warnV(), warnOpen: true, up: true })}</div>`;
+            case "fr":
+              return T({ v: warnV(), warnOpen: true, lang: "fr" });
+            case "frTip":
+              return T({ v: calm(), lang: "fr", hover: "meter", lit: { meter: true }, tip: "meter" });
+            case "focus":
+              return T({ v: calm(), focus: "todos" });
+            case "try":
+              return tryHtml(ctx);
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "launch", title: "At launch", sub: `${A} only the toolbar opens. ${A} Odyle Energy and Shugo Festival keys always shown: regular pool / cap, extra pool "+380" / "+3" beside it. ${P} sizes and order` },
+            { id: "hover", title: "Pointer on a tool", sub: `${P} soft fill on enter, gone on leave; the tooltip after 500 ms says what closing the meter means` },
+            { id: "open", title: "Meter and To-dos open", sub: `${A} a lit icon = that tool is open; a click closes it. ${P} lit = hot fill and a 4 px dot. The meter is the approved card, placed where you left it` },
+            { id: "countTip", title: "Pointer on Odyle Energy", sub: `${A} a click opens the Resources window. ${P} the tooltip names it and says when it is full` },
+            { id: "shugoFull", title: "Shugo keys full, a refill coming", sub: `${A} amber when the regular pool is at its cap and a refill is coming: 21/21; the extra +3 never counts` },
+            { id: "warn", title: "Other resources full", sub: `${A} the warning shows only while other resources are full and will refill soon (Invasion keys 7/7, Nightmare 14/14)` },
+            { id: "warnOpen", title: "The warning's dropdown", sub: `${A} the full ones, then "All resources" (opens the Resources window). ${P} figures and refill times right-aligned in columns; a click on a row opens Resources too` },
+            { id: "resOpen", title: "Resources window open", sub: `${A} the full list for the current character. ${P} the counts read lit while it is open; here Deus and Arkanis 4/4 are full (open data, dashed), so the warning says 2` },
+            { id: "empty", title: "No game value yet", sub: `${P} before any login is seen: a faint dash, and the tooltip says how to get values` },
+            { id: "bell", title: "Reminders: the bell's dropdown", sub: `${O} the next reminders switched on, "Pause reminders" and "Reminder settings" (Settings, Reminders). Alternative: the bell opens Settings, Reminders` },
+            { id: "paused", title: "Reminders paused", sub: `${O} the bell turns to Lucide bell-off in faint while reminders are paused (the Settings master switch)` },
+            { id: "reminder", title: "A reminder while the meter is closed", sub: `${P} the approved card, 6 px under the toolbar, left edges aligned; above the meter while the meter is open, as approved` },
+            { id: "quit", title: "Pointer on quit", sub: `${A} closing the toolbar quits Kisk. ${P} × after fold, no confirmation; the tooltip says it closes every tool` },
+            { id: "folded", title: "Folded", sub: `${P} a small handle: grip and unfold` },
+            { id: "foldedWarn", title: "Folded, something full", sub: `${P} the warning counts everything full (here Shugo keys and Invasion keys), so nothing is missed while folded` },
+            { id: "low", title: "Toolbar low on the screen", sub: `${P} the dropdown opens upward` },
+            { id: "fr", title: "In French", sub: `${P} draft French (it goes through i18n): "Pleines, une recharge arrive", "Toutes les ressources" fit; key names as the French reminders word them` },
+            { id: "frTip", title: "In French, meter open", sub: `${P} the tooltip of an open meter: a click closes it and fights stop being tracked` },
+            { id: "focus", title: "Keyboard focus (accessibility tools)", sub: `${P} the approved focus ring, 2 px, 1 px outside the button; Left and Right move along the bar` },
+            { id: "try", title: "Try it", sub: "a working toolbar: open and close tools (the meter opens with the first-open prompt once), click a count or the warning, fold, quit. Nothing is saved" },
+          ],
+          variants: [
+            {
+              key: "labels",
+              label: "Counts",
+              def: "icons",
+              options: [
+                { value: "icons", label: "icons only" },
+                { value: "names", label: "with names" },
+              ],
+            },
+          ],
+          controls: ["alpha", "scale", "mask"],
+          tileMin: 600,
+          stageMin: 300,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

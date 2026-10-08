@@ -1,0 +1,208 @@
+/* To-dos filled from the game (TASK-20.2), on top of todos.css (the
+   approved window, unchanged). Everything here is a proposal until the user
+   approves it; values reuse the approved tokens (tokens.md, "To-do window"
+   and "Spacing", meter hint line). */
+
+/* ---- Where the values come from: one line under the character selector.
+   The meter's hint line ("not identified yet"): 20 px, 4 px inset, a 12 px
+   Lucide icon in faint, 11.5 px / 500 muted, cut off with an ellipsis. */
+.g-src {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  margin: -2px 0 4px;
+  padding: 0 4px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.g-src > .i {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.g-src > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.g-src b {
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+.g-src .faint {
+  color: var(--o-faint);
+}
+
+/* ---- A value from the game: the figure without arrows. The block keeps
+   the stepper's 88 px (20 + 1 + 46 + 1 + 20) so nothing else in the row
+   moves: a 14 px gap where the one-less arrow was, the approved 46 px
+   figure, and the extra pool in a 26 px slot after it ("+380" fits). */
+.g-step {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1px;
+}
+
+.g-step > .t-gap {
+  width: 14px;
+}
+
+/* A click types over it (Enter on the keyboard); it does not add one. */
+.t-fig.g-fig {
+  cursor: text;
+}
+
+.t-fig.g-fig:hover,
+.t-fig.g-fig.is-hover {
+  background: var(--o-track);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 225, 0.12);
+}
+
+/* "+3": the extra pool (items, rewards). Never refilled, never part of
+   the cap, never yellow. */
+.g-extra {
+  flex-shrink: 0;
+  width: 26px;
+  padding-left: 1px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.t-row.is-done .g-extra,
+.t-row.is-waste .g-extra {
+  color: var(--o-muted);
+}
+
+/* "Keep the arrows" variant: the extra pool after the one-more arrow, in a
+   fixed slot so the arrows still line up. */
+.g-extra.is-after {
+  min-width: 26px;
+  padding-left: 3px;
+}
+
+/* Weekly rows read as entries left (variant "left"). */
+.t-fig small.g-left {
+  margin-left: 3px;
+}
+
+/* ---- A game value you typed over: Lucide pencil in the gutter, faint.
+   The full warning wins the gutter when both apply. */
+.t-gut.is-typed {
+  color: var(--o-faint);
+}
+
+/* ---- Rows shared by the characters of one server: the approved "Account"
+   tag (Duty Missions) now also on Shugo Festival keys, Invasion keys and
+   the Unknown Fissure. */
+
+/* The field's ×, drawn under the pointer (static states). */
+.t-field .o-btn.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+/* ---- Tooltips on a figure: the approved control tooltip, allowed two
+   lines for the source and time. */
+.t-tip.g-tip {
+  max-width: 250px;
+  white-space: normal;
+}
+
+.t-tip.g-tip .faint {
+  color: var(--o-faint);
+}
+
+/* ---- Mockup only: data questions that are still open. Not part of the
+   product look. */
+.mk-open {
+  outline: 1px dashed rgba(143, 184, 255, 0.85);
+  outline-offset: 1px;
+  border-radius: 5px;
+}
+
+.t-row.mk-open {
+  border-radius: 6px;
+}
+
+/* Page chrome: decision tags in captions and notes. */
+.dec {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  vertical-align: 1px;
+}
+
+.dec.is-agreed {
+  background: rgba(134, 227, 168, 0.14);
+  color: #86e3a8;
+}
+
+.dec.is-proposed {
+  background: rgba(242, 198, 109, 0.14);
+  color: #f2c66d;
+}
+
+.dec.is-open {
+  background: rgba(143, 184, 255, 0.16);
+  color: #a9c7ff;
+}
+
+/* Page chrome: simulated game messages under the working window. */
+.mk-sim {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 370px;
+  margin-top: 10px;
+  padding: 8px;
+  border: 1px dashed rgba(143, 184, 255, 0.6);
+  border-radius: 10px;
+  background: rgba(10, 12, 18, 0.82);
+  color: #cfd8e6;
+  font: 12px/1.3 system-ui, sans-serif;
+}
+
+.mk-sim b {
+  flex-basis: 100%;
+  font-weight: 600;
+}
+
+.mk-sim button {
+  padding: 3px 8px;
+  border: 1px solid rgba(143, 184, 255, 0.5);
+  border-radius: 6px;
+  background: rgba(143, 184, 255, 0.12);
+  color: #e6edf7;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mk-sim button:hover {
+  background: rgba(143, 184, 255, 0.24);
+}
+
+.mk-legend {
+  outline: 1px dashed rgba(143, 184, 255, 0.85);
+  outline-offset: 1px;
+  padding: 0 4px;
+  border-radius: 4px;
+}

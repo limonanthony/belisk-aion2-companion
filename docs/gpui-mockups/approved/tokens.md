@@ -171,10 +171,11 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
 - **Meter under the pointer**: the tools (reset, capsule, lock, copy
   report, "…", close; 22 px tool buttons, evenly spaced 2 px apart) take the
   time's place at top right; the name gives way. Copy turns into a check for
-  1.5 s. "…" opens the boss correction for the header's target; History,
-  PvP and Settings will join that menu. A click elsewhere in the meter, a
-  second click on "…" or the pointer leaving the card closes the menu.
-  Locked (click-through) shows no tools. The window never resizes on hover.
+  1.5 s. "…" (tooltip "Boss setting") opens the boss setting for the
+  header's target, and nothing else (see "Hub", Meter "…" menu and ×). A
+  click elsewhere in the meter, a second click on "…" or the pointer leaving
+  the card closes the menu. × closes the meter only. Locked (click-through)
+  shows no tools. The window never resizes on hover.
 - **Meter footer**: always shown. Session board: Damage (session total) and
   the number of targets fought (Lucide `target` 12 px in `faint`, then the
   number in `muted`). Target board: the pace against your personal best for
@@ -209,7 +210,10 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
   before logging in, or relog via character select). It goes away once you
   are named.
 - **Product name**: "AION 2 DPS Meter" in the main window; "DPS Meter" where
-  an overlay has no target to name (waiting card, idle capsule).
+  an overlay has no target to name (waiting card, idle capsule). "Kisk"
+  where the hub names the app (the toolbar's quit tooltip, the first-open
+  prompt, the tray, the new Settings descriptions); the other names change
+  with the rename (TASK-23).
 - **Sorting**: the active column is `text` with a down arrow; other sortable
   columns are underlined at 0.25.
 - **Delete confirmation**: the button turns into a `danger-fill` "Delete?"
@@ -240,6 +244,11 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
   row's pointer enter and leave only; nothing in that window animates.
 - The fight report's row lift and chevron appear on the row's pointer enter
   and go on leave, never on movement inside the row.
+- The toolbar's tools and counts light on pointer enter and go on leave,
+  never on movement inside; its tooltips appear after 500 ms, as the
+  meter's. Its dropdowns open and close at once. The first-open prompt's
+  good note stays 4 s, then the card fades out over 150 ms, as the reminder
+  card.
 - Frames are drawn only on a snapshot or while a tween runs.
 
 ## Reminder card
@@ -251,7 +260,7 @@ meter's content scale.
 
 | Element | Value |
 |---|---|
-| Placement | 6 px above the meter's top edge, left edges aligned. If it does not fit above the meter on that monitor: 6 px below the meter's bottom edge, following the meter's height. Capsule layout: 6 px above the capsule, on its left edge |
+| Placement | 6 px above the meter's top edge, left edges aligned. If it does not fit above the meter on that monitor: 6 px below the meter's bottom edge, following the meter's height. Capsule layout: 6 px above the capsule, on its left edge. While the meter is closed (hub, 2026-10-08): 6 px under the toolbar, left edges aligned, 310 px; above the toolbar when it sits low on the screen. A first-open prompt on screen: the card stacks 6 px above it |
 | Width | The meter's: 310 px, 340 with total damage; capsule layout a fixed 220 px. All times the content scale |
 | Height | Hugs the content, border included, at 100%: 1 event 84 px, 2 events 123, 3 events 162 |
 | Card | 14 px radius; 8 px sides and top, 6 px bottom |
@@ -274,16 +283,17 @@ meter's content scale.
   pointer, and it runs out by itself.
 - **Focus**: the window never activates (the meter's no-activate, tool-window
   styles); the game keeps keyboard and mouse focus. No Windows notification.
-- Not built yet, decided with those features: where the card goes while the
-  meter is hidden between fights, and whether Alt+E also dismisses it.
+- Not built yet, decided with that feature: whether Alt+E also dismisses
+  it.
 
 ## To-do window
 
 An overlay window of its own for what resets and is lost if not done
-([todos.html](todos.html)), approved on 2026-10-06 (direction E). It uses the
-overlay values above: `card` at the user's opacity, `card-border`, no shadow,
-Barlow Semi Condensed, the meter's content scale, the window header and
-footer.
+([todos.html](todos.html)), approved on 2026-10-06 (direction E); filled
+from the game and opened from the toolbar, approved on 2026-10-08 (see
+"Values from the game" below). It uses the overlay values above: `card` at
+the user's opacity, `card-border`, no shadow, Barlow Semi Condensed, the
+meter's content scale, the window header and footer.
 
 | Element | Value |
 |---|---|
@@ -299,8 +309,8 @@ footer.
 | × slot | 20 px on every row, kept when empty so nothing shifts. The button: 20 × 20 px, 5 px radius, Lucide `x` 12 px in `muted`; pointer on it: `soft`, `text`. On a hidden row listed by Show: Lucide `eye`, always shown |
 | Hover × rule | Check and × are shown while the pointer is in the row (enter shows, leave hides; moves inside change nothing) or while the row has keyboard focus. After a hide or removal, the row now under the pointer keeps them hidden until the pointer moves |
 | Count | Lucide `chevron-down`, the figure, Lucide `chevron-up`, 1 px apart. Arrows 20 × 20 px, 5 px radius, 12 px at stroke 2.25, `muted`; pointer on one: `soft`, `text`; pressed: `press`; at 0 or N the arrow is `faint` at 0.45. Figure 46 × 20 px, 5 px radius, centred, "9" 12.5 px / 600 `text` and "/14" 11 px / 500 `faint` 1 px after; pointer on it: `soft`; pressed: `press` |
-| Amount | Empty: "—" 12.5 px / 500 `faint` in the figure's place, 20 px gaps for the arrows, the name `muted`. Tracked: "Full in 2 d 16 h" 11.5 px / 500 `muted` before the count's controls; the figure reads as a field under the pointer (`track` fill, 1 px inset `rgba(255, 240, 225, 0.12)`). Full: the row on `full-fill`, the warning glyph in the gutter, "Full, being wasted" / "Full, spend by Tue 16:00" in `warn` / 600, the figure `warn` with "/560" at `warn` 0.7 |
-| Amount field | Replaces the arrows and figure: 112 × 22 px, 6 px radius, `track` fill, 1 px `rgba(255, 246, 236, 0.55)` border, 7 px left padding; the typed figure right-aligned, 12.5 px / 600; "/28" 11 px `faint`; an 18 × 18 px clear button (4 px radius, Lucide `x`) |
+| Amount | Empty: "—" 12.5 px / 500 `faint` in the figure's place, 20 px gaps for the arrows, the name `muted`. Tracked: "Full in 2 d 16 h" 11.5 px / 500 `muted` before the count's controls; the figure reads as a field under the pointer (`track` fill, 1 px inset `rgba(255, 240, 225, 0.12)`). Full: the row on `full-fill`, the warning glyph in the gutter, "Full, being wasted" / "Full, spend by Tue 09:00" in `warn` / 600, the figure `warn` with "/840" at `warn` 0.7 |
+| Amount field | Replaces the arrows and figure: 112 × 22 px, 6 px radius, `track` fill, 1 px `rgba(255, 246, 236, 0.55)` border, 7 px left padding; the typed figure right-aligned, 12.5 px / 600; "/21" 11 px `faint`; an 18 × 18 px clear button (4 px radius, Lucide `x`; on a game value it goes back to the game's value, else it stops tracking) |
 | Group row | Chevron in the gutter, the name, then "2 of 6 done" 11.5 px / 500 `muted` (`good` when all done) at the row's end, before the × slot |
 | Hidden line | Ends each section (and an open group) with hidden rows: 20 px, 11.5 px / 500 `faint`, 22 px in (40 in a group): "2 hidden · Show". Show / Hide again: `muted` / 600, underlined at `rgba(255, 246, 236, 0.25)`, 3 px offset; pointer over: `text`. Hidden rows listed by Show: everything but the put-back button at 0.42 opacity |
 | Add line | The list's last line, 6 px above: 26 px, 6 px radius, Lucide `plus` 12 px `faint` in the gutter, "Add a to-do" 12.5 px / 500 `muted`; pointer over: `soft` fill, `text` |
@@ -309,13 +319,56 @@ footer.
 | Footer | The 26 px window footer, 5 px gaps: Lucide `clock` 12 px `faint`, "Daily reset" with "09:00" in `text` / 600, a `faint` "·", "Change" as a link (as Show), then "Weekly on Wednesday" in `faint` pushed right |
 | Scrolling | The list scrolls inside the window with the 3 px `scroll-thumb`, 4 px from the right; 11 px right padding while it overflows. 3 px of room around the rows so a focus ring is never clipped |
 | Focus ring | `focus-ring`, 2 px, 1 px outside the focused control (the row for tick and group rows, the figure on counts and amounts, a button), so a row's ring fits the 2 px gap between rows. Text fields show focus with their brighter border, no ring |
-| Meter "…" menu | "To-dos" between "PvP meter" and "Settings"; while an amount is full, "1 full" 11 px `faint` at the item's end |
+| Opening it | The toolbar's checklist (Lucide `list-checks`), lit while the window is open; the meter's "…" menu no longer has it |
 
-- **One list per character**; Duty Missions are counted per account and
-  server (shared by your characters there). The selector follows the
-  character in game.
+- **One list per character**; Duty Missions, Shugo Festival keys, Invasion
+  keys and the Unknown Fissure are counted per account and server (shared by
+  your characters there, "Account"). The selector follows the character in
+  game.
 - **Focus**: the window never activates, except while a field takes the
-  keyboard (an amount, the new to-do's name), as the PvP name field does.
+  keyboard (an amount, a value typed over the game's, the new to-do's
+  name), as the PvP name field does.
+
+### Values from the game
+
+Approved on 2026-10-08 (the to-do autofill round,
+[../todos-autofill/README.md](../todos-autofill/README.md)). When you log in
+while Kisk runs, the meter open or not, the game sends every ticket (the
+regular pool it refills and an extra pool from items), then each change.
+Caps and refills come from the game's ticket table.
+
+| Element | Value |
+|---|---|
+| Source line | Under the character selector (2 px into its 6 px gap), 4 px above the list: the meter's hint line, 20 px, 4 px inset, 6 px gap, Lucide `gamepad-2` 12 px `faint`, 11.5 px / 500 `muted`, times and names `text` / 600, "·" in `faint`, cut off with an ellipsis. "From the game, live · logged in at 19:02"; "From the game at login, Sun 22:40 · refills since estimated"; "No game values yet. Log in with Sefa while Kisk runs."; "Tavrin not seen at login yet · Account rows from Mirelle" |
+| Game figure | No arrows: a 14 px gap where the one-less arrow was, the 46 px figure ("7" 12.5 px / 600, "/21" 11 px `faint`), the extra pool in a 26 px slot after it, 1 px apart, so the block keeps the stepper's 88 px and nothing else in the row moves. Under the pointer it reads as a field (`track` fill, 1 px inset `rgba(255, 240, 225, 0.12)`); a click or Enter types over it |
+| Extra pool | "+3" 11.5 px / 600 `muted`, left-aligned in its 26 px slot ("+380" fits); never yellow, never part of the cap or of "Full in …" |
+| Weekly rows | Done of target: done = target − entries left ("5/14" for 9 left of 14); done (struck through) at 0 left; extra entries in the extra-pool slot ("+7"). A final-boss tick is done when its ticket reaches 0 |
+| Typed over | The typed number in the figure's place, Lucide `pencil` 12 px `faint` in the gutter (the full warning wins the gutter when both apply); the extra pool stays the game's. The game's next value for that ticket replaces it |
+| Figure tooltip | The control tooltip allowed two lines, up to 250 px: the source and time in `text`, the detail in `faint` ("125 at your login Sun 22:40." / "+120 since: eight refills of 15, estimated."; "Typed by you. The game said 7." / "Its next value replaces yours: a spend, a refill or your next login.") |
+| At login | A good note for 4 s under the source line: "Filled from the game at login. Values you typed were replaced." |
+| Above the cap | Normal, never an error or a colour. A regular pool above the cap in force (membership off): shown as is, never full, no estimate |
+| Conquest dungeons | A folding group like Sanctuary, one row per dungeon (14, +2 a day); the group row says "10–13 of 14 each", or "1 full" in `warn` / 600. To confirm in game |
+| Refill hour | Shugo Festival keys +3 and Invasion keys +1 at the daily reset (the ticket table's daily clock, 16:00 KST = 09:00 CEST) |
+
+- **Caps**: Shugo Festival keys 12 (21 with membership), +3 a day, extra
+  pool up to 30; Odyle Energy 560 (840 with membership), +15 every 3 h;
+  Invasion keys 7, +1 a day. The membership switch picks the membership cap
+  of every ticket that has one; off again, nothing is cut.
+- **Yours to count**: Duty Missions, Duty Commands and your own to-dos keep
+  the arrows, and so does every row before the game has filled it. Before
+  the game fills a row, a typed number is your total: at or above the cap it
+  counts as full. Typed numbers may be above the cap; nothing cuts them.
+- **Between sessions**: the last game values plus the refills the table
+  knows since, up to the cap; spends are never guessed. A weekly row seen
+  before Wednesday's reset starts over at the reset.
+- **Start over** (Settings) empties what you typed; the game's values stay.
+  There is no switch to stop filling from the game.
+- **To confirm in game** (drawn dashed, built with the drawn default): the
+  Deus Research Base and Shattered Arkanis cap (4); Conquest dungeons as one
+  ticket per dungeon; what the game shows for keys above 21 (premium items),
+  which decides whether a typed number is your total (built as drawn); which
+  of tickets 102 and 103 is Abandoned Balaur Fortress or Fafnium
+  Laboratory; the exact reset hour; Ordeal's ticket (matched by name only).
 
 ## Fight report
 
@@ -430,6 +483,122 @@ rows and its header; a list that does not scroll has neither.
   heals, heals over time and self-heals), and that a death can be tied to
   the hit before it.
 
+## Hub
+
+Approved on 2026-10-08 ([../hub/README.md](../hub/README.md) is the record of
+how it was chosen). Kisk is a set of tools over the game: at launch only the
+toolbar opens, and every tool opens and closes from it. Pages:
+[toolbar.html](toolbar.html), [resources.html](resources.html),
+[prompt.html](prompt.html), [tray.html](tray.html), the meter's "…" menu and
+× in [meter.html](meter.html), Settings › Overlay › Window in
+[settings.html](settings.html). Styles: `hub.css`; drawing: `hub.js`.
+
+### Toolbar
+
+| Element | Value |
+|---|---|
+| Window | An overlay card of its own: `card` at the user's opacity, `card-border`, no shadow; 4 px padding, 12 px radius (the card's 14 px reads as a pill at this height); one row, 2 px gaps; the content scale. Horizontal only |
+| Order | Grip; DPS meter (Lucide `swords`), PvP meter (`crosshair`), To-dos (`list-checks`), Fight history (`crown`), Reminders (`bell`), Settings (`settings`); a rule; Odyle Energy (`zap`), Shugo Festival keys (`key-round`), the warning; a rule; fold (`chevrons-left`), quit (`x`) |
+| Grip | 14 × 26 px, Lucide `grip-vertical` 12 px in `faint`; the bar's empty space drags too |
+| Tool | 26 × 26 px, 7 px radius, icon 14 px in `muted`. Pointer over: `soft`, `text`. Lit (the tool is open): `hot`, `text`, the icon 3 px higher and a 4 × 4 px dot (`currentColor`, the pin dot's size) 2 px above the bottom edge. Reminders paused: Lucide `bell-off` in `faint` |
+| Fold and quit | 20 × 26 px, icon 12 px in `faint`; pointer over: `soft`, `text` |
+| Rule | 1 × 16 px, `rgba(255, 240, 225, 0.18)` (the capsule's), 5 px each side |
+| Count | 26 px tall, 7 px radius, 7 px sides, 5 px gaps: icon 13 px `muted`; the regular pool 12.5 px / 600 `text`, "/840" 11 px / 500 `faint` 1 px after; the extra pool "+380" 11.5 px / 500 `muted` 3 px after. Icons only (no names). Pointer over: `soft`. Resources open: `hot`. Before any game value: "—" in `faint` / 500 |
+| Count, full | Regular pool at its cap and a refill coming: `full-fill`, the icon and figure `warn`, "/21" `warn` at 0.7, the extra pool `muted`; pointer over: `warn` at 0.20 |
+| Warning | Only while other resources are full and a refill is coming: 26 px, 7 px radius, 7 px sides, 4 px gap, `full-fill`; Lucide `triangle-alert` 13 px and the number 12.5 px / 600 in `warn`; pointer over or open: `warn` at 0.20 |
+| Folded | Grip, unfold (`chevrons-right`, as fold) and, when anything is full (Odyle and Shugo keys included), the warning with that number; a click on it unfolds |
+| Tooltip | `popover` colours, 4 × 8 px padding, 6 px radius, 11.5 px / 500 `text`, a second line in `muted`; 6 px under the control, its left edge on the tool's (its right edge on a count's, the warning's, fold's and quit's); after 500 ms |
+| Focus ring | `focus-ring`, 2 px, 1 px outside the button (accessibility tools; Left and Right move along the bar) |
+
+- **Tooltips**: "DPS meter / Fights are tracked while it is open." (open:
+  "Click to close. Fights stop being tracked."), "PvP meter", "To-dos",
+  "Fight history", "Reminders" ("Reminders / Paused"), "Settings", "Fold the
+  toolbar", "Unfold the toolbar", "Quit Kisk / Closes every tool."; a count:
+  its name, then "245 of 840, +380 extra · full in 2 d 14 h. Click for all
+  resources." ("Full, spend by Tue 09:00", "Full, being wasted"); before any
+  game value "No value yet. Log in while Kisk runs."; the warning "2 more
+  full".
+- **Clicks**: a tool opens or closes its window; a count opens or closes
+  the Resources window; the warning opens its dropdown; quit ends the
+  process at once, no confirmation.
+- **Window**: no-activate, tool window, like the reminder card; never
+  click-through (Alt+CapsLock locks the meter only). Opens where you left
+  it (top centre the first time); tools keep their own places.
+- **Shortcuts**: Alt+Shift+CapsLock hides the toolbar and every open tool,
+  and shows them again; the tray icon's "Show toolbar" too.
+- **What is tracked when**: capture always runs; fights (damage, heals,
+  damage taken, deaths, fight history) only while the meter is open;
+  resources always.
+
+### Toolbar dropdowns
+
+| Element | Value |
+|---|---|
+| Place | Drawn inside the toolbar's window, which grows downward while one is open (upward when the toolbar sits low on the screen); 6 px under the button. The warning's: right edges aligned, 268 px. The bell's: left edges aligned, 236 px |
+| Frame | The `popover` (9 px radius, 4 px padding, 26 px items, 6 px gaps), items 500; pointer on an item: `hot`; the 1 px divider at 0.18, 4 px inset |
+| Label | 24 px, 8 px inset, 6 px gap, 11 px / 500 `faint` with its 12 px icon: "Full, a refill is coming" (`triangle-alert`), "Next reminders" (`bell`) |
+| Warning rows | The name (ellipsis), then right-aligned columns: the figure in 42 px ("7" 12.5 px / 600 `warn`, "/7" 11 px / 500 `warn` 0.7) and the refill in 74 px ("refills" 11 px `faint`, the time `muted` / 600). After the divider: Lucide `package` in a 12 px lead slot, "All resources", Lucide `chevron-right` 12 px. A click on any item opens the Resources window |
+| Bell rows | The next three reminders switched on, the name and the time (`muted` / 600) right-aligned; the divider; "Pause reminders" (a checkbox item, the 12 px lead slot; the Settings master switch); "Reminder settings" with Lucide `settings` and `chevron-right` (opens Settings › Reminders) |
+| Closing | A click elsewhere in the toolbar, a second click on its button, or the pointer leaving the toolbar and the dropdown |
+
+### Resources window
+
+| Element | Value |
+|---|---|
+| Window | The to-do window's frame: 370 px, the 28 px header with Lucide `package` 13 px in `muted` and "Resources", the "2 full" `chip-warn`, the close tool button; the character selector; the source line; the list 2 px under it; the 26 px footer |
+| Rows | The to-do window's Recharges rows, in the same order, the same display and "Values from the game"; no × slot (nothing to hide), so names get 26 px more. Weekly entries stay to-dos |
+| Footer | Lucide `clock` 12 px `faint`, "Daily reset" with "09:00" in `text` / 600, then "Membership caps" (or "Caps without membership") in `faint` pushed right |
+| Behaviour | No-activate except while a field takes the keyboard; one at a time; opens where you left it. The toolbar's counts read lit while it is open; a click on a count closes it. Same data as the to-dos: a change shows in both windows |
+
+### First-open prompt
+
+| Element | Value |
+|---|---|
+| Place | Its own overlay window, placed as the reminder card: 6 px above the meter, left edges aligned (below it when there is no room); a reminder that comes meanwhile stacks 6 px above it |
+| Card | The meter's width (310 px; 220 px over the capsule); 8 px padding; `card`, `card-border`, 14 px radius |
+| Header | The reminder card's: 22 px, 4 px left inset, 6 px gap, Lucide `swords` 13 px `muted`, "Open the meter at launch?" 12.5 px / 600 (ellipsis) |
+| Body | 23 px in (under the title), 4 px right, 3 px under the header: "Kisk starts with the toolbar alone. Open the DPS meter each time Kisk starts?" 11.5 px / 500 `muted`, 15 px line |
+| Path | 6 px under the body, 23 px in, wrapping: Lucide `settings` 12 px `faint`, then "Settings › Overlay › Open the meter at launch" 11.5 px / 500 `text` (the last step 600), Lucide `chevron-right` 10 px `faint` between the steps, 4 px gaps |
+| Buttons | 9 px under the path, right-aligned, 6 px apart: "Not now" (quiet text button) and "Yes, at launch" (tonal, `soft`); pointer over either: `hot`, `text` |
+| After Yes | The good overlay note "The meter opens at launch from now on." (Lucide `check`) in the body's place, the path under it 6 px apart; 4 s, then the card fades out over 150 ms |
+
+- **When**: once, the first time the meter is opened from the toolbar.
+  Either answer is final. No answer: the card stays while the meter is open;
+  closing the meter without answering asks again next time.
+- **Window**: no-activate, clickable even while the meter is locked.
+
+### Meter "…" menu and ×
+
+| Element | Value |
+|---|---|
+| "…" | Keeps its place among the meter's tools; tooltip and accessible name "Boss setting"; `hot` while the menu is open |
+| Menu | The `popover`, 240 px wide, 30 px from the card's top, 8 px from its right; the window grows downward while it does not fit. Items 26 px, 12.5 px / 500: "Treat Thornback Boar as a boss" (the header's target, ellipsis), "Not a boss", "Automatic"; a 12 px lead slot with Lucide `check` 12 px `muted` on the current choice, which is 600 |
+| Nothing hit yet | A 24 px hint line, 8 px inset, 11.5 px `muted`: "Hit a mob to set whether it is a boss"; "Treat as a boss" and the other items in `faint` |
+| × tooltip | Under the button, right edges aligned (32 px from the card's top, 6 px from its right): `popover`, 4 × 8 px padding, 6 px radius, "Close the meter" 11.5 px / 500 `text`, "Fights are tracked only while it is open." in `muted` |
+
+- × closes the meter only: the toolbar stays and its meter icon goes dark.
+  Fight history, PvP meter, To-dos and Settings are in the toolbar.
+
+### Tray icon
+
+| Element | Value |
+|---|---|
+| Icon | The app's icon (`crates/app/windows/icon.ico`); tooltip "Kisk" |
+| Menu | Windows' own: "Show toolbar" (the default item, bold), a separator, "Quit" |
+| Clicks | A left click does what "Show toolbar" does: brings back the toolbar and every tool that was open, unfolds a folded toolbar and brings it in front. "Quit" ends the process, as closing the toolbar does. No Windows notification |
+
+### Not decided by the mockups
+
+- The app's other names (title bars, About, the waiting card's "DPS Meter")
+  change with the rename (TASK-23).
+- French: the toolbar, its dropdowns and the prompt were drawn in French to
+  check the room; the real text goes through i18n.
+- Icons to add from Lucide (ISC) when built: `crosshair`, `grip-vertical`,
+  `key-round`, `zap`, `bell-off`, `chevrons-left`, `chevrons-right`,
+  `package`, `settings`, `gamepad-2`, `pencil`; `swords`, `bell`, `crown`,
+  `list-checks`, `triangle-alert`, `chevron-right` are in
+  `crates/app/assets/icons/` already.
+
 ## Main window (GPUI Kit)
 
 The startup gate, Home and Settings use GPUI Kit components dressed in the
@@ -506,18 +675,30 @@ Text, `good`, `warn` and `bad` are the overlay values.
 
 ### Settings → To-dos
 
-Approved on 2026-10-06 with the to-do window.
+Approved on 2026-10-06 with the to-do window; lead, Membership and Start
+over changed on 2026-10-08 with the values from the game.
 
 | Part | Value |
 |---|---|
 | Place | Sidebar item after Reminders, Lucide `list-checks`; no preview column |
-| Lead | "The to-do window, opened from the meter's "…" menu." |
+| Lead | "The to-do window, opened from the toolbar. Counts and amounts fill from the game when you log in while Kisk runs." |
 | Resets | Daily reset (Select, 130 px minimum: every whole hour 00:00 to 23:00, 09:00 by default; the list shows eight 28 px items at a time, opens scrolled to the chosen hour, 3 px thumb); Weekly reset (not a control: "Wednesday 09:00" in display type 13.5 px / 600 `muted`, following the daily hour) |
-| Recharges | Membership (Switch, off; one for every character) |
-| Default to-dos | Hidden to-dos: secondary button "Restore default to-dos" with Lucide `rotate-ccw`, disabled while nothing is hidden. Start over: danger button "Reset to-dos completely…" |
+| Recharges | Membership (Switch, off; one for every character): "Higher caps on every character: Odyle Energy 840 instead of 560, Shugo Festival keys 21 instead of 12." |
+| The game shows more | With the switch off and a game regular pool above the cap: the field message under the description, in `muted`, Lucide `info`, 5 px above: "The game shows **18 Shugo Festival keys** on Mirelle, more than 12. Do you have a membership?" (the figure and name in `text` / 600). No dialog, no automatic switch |
+| Default to-dos | Hidden to-dos: secondary button "Restore default to-dos" with Lucide `rotate-ccw`, disabled while nothing is hidden. Start over ("…empties every count and amount you typed."): danger button "Reset to-dos completely…" |
 | Restored | A good badge "6 to-dos back" with a check, 2 px before the button, for 4 s; no dialog |
-| Confirm dialog | The Dialog: "Reset the to-dos completely?", two paragraphs 6 px apart, Cancel (focused, the focus ring drawn) then the danger "Reset to-dos" |
+| Confirm dialog | The Dialog: "Reset the to-dos completely?", two paragraphs 6 px apart (the first ends "Values from the game stay."), Cancel (focused, the focus ring drawn) then the danger "Reset to-dos" |
 | After the reset | A good badge "To-dos reset" with a check before the button, for 4 s |
+
+### Settings → Overlay, Window
+
+Changed on 2026-10-08 with the hub.
+
+| Row | Value |
+|---|---|
+| Open the meter at launch | First in the group; Switch, off: "When Kisk starts. Off: only the toolbar opens, and the meter opens from its icon." The first-open prompt's Yes turns it on |
+| Lock overlay | Adds "The toolbar always takes clicks." |
+| Show or hide everything | Alt + Shift + CapsLock as read-only Kbd keys (4 px apart), the stacked row: "Hides the toolbar and every open tool, and brings them back. The tray icon's Show toolbar brings them back too." Each shortcut is described on the row it acts on (the build has no Shortcuts page) |
 
 ### Custom work beyond GPUI Kit
 
@@ -573,3 +754,8 @@ pinned version before planning.
   overflow scroll inside the window with the thumb gutter; the player
   details replace the report's content in the same window, and the report's
   sort and scroll are kept while they show.
+- The toolbar, the Resources window and the first-open prompt are overlay
+  windows with the meter's styles (transparent, no-activate, tool window).
+  The toolbar is never click-through and draws its tooltips and dropdowns
+  inside its own window, which grows while a dropdown is open. The
+  Resources window takes the keyboard only while a field is open.

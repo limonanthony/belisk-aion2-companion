@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hub: the meter's "…" menu</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../todos-autofill/todos.css" />
+    <link rel="stylesheet" href="../todos-autofill/autofill.css" />
+    <link rel="stylesheet" href="meter.css" />
+    <link rel="stylesheet" href="hub.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Hub mockups">
+        <a href="index.html">Hub: all pages</a>
+        <a href="toolbar.html">Toolbar</a>
+        <a href="resources.html">Resources window</a>
+        <a href="meter.html" aria-current="page">Meter "…" menu</a>
+        <a href="prompt.html">First-open prompt</a>
+        <a href="settings.html">Settings, Overlay</a>
+        <a href="tray.html">Tray icon</a>
+        <a href="../approved/meter.html">Approved meter</a>
+      </nav>
+      <h1>The meter's "…" menu <small>hub round, 2026-10-08, not approved yet</small></h1>
+      <ul class="rationale">
+        <li>The approved meter (<a href="../approved/meter.html">approved/meter.html</a>), unchanged except its "…" menu: Fight history, PvP meter, To-dos and Settings move to the toolbar, so the menu keeps only the boss setting for the target in the header.</li>
+        <li>The menu is the one built today (crates/app/src/meter/view.rs): 240 px, hanging from the card's top right, the check on the current choice; the last state shows today's menu for comparison.</li>
+        <li>Tags: <span class="dec is-agreed">Agreed</span>, <span class="dec is-proposed">Proposed</span>; <a href="README.md">README.md</a> lists every decision.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><span class="dec is-agreed">Agreed</span> <b>"…" holds only the boss setting</b>: "Treat … as a boss", "Not a boss" and "Automatic" (the fallback, so a game update never has to wait for an app update). History, To-dos, Settings and PvP are in the toolbar.</li>
+        <li>Unchanged: the menu closes on a click elsewhere in the meter, a second click on "…", or the pointer leaving the card; with nothing hit yet it says "Hit a mob to set whether it is a boss" and its items are faint.</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>"…" keeps its place</b> among the tools (reset, capsule, lock, copy, "…", ×) and its label becomes "Boss setting".</li>
+        <li><span class="dec is-proposed">Proposed</span> <b>× closes the meter only</b>: the toolbar stays and its meter icon goes dark. Its tooltip says "Fights are tracked only while it is open." (capture keeps running; resources stay up to date). The meter opens again from the toolbar.</li>
+        <li>Alt+CapsLock still locks the meter (unchanged); locked, the meter shows no tools, so no "…".</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="hub.js"></script>
+    <script>
+      (function () {
+        const { meter, tag } = Hub;
+        const A = tag("Agreed");
+        const P = tag("Proposed");
+
+        function render(state, ctx) {
+          switch (state) {
+            case "mob":
+              return meter(ctx, { board: "session", ptr: true, menu: { choice: "auto" } });
+            case "boss":
+              return meter(ctx, { board: "target", ptr: true, menu: { choice: "auto", hot: "not" } });
+            case "corrected":
+              return meter(ctx, { board: "session", ptr: true, menu: { choice: "boss" } });
+            case "waiting":
+              return meter(ctx, { board: "waiting", ptr: true, menu: {} });
+            case "close":
+              return meter(ctx, { board: "session", ptr: true, closeTip: true });
+            case "today":
+              return meter(ctx, { board: "session", ptr: true, menu: { choice: "auto", today: true } });
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "mob", title: "Open world: \"…\" open", sub: `${A} only the boss setting for the mob in the header; Automatic is the current choice` },
+            { id: "boss", title: "Boss: \"…\" open, pointer on Not a boss", sub: `${A} the same three items for the boss; the item under the pointer is hot` },
+            { id: "corrected", title: "After \"Treat Thornback Boar as a boss\"", sub: `Unchanged: the check moves to your choice, kept for that mob until you choose Automatic` },
+            { id: "waiting", title: "Nothing hit yet", sub: `Unchanged: the hint line, the items faint` },
+            { id: "close", title: "Pointer on ×", sub: `${P} × closes the meter only; the tooltip says fights are tracked only while it is open` },
+            { id: "today", title: "Today, for comparison", sub: `the menu built now: four links, a divider, the boss setting. The links move to the toolbar` },
+          ],
+          controls: ["alpha", "scale", "mask", "cp"],
+          tileMin: 400,
+          stageMin: 330,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

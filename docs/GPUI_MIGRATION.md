@@ -1514,6 +1514,55 @@ hover on enter and leave only, hide unknown players, report replacement; the
 summary card's button on final and provisional cards and not when locked;
 History's button on boss records only, by click and by keyboard).
 
+## Hub results (TASK-24, step C2)
+
+Approved pages: `docs/gpui-mockups/approved/toolbar.html`, `prompt.html`,
+`meter.html` (the "…" menu and ×), `settings.html` (Overlay › Window),
+`pvp.html` (crosshair), `reminders.html`; values in tokens.md, "Hub".
+
+- **The toolbar** (`src/toolbar/`) is a non-activating overlay window that is
+  never click-through. At launch only it opens; the meter opens with it when
+  Settings › Overlay › "Open the meter at launch" is on (replays and captures
+  always open the meter). Closing the toolbar quits; the meter's × hides the
+  meter only. The meter keeps its window while closed, hidden, so every
+  window placed against it still finds it and it opens where it was left.
+- **Fights are tracked only while the meter is open**: startup calls
+  `DpsMeter::set_fight_tracking` with whether the meter opens, and opening or
+  closing the meter switches it.
+- **Dropdowns and tooltips** are drawn in the toolbar's own window, which grows
+  for them; when the toolbar is low on its screen they open upward and the
+  window grows upward, moving so the bar stays still.
+- **Tools open** beside the meter while it is open, else under the toolbar;
+  the reminder card sits 6 px under the toolbar while the meter is closed
+  (`secondary::Stacking`, `placement::Stack`).
+- **The first-open prompt** is a registry window (`WindowKind::Prompt`) stacked
+  on the meter; Yes or Not now is stored as `windows.launchPromptAnswered`.
+- **Shortcuts and tray**: Alt+CapsLock locks the meter only while it is open;
+  Alt+Shift+CapsLock hides the toolbar and every open window and shows them
+  again; the tray's Show toolbar and a second launch bring them back.
+
+### Deviations from the mockups
+
+- The bell dropdown's next reminders are plain rows (no pointer highlight):
+  a click on them does nothing, so they do not look clickable.
+- Folded, the warning's tooltip hangs from its left edge (the folded bar is
+  too short to hang it from the right).
+- Tools do not remember a place of their own; they open beside the meter, or
+  under the toolbar while the meter is closed.
+
+### Checked
+
+`cargo test --workspace`; app 516 (new: a click on a tool takes no keyboard,
+tooltips 500 ms after enter only, the bell's dropdown and its Pause, a press
+elsewhere only closing a dropdown, fold and unfold, quit, counts asking for
+Resources, Left/Right/Enter/Space, the meter's icon and fight tracking, the
+prompt due once and both answers, "…" holding only the boss setting). The
+`--capture --fixtures` run (English and French) shoots `toolbar-*.png`,
+checks the toolbar answers `MA_NOACTIVATE`, is never click-through, opens
+To-dos, History, PvP, Settings and Resources from its controls, shows the
+prompt on the first open and drops it when the meter closes unanswered, and
+puts the reminder card 6 px under the toolbar with the left edges aligned.
+
 ## Effort
 
 Rough estimate, to be revised after phase 2:

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hub: the tray icon</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/app.css" />
+    <link rel="stylesheet" href="../todos-autofill/autofill.css" />
+    <link rel="stylesheet" href="hub.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Hub mockups">
+        <a href="index.html">Hub: all pages</a>
+        <a href="toolbar.html">Toolbar</a>
+        <a href="resources.html">Resources window</a>
+        <a href="meter.html">Meter "…" menu</a>
+        <a href="prompt.html">First-open prompt</a>
+        <a href="settings.html">Settings, Overlay</a>
+        <a href="tray.html" aria-current="page">Tray icon</a>
+      </nav>
+      <h1>The tray icon <small>hub round, 2026-10-08, not approved yet</small></h1>
+      <ul class="rationale">
+        <li>Kisk keeps an icon in the Windows notification area (the app's icon, crates/app/windows/icon.ico), so the toolbar can come back after Alt+Shift+CapsLock hid it, and Kisk can be quit from there.</li>
+        <li>Windows draws the tooltip and the menu itself, in its own light or dark theme; the taskbar corner here is only a stand-in. Tags: <span class="dec is-agreed">Agreed</span>, <span class="dec is-proposed">Proposed</span>; <a href="README.md">README.md</a> lists every decision.</li>
+      </ul>
+    </header>
+
+    <main class="scenes">
+      <section class="scene-group">
+        <div class="tiles" style="--tile-min: 460px" id="tiles"></div>
+      </section>
+    </main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><span class="dec is-agreed">Agreed</span> <b>Menu</b>: "Show toolbar" and "Quit".</li>
+        <li><span class="dec is-agreed">Agreed</span> <b>Closing the toolbar quits Kisk</b>, as Quit does: every tool closes and the process ends (closing the main window must end the process).</li>
+        <li><span class="dec is-agreed">Agreed</span> <b>Show toolbar</b> brings back the toolbar and every tool that was open, as Alt+Shift+CapsLock does.</li>
+        <li><span class="dec is-proposed">Proposed</span> A left click on the icon does the same as "Show toolbar" (the menu's default item, in bold, as Windows draws defaults). It also unfolds a folded toolbar and brings it in front.</li>
+        <li><span class="dec is-proposed">Proposed</span> Tooltip: "Kisk". The menu is only those two items; Settings and the tools stay on the toolbar.</li>
+        <li><span class="dec is-proposed">Proposed</span> No Windows notification, ever (as the reminder card: the game keeps the screen).</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script>
+      (function () {
+        const icon = Kit.icon;
+        const tag = (k) => `<span class="dec is-${k.toLowerCase()}">${k}</span>`;
+        const ICO = "../../../crates/app/windows/icon.ico";
+
+        function corner(o) {
+          const tip = o.tip ? `<div class="tray-tip" role="tooltip">Kisk</div>` : "";
+          const menu = o.menu
+            ? `<div class="tray-menu" role="menu" aria-label="Kisk"><div class="is-default${o.hot === "show" ? " is-hot" : ""}" role="menuitem">Show toolbar</div><hr><div class="${o.hot === "quit" ? "is-hot" : ""}" role="menuitem">Quit</div></div>`
+            : "";
+          return `<div class="tray-stage">${tip}${menu}<div class="tray-bar"><span class="tray-ic">${icon("chevronUp")}</span><span class="tray-ic${o.tip || o.menu ? " is-hover" : ""}" aria-label="Kisk"><img src="${ICO}" alt=""></span><span class="tray-clock">21:48<br>08/10/2026</span></div></div>`;
+        }
+
+        const STATES = [
+          { title: "Pointer on the icon", sub: `${tag("Proposed")} Windows' tooltip says "Kisk"; a left click shows the toolbar`, o: { tip: true } },
+          { title: "Right-click menu", sub: `${tag("Agreed")} Show toolbar, Quit. ${tag("Proposed")} Show toolbar is the default (bold)`, o: { menu: true } },
+          { title: "Pointer on Quit", sub: `${tag("Agreed")} quits Kisk: every tool closes, the process ends`, o: { menu: true, hot: "quit" } },
+        ];
+
+        document.getElementById("tiles").innerHTML = STATES.map(
+          (s) => `<figure class="tile" style="margin:0"><figcaption class="tile__cap"><b>${s.title}</b><span>${s.sub}</span></figcaption><div class="tile__stage desk" style="padding:0">${corner(s.o)}</div></figure>`
+        ).join("");
+      })();
+    </script>
+  </body>
+</html>
