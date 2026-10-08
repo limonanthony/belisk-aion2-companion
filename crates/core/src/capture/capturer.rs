@@ -14,6 +14,7 @@ use libloading::{Library, Symbol};
 use serde::Serialize;
 
 use crate::capture::channel::Channel;
+use crate::capture::dispatcher::is_web_flow;
 use crate::capture::game_connections::{query_game_connections, GameConnection};
 use crate::logger::AppLogger;
 
@@ -560,10 +561,11 @@ fn inspect_device_for_magic(
     while running.load(Ordering::SeqCst) && started_at.elapsed() < timeout {
         match next_captured_packet(npcap, handle) {
             CaptureRead::Packet(packet) => {
-                if packet
-                    .data
-                    .windows(MAGIC_PATTERN.len())
-                    .any(|window| window == MAGIC_PATTERN)
+                if !is_web_flow(packet.src_port, packet.dst_port)
+                    && packet
+                        .data
+                        .windows(MAGIC_PATTERN.len())
+                        .any(|window| window == MAGIC_PATTERN)
                 {
                     let (a, b) = if packet.src_port <= packet.dst_port {
                         (packet.src_port, packet.dst_port)

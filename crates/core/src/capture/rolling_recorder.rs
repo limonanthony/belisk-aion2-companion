@@ -26,7 +26,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::capture::capturer::CapturedPacket;
-use crate::capture::dispatcher::MAGIC;
+use crate::capture::dispatcher::{is_web_flow, MAGIC};
 use crate::capture::game_connections::{query_game_connections, GameConnection};
 use crate::capture::recorder::{prune_recordings_to_size, PacketRecorder};
 use crate::logger::AppLogger;
@@ -67,6 +67,9 @@ impl GameTrafficFilter {
     }
 
     fn accepts(&mut self, packet: &CapturedPacket) -> bool {
+        if is_web_flow(packet.src_port, packet.dst_port) {
+            return false;
+        }
         let source = (packet.src_ip, packet.src_port);
         let destination = (packet.dst_ip, packet.dst_port);
 
@@ -125,10 +128,10 @@ impl RollingSession {
             return;
         }
 
-        if self
+        let rotation_due = self
             .file_opened_at
-            .is_some_and(|opened_at| now.saturating_duration_since(opened_at) >= self.rotation_interval)
-        {
+            .is_some_and(|opened_at| now.saturating_duration_since(opened_at) >= self.rotation_interval);
+        if rotation_due || self.file.is_full_for(packet) {
             self.close_file();
         }
         if self.file_opened_at.is_none() {
@@ -436,6 +439,49 @@ mod tests {
                 vec![b"third".to_vec(), b"fourth".to_vec()]
             ]
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reaching_the_size_cap_starts_a_new_file_and_keeps_recording() {
+        let dir = temp_dir("size-cap");
+        let rolling = recorder(&dir);
+        connect(&rolling, &[game_connection(50_000, GAME_SERVER, 13_328)]);
+        let two_five_byte_packets = 12 + 2 * (28 + 5);
+        rolling.session.lock().unwrap().as_mut().unwrap().file =
+            PacketRecorder::with_max_bytes(two_five_byte_packets);
+        let now = Instant::now();
+        let packet = |data: &[u8]| to_server(GAME_SERVER, 13_328, 50_000, data);
+
+        for data in [b"one11", b"two22", b"thr33", b"fou44", b"fiv55"] {
+            rolling.record_at(&packet(data), now);
+        }
+        rolling.disable();
+
+        assert_eq!(
+            recorded_payloads(&dir),
+            vec![
+                vec![b"one11".to_vec(), b"two22".to_vec()],
+                vec![b"thr33".to_vec(), b"fou44".to_vec()],
+                vec![b"fiv55".to_vec()]
+            ]
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_web_port_flow_carrying_the_heartbeat_bytes_is_not_a_game_flow() {
+        let dir = temp_dir("web-heartbeat");
+        let rolling = recorder(&dir);
+        let now = Instant::now();
+        let heartbeat = [0x01, 0x0E, 0x00, 0x36, 0x02];
+
+        rolling.record_at(&from_server(WEB_SERVER, 443, 49_901, &heartbeat), now);
+        rolling.record_at(&to_server(WEB_SERVER, 443, 49_901, b"next"), now);
+        rolling.record_at(&from_server(WEB_SERVER, 80, 49_902, &heartbeat), now);
+        rolling.disable();
+
+        assert!(recorded_payloads(&dir).is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 

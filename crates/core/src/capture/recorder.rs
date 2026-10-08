@@ -75,14 +75,35 @@ struct ActiveRecording {
 
 /// Records packets to disk while enabled. Cheap to call when it is not: one
 /// uncontended mutex and an early return.
-#[derive(Default)]
 pub struct PacketRecorder {
     active: Mutex<Option<ActiveRecording>>,
+    max_bytes: u64,
+}
+
+impl Default for PacketRecorder {
+    fn default() -> Self {
+        Self::with_max_bytes(MAX_RECORDING_BYTES)
+    }
 }
 
 impl PacketRecorder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_max_bytes(max_bytes: u64) -> Self {
+        Self { active: Mutex::new(None), max_bytes }
+    }
+
+    /// Whether `packet` no longer fits in the file being written, so the
+    /// caller can start another file instead of losing it.
+    pub fn is_full_for(&self, packet: &CapturedPacket) -> bool {
+        let Ok(active) = self.active.lock() else {
+            return false;
+        };
+        active.as_ref().is_some_and(|recording| {
+            !recording.capped && recording.bytes + encoded_len(packet) > self.max_bytes
+        })
     }
 
     /// Begin a recording in `dir`, named after the current time.
@@ -151,8 +172,8 @@ impl PacketRecorder {
             return;
         }
 
-        let record_len = (RECORD_HEADER_LEN + packet.data.len()) as u64;
-        if recording.bytes + record_len > MAX_RECORDING_BYTES {
+        let record_len = encoded_len(packet);
+        if recording.bytes + record_len > self.max_bytes {
             recording.capped = true;
             let _ = recording.writer.flush();
             return;
@@ -192,6 +213,10 @@ impl PacketRecorder {
             },
         }
     }
+}
+
+fn encoded_len(packet: &CapturedPacket) -> u64 {
+    (RECORD_HEADER_LEN + packet.data.len()) as u64
 }
 
 fn write_error(error: std::io::Error) -> String {

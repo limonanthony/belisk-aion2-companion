@@ -19,6 +19,7 @@ use crate::logger::AppLogger;
 
 const TLS_CONTENT_TYPES: [u8; 4] = [0x14, 0x15, 0x16, 0x17];
 const TLS_VERSIONS: [u8; 5] = [0x00, 0x01, 0x02, 0x03, 0x04];
+const WEB_PORTS: [u16; 2] = [80, 443];
 pub(crate) const MAGIC: [u8; 3] = [0x0E, 0x00, 0x36];
 const MAGIC_LOCK_THRESHOLD: usize = 1;
 const MAGIC_LOCK_WINDOW: Duration = Duration::from_secs(3);
@@ -258,6 +259,10 @@ impl CaptureDispatcher {
                 // what capture produced -- replay then re-runs the real pipeline.
                 recorder.record(&packet);
                 rolling_recorder.record(&packet);
+
+                if is_web_flow(packet.src_port, packet.dst_port) {
+                    continue;
+                }
 
                 let mut state = state.lock().unwrap();
                 let flow_key = TcpFlowKey {
@@ -554,6 +559,12 @@ impl Drop for CaptureDispatcher {
     }
 }
 
+/// The game never talks over HTTP or HTTPS; CDN downloads on these ports
+/// carry the heartbeat bytes by chance.
+pub(crate) fn is_web_flow(src_port: u16, dst_port: u16) -> bool {
+    WEB_PORTS.contains(&src_port) || WEB_PORTS.contains(&dst_port)
+}
+
 fn looks_like_tls_payload(data: &[u8]) -> bool {
     data.len() >= 3
         && TLS_CONTENT_TYPES.contains(&data[0])
@@ -576,4 +587,104 @@ fn directional_connection_key(
 
 fn format_ipv4(ip: [u8; 4]) -> String {
     format!("{}.{}.{}.{}", ip[0], ip[1], ip[2], ip[3])
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::RwLock;
+
+    use super::*;
+    use crate::config::DpsMeterConfig;
+    use crate::events::{EventSink, MeterEvent};
+    use crate::mobs::catalog::MobCatalog;
+
+    const CLIENT: [u8; 4] = [192, 168, 1, 20];
+    const SERVER: [u8; 4] = [52, 1, 2, 3];
+    const CDN: [u8; 4] = [99, 84, 1, 2];
+    const HEARTBEAT: [u8; 5] = [0x01, 0x0E, 0x00, 0x36, 0x02];
+
+    struct Silent;
+    impl EventSink for Silent {
+        fn emit(&self, _: MeterEvent) {}
+    }
+
+    fn dispatcher() -> CaptureDispatcher {
+        let dir = std::env::temp_dir().join("aether-dispatcher-test");
+        let logger = Arc::new(AppLogger::new(dir.join("test.log"), Box::new(|_| {})));
+        let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
+        let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
+        let storage = Arc::new(DataStorage::new(Arc::new(Silent), Arc::clone(&config), mobs));
+        CaptureDispatcher::new(
+            Channel::new(1_000),
+            Arc::new(PacketRecorder::new()),
+            Arc::new(RollingRecorder::new(Arc::clone(&logger), Arc::new(AtomicBool::new(false)))),
+            storage,
+            logger,
+            Arc::new(PingTracker::new()),
+            config,
+        )
+    }
+
+    fn heartbeat_from(server: [u8; 4], server_port: u16, sequence: u32) -> CapturedPacket {
+        CapturedPacket {
+            src_ip: server,
+            src_port: server_port,
+            dst_ip: CLIENT,
+            dst_port: 50_000,
+            sequence,
+            data: HEARTBEAT.to_vec(),
+            captured_at: 1_700_000_000.0,
+        }
+    }
+
+    /// Feeds `web_packets`, then a game flow as the last packets. Packets are
+    /// handled in order, so once the game flow is locked the web packets
+    /// have been handled too. Returns the locked flow and the flows that got
+    /// assemblers.
+    fn feed_then_game_flow(dispatcher: &CaptureDispatcher, web_packets: Vec<CapturedPacket>) -> (String, Vec<String>) {
+        for packet in web_packets
+            .into_iter()
+            .chain([heartbeat_from(SERVER, 13_328, 3_000), heartbeat_from(SERVER, 13_328, 3_005)])
+        {
+            assert!(dispatcher.channel.try_send(packet));
+        }
+        dispatcher.start();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let locked = loop {
+            if let Some(locked) = dispatcher.current_combat_port() {
+                break locked;
+            }
+            assert!(Instant::now() < deadline, "the game flow was not locked");
+            thread::sleep(Duration::from_millis(10));
+        };
+        let mut flows: Vec<String> = dispatcher.assembler_buffer_sizes().into_keys().collect();
+        flows.sort();
+        dispatcher.stop();
+        (locked, flows)
+    }
+
+    #[test]
+    fn a_flow_on_a_web_port_carrying_the_heartbeat_bytes_is_never_a_candidate() {
+        let dispatcher = dispatcher();
+        let web_packets = vec![
+            heartbeat_from(CDN, 443, 1_000),
+            heartbeat_from(CDN, 443, 1_005),
+            heartbeat_from(CDN, 80, 2_000),
+            heartbeat_from(CDN, 80, 2_005),
+        ];
+
+        let (_, flows) = feed_then_game_flow(&dispatcher, web_packets);
+
+        assert!(flows.iter().all(|flow| flow.starts_with("52.1.2.3:13328")), "{flows:?}");
+    }
+
+    #[test]
+    fn a_flow_on_the_game_port_carrying_the_heartbeat_is_still_locked() {
+        let dispatcher = dispatcher();
+
+        let (locked, flows) = feed_then_game_flow(&dispatcher, Vec::new());
+
+        assert_eq!(locked, "52.1.2.3:13328->192.168.1.20:50000");
+        assert_eq!(flows.len(), 2, "the flow and its nickname assembler: {flows:?}");
+    }
 }

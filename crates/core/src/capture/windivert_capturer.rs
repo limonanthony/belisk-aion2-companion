@@ -16,6 +16,7 @@ use windows_048::Win32::Foundation::HANDLE;
 
 use crate::capture::capturer::CapturedPacket;
 use crate::capture::channel::Channel;
+use crate::capture::dispatcher::is_web_flow;
 use crate::logger::AppLogger;
 
 const MAGIC_PATTERN: [u8; 3] = [0x0e, 0x00, 0x36];
@@ -149,7 +150,7 @@ impl WinDivertCapturer {
                     last_candidate_cleanup = now;
                 }
 
-                if contains_magic(&packet.data) {
+                if !is_web_flow(packet.src_port, packet.dst_port) && contains_magic(&packet.data) {
                     if !candidates.contains(&connection) {
                         logger.info(format!(
                             "WinDivert capture candidate detected: {}-{}",
