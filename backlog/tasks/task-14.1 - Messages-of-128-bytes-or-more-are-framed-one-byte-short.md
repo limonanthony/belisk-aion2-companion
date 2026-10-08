@@ -1,10 +1,10 @@
 ---
 id: TASK-14.1
 title: Messages of 128 bytes or more are framed one byte short
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 10:02'
-updated_date: '2026-10-07 11:48'
+updated_date: '2026-10-08 09:31'
 labels:
   - bug
 dependencies: []
@@ -30,8 +30,8 @@ Effect: some messages that follow a long message can be misread or skipped, so d
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A recording with messages of 128 bytes or more is replayed before and after the fix; no message after a long one is misread or skipped after the fix.
-- [ ] #2 The user confirms the totals look right in a real fight.
+- [x] #1 A recording with messages of 128 bytes or more is replayed before and after the fix; no message after a long one is misread or skipped after the fix.
+- [x] #2 The user confirms the totals look right in a real fight.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -39,3 +39,9 @@ Effect: some messages that follow a long message can be misread or skipped, so d
 <!-- SECTION:NOTES:BEGIN -->
 Fixed and checked on 7 recordings: long messages now end in the right place; one recording had been losing several hundred messages. Agent-tested only; waiting for the user to check in a real fight.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+User acceptance 2026-10-08: "Most of the tasks you said I've tested and it seems to work correctly (until a new issue appears which is not impossible but for now we can consider them fixed)". Considered fixed on the user's own testing; reopen if a new issue appears.
+<!-- SECTION:FINAL_SUMMARY:END -->

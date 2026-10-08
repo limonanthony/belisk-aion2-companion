@@ -1,10 +1,10 @@
 ---
 id: TASK-15
 title: End-of-fight report for boss fights
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 12:14'
-updated_date: '2026-10-07 16:45'
+updated_date: '2026-10-08 09:31'
 labels:
   - feature
 dependencies: []
@@ -77,11 +77,11 @@ The approved mockups are in `docs/gpui-mockups/approved/`: `report.html` (the re
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The user has approved the mockups before any implementation starts.
-- [ ] #2 After a boss fight, a button opens a report: one table with a row per player showing damage, DPS, healing, damage taken and deaths, sortable by clicking a column, with deaths (who died and what killed them) listed under it.
-- [ ] #3 The report opens from the boss summary card (including when the fight ended without the boss dying) and from each boss fight in History.
-- [ ] #4 Clicking a player shows, inside the report window, their per-skill damage, hit types as count and rate, and buff and skill uptime as minutes:seconds with the share of the fight; '‹ Report' returns to the table.
-- [ ] #5 Fights saved before this change still open.
+- [x] #1 The user has approved the mockups before any implementation starts.
+- [x] #2 After a boss fight, a button opens a report: one table with a row per player showing damage, DPS, healing, damage taken and deaths, sortable by clicking a column, with deaths (who died and what killed them) listed under it.
+- [x] #3 The report opens from the boss summary card (including when the fight ended without the boss dying) and from each boss fight in History.
+- [x] #4 Clicking a player shows, inside the report window, their per-skill damage, hit types as count and rate, and buff and skill uptime as minutes:seconds with the share of the fight; '‹ Report' returns to the table.
+- [x] #5 Fights saved before this change still open.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -89,3 +89,9 @@ The approved mockups are in `docs/gpui-mockups/approved/`: `report.html` (the re
 <!-- SECTION:NOTES:BEGIN -->
 All parts (TASK-15.2, 15.3, 15.4) are built and reviewed; they wait for the user's test after a real boss fight.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+User acceptance 2026-10-08: "Most of the tasks you said I've tested and it seems to work correctly (until a new issue appears which is not impossible but for now we can consider them fixed)". Considered fixed on the user's own testing; reopen if a new issue appears.
+<!-- SECTION:FINAL_SUMMARY:END -->

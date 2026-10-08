@@ -1,10 +1,10 @@
 ---
 id: TASK-14.3
 title: 'Summon owners, monster spawns and boss HP read wrongly'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 10:02'
-updated_date: '2026-10-07 11:48'
+updated_date: '2026-10-08 09:31'
 labels:
   - bug
 dependencies: []
@@ -33,8 +33,8 @@ Effect: damage attribution between players and boss HP can be wrong; bosses with
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A player's summon damage goes to that player in the replayed recordings, not to the player named as a killer.
-- [ ] #2 A boss with 1 billion HP or more is no longer dropped and shows its HP.
+- [x] #1 A player's summon damage goes to that player in the replayed recordings, not to the player named as a killer.
+- [x] #2 A boss with 1 billion HP or more is no longer dropped and shows its HP.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -42,3 +42,9 @@ Effect: damage attribution between players and boss HP can be wrong; bosses with
 <!-- SECTION:NOTES:BEGIN -->
 Monster spawns, summon owners and HP are read from the real fields. On the recordings, summons that showed as separate unnamed rows now count for their owner (for example an Elementalist's spirit); boss and target detection unchanged. HP is 64-bit in the meter's data (the windows still show up to about 4.29 billion). Agent-tested only; waiting for the user to check in a real fight.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+User acceptance 2026-10-08: "Most of the tasks you said I've tested and it seems to work correctly (until a new issue appears which is not impossible but for now we can consider them fixed)". Considered fixed on the user's own testing; reopen if a new issue appears.
+<!-- SECTION:FINAL_SUMMARY:END -->

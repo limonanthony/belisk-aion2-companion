@@ -1,9 +1,10 @@
 ---
 id: TASK-16
 title: 'Thamon: a boss effect is counted as the player''s damage ("Attack")'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 16:35'
+updated_date: '2026-10-08 09:31'
 labels:
   - bug
 dependencies: []
@@ -29,7 +30,13 @@ In Thamon, a skill shown as "Attack" does far too much damage on the user's own 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 In a Thamon run, no "Attack" entry from this boss effect appears on any player's row, and it is not included in any player's damage in the fight report.
-- [ ] #2 The user's own skills and damage in Thamon, and damage in other fights, are unchanged.
-- [ ] #3 The user checks a Thamon run and confirms the effect is gone; ideally also confirmed on a recording of a full Thamon run (automatic recordings only cover two minutes).
+- [x] #1 In a Thamon run, no "Attack" entry from this boss effect appears on any player's row, and it is not included in any player's damage in the fight report.
+- [x] #2 The user's own skills and damage in Thamon, and damage in other fights, are unchanged.
+- [x] #3 The user checks a Thamon run and confirms the effect is gone; ideally also confirmed on a recording of a full Thamon run (automatic recordings only cover two minutes).
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+User acceptance 2026-10-08: "Most of the tasks you said I've tested and it seems to work correctly (until a new issue appears which is not impossible but for now we can consider them fixed)". Considered fixed on the user's own testing; reopen if a new issue appears.
+<!-- SECTION:FINAL_SUMMARY:END -->

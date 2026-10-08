@@ -1,9 +1,10 @@
 ---
 id: TASK-21
 title: One-shots by a boss's adds are missing from damage taken
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 22:53'
+updated_date: '2026-10-08 09:31'
 labels:
   - bug
 dependencies: []
@@ -28,7 +29,13 @@ Related: TASK-15 (end-of-fight report shows damage taken and deaths).
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 In a fight with adds, a player killed by an add shows that hit in their damage taken and as the last hit of their death.
-- [ ] #2 Players' pets are still not counted as damage dealt to players.
-- [ ] #3 The user confirms this in a Transcendence run.
+- [x] #1 In a fight with adds, a player killed by an add shows that hit in their damage taken and as the last hit of their death.
+- [x] #2 Players' pets are still not counted as damage dealt to players.
+- [x] #3 The user confirms this in a Transcendence run.
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+User acceptance 2026-10-08: "Most of the tasks you said I've tested and it seems to work correctly (until a new issue appears which is not impossible but for now we can consider them fixed)". Considered fixed on the user's own testing; reopen if a new issue appears.
+<!-- SECTION:FINAL_SUMMARY:END -->

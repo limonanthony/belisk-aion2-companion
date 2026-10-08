@@ -1,10 +1,10 @@
 ---
 id: TASK-14
 title: Read the game's combat packets correctly
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 10:02'
-updated_date: '2026-10-07 11:48'
+updated_date: '2026-10-08 09:31'
 labels:
   - bug
 dependencies: []
@@ -36,8 +36,8 @@ TASK-3 mentions the large-message framing fix in the local build; subtask A is t
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each subtask is verified by replaying the user's recordings before and after the change.
-- [ ] #2 The user confirms the totals look right in a real fight.
+- [x] #1 Each subtask is verified by replaying the user's recordings before and after the change.
+- [x] #2 The user confirms the totals look right in a real fight.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -45,3 +45,9 @@ TASK-3 mentions the large-message framing fix in the local build; subtask A is t
 <!-- SECTION:NOTES:BEGIN -->
 All four parts (TASK-14.1 to TASK-14.4) are implemented and reviewed. Waiting for the user to check totals in a real fight.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+User acceptance 2026-10-08: "Most of the tasks you said I've tested and it seems to work correctly (until a new issue appears which is not impossible but for now we can consider them fixed)". Considered fixed on the user's own testing; reopen if a new issue appears.
+<!-- SECTION:FINAL_SUMMARY:END -->

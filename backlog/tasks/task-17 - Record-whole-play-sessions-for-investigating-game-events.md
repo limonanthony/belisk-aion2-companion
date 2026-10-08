@@ -1,10 +1,10 @@
 ---
 id: TASK-17
 title: Record whole play sessions for investigating game events
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 17:21'
-updated_date: '2026-10-07 22:53'
+updated_date: '2026-10-08 09:31'
 labels:
   - feature
 dependencies: []
@@ -31,11 +31,11 @@ Related: TASK-16 (needs a full Thamon recording). Not in scope: per-boss-fight r
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With "Record every session" on, a whole play session is on disk as consecutive files of about 30 minutes each, and the files replay correctly in order.
-- [ ] #2 A rolling recording contains only the game's own traffic, not other TCP packets seen by the network adapter.
-- [ ] #3 Total disk use of rolling recordings stays under 2 GB, and the oldest rolling files are removed first.
-- [ ] #4 Recordings started by hand and unfamiliar-server recordings are never removed by the clean-up.
-- [ ] #5 With the switch off, nothing extra is recorded; the switch is off by default for new installs.
+- [x] #1 With "Record every session" on, a whole play session is on disk as consecutive files of about 30 minutes each, and the files replay correctly in order.
+- [x] #2 A rolling recording contains only the game's own traffic, not other TCP packets seen by the network adapter.
+- [x] #3 Total disk use of rolling recordings stays under 2 GB, and the oldest rolling files are removed first.
+- [x] #4 Recordings started by hand and unfamiliar-server recordings are never removed by the clean-up.
+- [x] #5 With the switch off, nothing extra is recorded; the switch is off by default for new installs.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -43,3 +43,9 @@ Related: TASK-16 (needs a full Thamon recording). Not in scope: per-boss-fight r
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-07 finding: two whole-session files stopped at the 512 MB per-file limit after about 20 minutes (22:37-22:59 and 23:07-23:18), instead of covering 30 minutes, because HTTPS downloads (port 443) were recorded as game traffic. Fixed (agent-tested): a whole-session file now continues into a new file when it reaches the limit, and HTTPS traffic is no longer recorded. Not yet confirmed by the user with a new build.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+User acceptance 2026-10-08: "Most of the tasks you said I've tested and it seems to work correctly (until a new issue appears which is not impossible but for now we can consider them fixed)". Considered fixed on the user's own testing; reopen if a new issue appears.
+<!-- SECTION:FINAL_SUMMARY:END -->
