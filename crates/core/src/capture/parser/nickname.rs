@@ -102,12 +102,15 @@ fn parse_main_fixed(context: &ParserContext<'_>, payload: &[u8]) -> bool {
     if let Some(actor_class) = actor_class {
         let key = find_character_key(payload, name_end + 2, server_id)
             .map(|key| bytes_to_hex(&key).replace(' ', ""));
-        context.data_storage.character_seen(KnownCharacter {
-            name,
-            server_id,
-            class: actor_class.to_string(),
-            key,
-        });
+        context.data_storage.character_seen(
+            KnownCharacter {
+                name,
+                server_id,
+                class: actor_class.to_string(),
+                key,
+            },
+            context.captured_at,
+        );
     }
     true
 }

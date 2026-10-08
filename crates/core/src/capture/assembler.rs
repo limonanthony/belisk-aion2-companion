@@ -36,7 +36,8 @@ impl StreamAssembler {
         }
     }
 
-    pub fn process_chunk(&mut self, data: &[u8], combat_damage_enabled: bool) -> bool {
+    pub fn process_chunk(&mut self, data: &[u8], combat_damage_enabled: bool, captured_at: f64) -> bool {
+        self.processor.set_captured_at(captured_at);
         self.processor
             .set_combat_damage_enabled(combat_damage_enabled);
         self.accumulator.append(data);

@@ -1,5 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use meter_core::capture::parser::ticket_record::{
+    decode_snapshot, decode_update, TicketReason, TicketRecord, SNAPSHOT_OPCODE, UPDATE_OPCODE,
+};
 use meter_core::capture::parser::utils::read_varint;
 use serde::Serialize;
 
@@ -7,13 +10,9 @@ use crate::args::Args;
 use crate::capture::{Capture, Direction, Packet};
 use crate::clock;
 
-const SNAPSHOT_OPCODE: [u8; 2] = [0x0B, 0x61];
-const UPDATE_OPCODE: [u8; 2] = [0x0C, 0x61];
 const IDENTITY_OPCODE: [u8; 2] = [0x33, 0x36];
 const IDENTITY_AFTER_SNAPSHOT_SECS: f64 = 15.0;
 const IDENTITY_BEFORE_SNAPSHOT_SECS: f64 = 2.0;
-const RECORD_FLAG_BITS: u8 = 0x0F;
-const MIN_RECORD_BYTES: usize = 5;
 const MAX_NAME_BYTES: usize = 36;
 
 const TICKET_NAMES: &[(u32, &str)] = &[
@@ -96,31 +95,6 @@ fn ticket_name(id: u32) -> &'static str {
     TICKET_NAMES.iter().find(|(known, _)| *known == id).map_or("(not in the notes' table)", |(_, name)| name)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TicketRecord {
-    pub flags: u8,
-    pub id: u32,
-    pub remaining_ms: Option<i64>,
-    pub field_b: Option<i64>,
-    pub count: u32,
-    pub charge: u32,
-}
-
-impl TicketRecord {
-    fn value(&self) -> Value {
-        Value { count: self.count, charge: self.charge }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TicketUpdate {
-    pub outer: u8,
-    pub record: TicketRecord,
-    pub reason: u8,
-    pub delta: Option<u32>,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 struct Value {
     count: u32,
@@ -128,114 +102,21 @@ struct Value {
 }
 
 impl Value {
+    fn of(record: &TicketRecord) -> Value {
+        Value { count: record.count, charge: record.charge }
+    }
+
     fn text(self) -> String {
         format!("count={} charge={}", self.count, self.charge)
     }
 }
 
-struct Reader<'a> {
-    data: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn after_opcode(data: &'a [u8]) -> Reader<'a> {
-        Reader { data, pos: 2 }
-    }
-
-    fn left(&self) -> usize {
-        self.data.len().saturating_sub(self.pos)
-    }
-
-    fn take(&mut self, len: usize) -> Result<&'a [u8], String> {
-        let bytes = self
-            .data
-            .get(self.pos..self.pos + len)
-            .ok_or_else(|| format!("truncated: {len} byte(s) wanted at offset {}, {} left", self.pos, self.left()))?;
-        self.pos += len;
-        Ok(bytes)
-    }
-
-    fn u8(&mut self) -> Result<u8, String> {
-        Ok(self.take(1)?[0])
-    }
-
-    fn u32(&mut self) -> Result<u32, String> {
-        let bytes = self.take(4)?;
-        Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-    }
-
-    fn i64(&mut self) -> Result<i64, String> {
-        let bytes = self.take(8)?;
-        Ok(i64::from_le_bytes(bytes.try_into().expect("take(8) returns 8 bytes")))
-    }
-
-    fn varint(&mut self) -> Result<u32, String> {
-        let varint = read_varint(self.data, self.pos);
-        if !varint.is_valid() {
-            return Err(format!("bad varint at offset {}", self.pos));
-        }
-        self.pos += varint.length;
-        u32::try_from(varint.value).map_err(|_| format!("varint at offset {} does not fit u32", self.pos))
-    }
-
-    fn finish(&self) -> Result<(), String> {
-        match self.left() {
-            0 => Ok(()),
-            extra => Err(format!("{extra} byte(s) left after the body")),
-        }
-    }
-}
-
-fn decode_record(reader: &mut Reader) -> Result<TicketRecord, String> {
-    let flags = reader.u8()?;
-    if flags & !RECORD_FLAG_BITS != 0 {
-        return Err(format!("record flags {flags:#04x} set bits above bit 3"));
-    }
-    let id = reader.u32()?;
-    let remaining_ms = if flags & 1 != 0 { Some(reader.i64()?) } else { None };
-    let field_b = if flags & 2 != 0 { Some(reader.i64()?) } else { None };
-    let count = if flags & 4 != 0 { reader.varint()? } else { 0 };
-    let charge = if flags & 8 != 0 { reader.varint()? } else { 0 };
-    Ok(TicketRecord { flags, id, remaining_ms, field_b, count, charge })
-}
-
-pub fn decode_snapshot(data: &[u8]) -> Result<Vec<TicketRecord>, String> {
-    if data.get(..2) != Some(&SNAPSHOT_OPCODE[..]) {
-        return Err("not a 0B 61 frame".to_string());
-    }
-    let mut reader = Reader::after_opcode(data);
-    let declared = reader.varint()? as usize;
-    if declared.saturating_mul(MIN_RECORD_BYTES) > reader.left() {
-        return Err(format!("{declared} records declared but only {} byte(s) follow", reader.left()));
-    }
-    let records = (0..declared).map(|_| decode_record(&mut reader)).collect::<Result<Vec<_>, _>>()?;
-    reader.finish()?;
-    Ok(records)
-}
-
-pub fn decode_update(data: &[u8]) -> Result<TicketUpdate, String> {
-    if data.get(..2) != Some(&UPDATE_OPCODE[..]) {
-        return Err("not a 0C 61 frame".to_string());
-    }
-    let mut reader = Reader::after_opcode(data);
-    let outer = reader.u8()?;
-    if outer > 1 {
-        return Err(format!("outer flags {outer:#04x} is not 0 or 1"));
-    }
-    let record = decode_record(&mut reader)?;
-    let reason = reader.u8()?;
-    let delta = if outer & 1 != 0 { Some(reader.u32()?) } else { None };
-    reader.finish()?;
-    Ok(TicketUpdate { outer, record, reason, delta })
-}
-
-fn reason_label(reason: u8) -> String {
+fn reason_label(reason: TicketReason) -> String {
     match reason {
-        1 => "gain".to_string(),
-        2 => "refill".to_string(),
-        3 => "spend".to_string(),
-        other => format!("reason {other}"),
+        TicketReason::Gain => "gain".to_string(),
+        TicketReason::TimedRefill => "refill".to_string(),
+        TicketReason::Spend => "spend".to_string(),
+        TicketReason::Unknown(code) => format!("reason {code}"),
     }
 }
 
@@ -456,7 +337,7 @@ fn analyze(packets: &[Packet], options: &Options) -> Report {
                     let mut rows = Vec::new();
                     let mut hidden_rows = 0;
                     for record in &records {
-                        let value = record.value();
+                        let value = Value::of(record);
                         let previous = previous_values.get(&record.id).copied();
                         let changed = previous.is_some_and(|previous| previous != value);
                         let change = changed.then(|| Change {
@@ -492,7 +373,7 @@ fn analyze(packets: &[Packet], options: &Options) -> Report {
                 Ok(update) => {
                     report.updates += 1;
                     let record = update.record;
-                    let value = record.value();
+                    let value = Value::of(&record);
                     let previous = state.entry(current).or_default().insert(record.id, value);
                     let reason = reason_label(update.reason);
                     let change = Change { time: time.clone(), kind: reason.clone(), from: previous, to: value, delta: update.delta };
@@ -602,7 +483,7 @@ fn row_line(row: &TicketRow, show_change: bool) -> String {
     let record = &row.record;
     let remaining = record.remaining_ms.map_or_else(String::new, hours_minutes);
     let change = match row.previous {
-        Some(previous) if show_change && previous != record.value() => format!("  <- {}", change_text(Some(previous), record.value())),
+        Some(previous) if show_change && previous != Value::of(record) => format!("  <- {}", change_text(Some(previous), Value::of(record))),
         _ => String::new(),
     };
     format!(
@@ -652,7 +533,7 @@ fn print_text(report: &Report) {
                     row.id,
                     row.name
                 );
-                crate::out!("  now {}   {}", row.record.value().text(), change_text(row.previous, row.record.value()));
+                crate::out!("  now {}   {}", Value::of(&row.record).text(), change_text(row.previous, Value::of(&row.record)));
             }
         }
     }
@@ -779,65 +660,6 @@ mod tests {
     }
 
     #[test]
-    fn absent_record_fields_read_as_zero() {
-        let data = snapshot(&[
-            record(4, None, None, Some(3)),
-            record(60000001, None, Some(15), Some(125)),
-            record(6, None, None, None),
-            record(3, Some(25_200_000), None, None),
-        ]);
-        let records = decode_snapshot(&data).expect("valid snapshot");
-        let counts: Vec<_> = records.iter().map(|record| (record.id, record.count, record.charge, record.remaining_ms)).collect();
-        assert_eq!(
-            counts,
-            vec![(4, 0, 3, None), (60000001, 15, 125, None), (6, 0, 0, None), (3, 0, 0, Some(25_200_000))]
-        );
-        assert_eq!(records[2].flags, 0);
-    }
-
-    #[test]
-    fn the_second_time_field_is_read_when_flag_bit_one_is_set() {
-        let mut data = snapshot(&[]);
-        data.pop();
-        data.extend(varint(1));
-        data.push(0b0111);
-        data.extend(7u32.to_le_bytes());
-        data.extend(1i64.to_le_bytes());
-        data.extend(2i64.to_le_bytes());
-        data.extend(varint(300));
-        let records = decode_snapshot(&data).expect("valid snapshot");
-        assert_eq!(records[0].remaining_ms, Some(1));
-        assert_eq!(records[0].field_b, Some(2));
-        assert_eq!(records[0].count, 300);
-    }
-
-    #[test]
-    fn a_snapshot_with_stray_flags_trailing_bytes_or_an_impossible_count_is_rejected() {
-        assert!(decode_snapshot(&snapshot(&[vec![0x10, 1, 0, 0, 0]])).is_err());
-        let mut trailing = snapshot(&[record(4, None, Some(1), None)]);
-        trailing.push(0);
-        assert!(decode_snapshot(&trailing).is_err());
-        let mut too_many = SNAPSHOT_OPCODE.to_vec();
-        too_many.extend(varint(403_477));
-        too_many.extend([0u8; 8]);
-        assert!(decode_snapshot(&too_many).is_err());
-    }
-
-    #[test]
-    fn an_update_carries_the_reason_and_a_delta_only_when_outer_is_one() {
-        let gain = decode_update(&update(1, record(60000001, None, Some(15), Some(225)), 1, Some(200))).expect("valid gain");
-        assert_eq!((gain.reason, gain.delta, gain.record.charge), (1, Some(200), 225));
-        let spend = decode_update(&update(0, record(60000001, None, None, Some(145)), 3, None)).expect("valid spend");
-        assert_eq!((spend.reason, spend.delta, spend.record.count), (3, None, 0));
-    }
-
-    #[test]
-    fn an_update_with_a_bad_outer_byte_or_a_missing_delta_is_rejected() {
-        assert!(decode_update(&update(2, record(4, None, Some(1), None), 3, None)).is_err());
-        assert!(decode_update(&update(1, record(4, None, Some(1), None), 1, None)).is_err());
-    }
-
-    #[test]
     fn a_snapshot_belongs_to_the_identity_that_follows_it() {
         let packets = vec![
             packet(1, 100.0, snapshot(&[record(4, None, Some(2), None)])),
@@ -872,7 +694,7 @@ mod tests {
         let Event::Update { row, reason, .. } = &report.events[1] else { panic!("update event") };
         assert_eq!(reason, "spend");
         assert_eq!(row.previous, Some(Value { count: 15, charge: 125 }));
-        assert_eq!(row.record.value(), Value { count: 0, charge: 60 });
+        assert_eq!(Value::of(&row.record), Value { count: 0, charge: 60 });
         let summary = &report.summaries[0].tickets[0];
         assert_eq!((summary.spends, summary.refills, summary.gains), (1, 1, 0));
         assert_eq!(summary.first, Value { count: 15, charge: 125 });

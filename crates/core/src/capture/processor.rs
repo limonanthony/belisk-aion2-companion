@@ -15,6 +15,8 @@ const KNOWN_PACKET_HEADERS: &[(u8, u8)] = &[
     (0x45, 0x36),
     (0x56, 0x36),
     (0x41, 0x36),
+    (0x0B, 0x61),
+    (0x0C, 0x61),
     (0x04, 0x38),
     (0x05, 0x38),
     (0x2A, 0x38),
@@ -139,6 +141,7 @@ pub struct StreamProcessor {
     hunting_packet_start: bool,
     combat_damage_enabled: bool,
     pub(super) own_actor: OwnActor,
+    pub(super) captured_at: f64,
 }
 
 impl StreamProcessor {
@@ -162,6 +165,7 @@ impl StreamProcessor {
             hunting_packet_start: false,
             combat_damage_enabled: false,
             own_actor: OwnActor::Unsettled,
+            captured_at: 0.0,
         }
     }
 
@@ -185,11 +189,16 @@ impl StreamProcessor {
             hunting_packet_start: false,
             combat_damage_enabled: false,
             own_actor: OwnActor::Unsettled,
+            captured_at: 0.0,
         }
     }
 
     pub fn set_combat_damage_enabled(&mut self, enabled: bool) {
         self.combat_damage_enabled = enabled;
+    }
+
+    pub fn set_captured_at(&mut self, captured_at: f64) {
+        self.captured_at = captured_at;
     }
 
     pub fn reset_framing(&mut self) {
@@ -455,20 +464,24 @@ impl StreamProcessor {
                     nickname::parse_main_combat_power(&self.parser_context(), payload, is_compressed_bundle)
                 }
                 (0x41, 0x36) => self.parse_summon_packet(payload, is_compressed_bundle),
-                (0x04, 0x38) if self.combat_damage_enabled => {
+                (0x04, 0x38) if self.combat_damage_enabled && self.data_storage.wants_damage_packets() => {
                     self.parse_damage_packet(payload, is_compressed_bundle)
                 }
-                (0x05, 0x38) if self.combat_damage_enabled => {
+                (0x05, 0x38) if self.combat_damage_enabled && self.data_storage.fight_tracking() => {
                     self.parse_dot_packet(payload, is_compressed_bundle)
                 }
-                (0x04, 0x8D) if self.combat_damage_enabled => {
+                (0x04, 0x8D) if self.combat_damage_enabled && self.data_storage.fight_tracking() => {
                     self.parse_char_die_packet(payload, is_compressed_bundle)
                 }
-                (0x2A, 0x38) | (0x2B, 0x38) => {
+                (0x2A, 0x38) | (0x2B, 0x38) if self.data_storage.fight_tracking() => {
                     self.parse_buff_packet(payload, is_compressed_bundle)
                 }
-                (0x2C, 0x38) => self.parse_buff_removal_packet(payload, is_compressed_bundle),
+                (0x2C, 0x38) if self.data_storage.fight_tracking() => {
+                    self.parse_buff_removal_packet(payload, is_compressed_bundle)
+                }
                 (0x42, 0x36) => self.parse_death_packet(payload, is_compressed_bundle),
+                (0x0B, 0x61) => self.parse_ticket_snapshot_packet(payload, is_compressed_bundle),
+                (0x0C, 0x61) => self.parse_ticket_update_packet(payload, is_compressed_bundle),
                 (0x00, 0x8D) => self.parse_remain_hp_packet(payload, is_compressed_bundle),
                 _ => false,
             },
@@ -491,7 +504,7 @@ impl StreamProcessor {
     }
 
     fn parser_context(&self) -> ParserContext<'_> {
-        ParserContext::new(&self.data_storage, &self.logger, &self.port)
+        ParserContext::new(&self.data_storage, &self.logger, &self.port, self.captured_at)
     }
 }
 
@@ -505,6 +518,9 @@ mod own_actor_tests {
     use crate::config::DpsMeterConfig;
     use crate::events::{EventSink, MeterEvent};
     use crate::identity::{IdentityDecision, KnownCharacter};
+    use crate::capture::parser::ticket_record::tests::{record, snapshot, update};
+    use crate::capture::parser::ticket_record::TicketReason;
+    use crate::tickets::{TicketContent, TicketReport};
     use crate::logger::AppLogger;
     use crate::mobs::catalog::MobCatalog;
     use crate::models::packet::ParsedDamagePacket;
@@ -550,6 +566,7 @@ mod own_actor_tests {
         let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
         let events = Arc::new(Recorder::default());
         let storage = Arc::new(DataStorage::new(events.clone(), config, mobs));
+        storage.set_fight_tracking(true);
         let processor = processor_over(&storage);
         Connection { processor, storage, events }
     }
@@ -867,6 +884,37 @@ mod own_actor_tests {
         feed(&mut connection, &[heal_tick_on_self(2_011_101)]);
 
         assert!(connection.storage.combat_events(0.0, f64::MAX).heals.is_empty());
+    }
+
+    #[test]
+    fn combat_packets_count_nothing_while_fights_are_not_tracked() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+        connection.storage.set_fight_tracking(false);
+        connection.storage.append_actor(PLAYER, "Victim", None);
+        connection.storage.append_mob(18, 2_300_810);
+
+        for packet in [
+            monster_hit_on_the_player(1_607_630),
+            heal_tick_on_self(16_190_020),
+            death_with_killer(54_321, 7_000),
+        ] {
+            assert!(!connection.processor.parse_packet(&packet, false), "packet {packet:02X?} was skipped");
+        }
+
+        let events = connection.storage.combat_events(0.0, f64::MAX);
+        assert!(events.hits.is_empty() && events.heals.is_empty() && events.deaths.is_empty());
+        assert!(connection.storage.get_dps_stats_snapshot().is_empty());
+    }
+
+    #[test]
+    fn a_mob_death_is_still_seen_while_fights_are_not_tracked() {
+        let mut connection = connection();
+        connection.storage.set_fight_tracking(false);
+        let boss = Spawn::global();
+        feed(&mut connection, &[spawn(&boss), mob_hp(boss.entity_id, 30_000), death(boss.entity_id, 3)]);
+
+        assert_eq!(mob_hp_of(&connection, boss.entity_id).map(|hp| hp.0), Some(0));
     }
 
     fn death(entity: u32, flag: u8) -> Vec<u8> {
@@ -1272,6 +1320,60 @@ mod own_actor_tests {
         );
     }
 
+    fn ticket_reports(connection: &Connection) -> Vec<TicketReport> {
+        connection
+            .events
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|event| match event {
+                MeterEvent::Tickets(report) => Some(report.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn ticket_messages_reach_the_app_with_the_character_named_after_them_and_their_capture_time() {
+        let mut connection = connection();
+        connection.processor.set_captured_at(100.0);
+        feed(
+            &mut connection,
+            &[frame(&snapshot(&[record(8, None, Some(2), None), record(10, None, Some(1), None)]))],
+        );
+        assert!(ticket_reports(&connection).is_empty(), "the snapshot waits for the name");
+
+        connection.processor.set_captured_at(104.0);
+        feed(&mut connection, &[named_by_the_game(BEFORE_ZONE_CHANGE, NAME, None)]);
+        connection.processor.set_captured_at(500.0);
+        feed(&mut connection, &[frame(&update(0, record(60000001, None, None, Some(245)), 3, None))]);
+
+        let reports = ticket_reports(&connection);
+        assert_eq!(reports.len(), 2);
+        assert_eq!((reports[0].character.name.as_str(), reports[0].character.server_id), (NAME, 1302));
+        assert_eq!(reports[0].captured_at, 100.0);
+        let TicketContent::Snapshot(records) = &reports[0].content else { panic!("snapshot first") };
+        assert_eq!(records.iter().map(|record| (record.id, record.count)).collect::<Vec<_>>(), vec![(8, 2)]);
+        assert_eq!(reports[1].captured_at, 500.0);
+        let TicketContent::Change { record, reason, delta } = &reports[1].content else { panic!("change second") };
+        assert_eq!((record.id, record.charge, *reason, *delta), (60000001, 245, TicketReason::Spend, None));
+    }
+
+    #[test]
+    fn a_look_alike_frame_under_a_ticket_opcode_emits_nothing() {
+        let mut connection = connection();
+        let snapshot_like = vec![0x0B, 0x61, 0x91, 0x80, 0x9A, 0x0C, 1, 2, 3, 4];
+        let update_like = vec![0x0C, 0x61, 2, 1, 2, 3, 4, 5, 6, 7];
+        connection.processor.set_captured_at(100.0);
+        feed(&mut connection, &[named_by_the_game(BEFORE_ZONE_CHANGE, NAME, None)]);
+
+        assert!(!connection.processor.parse_packet(&frame(&snapshot_like), false));
+        assert!(!connection.processor.parse_packet(&frame(&update_like), false));
+
+        assert!(ticket_reports(&connection).is_empty());
+    }
+
     fn named_on_a_first_connection(connection: &mut Connection, known: Vec<KnownCharacter>) {
         connection.storage.set_known_characters(known);
         feed(connection, &[named_by_the_game(BEFORE_ZONE_CHANGE, NAME, None)]);
@@ -1387,6 +1489,7 @@ mod framing_tests {
         let config = Arc::new(RwLock::new(config));
         let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
         let storage = Arc::new(DataStorage::new(Arc::new(Discard), Arc::clone(&config), mobs));
+        storage.set_fight_tracking(true);
         let log = std::env::temp_dir().join("aether-framing-tests").join("aether.log");
         let logger = Arc::new(AppLogger::new(log, Box::new(|_| {})));
         StreamAssembler::new(storage, logger, "test".to_string(), config)
@@ -1413,7 +1516,7 @@ mod framing_tests {
         stream
             .chunks(TCP_SEGMENT)
             .map(|segment| {
-                assembler.process_chunk(segment, false);
+                assembler.process_chunk(segment, false, 0.0);
                 assembler.buffer_size()
             })
             .collect()
@@ -1445,7 +1548,7 @@ mod framing_tests {
 
         for segment in stream.chunks(TCP_SEGMENT) {
             std::thread::sleep(Duration::from_millis(40));
-            assembler.process_chunk(segment, false);
+            assembler.process_chunk(segment, false, 0.0);
             fed += segment.len();
             if fed < stream.len() {
                 assert_eq!(assembler.buffer_size(), fed, "a head that keeps growing is not skipped");
@@ -1463,7 +1566,7 @@ mod framing_tests {
         let started = std::time::Instant::now();
         while started.elapsed() < limit {
             std::thread::sleep(Duration::from_millis(20));
-            assembler.process_chunk(&[0x00], false);
+            assembler.process_chunk(&[0x00], false, 0.0);
             if assembler.buffer_size() == 0 {
                 return Some(started.elapsed());
             }
@@ -1483,7 +1586,7 @@ mod framing_tests {
         let mut frame_parsed = false;
         for segment in stream.chunks(TCP_SEGMENT) {
             fed += segment.len();
-            let parsed = assembler.process_chunk(segment, false);
+            let parsed = assembler.process_chunk(segment, false, 0.0);
             frame_parsed |= parsed && fed >= large_packet.len();
         }
 
@@ -1498,7 +1601,7 @@ mod framing_tests {
     #[test]
     fn consecutive_bogus_heads_are_skipped_within_one_cap_while_live_data_keeps_arriving() {
         let mut assembler = assembler();
-        assembler.process_chunk(&bogus_heads(10), false);
+        assembler.process_chunk(&bogus_heads(10), false, 0.0);
 
         let resynced_at = feed_idle_bytes_until_drained(&mut assembler, Duration::from_secs(5))
             .expect("stream stayed blocked on the bogus heads");
@@ -1508,9 +1611,9 @@ mod framing_tests {
     #[test]
     fn a_large_packet_is_waited_for_after_a_hunt_drained_the_buffer() {
         let mut assembler = assembler();
-        assembler.process_chunk(&[0xFF, 0x7F], false);
+        assembler.process_chunk(&[0xFF, 0x7F], false, 0.0);
         std::thread::sleep(Duration::from_millis(1_100));
-        assembler.process_chunk(&[], false);
+        assembler.process_chunk(&[], false, 0.0);
         assert_eq!(assembler.buffer_size(), 0, "the hunt drained the buffer");
 
         let mut stream = unknown_packet(13_000);
@@ -1528,11 +1631,11 @@ mod framing_tests {
     fn framing_restarts_at_the_next_frame_after_the_buffered_head_is_discarded() {
         let mut assembler = assembler();
         let head_of_a_large_packet = unknown_packet(13_000);
-        assembler.process_chunk(&head_of_a_large_packet[..3 * TCP_SEGMENT], false);
+        assembler.process_chunk(&head_of_a_large_packet[..3 * TCP_SEGMENT], false, 0.0);
         assert_eq!(assembler.buffer_size(), 3 * TCP_SEGMENT);
 
         assembler.discard_buffered();
-        assembler.process_chunk(&unknown_packet(20), false);
+        assembler.process_chunk(&unknown_packet(20), false, 0.0);
 
         assert_eq!(assembler.buffer_size(), 0, "the frame after the gap was framed on its own");
     }

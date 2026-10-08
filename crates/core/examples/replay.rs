@@ -2,19 +2,25 @@
 //! summary of the final snapshot. No capture driver is loaded and no elevation
 //! is needed.
 //!
-//!     cargo run --example replay -- <recording.aetherpc> [--names]
+//!     cargo run --example replay -- <recording.aetherpc> [--names] [--tickets] [--fights on|off|from-identity|from-tickets]
 //!
-//! Other players' names are only printed with `--names`.
+//! Other players' names are only printed with `--names`. `--tickets` lists the
+//! ticket events the core emitted, with the capture time as Unix seconds.
+//! `--fights off` replays with fight tracking off, as with the DPS meter
+//! closed; `--fights from-identity` turns it on when the game first names the
+//! player's character, and `--fights from-tickets` at the first ticket event,
+//! as if the meter were opened then.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use meter_core::engine::meter::DpsMeter;
 use meter_core::events::{EventSink, MeterEvent};
+use meter_core::tickets::{TicketContent, TicketReport};
 use meter_core::logger::AppLogger;
 
 const REPLAY_TIMEOUT: Duration = Duration::from_secs(600);
@@ -27,9 +33,20 @@ enum ReplayOutcome {
     Failed(String),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FightMode {
+    On,
+    Off,
+    FromIdentity,
+    FromTickets,
+}
+
 struct CollectingSink {
     counts: Mutex<BTreeMap<&'static str, usize>>,
+    tickets: Mutex<Vec<TicketReport>>,
     outcome: Mutex<Sender<ReplayOutcome>>,
+    meter: OnceLock<Arc<DpsMeter>>,
+    fights: FightMode,
 }
 
 impl EventSink for CollectingSink {
@@ -43,12 +60,28 @@ impl EventSink for CollectingSink {
             MeterEvent::MainActorDetected(_) => "dps-main-actor-detected",
             MeterEvent::CharacterSeen(_) => "character-seen",
             MeterEvent::OwnIdentity(_) => "own-identity",
+            MeterEvent::Tickets(_) => "tickets",
             MeterEvent::PacketReplayFinished(_) => "packet-replay-finished",
             MeterEvent::PacketReplayFailed(_) => "packet-replay-failed",
             MeterEvent::DpsIdleHidden(_) => "dps-idle-hidden",
         };
         *self.counts.lock().unwrap().entry(name).or_default() += 1;
 
+        if let MeterEvent::Tickets(report) = &event {
+            self.tickets.lock().unwrap().push(report.clone());
+        }
+        let opens_the_meter = match &event {
+            MeterEvent::MainActorDetected(payload) => {
+                self.fights == FightMode::FromIdentity && !payload.actor_name.is_empty()
+            }
+            MeterEvent::Tickets(_) => self.fights == FightMode::FromTickets,
+            _ => false,
+        };
+        if opens_the_meter {
+            if let Some(meter) = self.meter.get() {
+                meter.set_fight_tracking(true);
+            }
+        }
         let outcome = match event {
             MeterEvent::PacketReplayFinished(count) => ReplayOutcome::Finished(count),
             MeterEvent::PacketReplayFailed(error) => ReplayOutcome::Failed(error),
@@ -61,9 +94,25 @@ impl EventSink for CollectingSink {
 fn main() -> ExitCode {
     let mut path = None;
     let mut show_names = false;
-    for arg in std::env::args().skip(1) {
+    let mut show_tickets = false;
+    let mut fights = FightMode::On;
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
         match arg.as_str() {
             "--names" => show_names = true,
+            "--tickets" => show_tickets = true,
+            "--fights" => {
+                fights = match args.next().as_deref() {
+                    Some("on") => FightMode::On,
+                    Some("off") => FightMode::Off,
+                    Some("from-identity") => FightMode::FromIdentity,
+                    Some("from-tickets") => FightMode::FromTickets,
+                    other => {
+                        eprintln!("--fights takes on, off, from-identity or from-tickets, not {other:?}");
+                        return ExitCode::FAILURE;
+                    }
+                };
+            }
             _ if path.is_none() => path = Some(arg),
             _ => {
                 eprintln!("unexpected argument: {arg}");
@@ -72,11 +121,11 @@ fn main() -> ExitCode {
         }
     }
     let Some(path) = path else {
-        eprintln!("usage: replay <recording.aetherpc> [--names]");
+        eprintln!("usage: replay <recording.aetherpc> [--names] [--tickets] [--fights on|off|from-identity|from-tickets]");
         return ExitCode::FAILURE;
     };
 
-    match run(path, show_names) {
+    match run(path, show_names, show_tickets, fights) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("replay failed: {error}");
@@ -85,15 +134,20 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(path: String, show_names: bool) -> Result<(), String> {
+fn run(path: String, show_names: bool, show_tickets: bool, fights: FightMode) -> Result<(), String> {
     let (outcome_tx, outcome_rx) = mpsc::channel();
     let sink = Arc::new(CollectingSink {
         counts: Mutex::new(BTreeMap::new()),
+        tickets: Mutex::new(Vec::new()),
         outcome: Mutex::new(outcome_tx),
+        meter: OnceLock::new(),
+        fights,
     });
     let log_path: PathBuf = std::env::temp_dir().join("aether").join("replay-example.log");
     let logger = Arc::new(AppLogger::new(log_path, Box::new(|_| {})));
-    let meter = DpsMeter::new(sink.clone(), logger, None);
+    let meter = Arc::new(DpsMeter::new(sink.clone(), logger, None));
+    let _ = sink.meter.set(Arc::clone(&meter));
+    meter.set_fight_tracking(fights == FightMode::On);
 
     let mut config = meter.current_config();
     config.idle_reset_secs = 0;
@@ -114,8 +168,19 @@ fn run(path: String, show_names: bool) -> Result<(), String> {
     };
 
     wait_for_pipeline_to_drain(&meter);
-    let Some(snapshot) = meter.get_dps_snapshot(0) else {
-        return Err("the recording produced no combat data".to_string());
+    let snapshot = match meter.get_dps_snapshot(0) {
+        Some(snapshot) => snapshot,
+        None if fights == FightMode::Off => {
+            println!("packets replayed: {packets}");
+            println!("fight tracking off: no combat data, as expected");
+            print_own_character(&meter);
+            if show_tickets {
+                print_tickets(&sink.tickets.lock().unwrap(), show_names);
+            }
+            print_events(&sink);
+            return Ok(());
+        }
+        None => return Err("the recording produced no combat data".to_string()),
     };
 
     println!("packets replayed: {packets}");
@@ -203,11 +268,50 @@ fn run(path: String, show_names: bool) -> Result<(), String> {
         }
     }
 
+    if show_tickets {
+        print_tickets(&sink.tickets.lock().unwrap(), show_names);
+    }
+
+    print_events(&sink);
+    Ok(())
+}
+
+fn print_own_character(meter: &DpsMeter) {
+    match meter.main_actor_name() {
+        Some(name) => println!("own character named: {}", !name.is_empty()),
+        None => println!("own character: not named"),
+    }
+}
+
+fn print_events(sink: &CollectingSink) {
     println!("events emitted:");
     for (name, count) in sink.counts.lock().unwrap().iter() {
         println!("  {name}: {count}");
     }
-    Ok(())
+}
+
+fn print_tickets(reports: &[TicketReport], show_names: bool) {
+    println!("ticket events: {}", reports.len());
+    for report in reports {
+        let character = &report.character;
+        let name = if show_names { character.name.clone() } else { format!("##({})", character.name.chars().count()) };
+        let who = format!("{name} server {} key {}", character.server_id, character.key.as_deref().unwrap_or("-"));
+        match &report.content {
+            TicketContent::Snapshot(records) => {
+                println!("  {:.3} snapshot of {} tickets for {who}", report.captured_at, records.len());
+                for record in records {
+                    println!(
+                        "      {} count {} charge {} remaining {:?}",
+                        record.id, record.count, record.charge, record.remaining_ms
+                    );
+                }
+            }
+            TicketContent::Change { record, reason, delta } => println!(
+                "  {:.3} change for {who}: {} count {} charge {} remaining {:?} {reason:?} delta {delta:?}",
+                report.captured_at, record.id, record.count, record.charge, record.remaining_ms
+            ),
+        }
+    }
 }
 
 fn wait_for_pipeline_to_drain(meter: &DpsMeter) {

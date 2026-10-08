@@ -139,12 +139,11 @@ impl FightCloser {
         )
     }
 
-    /// Nothing of yours has happened for the idle timeout: the fight is over.
-    /// It goes to history if you were in it; a meter holding only other
-    /// people's fights nearby is cleared without a record.
-    fn end_idle_fight(&self, was_in_fight: bool) {
+    /// The fight is over: it goes to history if you were in it; a meter
+    /// holding only other people's fights nearby is cleared without a record.
+    fn end_fight(&self, was_in_fight: bool, reason: &str) {
         if was_in_fight {
-            self.logger.info("idle timeout: fight saved and meter reset");
+            self.logger.info(format!("{reason}: fight saved and meter reset"));
             self.reset(true);
         } else {
             self.clear_runtime_state_nopacket();
@@ -400,6 +399,29 @@ impl DpsMeter {
     /// Turns PvP tracking on or off without touching any other setting.
     pub fn set_pvp_mode(&self, on: bool) {
         self.config.write().unwrap().pvp_mode_on = on;
+    }
+
+    /// Whether damage, heals, damage taken, deaths and buff uptime are counted.
+    /// Off until the host turns it on, so a meter that starts with its window
+    /// closed never counts a fight; capture, identity, the world and tickets
+    /// run either way.
+    pub fn fight_tracking(&self) -> bool {
+        self.data_storage.fight_tracking()
+    }
+
+    /// Turns fight counting on or off, as the DPS meter window opens or
+    /// closes. Turning it off ends the fight on the meter like an idle
+    /// timeout does; turning it on counts from that moment.
+    pub fn set_fight_tracking(&self, on: bool) {
+        if self.data_storage.fight_tracking() == on {
+            return;
+        }
+        self.data_storage.set_fight_tracking(on);
+        if !on {
+            let was_in_fight = self.data_storage.activity_at().is_some();
+            self.fight.end_fight(was_in_fight, "meter closed");
+        }
+        self.logger.info(format!("fight tracking {}", if on { "on" } else { "off" }));
     }
 
     pub fn start_dps_meter(&self) -> Result<(), String> {
@@ -675,6 +697,11 @@ impl DpsMeter {
             let mut idle_hidden: Option<bool> = None;
 
             while snapshot_running.load(Ordering::SeqCst) {
+                if !data_storage.fight_tracking() {
+                    let interval_ms = config.read().unwrap().dps_snapshot_interval_ms;
+                    thread::park_timeout(Duration::from_millis(interval_ms));
+                    continue;
+                }
                 let cfg = config.read().unwrap();
                 let hide_unknown = cfg.hide_unknown_players;
                 let max_count = cfg.max_player_count;
@@ -690,7 +717,7 @@ impl DpsMeter {
                         let activity = data_storage.activity_at();
                         let idle_for = now_seconds() - activity.unwrap_or(started);
                         if idle_for >= idle_reset_secs as f64 {
-                            fight.end_idle_fight(activity.is_some());
+                            fight.end_fight(activity.is_some(), "idle timeout");
                         }
                     }
                 }
@@ -937,6 +964,7 @@ impl DpsMeter {
         if self.replaying.swap(true, Ordering::SeqCst) {
             return Err("A replay is already running.".to_string());
         }
+        self.data_storage.reset_ticket_binding();
 
         let channel = self.packet_channel.clone();
         let replaying = Arc::clone(&self.replaying);
@@ -1147,5 +1175,95 @@ mod tests {
         let _ = std::fs::remove_file(log);
         assert!(!meter.is_running());
         assert!(took < Duration::from_millis(500), "stopping took {took:?}");
+    }
+
+    struct Recording(Mutex<Vec<&'static str>>);
+
+    impl EventSink for Recording {
+        fn emit(&self, event: MeterEvent) {
+            let name = match event {
+                MeterEvent::HistoryUpdated => "history-updated",
+                MeterEvent::DpsSnapshot(_) => "dps-snapshot",
+                _ => return,
+            };
+            self.0.lock().unwrap().push(name);
+        }
+    }
+
+    fn big_hit(actor_id: u32, target_id: u32) -> crate::models::packet::ParsedDamagePacket {
+        crate::models::packet::ParsedDamagePacket {
+            target_id,
+            actor_id,
+            skill_code: 11_000_000,
+            ori_skill_code: 11_000_000,
+            damage: 5_000_000,
+            is_dot: false,
+            is_crit: false,
+            multi_hit_damage: 0,
+            multi_hit_count: 0,
+            specials: Vec::new(),
+            drain_amount: 0,
+            regeneration_amount: 0,
+        }
+    }
+
+    fn meter_with(events: Arc<Recording>) -> DpsMeter {
+        let log = std::env::temp_dir().join(format!("meter-core-tracking-{}.log", std::process::id()));
+        let logger = Arc::new(AppLogger::new(log, Box::new(|_| {})));
+        DpsMeter::new(events, logger, None)
+    }
+
+    #[test]
+    fn closing_the_meter_in_a_fight_ends_it_like_the_idle_timeout_and_saves_it() {
+        let events = Arc::new(Recording(Mutex::new(Vec::new())));
+        let meter = meter_with(Arc::clone(&events));
+        meter.set_fight_tracking(true);
+        meter.data_storage.append_damage(big_hit(7, 900));
+        assert!(meter.get_history().is_empty());
+
+        meter.set_fight_tracking(false);
+
+        assert!(!meter.fight_tracking());
+        assert_eq!(meter.get_history().len(), 1);
+        assert!(meter.get_dps_snapshot(0).is_none_or(|snapshot| snapshot.total_damage == 0));
+        assert!(events.0.lock().unwrap().contains(&"history-updated"));
+    }
+
+    #[test]
+    fn a_meter_that_never_tracked_counts_no_fight_and_saves_no_history() {
+        let events = Arc::new(Recording(Mutex::new(Vec::new())));
+        let meter = meter_with(Arc::clone(&events));
+
+        meter.data_storage.append_damage(big_hit(7, 900));
+        meter.set_fight_tracking(false);
+
+        assert!(!meter.fight_tracking());
+        assert!(meter.get_history().is_empty());
+        assert!(events.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn closing_a_meter_with_no_fight_on_it_saves_no_history() {
+        let events = Arc::new(Recording(Mutex::new(Vec::new())));
+        let meter = meter_with(Arc::clone(&events));
+        meter.set_fight_tracking(true);
+
+        meter.set_fight_tracking(false);
+
+        assert!(meter.get_history().is_empty());
+        assert!(!events.0.lock().unwrap().contains(&"history-updated"));
+    }
+
+    #[test]
+    fn opening_the_meter_counts_from_that_moment() {
+        let events = Arc::new(Recording(Mutex::new(Vec::new())));
+        let meter = meter_with(events);
+        meter.data_storage.append_damage(big_hit(7, 900));
+
+        meter.set_fight_tracking(true);
+        meter.data_storage.append_damage(big_hit(7, 900));
+
+        let snapshot = meter.get_dps_snapshot(0).expect("a fight is on the meter");
+        assert_eq!(snapshot.total_damage, 5_000_000);
     }
 }

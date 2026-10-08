@@ -10,5 +10,7 @@ pub(crate) mod nickname;
 pub(crate) mod periodic_record;
 pub(crate) mod spawn_record;
 pub(crate) mod summon;
+pub(crate) mod ticket;
+pub mod ticket_record;
 pub mod utils;
 pub(crate) mod wire_cursor;

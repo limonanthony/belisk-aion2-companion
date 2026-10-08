@@ -406,9 +406,11 @@ impl CaptureDispatcher {
                         .assemblers
                         .get_mut(&key)
                         .expect("candidate assembler must exist");
-                    let _ = assembler
-                        .assembler
-                        .process_chunk(&packet.data, combat_damage_enabled);
+                    let _ = assembler.assembler.process_chunk(
+                        &packet.data,
+                        combat_damage_enabled,
+                        packet.captured_at,
+                    );
 
                     let nickname_assembler = state
                         .nickname_assemblers
@@ -416,7 +418,7 @@ impl CaptureDispatcher {
                         .expect("candidate nickname assembler must exist");
                     let _ = nickname_assembler
                         .assembler
-                        .process_chunk(&packet.data, false);
+                        .process_chunk(&packet.data, false, packet.captured_at);
                 }
             }
         });
@@ -614,6 +616,7 @@ mod tests {
         let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
         let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
         let storage = Arc::new(DataStorage::new(Arc::new(Silent), Arc::clone(&config), mobs));
+        storage.set_fight_tracking(true);
         CaptureDispatcher::new(
             Channel::new(1_000),
             Arc::new(PacketRecorder::new()),

@@ -7,6 +7,7 @@ pub(crate) struct ParserContext<'a> {
     pub(super) data_storage: &'a Arc<DataStorage>,
     pub(super) logger: &'a Arc<AppLogger>,
     pub(super) port: &'a str,
+    pub(super) captured_at: f64,
 }
 
 impl<'a> ParserContext<'a> {
@@ -14,11 +15,13 @@ impl<'a> ParserContext<'a> {
         data_storage: &'a Arc<DataStorage>,
         logger: &'a Arc<AppLogger>,
         port: &'a str,
+        captured_at: f64,
     ) -> Self {
         Self {
             data_storage,
             logger,
             port,
+            captured_at,
         }
     }
 }

@@ -13,3 +13,4 @@ pub mod region;
 pub mod report;
 pub mod skill_names;
 pub mod storage;
+pub mod tickets;

@@ -55,6 +55,7 @@ fn skill_uses(raws: &[RawFile]) -> BTreeMap<u32, SkillUse> {
         let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
         let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
         let storage = Arc::new(DataStorage::new(Arc::new(DiscardEvents), Arc::clone(&config), mobs));
+        storage.set_fight_tracking(true);
         let mut assemblers: HashMap<usize, StreamAssembler> = HashMap::new();
         for chunk in &raw.chunks {
             if contains_heartbeat(&chunk.data) {
@@ -68,7 +69,7 @@ fn skill_uses(raws: &[RawFile]) -> BTreeMap<u32, SkillUse> {
                 });
             }
             if let Some(assembler) = assemblers.get_mut(&chunk.flow) {
-                assembler.process_chunk(&chunk.data, true);
+                assembler.process_chunk(&chunk.data, true, chunk.t);
             }
         }
 

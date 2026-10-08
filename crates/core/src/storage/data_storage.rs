@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use serde::Serialize;
@@ -9,6 +9,7 @@ use std::sync::Arc;
 use crate::config::{SharedDpsMeterConfig, TRAINING_DUMMY_MOB_CODE};
 use crate::events::{EventSink, MeterEvent};
 use crate::identity::{character_of_class, IdentityDecision, KnownCharacter};
+use crate::capture::parser::ticket_record::{TicketReason, TicketRecord};
 use crate::models::combat::{
     BuffInterval, BuffSummary, PlayerHpInfo, PvpCombatStats, PvpCombatStatsRow, PvpKnownPlayer,
     PvpWatchInfo, PvpWatchInfoResponse, SkillStats,
@@ -18,6 +19,7 @@ use crate::mobs::catalog::MobCatalog;
 use crate::report::events::{CombatEventLog, CombatEvents, Heal, HealKind, IncomingHit, Killer};
 use crate::report::ledger::{fight_party, BuffIntervals};
 use crate::storage::loaders::load_healing_skill_codes;
+use crate::tickets::TicketBinder;
 
 pub(crate) struct FightLedgerInputs {
     pub events: CombatEvents,
@@ -280,8 +282,16 @@ pub struct DataStorage {
     /// Characters the player was seen as in earlier runs, most recent first.
     /// Kept apart from `inner`: a reset must not forget them.
     known_characters: RwLock<Vec<KnownCharacter>>,
+    /// Ties the game's ticket messages to the character named as the player.
+    /// Kept apart from `inner`: a reset must not forget who the player is.
+    tickets: Mutex<TicketBinder>,
     /// Counts what the Boss only filter threw away, so the UI can say so.
     boss_only_filtered: AtomicU64,
+    /// Whether fights are being counted: damage, heals, damage taken, deaths
+    /// and buff uptime. Off until the host turns it on, so a meter that starts
+    /// with its window closed never counts a fight. Kept apart from `inner`:
+    /// a reset must not change it.
+    fight_tracking: AtomicBool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -322,7 +332,9 @@ impl DataStorage {
             mobs,
             main_actor_callback: Mutex::new(None),
             known_characters: RwLock::new(Vec::new()),
+            tickets: Mutex::new(TicketBinder::default()),
             boss_only_filtered: AtomicU64::new(0),
+            fight_tracking: AtomicBool::new(false),
         }
     }
 
@@ -378,6 +390,46 @@ impl DataStorage {
     /// Hits thrown away by the Boss only filter since the last reset.
     pub fn boss_only_filtered(&self) -> u64 {
         self.boss_only_filtered.load(Ordering::Relaxed)
+    }
+
+    pub fn fight_tracking(&self) -> bool {
+        self.fight_tracking.load(Ordering::Relaxed)
+    }
+
+    pub fn set_fight_tracking(&self, on: bool) {
+        self.fight_tracking.store(on, Ordering::Relaxed);
+    }
+
+    /// Damage packets matter while fights are counted, and while the own
+    /// character still waits for its class to be named.
+    pub fn wants_damage_packets(&self) -> bool {
+        self.fight_tracking() || self.inner.read().unwrap().own_name_pending != OwnNamePending::No
+    }
+
+    /// With fights not counted, a hit still tells the class of the own
+    /// character, which names it.
+    fn learn_own_class_from_hit(&self, packet: &ParsedDamagePacket) {
+        if self.healing_skill_codes.contains(&packet.skill_code) {
+            return;
+        }
+        let mut inner = self.inner.write().unwrap();
+        let actor_id = inner
+            .summon_owner_map
+            .get(&packet.actor_id)
+            .copied()
+            .unwrap_or(packet.actor_id);
+        if inner.own_name_pending == OwnNamePending::No
+            || inner.main_actor_id != Some(actor_id)
+            || inner.actor_id_class_map.contains_key(&actor_id)
+        {
+            return;
+        }
+        let Some(class) = infer_actor_class(packet.skill_code) else {
+            return;
+        };
+        inner.actor_id_class_map.insert(actor_id, class);
+        drop(inner);
+        self.resolve_own_name();
     }
 
     pub fn append_damage(&self, packet: ParsedDamagePacket) {
@@ -475,6 +527,10 @@ impl DataStorage {
     }
 
     pub fn append_damage_at(&self, packet: ParsedDamagePacket, timestamp: f64) {
+        if !self.fight_tracking() {
+            self.learn_own_class_from_hit(&packet);
+            return;
+        }
         let config = self.config.read().unwrap().clone();
         let mut inner = self.inner.write().unwrap();
 
@@ -685,6 +741,9 @@ impl DataStorage {
     }
 
     pub fn record_incoming_hit_at(&self, victim_id: u32, source_id: u32, skill_code: u32, amount: u64, at: f64) {
+        if !self.fight_tracking() {
+            return;
+        }
         let mut inner = self.inner.write().unwrap();
         let from_a_player = inner.actor_id_name_map.contains_key(&source_id) && !inner.mob_id_code_map.contains_key(&source_id);
         if amount == 0
@@ -1125,9 +1184,33 @@ impl DataStorage {
     }
 
     /// Tells the app the game named the player's character, so it can be
-    /// remembered.
-    pub fn character_seen(&self, character: KnownCharacter) {
+    /// remembered, and releases the ticket messages that waited for the name.
+    pub fn character_seen(&self, character: KnownCharacter, captured_at: f64) {
+        let reports = self.tickets.lock().unwrap().character_named(character.clone(), captured_at);
         self.events.emit(MeterEvent::CharacterSeen(character));
+        for report in reports {
+            self.events.emit(MeterEvent::Tickets(report));
+        }
+    }
+
+    pub fn tickets_snapshot(&self, records: Vec<TicketRecord>, captured_at: f64) {
+        let report = self.tickets.lock().unwrap().snapshot(records, captured_at);
+        if let Some(report) = report {
+            self.events.emit(MeterEvent::Tickets(report));
+        }
+    }
+
+    pub fn ticket_changed(&self, record: TicketRecord, reason: TicketReason, delta: Option<u32>, captured_at: f64) {
+        let report = self.tickets.lock().unwrap().change(record, reason, delta, captured_at);
+        if let Some(report) = report {
+            self.events.emit(MeterEvent::Tickets(report));
+        }
+    }
+
+    /// Forgets the character the tickets were tied to; a recording starts from
+    /// its own times.
+    pub fn reset_ticket_binding(&self) {
+        self.tickets.lock().unwrap().reset();
     }
 
     pub fn get_dps_stats_snapshot(&self) -> HashMap<u32, HashMap<u32, HashMap<u32, SkillStats>>> {
@@ -1241,6 +1324,9 @@ impl DataStorage {
     }
 
     pub fn mark_player_dead(&self, entity_id: u32) -> (bool, Option<String>) {
+        if !self.fight_tracking() {
+            return (false, None);
+        }
         if !self.config.read().unwrap().pvp_mode_on {
             return (false, None);
         }
@@ -1626,7 +1712,9 @@ mod unowned_hit_tests {
     fn storage() -> DataStorage {
         let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
         let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
-        DataStorage::new(Arc::new(Silent), config, mobs)
+        let storage = DataStorage::new(Arc::new(Silent), config, mobs);
+        storage.set_fight_tracking(true);
+        storage
     }
 
     fn hit(actor_id: u32) -> ParsedDamagePacket {
@@ -1780,6 +1868,7 @@ mod combat_event_tests {
         let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
         let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
         let storage = DataStorage::new(Arc::new(Silent), config, mobs);
+        storage.set_fight_tracking(true);
         storage.append_actor(PLAYER, "Player", None);
         storage.append_actor(HEALER, "Healer", None);
         storage.append_mob(BOSS, BOSS_CODE);
@@ -1981,5 +2070,129 @@ mod combat_event_tests {
         storage.clear();
 
         assert!(storage.combat_events(0.0, 20.0).hits.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod fight_tracking_tests {
+    use std::sync::{Arc, RwLock};
+
+    use super::DataStorage;
+    use crate::config::DpsMeterConfig;
+    use crate::events::{EventSink, MeterEvent};
+    use crate::identity::KnownCharacter;
+    use crate::mobs::catalog::MobCatalog;
+    use crate::models::packet::ParsedDamagePacket;
+
+    struct Silent;
+    impl EventSink for Silent {
+        fn emit(&self, _: MeterEvent) {}
+    }
+
+    const PLAYER: u32 = 7;
+    const MOB: u32 = 900;
+    const MOB_CODE: u32 = 2_340_601;
+    const GLADIATOR_SKILL: u32 = 11_000_000;
+
+    fn storage() -> DataStorage {
+        let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
+        let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
+        DataStorage::new(Arc::new(Silent), config, mobs)
+    }
+
+    fn hit(actor_id: u32, target_id: u32) -> ParsedDamagePacket {
+        ParsedDamagePacket {
+            target_id,
+            actor_id,
+            skill_code: GLADIATOR_SKILL,
+            ori_skill_code: GLADIATOR_SKILL,
+            damage: 407,
+            is_dot: false,
+            is_crit: false,
+            multi_hit_damage: 0,
+            multi_hit_count: 0,
+            specials: Vec::new(),
+            drain_amount: 0,
+            regeneration_amount: 0,
+        }
+    }
+
+    #[test]
+    fn no_fight_is_counted_until_tracking_is_turned_on() {
+        let storage = storage();
+        assert!(!storage.fight_tracking());
+
+        storage.append_damage_at(hit(PLAYER, MOB), 10.0);
+        assert!(storage.get_dps_stats_snapshot().is_empty());
+
+        storage.set_fight_tracking(true);
+        storage.append_damage_at(hit(PLAYER, MOB), 11.0);
+        assert_eq!(storage.get_dps_stats_snapshot().len(), 1);
+    }
+
+    #[test]
+    fn nothing_of_a_fight_is_counted_while_tracking_is_off() {
+        let storage = storage();
+        storage.set_fight_tracking(false);
+        storage.set_main_actor(PLAYER, "Me");
+
+        storage.append_damage_at(hit(PLAYER, MOB), 10.0);
+        storage.record_incoming_hit_at(PLAYER, MOB, 1_100_000, 900, 11.0);
+
+        assert!(storage.get_dps_stats_snapshot().is_empty());
+        assert_eq!(storage.start_time(), None);
+        assert_eq!(storage.activity_at(), None);
+        assert!(storage.combat_events(0.0, 100.0).hits.is_empty());
+    }
+
+    #[test]
+    fn the_world_is_kept_while_tracking_is_off() {
+        let storage = storage();
+        storage.set_fight_tracking(false);
+
+        storage.append_actor(PLAYER, "Me", None);
+        storage.append_mob(MOB, MOB_CODE);
+        storage.set_mob_hp(MOB, Some(900), Some(1_000));
+
+        assert_eq!(storage.actor_id_name_snapshot().get(&PLAYER).map(String::as_str), Some("Me"));
+        assert_eq!(storage.get_mob_code(MOB), Some(MOB_CODE));
+        assert_eq!(storage.mob_id_hp_snapshot().get(&MOB), Some(&(900, 1_000)));
+    }
+
+    #[test]
+    fn turning_tracking_on_counts_from_then_on_against_a_mob_seen_before() {
+        let storage = storage();
+        storage.set_fight_tracking(false);
+        storage.append_mob(MOB, MOB_CODE);
+        storage.append_damage_at(hit(PLAYER, MOB), 10.0);
+
+        storage.set_fight_tracking(true);
+        storage.append_damage_at(hit(PLAYER, MOB), 11.0);
+
+        let stats = storage.get_dps_stats_snapshot();
+        let counts: u32 = stats[&MOB][&PLAYER].values().map(|skill| skill.counts).sum();
+        assert_eq!(counts, 1);
+        assert_eq!(storage.get_mob_code(MOB), Some(MOB_CODE));
+        assert!(storage.is_boss(MOB_CODE));
+    }
+
+    #[test]
+    fn a_hit_still_names_the_own_character_by_its_class_while_tracking_is_off() {
+        let storage = storage();
+        storage.set_known_characters(vec![KnownCharacter {
+            name: "Me".to_string(),
+            server_id: 1,
+            class: "GLADIATOR".to_string(),
+            key: None,
+        }]);
+        storage.bind_own_actor(PLAYER);
+        storage.set_fight_tracking(false);
+        assert!(storage.wants_damage_packets());
+
+        storage.append_damage_at(hit(PLAYER, MOB), 10.0);
+
+        assert_eq!(storage.main_actor_name().as_deref(), Some("Me"));
+        assert!(!storage.wants_damage_packets());
+        assert!(storage.get_dps_stats_snapshot().is_empty());
     }
 }

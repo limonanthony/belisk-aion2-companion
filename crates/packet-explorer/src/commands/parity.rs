@@ -43,6 +43,7 @@ fn shipped_census(raws: &[RawFile]) -> BTreeMap<[u8; 2], u64> {
         let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
         let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
         let storage = Arc::new(DataStorage::new(Arc::new(DiscardEvents), Arc::clone(&config), mobs));
+        storage.set_fight_tracking(true);
         let mut assemblers: HashMap<usize, StreamAssembler> = HashMap::new();
         for chunk in &raw.chunks {
             if contains_heartbeat(&chunk.data) {
@@ -56,7 +57,7 @@ fn shipped_census(raws: &[RawFile]) -> BTreeMap<[u8; 2], u64> {
                 });
             }
             if let Some(assembler) = assemblers.get_mut(&chunk.flow) {
-                assembler.process_chunk(&chunk.data, false);
+                assembler.process_chunk(&chunk.data, false, chunk.t);
             }
         }
     }
