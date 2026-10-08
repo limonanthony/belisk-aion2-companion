@@ -292,6 +292,22 @@ pub struct MainActorDetectedPayload {
     pub sid: Option<String>,
 }
 
+/// Boss adds are summons owned by the boss, so their hits are damage taken.
+/// Only a summon whose owner chain ends at a player is that player's pet.
+fn is_summon_of_a_player(inner: &DataStorageInner, source_id: u32) -> bool {
+    const OWNER_CHAIN_DEPTH: usize = 4;
+    let mut current = source_id;
+    for _ in 0..OWNER_CHAIN_DEPTH {
+        match inner.summon_owner_map.get(&current) {
+            Some(&owner_id) => current = owner_id,
+            None => break,
+        }
+    }
+    current != source_id
+        && inner.actor_id_name_map.contains_key(&current)
+        && !inner.mob_id_code_map.contains_key(&current)
+}
+
 impl DataStorage {
     pub fn new(
         events: Arc<dyn EventSink>,
@@ -675,7 +691,7 @@ impl DataStorage {
             || victim_id == source_id
             || from_a_player
             || inner.mob_id_code_map.contains_key(&victim_id)
-            || inner.summon_owner_map.contains_key(&source_id)
+            || is_summon_of_a_player(&inner, source_id)
         {
             return;
         }
@@ -1812,6 +1828,52 @@ mod combat_event_tests {
         storage.record_incoming_hit_at(PLAYER, BOSS, MONSTER_SKILL, 0, 10.0);
 
         assert!(storage.combat_events(0.0, 20.0).hits.is_empty());
+    }
+
+    #[test]
+    fn a_hit_from_a_summon_of_a_monster_is_damage_taken_at_its_full_amount() {
+        let storage = storage();
+        storage.append_summon(BOSS, 5_001);
+
+        storage.record_incoming_hit_at(PLAYER, 5_001, MONSTER_SKILL, 18_576, 10.0);
+
+        let hits = storage.combat_events(0.0, 20.0).hits;
+        assert_eq!(hits.len(), 1);
+        assert_eq!((hits[0].source_id, hits[0].amount), (5_001, 18_576));
+    }
+
+    #[test]
+    fn a_hit_from_a_summon_of_a_player_is_not_damage_taken() {
+        let storage = storage();
+        storage.append_summon(HEALER, 5_001);
+        storage.append_summon(5_001, 5_002);
+
+        storage.record_incoming_hit_at(PLAYER, 5_001, MONSTER_SKILL, 900, 10.0);
+        storage.record_incoming_hit_at(PLAYER, 5_002, MONSTER_SKILL, 900, 10.0);
+
+        assert!(storage.combat_events(0.0, 20.0).hits.is_empty());
+    }
+
+    #[test]
+    fn a_death_by_a_monsters_summon_has_that_hit_as_its_last_hit() {
+        let storage = storage();
+        storage.append_summon(BOSS, 5_001);
+
+        storage.record_incoming_hit_at(PLAYER, 5_001, MONSTER_SKILL, 15_963, 10.0);
+        storage.record_player_death_at(PLAYER, MONSTER_SKILL, 5_001, "", 0, 10.5);
+
+        let deaths = storage.combat_events(0.0, 20.0).deaths;
+        assert_eq!(deaths[0].last_hit.as_ref().map(|hit| hit.amount), Some(15_963));
+    }
+
+    #[test]
+    fn a_hit_from_a_summon_of_an_owner_not_seen_spawning_is_damage_taken() {
+        let storage = storage();
+        storage.append_summon(5_000, 5_001);
+
+        storage.record_incoming_hit_at(PLAYER, 5_001, MONSTER_SKILL, 18_576, 10.0);
+
+        assert_eq!(storage.combat_events(0.0, 20.0).hits.len(), 1);
     }
 
     #[test]
