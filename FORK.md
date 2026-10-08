@@ -470,7 +470,11 @@ above). The packet explorer still reads English only.
 
 Dungeon names and difficulties in `dungeons.json` have French too (QuestLog's
 `database.getDungeon`; `game_data::dungeon_of` follows the language, English per
-field where one is missing), and four empty English dungeon names were filled from QuestLog.
+field where one is missing). Four empty English dungeon names were filled from
+QuestLog, and four that came from upstream's translations (Phantoms Hall, Fallen
+Guardian's City, Abyssal Rock Grotto, Reforged Abyss) now use the Global client's
+names (Hall of Illusion, Citadel of the Fallen Daeva, Abyssal Horn Den, Abyssal
+Forge: Ludra).
 
 **Personal bests** (`crates/core/src/personal_best.rs`, tested) keep your best DPS
 per character and boss in `history/personal_bests.json`, apart from the

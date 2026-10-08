@@ -246,7 +246,7 @@ mod tests {
 
         i18n::set_language(Language::English);
         assert_eq!(skill_name(TRANSLATED_SKILL), "Basic Attack");
-        assert_eq!(dungeon_of(2_301_721).as_deref(), Some("Fallen Guardian's City · Hard"));
+        assert_eq!(dungeon_of(2_301_721).as_deref(), Some("Citadel of the Fallen Daeva · Hard"));
         assert_eq!(mob_name(Some(TRANSLATED_MOB), Some("Punching Bag")).as_deref(), Some("Punching Bag"));
 
         i18n::set_language(Language::French);

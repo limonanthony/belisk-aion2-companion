@@ -443,7 +443,7 @@ pub fn history_records() -> Vec<HistoryRecord> {
 /// Which of the approved mockup's fights.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ReportFight {
-    /// Basilus the False in Fallen Guardian's City (Hard), six players.
+    /// Basilus the False in the Citadel of the Fallen Daeva (Hard), six players.
     Basilus,
     /// Tyrant Tassin, a field boss with fourteen players.
     Tassin,

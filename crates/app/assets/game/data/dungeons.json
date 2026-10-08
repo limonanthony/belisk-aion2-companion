@@ -14,7 +14,7 @@
   {
     "dungeon_id": "00004",
     "name": {
-      "en": "Phantoms Hall",
+      "en": "Hall of Illusion",
       "fr": "Corridor d'Illusion"
     },
     "difficulty": {
@@ -26,7 +26,7 @@
   {
     "dungeon_id": "00010",
     "name": {
-      "en": "Fallen Guardian's City",
+      "en": "Citadel of the Fallen Daeva",
       "fr": "Citadelle du Daeva déchu"
     },
     "difficulty": {
@@ -61,7 +61,7 @@
   {
     "dungeon_id": "10024",
     "name": {
-      "en": "Abyssal Rock Grotto",
+      "en": "Abyssal Horn Den",
       "fr": "Antre de la Corne abyssale"
     },
     "difficulty": {
@@ -84,7 +84,7 @@
   {
     "dungeon_id": "20001",
     "name": {
-      "en": "Reforged Abyss",
+      "en": "Abyssal Forge: Ludra",
       "fr": "Creuset de l'Abîme : Ludra"
     },
     "difficulty": {
