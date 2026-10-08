@@ -1,0 +1,84 @@
+---
+id: TASK-28
+title: Update the app from GitHub Releases
+status: To Do
+assignee: []
+created_date: '2026-10-08 15:23'
+updated_date: '2026-10-08 15:33'
+labels:
+  - feature
+dependencies: []
+type: feature
+ordinal: 81000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+## Intent
+
+Players learn about new versions inside the app and can update with a click. The app downloads, verifies and stages the new version, and a restart puts it in place. Optionally the download happens on its own, and the player only clicks Restart.
+
+## Agreed (user, 2026-10-08)
+
+- **Source.** Updates come from GitHub Releases. CI builds them on GitHub runners; neither the public repository nor the CI exists yet.
+- **Step 1, manual update:**
+  1. The app detects a new release and shows an Update button.
+  2. The player clicks it, and the app downloads, unpacks and stages the update.
+  3. The app shows a Restart button.
+  4. The player clicks it; the app closes and starts again in the new version.
+- **Step 2, an "auto update" setting.** When it is on, the app downloads, unpacks and stages by itself. The download is throttled so it does not take too much of the network while the player plays. The player then only sees "restart to update". A button or an icon with a hover tooltip are both fine; the user has no preference.
+- **Restart.** Installing always waits for the player's click on Restart. Nothing is installed silently.
+- **Checking schedule.** At launch, then once an hour while the app runs.
+
+## Children
+
+- TASK-28.1: step 1, check, Update button, download, verify, stage, Restart.
+- TASK-28.2: step 2, automatic download and the restart indicator (depends on TASK-28.1).
+
+## Background (from the discussion; facts checked against GitHub's docs)
+
+- **Endpoint.** `GET https://api.github.com/repos/<owner>/<repo>/releases/latest` returns the most recent release that is neither a draft nor a prerelease: https://docs.github.com/en/rest/releases/releases
+  - Requests must send a `User-Agent` header.
+  - Unauthenticated requests are limited to 60 per hour per IP: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
+  - With one check per hour, up to 60 PCs behind one IP stay under that limit. With a 5-minute interval, only 5 would.
+- **Version.** The app compares the release's `tag_name` with its own version (`CARGO_PKG_VERSION`).
+- **Prereleases.** `/latest` never returns them, so betas can be published without reaching normal players.
+
+## Prerequisites (not in this ticket)
+
+- **Version numbering.** It must be decided before the first public release: Cargo still says Aether's 2.4.0 while FORK.md claims a reset to 0.1.0 (TASK-26.3). CI must check that the git tag equals the Cargo version.
+- **Public repository and CI release workflow.** The workflow should attach a lean update archive (exe plus WinDivert files, without `source/`), its SHA-256 and a signature (see step 1). The GPL source obligation is met by the public repository at the release tag and the full dist zip.
+- **Repository owner and name.** The app embeds them in its update URL, so they must be known. The Kisk rename (TASK-23) may change the repository name.
+
+## Open questions (not decided)
+
+- Is update checking on by default, with a Settings switch to turn it off?
+- Is "auto update" on or off by default?
+- Should there be a beta channel? It would read the `/releases` list instead of `/latest`.
+- Signing: which scheme (an ed25519 key such as minisign, or Windows Authenticode code signing, which costs money but also removes SmartScreen warnings), and where the private key lives (not in CI).
+- Restart during a fight: hide the Restart button until the fight ends, or show "Restart after this fight"?
+- The README must say what the app contacts and why. This would be the app's first network call.
+
+## Related
+
+- TASK-23: Kisk rename.
+- TASK-26.3: version and metadata.
+- TASK-12: single instance.
+- TASK-6: closing with × must end the process.
+- TASK-27: README.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-10-08 15:31
+---
+Decided (user, 2026-10-08): once the code is on GitHub, development happens on a `dev` branch and main only receives finished work; a push (merge) to main is the release trigger. The version resets to 1.0.0 (see TASK-26.3). Derived for the CI release workflow: CI runs build and tests on pushes/PRs to dev; on a push to main it releases only when the tag v<Cargo version> does not exist yet. Catch found in the local repository: Aether's tags v0.1.0 to v0.1.15 and v2.0.0 to v2.4.0 exist locally (plus our tauri-final). If they are pushed to the new GitHub repository, our future v2.0.0 to v2.4.0 would collide with them and the 'tag exists' check would skip those releases. Do not push Aether's tags (push branches only, or rename them, e.g. aether-v2.4.0); the user decides, and no tag was changed.
+---
+
+created: 2026-10-08 15:33
+---
+Correction (user, 2026-10-08): the version reset is decided, the number is NOT: it will be either 0.1.0 or 1.0.0, to be determined. Read "1.0.0" in the previous comment as "the reset version". CI release workflow: TASK-30.
+---
+<!-- COMMENTS:END -->

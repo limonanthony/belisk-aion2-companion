@@ -1,10 +1,10 @@
 ---
 id: TASK-20.2
 title: Mockups for to-dos filled from the game
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-07 20:31'
-updated_date: '2026-10-07 21:36'
+updated_date: '2026-10-08 16:53'
 labels:
   - feature
 dependencies:
@@ -36,9 +36,9 @@ Part of the parent work item. Waits on the ticket check, whose answers decide wh
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Mockups cover every changed screen: the to-do window and Settings → To-dos.
-- [ ] #2 Mockups show a game-filled value versus a manual one, and the state before the first login is seen.
-- [ ] #3 The user approves the mockups before any implementation starts.
+- [x] #1 Mockups cover every changed screen: the to-do window and Settings → To-dos.
+- [x] #2 Mockups show a game-filled value versus a manual one, and the state before the first login is seen.
+- [x] #3 The user approves the mockups before any implementation starts.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -51,4 +51,15 @@ Input for the mockups: agreed display (user, 2026-10-07, on keys above stock bec
 - "Full, being wasted" shows only when the regular pool reaches its cap.
 - Typed values accept numbers above the cap (today they are clamped).
 - The To-dos membership switch picks the membership cap for every ticket (for example Shugo keys 12 → 21, Odyle 560 → 840).
+
+Update 2026-10-08: mockups made at docs/gpui-mockups/todos-autofill/ — index.html (the to-do window, 14 states), settings.html (Settings → To-dos, 4 states), README.md (lists every decision as Agreed / Proposed / Open). Awaiting the user's approval.
+
+Questions put to the user:
+- (a) With premium keys above 21, what does the game itself show: "24", "21 +3" or "24/21"?
+- (b) Is a switch to stop filling from the game wanted? (recommended: no)
+- (c) Arrows or none on game-filled rows, and "done / target" vs "N left" on weekly rows?
+
+Open data, shown dashed in the mockups: Deus Research Base / Shattered Arkanis cap 4 or 14; which ticket a Conquest entry spends.
+
+Update 2026-10-08: the user approved the mockups ("yup perfect"), after the open questions and drawn defaults were listed. Approved designs: docs/gpui-mockups/approved/ (todos.html, resources.html, toolbar.html, prompt.html, tray.html, meter.html, settings.html, pvp.html, reminders.html; tokens.md "Hub"); rationale in docs/gpui-mockups/todos-autofill/README.md and docs/gpui-mockups/hub/README.md.
 <!-- SECTION:NOTES:END -->

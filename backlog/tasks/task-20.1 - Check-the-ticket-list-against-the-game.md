@@ -4,7 +4,7 @@ title: Check the ticket list against the game
 status: In Progress
 assignee: []
 created_date: '2026-10-07 20:31'
-updated_date: '2026-10-07 21:36'
+updated_date: '2026-10-08 16:53'
 labels:
   - feature
 dependencies: []
@@ -38,4 +38,15 @@ Update 2026-10-07: the Shugo Festival key is confirmed in game (the user has 7 k
 Remaining checks: Invasion keys, Deus Research Base / Shattered Arkanis (cap 4 vs 14), Abandoned Balaur Fortress / Fafnium Laboratory id order, Odyle Energy, and which tickets a Conquest entry spends.
 
 Findings: the owner's notes file `todo-autofill-findings.md`, with detailed notes next to it (notmeter-consumables.md, abyss-consumables.md, tickets-*.txt). Kept outside the repository on purpose (clean-room study of other meters).
+
+Update 2026-10-08: the game servers were down, so the in-game comparison could not be done. The user chose to build first and compare the numbers once it works ("do you think it makes sense to implement now anyways and when it works I compare the numbers you found with what I have in game to gain time ?" — agreed).
+
+New evidence from the 2026-10-07 22:40 – 2026-10-08 02:21 recordings:
+- The Odyle refill at 00:00 and the shared Conquest pool refill at 01:00 both fit refills timed from a 09:00 (Paris time) daily reset.
+- A server-wide weekly ticket (10/week, internal name "Unclaimed") was spent 5 times between 00:24 and 00:48 for an unknown activity.
+- No per-dungeon Conquest ticket changed.
+
+Expected values for the in-game check if the reset is 09:00: Shugo keys 9, Invasion keys 3, Balaur/Fafnium 7/7, Deus/Arkanis 4/4, Nightmare 2, Odyle 60 + 245 extra.
+
+Update 2026-10-08: the comparison will be done on the built app when the servers are back.
 <!-- SECTION:NOTES:END -->

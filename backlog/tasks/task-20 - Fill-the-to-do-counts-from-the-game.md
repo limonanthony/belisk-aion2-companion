@@ -4,7 +4,7 @@ title: Fill the to-do counts from the game
 status: In Progress
 assignee: []
 created_date: '2026-10-07 20:31'
-updated_date: '2026-10-07 21:36'
+updated_date: '2026-10-08 11:47'
 labels:
   - feature
 dependencies: []
@@ -73,3 +73,9 @@ TASK-2 (existing to-do tracker, manual counts), TASK-17 (whole-session recording
 - [ ] #2 A to-do row the game does not send (for example Duty Missions, Duty Commands) stays manual.
 - [ ] #3 The user confirms the filled values match the game's own counters.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Resumed 2026-10-08.
+<!-- SECTION:NOTES:END -->
