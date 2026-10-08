@@ -5,7 +5,7 @@ use std::str::FromStr;
 use crate::capture::{labels::format_opcode, Direction, FileInfo, Packet};
 use crate::clock::TimeSpec;
 
-const BOOLEAN_FLAGS: &[&str] = &["json", "show-text", "all", "c2s-sizes", "help"];
+const BOOLEAN_FLAGS: &[&str] = &["json", "show-text", "all", "c2s-sizes", "help", "changes-only"];
 const RECORDINGS_SUBPATH: &str = "com.helveticxa.aether/recordings";
 
 pub struct Args {

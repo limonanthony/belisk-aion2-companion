@@ -6,6 +6,7 @@ pub mod opcodes;
 pub mod parity;
 pub mod periodic;
 pub mod search;
+pub mod tickets;
 pub mod unnamed_skills;
 
 use crate::args::{describe_opcode, Args};
@@ -28,6 +29,7 @@ commands:
   dump      hex + field view per packet                                          [--fields-max N (0 = no field table)]
   diff      changed offsets between two packets of one opcode                    --a <id> --b <id>   |   --op 0be3 (consecutive packets)
   search    a number in every encoding                                           --value 560 [--value ..] [--enc u16le,varint]   |   --pair 560,23 --within 16
+  tickets   0B 61 / 0C 61 ticket snapshots and changes per character, by content    [--id 60000001]... [--changes-only] [--show-text]
   events    opcodes near, and rare away from, noted moments                      --notes notes.txt [--before 5] [--after 30] [--ratio 5]
   periodic  opcodes repeating on a fixed interval or at round wall-clock times   [--min 3] [--merge 2] [--tol 10] [--all]
   unnamed-skills  skill ids the app shows as 'Skill <id>': hits, damage, class   [--json]
@@ -73,6 +75,7 @@ pub fn run(args: &Args) -> Result<(), String> {
                 "search" => search::run(&capture, args),
                 "events" => events::run(&capture, args),
                 "periodic" => periodic::run(&capture, args),
+                "tickets" => tickets::run(&capture, args),
                 other => Err(format!("unknown command '{other}' (try: packet-explorer help)")),
             }
         }
