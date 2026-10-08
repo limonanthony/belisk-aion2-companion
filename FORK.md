@@ -449,6 +449,29 @@ the same project. The snapshot builder used to clone the whole name map five
 times a second; it now looks names up one at a time
 (`DataStorage::mob_name`).
 
+**French names.** `crates/core/data/npc_names_fr.json` (about 7,900 mob codes) and
+`crates/app/assets/game/data/skill_names_fr.json` (about 6,900 skill ids) hold
+French names for ids that `npc_names_en.json` and `skill_names_en.json` already
+have; no id is added and no English name changes. The core, the saved history
+and the personal bests keep English. The app looks a name up by id when it
+shows it (`game_data::skill_name`, `game_data::mob_name`) in the language in
+force, English where an id has no French name, and follows the language switch
+live. A record stores a mob code with its English name, so old history shows
+French too. `scripts/build-fr-names.mjs` builds both files, per id: QuestLog.gg
+by id (its public API, fetched in batches into a cache outside the repository),
+then NotMeter's game catalogue by id (names extracted from the Global Steam
+client, kept outside the repository and read only for ids we already have), then
+QuestLog's French for another of our ids with the same English name, then
+NotMeter's French for the same English name, else none. "(DNT)" is ignored when
+names are compared, and the "???" both sources hold for untranslated text is
+not a name. Names are (c) NCSOFT. Today: mobs 7,885 / 0 / 24 / 0 with 82 left
+English, skills 305 / 6,285 / 15 / 325 with 175 left English (layer order as
+above). The packet explorer still reads English only.
+
+Dungeon names and difficulties in `dungeons.json` have French too (QuestLog's
+`database.getDungeon`; `game_data::dungeon_of` follows the language, English per
+field where one is missing), and four empty English dungeon names were filled from QuestLog.
+
 **Personal bests** (`crates/core/src/personal_best.rs`, tested) keep your best DPS
 per character and boss in `history/personal_bests.json`, apart from the
 history so deleting it keeps them. They learn from every record the history

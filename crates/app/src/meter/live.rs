@@ -128,10 +128,9 @@ pub fn boss_hp(target: &TargetInfo) -> Option<Gauge> {
 }
 
 pub fn target_name(target: &TargetInfo) -> String {
-    match &target.target_name {
-        Some(name) if !name.is_empty() => name.clone(),
-        _ => fl!("common-target-numbered", id = target.id),
-    }
+    let english = target.target_name.as_deref().filter(|name| !name.is_empty());
+    game_data::mob_name(target.target_mob_code, english)
+        .unwrap_or_else(|| fl!("common-target-numbered", id = target.id))
 }
 
 /// A target and everyone who hit it, most damage first. Built from the
@@ -404,7 +403,7 @@ pub fn battle_report(snapshot: &CombatSnapshot, target_id: u32, hide_unknown_pla
     let secs = target.map_or(0.0, fight_secs);
     let party = if secs > 0.0 { total as f64 / secs } else { 0.0 };
     let name = target
-        .and_then(|target| target.target_name.as_deref())
+        .and_then(|target| game_data::mob_name(target.target_mob_code, target.target_name.as_deref()))
         .map(|name| format!("{name} · "))
         .unwrap_or_default();
     let mut report = format!(

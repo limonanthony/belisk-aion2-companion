@@ -2,30 +2,36 @@
   {
     "dungeon_id": "00002",
     "name": {
-      "en": "Azure Breath Island"
+      "en": "Azure Breath Island",
+      "fr": "Île du Souffle Azuré"
     },
     "difficulty": {
-      "en": "Hard"
+      "en": "Hard",
+      "fr": "Difficile"
     },
     "boss_ids": [2300243, 2300244, 2300245]
   },
   {
     "dungeon_id": "00004",
     "name": {
-      "en": "Phantoms Hall"
+      "en": "Phantoms Hall",
+      "fr": "Corridor d'Illusion"
     },
     "difficulty": {
-      "en": "Hard"
+      "en": "Hard",
+      "fr": "Difficile"
     },
     "boss_ids": [2321402, 2321401, 2321403]
   },
   {
     "dungeon_id": "00010",
     "name": {
-      "en": "Fallen Guardian's City"
+      "en": "Fallen Guardian's City",
+      "fr": "Citadelle du Daeva déchu"
     },
     "difficulty": {
-      "en": "Hard"
+      "en": "Hard",
+      "fr": "Difficile"
     },
     "boss_ids": [2301721, 2301722, 2301723]
   },
@@ -35,27 +41,32 @@
       "en": "Devourer's Research Base"
     },
     "difficulty": {
-      "en": "Hard"
+      "en": "Hard",
+      "fr": "Difficile"
     },
     "boss_ids": [2300555, 2300556, 2300481]
   },
   {
     "dungeon_id": "10014",
     "name": {
-      "en": ""
+      "en": "Mirror of Scarlet Desire",
+      "fr": "Miroir de l'Affection Rouge"
     },
     "difficulty": {
-      "en": "Phase 4"
+      "en": "Phase 4",
+      "fr": "Phase 4"
     },
     "boss_ids": [2300353, 2300354, 2300355]
   },
   {
     "dungeon_id": "10024",
     "name": {
-      "en": "Abyssal Rock Grotto"
+      "en": "Abyssal Rock Grotto",
+      "fr": "Antre de la Corne abyssale"
     },
     "difficulty": {
-      "en": "Phase 4"
+      "en": "Phase 4",
+      "fr": "Phase 4"
     },
     "boss_ids": [2300544, 2300545, 2300546]
   },
@@ -65,47 +76,56 @@
       "en": "Hidden Legacy of Noi Lan"
     },
     "difficulty": {
-      "en": "Phase 4"
+      "en": "Phase 4",
+      "fr": "Phase 4"
     },
     "boss_ids": [2300446, 2300447, 2300445]
   },
   {
     "dungeon_id": "20001",
     "name": {
-      "en": "Reforged Abyss"
+      "en": "Reforged Abyss",
+      "fr": "Creuset de l'Abîme : Ludra"
     },
     "difficulty": {
-      "en": "Season 1"
+      "en": "Season 1",
+      "fr": "Saison 1"
     },
     "boss_ids": [2301006, 2301007, 2301014]
   },
   {
     "dungeon_id": "20002",
     "name": {
-      "en": ""
+      "en": "Corroded Decontamination Facility",
+      "fr": "Sanctuaire de Purification de l'Érosion"
     },
     "difficulty": {
-      "en": "Season 2"
+      "en": "Season 2",
+      "fr": "Saison 2"
     },
     "boss_ids": [2301209, 2301207, 2301208]
   },
   {
     "dungeon_id": "20003",
     "name": {
-      "en": ""
+      "en": "Chalice of Muspel",
+      "fr": "Calice de Muspel"
     },
     "difficulty": {
-      "en": "Season 3"
+      "en": "Season 3",
+      "fr": "Saison 3"
     },
     "boss_ids": [2301059, 2301060]
   },
   {
     "dungeon_id": "20004",
     "name": {
-      "en": ""
+      "en": "Chalice of Muspel",
+      "fr": "Calice de Muspel"
     },
     "difficulty": {
-      "en": "Season 3"
+      "en": "Season 3",
+      "fr": "Saison 3"
     },
     "boss_ids": [2301089, 2301090]
   }

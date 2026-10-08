@@ -121,7 +121,7 @@ impl FightSummary {
         let share = mine.as_ref().map(|(_, player, ..)| format::percent(player.damage_contribution));
         let report = copy_text(&CopyFacts {
             boss: &boss,
-            place,
+            place: place.as_deref(),
             kind,
             secs,
             you: mine.as_ref().zip(share.as_deref()).map(|((index, player, _, crit, best), share)| YouFacts {

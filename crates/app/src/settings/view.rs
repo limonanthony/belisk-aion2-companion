@@ -2821,6 +2821,7 @@ mod tests {
         let mut fight = sample::boss_fight(60.0, 500);
         if let Some(target) = fight.last_target_info.as_mut() {
             target.target_name = None;
+            target.target_mob_code = Some(1);
         }
         let meter = window.meter.clone();
         window.cx.update(|_, cx| {

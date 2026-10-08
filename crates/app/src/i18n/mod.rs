@@ -1,8 +1,8 @@
 //! The app's one translation setup: Fluent files in `crates/app/i18n/<lang>/`
 //! embedded in the exe, English as the fallback, the language chosen in
 //! Settings → General (or Windows' own) and switched live. Every user-facing
-//! string goes through [`fl!`]; game data (bosses, dungeons, skills) stays
-//! English.
+//! string goes through [`fl!`]; game names (bosses, skills) are looked up by id
+//! in the language in force, English where a name has no translation.
 //!
 //! The language lives in the [`Locale`] entity: every window redraws when it
 //! changes, and a model that keeps text it built earlier observes it to
@@ -16,11 +16,9 @@ mod words;
 
 use gpui::{App, AppContext as _, Entity, Global};
 
-pub use language::LanguageChoice;
+pub use language::{Language, LanguageChoice};
 pub use words::{day_stamp, duration_words, join_and, month_short, weekday_short};
 
-#[cfg(test)]
-pub use language::Language;
 #[cfg(test)]
 pub use loader::set_language;
 
@@ -53,7 +51,6 @@ pub fn locale(cx: &mut App) -> Entity<Locale> {
 }
 
 /// The language now in force.
-#[cfg(test)]
 pub fn language() -> Language {
     loader::language()
 }

@@ -15,13 +15,13 @@ use meter_core::capture::rolling_recorder::ROLLING_FILE_PREFIX;
 use meter_core::engine::meter::{CaptureBackend, DpsMeter};
 use meter_core::preflight;
 use meter_core::region;
-use gpui::{Context, Entity, Task};
+use gpui::{Context, Entity, Subscription, Task};
 
 use super::files::{self, StorageSummary};
 use super::model::global;
 use crate::game_data;
 use crate::history::record_time;
-use crate::i18n::fl;
+use crate::i18n::{self, fl};
 use crate::meter::{MeterModel, ReplayState};
 
 const POLL_EVERY: Duration = Duration::from_secs(1);
@@ -147,6 +147,7 @@ pub struct RuntimeModel {
     check: Option<Task<()>>,
     sizing: Option<Task<()>>,
     scan: Option<Task<()>>,
+    _language: Subscription,
     /// A dev capture draws the page as if a meter ran.
     #[cfg(feature = "probes")]
     pretend_meter: bool,
@@ -156,6 +157,11 @@ impl RuntimeModel {
     pub fn new(meter_model: Entity<MeterModel>, cx: &mut Context<Self>) -> Self {
         let meter = meter_model.read(cx).meter().cloned();
         let data_dir = global(cx).read(cx).data_dir().map(Path::to_path_buf);
+        let locale = i18n::locale(cx);
+        let language = cx.observe(&locale, |this, _, cx| {
+            this.bests = this.read_bests();
+            cx.notify();
+        });
         let mut model = Self {
             meter,
             meter_model,
@@ -172,6 +178,7 @@ impl RuntimeModel {
             check: None,
             sizing: None,
             scan: None,
+            _language: language,
             #[cfg(feature = "probes")]
             pretend_meter: false,
         };
@@ -371,11 +378,14 @@ impl RuntimeModel {
             .personal_bests()
             .into_iter()
             .map(|best| BestRow {
-                boss: best
-                    .target_name
-                    .filter(|name| !name.is_empty())
-                    .or_else(|| meter.mobs().mob_name(best.mob_code))
-                    .unwrap_or_else(|| fl!("common-mob-numbered", code = best.mob_code)),
+                boss: crate::game_data::mob_name(
+                    Some(best.mob_code),
+                    best.target_name
+                        .filter(|name| !name.is_empty())
+                        .or_else(|| meter.mobs().mob_name(best.mob_code))
+                        .as_deref(),
+                )
+                .unwrap_or_else(|| fl!("common-mob-numbered", code = best.mob_code)),
                 character: best.character,
                 dps: best.dps,
                 achieved_at_ms: best.achieved_at,

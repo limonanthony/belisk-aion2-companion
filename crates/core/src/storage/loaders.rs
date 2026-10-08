@@ -34,16 +34,24 @@ pub fn load_healing_skill_codes() -> HashSet<u32> {
 /// (see there for sources); the Traditional Chinese catalogue it replaced read
 /// as the app switching language whenever a target's name was shown.
 pub fn load_npc_names() -> HashMap<u32, String> {
-    serde_json::from_str::<HashMap<String, String>>(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/npc_names_en.json"
-    )))
-    .map(|map| {
-        map.into_iter()
-            .filter_map(|(key, name)| Some((key.parse::<u32>().ok()?, name)))
-            .collect()
-    })
-    .unwrap_or_default()
+    parse_npc_names(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/npc_names_en.json")))
+}
+
+/// French NPC names for the mob codes that have one, built by
+/// `scripts/build-fr-names.mjs`. The core keeps English; the app looks these
+/// up when it shows a name.
+pub fn load_npc_names_fr() -> HashMap<u32, String> {
+    parse_npc_names(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/npc_names_fr.json")))
+}
+
+fn parse_npc_names(json: &str) -> HashMap<u32, String> {
+    serde_json::from_str::<HashMap<String, String>>(json)
+        .map(|map| {
+            map.into_iter()
+                .filter_map(|(key, name)| Some((key.parse::<u32>().ok()?, name)))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -70,6 +78,16 @@ mod tests {
             named * 100 >= bosses.len() * 95,
             "only {named} of {} bosses have an English name",
             bosses.len()
+        );
+    }
+
+    #[test]
+    fn french_npc_names_have_no_han() {
+        let french = load_npc_names_fr();
+        assert!(french.len() > 7_000, "French catalogue shrank to {}", french.len());
+        assert!(
+            french.values().all(|name| !has_han(name)),
+            "a Chinese name crept into npc_names_fr.json"
         );
     }
 }

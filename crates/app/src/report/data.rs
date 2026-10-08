@@ -150,7 +150,7 @@ impl ReportData {
         let when = crate::history::record_time(report.ended_at_ms);
         let place = report.mob_code.and_then(game_data::dungeon_of);
         let count = fl!("common-players-count", count = players.len());
-        let sub_line = place.into_iter().map(str::to_string).chain([when.clone(), count]).collect::<Vec<_>>().join(" · ");
+        let sub_line = place.into_iter().chain([when.clone(), count]).collect::<Vec<_>>().join(" · ");
         Self {
             boss: boss_name(report),
             sub_line,
@@ -361,15 +361,16 @@ fn server(player: &PlayerReport) -> String {
 }
 
 fn boss_name(report: &FightReport) -> String {
-    report.boss_name.clone().unwrap_or_else(|| match report.mob_code {
+    game_data::mob_name(report.mob_code, report.boss_name.as_deref()).unwrap_or_else(|| match report.mob_code {
         Some(code) => fl!("common-mob-numbered", code = code),
         None => fl!("common-target-numbered", id = report.target_id),
     })
 }
 
 fn monster_name(name: Option<&str>, code: Option<u32>) -> String {
-    match (name.filter(|name| !name.trim().is_empty()), code) {
-        (Some(name), _) => name.to_string(),
+    let english = name.filter(|name| !name.trim().is_empty());
+    match (game_data::mob_name(code, english), code) {
+        (Some(name), _) => name,
         (None, Some(code)) => fl!("common-mob-numbered", code = code),
         (None, None) => fl!("report-unknown"),
     }

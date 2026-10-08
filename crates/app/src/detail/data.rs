@@ -574,6 +574,24 @@ mod tests {
     }
 
     #[test]
+    fn the_target_and_skill_names_are_built_in_the_language_in_force() {
+        const PUNCHING_BAG: u32 = 2_000_000;
+        let mut snapshot = snapshot();
+        snapshot.combat_infos.target_infos.get_mut(&BOSS).unwrap().target_mob_code = Some(PUNCHING_BAG);
+        let source = || DetailSource::Target { actor_id: ME, target_id: Some(BOSS) };
+
+        crate::i18n::set_language(crate::i18n::Language::English);
+        let english = build(source(), &snapshot);
+        assert_eq!(english.target_name.as_deref(), Some("Mob 100"));
+        assert_eq!(english.skills[0].name, "Basic Attack");
+
+        crate::i18n::set_language(crate::i18n::Language::French);
+        let french = build(source(), &snapshot);
+        assert_eq!(french.target_name.as_deref(), Some("Mannequin"));
+        assert_eq!(french.skills[0].name, "Attaque de base");
+    }
+
+    #[test]
     fn fight_time_and_dps_come_from_the_players_own_window_on_the_target() {
         let detail = build(DetailSource::Target { actor_id: ME, target_id: Some(BOSS) }, &snapshot());
 
