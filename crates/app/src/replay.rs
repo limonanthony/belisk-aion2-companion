@@ -6,11 +6,13 @@ use meter_core::events::EventSink;
 use meter_core::logger::AppLogger;
 
 /// Starts the meter without a capture driver and feeds it `recording` at
-/// `speed` times the pace it was captured at.
+/// `speed` times the pace it was captured at. `track_fights` is whether the
+/// meter window is open.
 pub fn start(
     events: Arc<dyn EventSink>,
     recording: &Path,
     speed: f64,
+    track_fights: bool,
 ) -> Result<Arc<DpsMeter>, String> {
     let log_path = std::env::temp_dir().join("aether").join("gpui-app.log");
     let logger = Arc::new(AppLogger::new(log_path, Box::new(|_| {})));
@@ -22,6 +24,7 @@ pub fn start(
     config.hide_unknown_players = false;
     config.show_possible_boss = true;
     meter.apply_config(config);
+    meter.set_fight_tracking(track_fights);
 
     meter.start_for_replay()?;
     meter.replay_packet_recording_paced(recording.to_string_lossy().into_owned(), speed)?;

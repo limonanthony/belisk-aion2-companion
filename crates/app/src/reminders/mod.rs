@@ -10,6 +10,7 @@ mod sound;
 mod view;
 
 pub use events::{EventId, Rule, EVENTS};
+pub use schedule::upcoming;
 pub use service::{global, install, log_to, ShowReminder};
 pub use settings::{ReminderSettings, LEAD_MINUTES_OPTIONS};
 pub use view::{expected_size, MeterLink, ReminderView, GAP};

@@ -94,7 +94,9 @@ pub fn save(path: &Path, data: &TodoData) -> Result<(), String> {
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use meter_core::capture::parser::ticket_record::TicketRecord;
     use meter_core::identity::KnownCharacter;
+    use meter_core::tickets::{TicketContent, TicketReport};
 
     use super::*;
     use crate::todos::data::{Cadence, NewOwnTodo, OwnKind, RowId};
@@ -186,5 +188,39 @@ mod tests {
         assert_eq!(loaded.data.characters()[0].name, "Birch");
         assert!(loaded.data.is_folded(crate::todos::catalogue::Section::Today));
         assert!(dir.file().exists(), "the file is not moved aside");
+    }
+
+    #[test]
+    fn a_file_written_before_the_game_filled_the_rows_loads_with_its_typed_amounts() {
+        let dir = TempDir::new("before-tickets");
+        fs::write(
+            dir.file(),
+            br#"{"version":1,"dailyResetMs":5,"characters":[{"id":1,"name":"Alder","serverId":1001,
+                "amounts":{"odyle":{"value":425,"atMs":10},"conquest":{"value":9,"atMs":10},"shugo":{"value":28,"atMs":10}},
+                "progress":{"fissure":4}}],"dutyMissions":{"1001":2}}"#,
+        )
+        .unwrap();
+        let loaded = load(&dir.file(), 0);
+        assert_eq!(loaded.notice, None);
+        let alder = &loaded.data.characters()[0];
+        assert_eq!(alder.typed_amount("odyle").map(|typed| typed.value), Some(425));
+        assert_eq!(alder.typed_amount("shugo").map(|typed| typed.value), Some(28), "a typed amount above the cap is kept");
+        assert_eq!(alder.typed_amount("conquest"), None, "a row that became a group costs that entry only");
+        assert_eq!(alder.logged_in_ms(), None);
+        assert_eq!(loaded.data.duty_missions_done(1001), 2);
+    }
+
+    #[test]
+    fn what_the_game_said_is_saved_and_read_back() {
+        let dir = TempDir::new("tickets");
+        let mut data = sample();
+        let who = KnownCharacter { name: "Alder".to_string(), server_id: 1001, class: "RANGER".to_string(), key: None };
+        let records = [(60_000_001, 125, 245), (8, 2, 0)]
+            .map(|(id, count, charge)| TicketRecord { flags: 0, id, remaining_ms: None, field_b: None, count, charge });
+        data.apply_tickets(&TicketReport { character: who, captured_at: 1_791_000_000.5, content: TicketContent::Snapshot(records.to_vec()) });
+        save(&dir.file(), &data).unwrap();
+        let text = fs::read_to_string(dir.file()).unwrap();
+        assert!(text.contains("\"serverTickets\"") && text.contains("\"loggedInMs\": 1791000000500"), "{text}");
+        assert_eq!(load(&dir.file(), 0).data, data);
     }
 }

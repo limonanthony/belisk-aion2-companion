@@ -9,7 +9,7 @@ use gpui::{
     div, img, prelude::*, px, relative, rgb, rgba, size, svg,
     Animation, AnimationExt as _, AnyElement, App, ClipboardItem, Context, Div, ElementId,
     Entity, EventEmitter, FontFeatures, FontWeight, Global, Hsla, IntoElement, Render, Role, SharedString, Stateful,
-    Task, Window, WindowHandle,
+    Task, Toggled, Window, WindowHandle,
 };
 
 use super::board::Board;
@@ -30,7 +30,7 @@ use crate::overlay;
 use crate::secondary;
 use crate::style::{class_fill, track, Scale};
 use crate::report::ReportRequest;
-use crate::todos;
+use crate::toolbar;
 
 const TEXT: u32 = 0xfff6ecf5;
 const SECONDARY: u32 = 0xfff6ecd1;
@@ -83,6 +83,13 @@ struct RowMotion {
     bar: Tween,
 }
 
+/// The tools with a tooltip.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MeterTool {
+    More,
+    Close,
+}
+
 /// The board a card draws.
 enum Shown<'a> {
     Session(&'a SessionBoard),
@@ -127,6 +134,11 @@ pub struct MeterView {
     /// The switch side whose tooltip is up, once the pointer has rested.
     tip: Option<Board>,
     tip_timer: Option<Task<()>>,
+    /// The "…" or × under the pointer, from its enter and leave.
+    tool_hover: Option<MeterTool>,
+    /// The tool whose tooltip is up, once the pointer has rested on it.
+    tool_tip: Option<MeterTool>,
+    tool_tip_timer: Option<Task<()>>,
     menu_open: bool,
     menu_close: Option<Task<()>>,
     /// The pointer is on the summary card's report button, from its enter and
@@ -187,6 +199,9 @@ impl MeterView {
             switch_hover: None,
             tip: None,
             tip_timer: None,
+            tool_hover: None,
+            tool_tip: None,
+            tool_tip_timer: None,
             menu_open: false,
             menu_close: None,
             report_hover: false,
@@ -293,6 +308,7 @@ impl MeterView {
             return;
         }
         self.hover_switch_off();
+        self.hover_tool_off();
         self.collapse = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(COLLAPSE_AFTER).await;
             let _ = this.update(cx, |this, cx| {
@@ -338,6 +354,69 @@ impl MeterView {
         self.switch_hover = None;
         self.tip = None;
         self.tip_timer = None;
+    }
+
+    fn hover_tool_off(&mut self) {
+        self.tool_hover = None;
+        self.tool_tip = None;
+        self.tool_tip_timer = None;
+    }
+
+    /// As the switch's: the tooltip waits for the pointer to rest.
+    fn hover_tool(&mut self, tool: MeterTool, hovered: bool, cx: &mut Context<Self>) {
+        if hovered {
+            self.tool_hover = Some(tool);
+            self.tool_tip = None;
+            self.tool_tip_timer = Some(cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(TIP_DELAY).await;
+                let _ = this.update(cx, |this, cx| {
+                    this.tool_tip = this.tool_hover;
+                    this.tool_tip_timer = None;
+                    cx.notify();
+                });
+            }));
+        } else if self.tool_hover == Some(tool) {
+            self.hover_tool_off();
+        }
+        cx.notify();
+    }
+
+    /// For dev captures: the pointer resting on ×, its tooltip up.
+    #[cfg(feature = "probes")]
+    pub fn force_close_tip(&mut self, cx: &mut Context<Self>) {
+        self.tool_hover = Some(MeterTool::Close);
+        self.tool_tip = Some(MeterTool::Close);
+        self.tool_tip_timer = None;
+        cx.notify();
+    }
+
+    /// The tooltip of the tool the pointer rests on, under it, right edges
+    /// aligned; "…" says nothing while its menu is open.
+    fn tool_tooltip(&self, s: Scale) -> Option<impl IntoElement> {
+        let (title, line): (SharedString, Option<SharedString>) = match self.tool_tip? {
+            MeterTool::More if self.menu_open => return None,
+            MeterTool::More => (fl!("meter-boss-setting").into(), None),
+            MeterTool::Close => (fl!("meter-close").into(), Some(fl!("meter-close-line").into())),
+        };
+        Some(
+            div()
+                .absolute()
+                .top(s.px(31.))
+                .right(s.px(5.))
+                .py(s.px(4.))
+                .px(s.px(8.))
+                .rounded(s.px(6.))
+                .border_1()
+                .border_color(rgba(POPOVER_BORDER))
+                .bg(rgba(POPOVER))
+                .text_size(s.px(11.5))
+                .font_weight(FontWeight::MEDIUM)
+                .line_height(relative(1.35))
+                .whitespace_nowrap()
+                .child(title)
+                .children(line.map(|line| div().text_color(rgba(MUTED)).child(line)))
+                .with_animation("tool-tip", Animation::new(CHIP_FADE), |tip, t| tip.opacity(t)),
+        )
     }
 
     /// The tooltip waits for the pointer to rest, like GPUI's own tooltips.
@@ -410,19 +489,31 @@ impl MeterView {
                         .on_click(cx.listener(|this, _, _, cx| this.copy_report(cx))),
                 )
             })
-            .child(tool_button("more", Icon::More, self.menu_open, s).on_click(cx.listener(
-                |this, _, _, cx| {
-                    if this.menu_open {
-                        this.close_menu();
-                    } else {
-                        this.menu_open = true;
-                    }
-                    cx.notify();
-                },
-            )))
+            .child(
+                tool_button("more", Icon::More, self.menu_open, s)
+                    .role(Role::Button)
+                    .aria_label(fl!("meter-boss-setting"))
+                    .aria_expanded(self.menu_open)
+                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.hover_tool(MeterTool::More, *hovered, cx)))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if this.menu_open {
+                            this.close_menu();
+                        } else {
+                            this.menu_open = true;
+                        }
+                        cx.notify();
+                    })),
+            )
             .child(
                 tool_button("close", Icon::Close, false, s)
-                    .on_click(cx.listener(|_, _, _, cx| cx.quit())),
+                    .role(Role::Button)
+                    .aria_label(fl!("meter-close"))
+                    .aria_description(fl!("meter-close-line"))
+                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.hover_tool(MeterTool::Close, *hovered, cx)))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.hover_tool_off();
+                        cx.defer(toolbar::close_meter);
+                    })),
             )
     }
 
@@ -591,6 +682,7 @@ impl MeterView {
             .when(!model.identified(), |card| card.child(unidentified_note(s)))
             .child(foot)
             .when_some(tip, |card, (title, line)| card.child(tooltip(title, line, row_count < 2, s)))
+            .children(self.tool_tooltip(s))
     }
 
     fn board_footer(
@@ -804,6 +896,7 @@ impl MeterView {
                     .child(div().flex_1())
                     .children(system_figures(model, s)),
             )
+            .children(self.tool_tooltip(s))
     }
 
     /// The boss correction for the mob the header names. Drawn in the window
@@ -820,6 +913,10 @@ impl MeterView {
             let checked = choice == Some(item_choice);
             div()
                 .id(id)
+                .debug_selector(move || id.to_string())
+                .role(Role::MenuItemRadio)
+                .aria_label(text.clone())
+                .aria_toggled(if checked { Toggled::True } else { Toggled::False })
                 .h(s.px(26.))
                 .px(s.px(8.))
                 .flex()
@@ -855,36 +952,15 @@ impl MeterView {
                         }))
                 })
         };
-        let link = |id: &'static str, text: String, trailer: Option<String>, open: fn(&Entity<MeterModel>, &mut App)| {
-            div()
-                .id(id)
-                .h(s.px(26.))
-                .px(s.px(8.))
-                .flex()
-                .items_center()
-                .gap(s.px(8.))
-                .rounded(s.px(6.))
-                .text_color(rgba(TEXT))
-                .cursor_pointer()
-                .hover(|item| item.bg(rgba(HOT)))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.close_menu();
-                    open(&this.model, cx);
-                    cx.notify();
-                }))
-                .child(div().flex_none().size(s.px(12.)))
-                .child(div().flex_1().min_w_0().truncate().font_weight(FontWeight::MEDIUM).child(text))
-                .children(trailer.map(|trailer| {
-                    div().flex_none().text_size(s.px(11.)).text_color(rgba(FAINT)).child(trailer)
-                }))
-        };
-        let full = todos::global(cx).read(cx).full_count();
         div()
             .absolute()
             .top(s.px(MENU_TOP))
             .right(s.px(8.))
             .w(s.px(MENU_WIDTH))
             .occlude()
+            .id("boss-menu")
+            .role(Role::Menu)
+            .aria_label(fl!("meter-boss-setting"))
             .p(s.px(4.))
             .flex()
             .flex_col()
@@ -893,11 +969,6 @@ impl MeterView {
             .border_color(rgba(POPOVER_BORDER))
             .bg(rgba(POPOVER))
             .text_size(s.px(12.5))
-            .child(link("menu-history", fl!("meter-menu-fight-history"), None, secondary::open_history))
-            .child(link("menu-pvp", fl!("meter-menu-pvp"), None, secondary::open_pvp))
-            .child(link("menu-todos", fl!("meter-menu-todos"), (full > 0).then(|| todos::copy::full(full)), secondary::open_todos))
-            .child(link("menu-settings", fl!("meter-menu-settings"), None, secondary::open_settings))
-            .child(div().h(s.px(1.)).mx(s.px(4.)).my(s.px(4.)).bg(rgba(DIVIDER)))
             .when(target.is_none(), |menu| {
                 menu.child(
                     div()
@@ -1772,5 +1843,25 @@ mod tests {
         });
 
         assert!(card.cx.debug_bounds("open-report").is_none());
+    }
+
+    #[gpui::test]
+    fn the_menu_holds_only_the_boss_setting(cx: &mut TestAppContext) {
+        let card = card(cx, Vec::new());
+        let view = card.view.clone();
+        card.cx.update(|_, cx| {
+            view.update(cx, |view, cx| {
+                view.menu_open = true;
+                cx.notify();
+            })
+        });
+        card.cx.run_until_parked();
+
+        for item in ["menu-boss", "menu-not-boss", "menu-automatic"] {
+            assert!(card.cx.debug_bounds(item).is_some(), "{item} is missing");
+        }
+        for gone in ["menu-history", "menu-pvp", "menu-todos", "menu-resources", "menu-settings"] {
+            assert!(card.cx.debug_bounds(gone).is_none(), "{gone} is still in the menu");
+        }
     }
 }

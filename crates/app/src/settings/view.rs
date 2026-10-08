@@ -34,8 +34,9 @@ use super::model::{
 };
 use super::runtime::{CaptureCheck, MeterTile, RecordingOrigin, ReplayProgress, RuntimeModel, StorageState};
 use super::widgets::{
-    self, alert, backdrop, badge, button, description, dimmed_row, disabled_select, group, group_title, icon, list_row,
-    note, page_head, row, scroll_thumb, segmented, select_menu, select_trigger, side_item, slider, spinner, switch, tile,
+    self, alert, backdrop, badge, button, description, dimmed_row, disabled_select, group, group_title, icon, keys,
+    list_row, note, page_head, row, scroll_thumb, segmented, select_menu, select_trigger, side_item, slider, spinner,
+    stacked_row, switch, tile,
     ButtonKind, Focus, Handler, Reveal, SliderSpec, Tone, BODY_FONT, CANVAS, DISPLAY_FONT, FAINT, LINE, MUTED,
     OPTION_HEIGHT, POPOVER_BORDER, RAISED, SCRIM, SIDE, TEXT,
 };
@@ -195,7 +196,10 @@ impl Select {
                 END_FIGHT_AFTER_OPTIONS.iter().position(|&secs| secs == settings.behaviour.end_fight_after_secs)
             }
             Self::LeadTime => LEAD_MINUTES_OPTIONS.iter().position(|&minutes| minutes == settings.reminders.lead_minutes),
-            Self::ResetHour => Some(usize::from(settings.todos.reset_hour.min(23))),
+            Self::ResetHour => {
+                let clock = settings.todos.reset_clock_now();
+                (clock.minute == 0).then_some(usize::from(clock.hour))
+            }
             Self::Language => LanguageChoice::ALL.iter().position(|&choice| choice == settings.general.language),
         }
     }
@@ -204,7 +208,7 @@ impl Select {
         match self {
             Self::EndFight => end_fight_after_label(settings.behaviour.end_fight_after_secs).into(),
             Self::LeadTime => lead_label(settings.reminders.lead_minutes),
-            Self::ResetHour => hour_label(settings.todos.reset_hour),
+            Self::ResetHour => settings.todos.reset_clock_now().to_string().into(),
             Self::Language => language_label(settings.general.language),
         }
     }
@@ -314,17 +318,24 @@ enum TodosDone {
 }
 
 /// What the To-dos page shows of the to-dos: hidden built-ins, your own
-/// to-dos for the dialog, and a failed save.
+/// to-dos for the dialog, a failed save, and a pool the game shows above its
+/// plain cap while the membership switch is off.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct TodosSeen {
     hidden: HiddenSummary,
     own_total: usize,
     save_error: Option<String>,
+    membership_hint: Option<todos::PoolAbovePlainCap>,
 }
 
 impl TodosSeen {
     fn of(todos: &todos::Todos) -> Self {
-        Self { hidden: todos.hidden_summary(), own_total: todos.own_total(), save_error: todos.save_error().map(str::to_string) }
+        Self {
+            hidden: todos.hidden_summary(),
+            own_total: todos.own_total(),
+            save_error: todos.save_error().map(str::to_string),
+            membership_hint: todos.membership_hint(),
+        }
     }
 }
 
@@ -913,7 +924,25 @@ impl SettingsView {
                 cx,
             ),
         ]);
+        let open_meter = self.switch_row(
+            "open-meter",
+            fl!("settings-overlay-open-meter"),
+            Some(fl!("settings-overlay-open-meter-text")),
+            settings.windows.open_meter_at_launch,
+            |all, on| all.windows.open_meter_at_launch = on,
+            window,
+            cx,
+        );
         let lock = self.lock_row(window, cx);
+        let show_hide = stacked_row(
+            fl!("settings-overlay-show-hide"),
+            Some(description(fl!("settings-overlay-show-hide-text"))),
+            keys(
+                "show-hide-keys",
+                fl!("settings-overlay-show-hide-keys"),
+                vec![fl!("settings-key-alt"), fl!("settings-key-shift"), fl!("settings-key-caps-lock")],
+            ),
+        );
         let detail = self.segmented_row(
             "detail-opens",
             fl!("settings-overlay-detail-opens"),
@@ -940,7 +969,7 @@ impl SettingsView {
             .child(group_title(fl!("settings-overlay-boss-fights"), false))
             .child(fights)
             .child(group_title(fl!("settings-overlay-window"), false))
-            .child(group(vec![lock, detail]));
+            .child(group(vec![open_meter, lock, show_hide, detail]));
         #[cfg(feature = "probes")]
         let rows = rows.relative().child(self.layout_marks.entry("overlay-rows").or_default().marker());
         let preview = self.preview_column(cx);
@@ -2461,6 +2490,7 @@ mod tests {
             "dps",
             "fight-summary",
             "pace",
+            "open-meter",
             "detail-opens",
             "nav-overlay",
         ];
@@ -2475,7 +2505,7 @@ mod tests {
         window.press("shift-tab");
         assert_eq!(window.focused().as_deref(), Some("detail-opens"));
         window.press("shift-tab");
-        assert_eq!(window.focused().as_deref(), Some("pace"));
+        assert_eq!(window.focused().as_deref(), Some("open-meter"));
     }
 
     #[gpui::test]
@@ -2765,7 +2795,8 @@ mod tests {
                         server_id: 1001,
                         class: "RANGER".to_string(),
                         key: None,
-                    }]
+                    }];
+                    all.todos.reset_hour = Some(9);
                 })
             })
         });
@@ -2775,9 +2806,12 @@ mod tests {
         assert!(window.select_open());
         window.press("up");
         window.press("enter");
-        assert_eq!(window.settings().todos.reset_hour, 8, "the hour before 09:00");
         let todos = window.cx.update(|_, cx| todos::global(cx));
-        assert_eq!(window.cx.update(|_, cx| todos.read(cx).reset_hour()), 8, "the tracker follows at once");
+        assert_eq!(
+            window.cx.update(|_, cx| todos.read(cx).reset_clock().to_string()),
+            "08:00",
+            "the hour before 09:00, and the tracker follows at once"
+        );
 
         window.tab_to("membership");
         window.press("space");

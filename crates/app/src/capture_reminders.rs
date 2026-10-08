@@ -159,7 +159,7 @@ enum Side {
 }
 
 /// A reminder starting a minute from now at `hour`:`minute` on the clock.
-fn show(events: Vec<EventId>, (hour, minute): (u8, u8), cx: &mut AsyncApp) {
+pub(crate) fn show(events: Vec<EventId>, (hour, minute): (u8, u8), cx: &mut AsyncApp) {
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_millis() as i64);
     let request = ShowReminder { events, start_ms: now_ms + 60_000, starts_at: ClockTime { hour, minute }, is_test: false };
     cx.update(|cx| secondary::show_reminder(&request, cx));
@@ -280,14 +280,26 @@ fn window_rect(hwnd: HWND) -> Result<Rect> {
 async fn shoot_stack(meter_hwnd: HWND, dir: &Path, name: &str, cx: &mut AsyncApp) -> Result<()> {
     pause(cx, SETTLE).await;
     let card_hwnd = window_hwnd(WindowKind::Reminder, cx)?;
-    let (meter_raw, card_raw) = (meter_hwnd.0 as isize, card_hwnd.0 as isize);
+    shoot_together(&[meter_hwnd, card_hwnd], dir, name, cx).await
+}
+
+/// Windows each as PrintWindow draws it, placed as they sit on the (virtual)
+/// screen, over a plain backdrop.
+pub(crate) async fn shoot_together(windows: &[HWND], dir: &Path, name: &str, cx: &mut AsyncApp) -> Result<()> {
+    let raw: Vec<isize> = windows.iter().map(|hwnd| hwnd.0 as isize).collect();
+    let count = raw.len();
     let path = dir.join(format!("{name}.png"));
     let target = path.clone();
     let (width, height) = cx
         .background_executor()
         .spawn(async move {
-            let (meter, card) = (HWND(meter_raw as *mut c_void), HWND(card_raw as *mut c_void));
-            let stack = [(window_rect(meter)?, grab_image(meter)?), (window_rect(card)?, grab_image(card)?)];
+            let stack = raw
+                .into_iter()
+                .map(|raw| {
+                    let hwnd = HWND(raw as *mut c_void);
+                    Ok::<_, String>((window_rect(hwnd)?, grab_image(hwnd)?))
+                })
+                .collect::<Result<Vec<_>>>()?;
             let left = stack.iter().map(|(rect, _)| rect.left).min().unwrap_or(0) - STACK_MARGIN;
             let top = stack.iter().map(|(rect, _)| rect.top).min().unwrap_or(0) - STACK_MARGIN;
             let right = stack.iter().map(|(rect, _)| rect.right).max().unwrap_or(0) + STACK_MARGIN;
@@ -300,7 +312,7 @@ async fn shoot_stack(meter_hwnd: HWND, dir: &Path, name: &str, cx: &mut AsyncApp
             Ok::<_, String>(canvas.dimensions())
         })
         .await?;
-    println!("captured {} ({width}x{height}, meter and card)", path.display());
+    println!("captured {} ({width}x{height}, {count} windows)", path.display());
     Ok(())
 }
 

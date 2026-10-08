@@ -39,10 +39,8 @@ impl Section {
 /// When a refilling amount gains its next step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Refill {
-    /// Every `hours` real hours, counted from the moment the amount was typed.
+    /// Every `hours` hours on a clock that starts at the daily reset hour.
     EveryHours { add: u32, hours: u32 },
-    /// Once a day at a fixed hour of the PC's clock.
-    DailyAt { add: u32, hour: u8 },
     /// Once a day at the daily reset hour.
     AtDailyReset { add: u32 },
 }
@@ -50,7 +48,7 @@ pub enum Refill {
 impl Refill {
     pub fn add(self) -> u32 {
         match self {
-            Self::EveryHours { add, .. } | Self::DailyAt { add, .. } | Self::AtDailyReset { add } => add,
+            Self::EveryHours { add, .. } | Self::AtDailyReset { add } => add,
         }
     }
 
@@ -64,6 +62,8 @@ pub struct AmountSpec {
     pub cap: u32,
     /// The cap with the membership switch on; none when membership changes nothing.
     pub membership_cap: Option<u32>,
+    /// How far the extra pool (items and rewards, never refilled) goes; none when the game sets no limit.
+    pub extra_cap: Option<u32>,
     /// What one arrow press adds or removes.
     pub step: u32,
     pub refill: Refill,
@@ -120,13 +120,23 @@ pub struct Builtin {
     pub kind: Kind,
     /// The id of the group this row sits in.
     pub group: Option<&'static str>,
-    /// Shared by the characters of one server (the game counts it per account).
+    /// Counted by the tracker once for the server's characters, not per character.
     pub account_wide: bool,
     pub hidden_by_default: bool,
+    /// The game's ticket this row follows; none for what only the player counts.
+    pub ticket: Option<u32>,
+}
+
+impl Builtin {
+    /// Shown with the "Account" tag: counted for the whole server, by the
+    /// tracker or by the game.
+    pub fn is_account(&self) -> bool {
+        self.account_wide || self.ticket.is_some_and(is_server_ticket)
+    }
 }
 
 const fn row(id: &'static str, section: Section, label: &'static str, sub: Option<Sub>, kind: Kind) -> Builtin {
-    Builtin { id, section, label, sub, kind, group: None, account_wide: false, hidden_by_default: false }
+    Builtin { id, section, label, sub, kind, group: None, account_wide: false, hidden_by_default: false, ticket: None }
 }
 
 const fn today(id: &'static str, label: &'static str, target: u32) -> Builtin {
@@ -142,67 +152,102 @@ const fn in_group(group: &'static str, mut builtin: Builtin) -> Builtin {
     builtin
 }
 
-const fn recharge(id: &'static str, label: &'static str, spec: AmountSpec) -> Builtin {
-    row(id, Section::Recharges, label, None, Kind::Amount(spec))
+const fn backed(ticket: u32, mut builtin: Builtin) -> Builtin {
+    builtin.ticket = Some(ticket);
+    builtin
+}
+
+const fn recharge(id: &'static str, label: &'static str, ticket: u32, spec: AmountSpec) -> Builtin {
+    backed(ticket, row(id, Section::Recharges, label, None, Kind::Amount(spec)))
 }
 
 const fn spec(cap: u32, step: u32, refill: Refill) -> AmountSpec {
-    AmountSpec { cap, membership_cap: None, step, refill }
+    AmountSpec { cap, membership_cap: None, extra_cap: None, step, refill }
 }
 
 pub const DUTY_MISSIONS: &str = "duty";
 pub const ODYLE: &str = "odyle";
+pub const SHUGO_KEYS: &str = "shugo";
+
+/// The tickets the game counts for the server, shared by its characters.
+const SERVER_TICKETS: [u32; 5] = [1, 8, 15, 101, 60_000_009];
+
+pub fn is_server_ticket(ticket: u32) -> bool {
+    SERVER_TICKETS.contains(&ticket)
+}
 
 const ODYLE_SPEC: AmountSpec = AmountSpec {
     cap: 560,
     membership_cap: Some(840),
+    extra_cap: Some(2000),
     step: 10,
     refill: Refill::EveryHours { add: 15, hours: 3 },
 };
 
+const SHUGO_SPEC: AmountSpec = AmountSpec {
+    cap: 12,
+    membership_cap: Some(21),
+    extra_cap: Some(30),
+    step: 1,
+    refill: Refill::AtDailyReset { add: 3 },
+};
+
+const INVASION_SPEC: AmountSpec = AmountSpec { extra_cap: Some(30), ..spec(7, 1, Refill::AtDailyReset { add: 1 }) };
+const NIGHTMARE_SPEC: AmountSpec = AmountSpec { extra_cap: Some(30), ..spec(14, 1, Refill::AtDailyReset { add: 2 }) };
+const CONQUEST_SPEC: AmountSpec = spec(14, 1, Refill::AtDailyReset { add: 2 });
+const GRADE_SPEC: AmountSpec = spec(4, 1, Refill::AtDailyReset { add: 2 });
+const DAILY_DUNGEON_SPEC: AmountSpec = spec(7, 1, Refill::AtDailyReset { add: 1 });
+
+const GROUP_CONQUEST: &str = "conquest";
 const GROUP_EXPLORATION: &str = "explore";
 const GROUP_SANCTUARY: &str = "sanct";
 
 pub const CATALOGUE: &[Builtin] = &[
     Builtin { account_wide: true, ..today(DUTY_MISSIONS, "Duty Missions", 5) },
-    recharge(ODYLE, "Odyle Energy", ODYLE_SPEC),
-    recharge("shugo", "Shugo Festival keys", spec(28, 1, Refill::DailyAt { add: 4, hour: 16 })),
-    recharge("invasion", "Invasion keys", spec(7, 1, Refill::DailyAt { add: 1, hour: 16 })),
-    recharge("nightmare", "Nightmare", spec(14, 1, Refill::AtDailyReset { add: 2 })),
-    recharge("conquest", "Conquest dungeons", spec(14, 1, Refill::AtDailyReset { add: 2 })),
-    recharge("deus", "Deus Research Base", spec(14, 1, Refill::AtDailyReset { add: 2 })),
-    recharge("arkanis", "Shattered Arkanis", spec(14, 1, Refill::AtDailyReset { add: 2 })),
-    recharge("balaur", "Abandoned Balaur Fortress", spec(7, 1, Refill::AtDailyReset { add: 1 })),
-    recharge("fafnium", "Fafnium Laboratory", spec(7, 1, Refill::AtDailyReset { add: 1 })),
-    weekly("fissure", "Daily Dungeon", Some(Sub::Game("Unknown Fissure")), 14),
-    weekly("trial", "Ascension Trial", None, 3),
-    weekly("subj", "Subjugation", None, 3),
+    recharge(ODYLE, "Odyle Energy", 60_000_001, ODYLE_SPEC),
+    recharge(SHUGO_KEYS, "Shugo Festival keys", 1, SHUGO_SPEC),
+    recharge("invasion", "Invasion keys", 8, INVASION_SPEC),
+    recharge("nightmare", "Nightmare", 4, NIGHTMARE_SPEC),
+    row(GROUP_CONQUEST, Section::Recharges, "Conquest dungeons", None, Kind::Group),
+    in_group(GROUP_CONQUEST, recharge("c-krao", "Krao Cave", 60_000_101, CONQUEST_SPEC)),
+    in_group(GROUP_CONQUEST, recharge("c-urugugu", "Urugugu Canyon", 60_001_201, CONQUEST_SPEC)),
+    in_group(GROUP_CONQUEST, recharge("c-fire", "Fire Temple", 60_002_201, CONQUEST_SPEC)),
+    in_group(GROUP_CONQUEST, recharge("c-draupnir", "Draupnir", 60_003_201, CONQUEST_SPEC)),
+    in_group(GROUP_CONQUEST, recharge("c-vakron", "Vakron Sky Island", 60_007_201, CONQUEST_SPEC)),
+    in_group(GROUP_CONQUEST, recharge("c-horn", "Ferocious Horn Den", 60_009_201, CONQUEST_SPEC)),
+    recharge("deus", "Deus Research Base", 60_005_301, GRADE_SPEC),
+    recharge("arkanis", "Shattered Arkanis", 60_006_301, GRADE_SPEC),
+    recharge("balaur", "Abandoned Balaur Fortress", 102, DAILY_DUNGEON_SPEC),
+    recharge("fafnium", "Fafnium Laboratory", 103, DAILY_DUNGEON_SPEC),
+    backed(101, weekly("fissure", "Daily Dungeon", Some(Sub::Game("Unknown Fissure")), 14)),
+    backed(80_000_001, weekly("trial", "Ascension Trial", None, 3)),
+    backed(70_000_001, weekly("subj", "Subjugation", None, 3)),
     row(GROUP_SANCTUARY, Section::ThisWeek, "Sanctuary", None, Kind::Group),
-    in_group(GROUP_SANCTUARY, weekly("forge", "Abyssal Forge", Some(Sub::Attempts), 4)),
+    in_group(GROUP_SANCTUARY, backed(90_000_001, weekly("forge", "Abyssal Forge", Some(Sub::Attempts), 4))),
     in_group(
         GROUP_SANCTUARY,
-        row("forgeboss", Section::ThisWeek, "Abyssal Forge", Some(Sub::FinalBoss), Kind::Tick),
+        backed(90_000_002, row("forgeboss", Section::ThisWeek, "Abyssal Forge", Some(Sub::FinalBoss), Kind::Tick)),
     ),
-    in_group(GROUP_SANCTUARY, weekly("corr", "Corroded Facility", Some(Sub::Attempts), 4)),
-    in_group(GROUP_SANCTUARY, weekly("corrboss", "Corroded Facility", Some(Sub::FinalBoss), 2)),
-    in_group(GROUP_SANCTUARY, weekly("chal", "Chalice of Muspel", Some(Sub::Attempts), 4)),
-    in_group(GROUP_SANCTUARY, weekly("chalboss", "Chalice of Muspel", Some(Sub::FinalBoss), 2)),
-    weekly("transc", "Transcendence", Some(Sub::FinalBossKills), 28),
-    weekly("conqk", "Conquest", Some(Sub::FinalBossKills), 35),
-    weekly("cradle", "Cradle of Nihility", Some(Sub::Game("Conquest")), 7),
-    weekly("dramata", "Dying Dramata's Nest", Some(Sub::Game("Conquest")), 7),
-    weekly("ordeal", "Ordeal", Some(Sub::FinalBossKills), 7),
+    in_group(GROUP_SANCTUARY, backed(90_000_003, weekly("corr", "Corroded Facility", Some(Sub::Attempts), 4))),
+    in_group(GROUP_SANCTUARY, backed(90_000_004, weekly("corrboss", "Corroded Facility", Some(Sub::FinalBoss), 2))),
+    in_group(GROUP_SANCTUARY, backed(90_000_005, weekly("chal", "Chalice of Muspel", Some(Sub::Attempts), 4))),
+    in_group(GROUP_SANCTUARY, backed(90_000_006, weekly("chalboss", "Chalice of Muspel", Some(Sub::FinalBoss), 2))),
+    backed(60_000_008, weekly("transc", "Transcendence", Some(Sub::FinalBossKills), 28)),
+    backed(60_000_007, weekly("conqk", "Conquest", Some(Sub::FinalBossKills), 35)),
+    backed(60_012_201, weekly("cradle", "Cradle of Nihility", Some(Sub::Game("Conquest")), 7)),
+    backed(60_004_201, weekly("dramata", "Dying Dramata's Nest", Some(Sub::Game("Conquest")), 7)),
+    backed(60_015_101, weekly("ordeal", "Ordeal", Some(Sub::FinalBossKills), 7)),
     row(GROUP_EXPLORATION, Section::ThisWeek, "Exploration", Some(Sub::RunsPerDungeon), Kind::Group),
-    in_group(GROUP_EXPLORATION, weekly("x-azure", "Azure Breath Island", None, 7)),
-    in_group(GROUP_EXPLORATION, weekly("x-cradle", "Cradle of Nihility", None, 7)),
-    in_group(GROUP_EXPLORATION, weekly("x-draupnir", "Draupnir", None, 7)),
-    in_group(GROUP_EXPLORATION, weekly("x-dramata", "Dying Dramata's Nest", None, 7)),
-    in_group(GROUP_EXPLORATION, weekly("x-horn", "Ferocious Horn Den", None, 7)),
-    in_group(GROUP_EXPLORATION, weekly("x-fire", "Fire Temple", None, 7)),
-    in_group(GROUP_EXPLORATION, weekly("x-illusion", "Hall of Illusion", None, 7)),
-    in_group(GROUP_EXPLORATION, weekly("x-krao", "Krao Cave", None, 7)),
-    in_group(GROUP_EXPLORATION, weekly("x-urugugu", "Urugugu Canyon", None, 7)),
-    in_group(GROUP_EXPLORATION, weekly("x-vakron", "Vakron Sky Island", None, 7)),
+    in_group(GROUP_EXPLORATION, backed(60_014_101, weekly("x-azure", "Azure Breath Island", None, 7))),
+    in_group(GROUP_EXPLORATION, backed(60_012_101, weekly("x-cradle", "Cradle of Nihility", None, 7))),
+    in_group(GROUP_EXPLORATION, backed(60_003_101, weekly("x-draupnir", "Draupnir", None, 7))),
+    in_group(GROUP_EXPLORATION, backed(60_004_101, weekly("x-dramata", "Dying Dramata's Nest", None, 7))),
+    in_group(GROUP_EXPLORATION, backed(60_009_101, weekly("x-horn", "Ferocious Horn Den", None, 7))),
+    in_group(GROUP_EXPLORATION, backed(60_002_101, weekly("x-fire", "Fire Temple", None, 7))),
+    in_group(GROUP_EXPLORATION, backed(60_013_101, weekly("x-illusion", "Hall of Illusion", None, 7))),
+    in_group(GROUP_EXPLORATION, backed(60_000_201, weekly("x-krao", "Krao Cave", None, 7))),
+    in_group(GROUP_EXPLORATION, backed(60_001_101, weekly("x-urugugu", "Urugugu Canyon", None, 7))),
+    in_group(GROUP_EXPLORATION, backed(60_007_101, weekly("x-vakron", "Vakron Sky Island", None, 7))),
     Builtin { hidden_by_default: true, ..weekly("dutycmd", "Duty Commands", None, 20) },
 ];
 
@@ -217,6 +262,11 @@ pub fn hidden_by_default() -> impl Iterator<Item = &'static str> {
 
 pub fn children_of(group: &'static str) -> impl Iterator<Item = &'static Builtin> {
     CATALOGUE.iter().filter(move |builtin| builtin.group == Some(group))
+}
+
+/// The rows that follow this ticket.
+pub fn rows_of_ticket(ticket: u32) -> impl Iterator<Item = &'static Builtin> {
+    CATALOGUE.iter().filter(move |builtin| builtin.ticket == Some(ticket))
 }
 
 #[cfg(test)]
@@ -255,14 +305,26 @@ mod tests {
     }
 
     #[test]
-    fn membership_changes_only_the_odyle_cap() {
+    fn membership_changes_the_odyle_and_shugo_caps() {
         let capped: Vec<&str> = CATALOGUE
             .iter()
             .filter(|builtin| matches!(builtin.kind, Kind::Amount(spec) if spec.membership_cap.is_some()))
             .map(|builtin| builtin.id)
             .collect();
-        assert_eq!(capped, vec![ODYLE]);
-        assert_eq!(ODYLE_SPEC.cap_for(false), 560);
-        assert_eq!(ODYLE_SPEC.cap_for(true), 840);
+        assert_eq!(capped, vec![ODYLE, "shugo"]);
+        assert_eq!((ODYLE_SPEC.cap_for(false), ODYLE_SPEC.cap_for(true)), (560, 840));
+        assert_eq!((SHUGO_SPEC.cap_for(false), SHUGO_SPEC.cap_for(true)), (12, 21));
+    }
+
+    #[test]
+    fn a_ticket_backs_one_row_and_the_server_ones_show_the_account_tag() {
+        let mut seen = HashSet::new();
+        for ticket in CATALOGUE.iter().filter_map(|builtin| builtin.ticket) {
+            assert!(seen.insert(ticket), "ticket {ticket} backs two rows");
+        }
+        let account: Vec<&str> = CATALOGUE.iter().filter(|builtin| builtin.is_account()).map(|builtin| builtin.id).collect();
+        assert_eq!(account, vec![DUTY_MISSIONS, "shugo", "invasion", "fissure"]);
+        assert_eq!(rows_of_ticket(1).map(|builtin| builtin.id).collect::<Vec<_>>(), vec!["shugo"]);
+        assert_eq!(rows_of_ticket(5).count(), 0);
     }
 }

@@ -20,6 +20,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::capture::{self, shoot_hwnd, MK_LBUTTON, ROW_POINT};
 use crate::capture_reminders;
+use crate::capture_toolbar;
 use crate::capture_settings;
 use crate::capture_todos;
 use crate::detail::{DetailModel, DetailSource, DetailView};
@@ -35,9 +36,6 @@ use crate::report::ReportRequest;
 const VK_RETURN: usize = 0x0D;
 const VK_ESCAPE: usize = 0x1B;
 pub(crate) const TICK: Duration = Duration::from_millis(150);
-/// The menu's first two entries at 100% scale, in the meter's client area.
-const HISTORY_ITEM_POINT: (i32, i32) = (150, 47);
-const PVP_ITEM_POINT: (i32, i32) = (150, 73);
 /// On the title, left of anything else in the header, at 100% scale.
 pub(crate) const TITLE_POINT: (i32, i32) = (60, 20);
 /// Only a `WindowControlArea` answers anything but HTCLIENT, and none would
@@ -58,9 +56,10 @@ pub async fn from_fixtures(
     capture_report::from_fixtures(meter, model, dir, cx).await?;
     pvp_window(model, dir, cx).await?;
     entry_points(meter, model, cx).await?;
-    capture_todos::from_fixtures(meter, model, dir, cx).await?;
+    capture_todos::from_fixtures(model, dir, cx).await?;
     capture_settings::from_fixtures(meter, model, dir, cx).await?;
-    capture_reminders::from_fixtures(meter, model, dir, cx).await
+    capture_reminders::from_fixtures(meter, model, dir, cx).await?;
+    capture_toolbar::from_fixtures(dir, cx).await
 }
 
 /// After a replay: the detail window on the recording's local player, on both
@@ -472,8 +471,9 @@ fn check_typing_style(hwnd: HWND) -> Result<()> {
     capture::check_click_activation(hwnd, "a click on the PvP window after the edit", MA_NOACTIVATE)
 }
 
-/// The real entry points, with mouse messages posted to the meter's own
-/// window: the "…" menu's two links, and a row.
+/// The meter's own entry point, with mouse messages posted to its window: a
+/// row opens the player detail. The tools open from the toolbar
+/// (`capture_toolbar`).
 async fn entry_points(meter: gpui::WindowHandle<MeterView>, model: &Entity<MeterModel>, cx: &mut AsyncApp) -> Result<()> {
     show_scene(model, fixtures::open_world(), cx);
     let hwnd = meter
@@ -483,27 +483,9 @@ async fn entry_points(meter: gpui::WindowHandle<MeterView>, model: &Entity<Meter
             overlay::hwnd(window)
         })
         .map_err(|error| format!("overlay window gone: {error:#}"))??;
-    let click = |point: (i32, i32)| {
-        post(hwnd, WM_MOUSEMOVE, 0, pack(point));
-        post(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, pack(point));
-        post(hwnd, WM_LBUTTONUP, 0, pack(point));
-    };
-    let open_menu = |cx: &mut AsyncApp| meter.update(cx, |view, _, cx| view.force_hover(None, true, false, cx));
-
-    for (label, point, kind) in [
-        ("Fight history", HISTORY_ITEM_POINT, WindowKind::History),
-        ("PvP meter", PVP_ITEM_POINT, WindowKind::Pvp),
-    ] {
-        open_menu(cx).map_err(|error| format!("overlay window gone: {error:#}"))?;
-        pause(cx, TICK).await;
-        click(point);
-        pause(cx, TICK * 2).await;
-        let open = cx.update(|cx| secondary::window_of(kind, cx).is_some());
-        println!("entry point: click on \"{label}\" in the menu: {kind:?} window open {open}");
-        close(kind, cx).await?;
-    }
-
-    click(ROW_POINT);
+    post(hwnd, WM_MOUSEMOVE, 0, pack(ROW_POINT));
+    post(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, pack(ROW_POINT));
+    post(hwnd, WM_LBUTTONUP, 0, pack(ROW_POINT));
     pause(cx, TICK * 2).await;
     let open = cx.update(|cx| secondary::window_of(WindowKind::Detail, cx).is_some());
     println!("entry point: click on a Session row: Detail window open {open}: {}", describe_detail(cx).unwrap_or_default());

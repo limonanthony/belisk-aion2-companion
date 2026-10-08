@@ -1,6 +1,6 @@
 //! Off-screen captures and checks of the to-do window, run by `--capture
 //! --fixtures` after the PvP window's. The characters and their progress are
-//! invented. The window is opened from the meter's "…" menu and stays past
+//! invented. The window is opened from the toolbar and stays past
 //! every monitor; fields take the keyboard inside GPUI only, so nothing asks
 //! Windows for the foreground, and the only input is mouse and key messages
 //! posted to our own windows. The run fails when the window could take
@@ -15,21 +15,22 @@ use meter_core::identity::KnownCharacter;
 use gpui::{AsyncApp, Entity, WindowHandle};
 use windows::Win32::UI::WindowsAndMessaging::{WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE};
 
-use crate::capture::{self, MK_LBUTTON};
+use crate::capture::MK_LBUTTON;
 use crate::capture_reminders;
+use crate::capture_resources;
+use crate::capture_toolbar;
 use crate::capture_secondary::{
     check_title, close, pack, pause, post, report_window, shoot_window, show_scene, until_handled, window_handle,
     window_hwnd,
 };
 use crate::fixtures;
-use crate::meter::{MeterModel, MeterView};
-use crate::overlay::{self, off_screen};
+use crate::meter::MeterModel;
+use crate::overlay::off_screen;
 use crate::secondary::{self, WindowKind};
 use crate::settings::{self, Section, SettingsView};
-use crate::todos::{self, Cadence, CharacterId, HiddenIn, Identified, NewOwnTodo, OwnKind, PlayerRef, RowId, TodoView, Todos};
+use crate::todos::{self, Cadence, CharacterId, HiddenIn, Identified, NewOwnTodo, OwnKind, PlayerRef, RowId, TodoView, Todos, Typing};
+use crate::toolbar::{Slot, Tool};
 
-/// The menu's third entry at 100% scale, in the meter's client area.
-const TODOS_ITEM_POINT: (i32, i32) = (150, 99);
 const TICK: Duration = Duration::from_millis(150);
 const MOVE_GAP: Duration = Duration::from_millis(60);
 const KEY_UP: isize = 0xC000_0001;
@@ -42,10 +43,10 @@ type Result<T, E = String> = std::result::Result<T, E>;
 /// Invented characters: the one in game first.
 const CHARACTERS: [(&str, u32, &str); 3] = [("Mirelle", 1002, "RANGER"), ("Tavrin", 1002, "TEMPLAR"), ("Sefa", 1003, "CLERIC")];
 
-pub async fn from_fixtures(meter: WindowHandle<MeterView>, model: &Entity<MeterModel>, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
+pub async fn from_fixtures(model: &Entity<MeterModel>, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
     show_scene(model, fixtures::open_world(), cx);
     let foreground_before = capture_reminders::foreground();
-    open_from_menu(meter, model, cx).await?;
+    open_from_toolbar(model, cx).await?;
     report_window(WindowKind::Todos, cx)?;
     let view = window_handle::<TodoView>(WindowKind::Todos, cx)?;
     view.update(cx, |view, _, _| view.keep_keyboard_in_app()).map_err(gone)?;
@@ -53,6 +54,7 @@ pub async fn from_fixtures(meter: WindowHandle<MeterView>, model: &Entity<MeterM
 
     let todos = cx.update(|cx| todos::global(cx));
     remember_characters(cx);
+    set_membership(true, cx);
     identify("Mirelle", cx);
     let ids: Vec<CharacterId> = cx.update(|cx| todos.read(cx).characters().into_iter().map(|character| character.id).collect());
     let [mirelle, tavrin, sefa] = ids[..] else {
@@ -96,12 +98,11 @@ pub async fn from_fixtures(meter: WindowHandle<MeterView>, model: &Entity<MeterM
 
     type_an_amount(&view, &todos, mirelle, dir, cx).await?;
     edit(&todos, cx, |todos, cx| {
-        todos.set_amount(mirelle, "shugo", Some(28), cx);
+        todos.set_amount(mirelle, "shugo", Some(24), cx);
         todos.set_amount(mirelle, "nightmare", Some(14), cx);
         Ok(())
     })?;
     shot(dir, "todos-08-full", cx).await?;
-    shoot_menu(meter, dir, cx).await?;
 
     edit(&todos, cx, |todos, cx| {
         for row in ["deus", "arkanis", "balaur", "fafnium", "trial", "subj"] {
@@ -124,7 +125,7 @@ pub async fn from_fixtures(meter: WindowHandle<MeterView>, model: &Entity<MeterM
 
     view.update(cx, |view, _, cx| view.show_picker(cx)).map_err(gone)?;
     edit(&todos, cx, |todos, cx| {
-        todos.set_amount(tavrin, "shugo", Some(28), cx);
+        todos.set_amount(tavrin, "shugo", Some(24), cx);
         todos.adjust_count(sefa, RowId::Builtin("fissure"), 14, cx);
         Ok(())
     })?;
@@ -148,6 +149,9 @@ pub async fn from_fixtures(meter: WindowHandle<MeterView>, model: &Entity<MeterM
     shot(dir, "todos-17-scale-125", cx).await?;
     cx.update(|cx| settings::global(cx).update(cx, |settings, cx| settings.update(cx, |all| all.overlay.content_scale = 1.0)));
 
+    capture_resources::from_fixtures(model, &view, [mirelle, tavrin, sefa], dir, cx).await?;
+    set_membership(false, cx);
+
     // The run takes minutes; whoever uses the PC may switch windows meanwhile,
     // so only "the to-do window never took the focus" is checked here.
     println!("the foreground window during the run: {:?} at the start", foreground_before.0);
@@ -158,24 +162,13 @@ pub async fn from_fixtures(meter: WindowHandle<MeterView>, model: &Entity<MeterM
     Ok(())
 }
 
-/// The real entry point: a click on "To-dos" in the meter's "…" menu.
-async fn open_from_menu(meter: WindowHandle<MeterView>, model: &Entity<MeterModel>, cx: &mut AsyncApp) -> Result<()> {
-    let meter_hwnd = meter
-        .update(cx, |view, window, cx| {
-            view.forced_pointer = None;
-            view.force_hover(None, true, false, cx);
-            overlay::hwnd(window)
-        })
-        .map_err(|error| format!("overlay window gone: {error:#}"))??;
-    pause(cx, TICK).await;
-    post(meter_hwnd, WM_MOUSEMOVE, 0, pack(TODOS_ITEM_POINT));
-    post(meter_hwnd, WM_LBUTTONDOWN, MK_LBUTTON, pack(TODOS_ITEM_POINT));
-    post(meter_hwnd, WM_LBUTTONUP, 0, pack(TODOS_ITEM_POINT));
-    pause(cx, TICK * 2).await;
+/// The real entry point: a click on To-dos on the toolbar.
+async fn open_from_toolbar(model: &Entity<MeterModel>, cx: &mut AsyncApp) -> Result<()> {
+    capture_toolbar::click(Slot::Tool(Tool::Todos), cx).await?;
     let open = cx.update(|cx| secondary::window_of(WindowKind::Todos, cx).is_some());
-    println!("entry point: click on \"To-dos\" in the menu: to-do window open {open}");
+    println!("entry point: click on To-dos on the toolbar: to-do window open {open}");
     if !open {
-        return Err("the to-do window did not open from the menu".to_string());
+        return Err("the to-do window did not open from the toolbar".to_string());
     }
     let before = cx.update(|cx| cx.windows().len());
     cx.update(|cx| secondary::open_todos(model, cx));
@@ -196,10 +189,22 @@ fn remember_characters(cx: &mut AsyncApp) {
     cx.update(|cx| settings::global(cx).update(cx, |settings, cx| settings.update(cx, |all| all.known_characters = known)));
 }
 
-fn identify(name: &str, cx: &mut AsyncApp) {
+/// The approved pages are drawn with the membership on (Shugo keys 21, Odyle
+/// 840); Settings' own run starts from the default, off.
+pub(crate) fn set_membership(on: bool, cx: &mut AsyncApp) {
+    cx.update(|cx| settings::global(cx).update(cx, |settings, cx| settings.update(cx, |all| all.todos.membership = on)));
+}
+
+pub(crate) fn identify(name: &str, cx: &mut AsyncApp) {
     let (_, server_id, _) = CHARACTERS.iter().copied().find(|(known, _, _)| *known == name).unwrap_or(CHARACTERS[0]);
     let player = Identified::Named(PlayerRef { name: name.to_string(), server_id: Some(server_id), key: None });
     cx.update(|cx| todos::follow_player(cx, vec![player]));
+}
+
+/// The invented character `name` as the game names it.
+pub(crate) fn known(name: &str) -> KnownCharacter {
+    let (name, server_id, class) = CHARACTERS.iter().copied().find(|(known, _, _)| *known == name).unwrap_or(CHARACTERS[0]);
+    KnownCharacter { name: name.to_string(), server_id, class: class.to_string(), key: None }
 }
 
 fn edit<R>(todos: &Entity<Todos>, cx: &mut AsyncApp, change: impl FnOnce(&mut Todos, &mut gpui::Context<Todos>) -> Result<R>) -> Result<R> {
@@ -308,7 +313,7 @@ async fn hide_under_the_pointer(view: &WindowHandle<TodoView>, todos: &Entity<To
 /// them. One on Invasion keys: Escape keeps nothing.
 async fn type_an_amount(view: &WindowHandle<TodoView>, todos: &Entity<Todos>, id: CharacterId, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
     let hwnd = window_hwnd(WindowKind::Todos, cx)?;
-    view.update(cx, |view, window, cx| view.open_amount_field("shugo", None, window, cx)).map_err(gone)?;
+    view.update(cx, |view, window, cx| view.open_amount_field("shugo", Typing::Amount, None, window, cx)).map_err(gone)?;
     pause(cx, TICK).await;
     for digit in "24".chars() {
         post(hwnd, WM_CHAR, digit as usize, 0);
@@ -324,7 +329,7 @@ async fn type_an_amount(view: &WindowHandle<TodoView>, todos: &Entity<Todos>, id
     }
     shot(dir, "todos-07-amount-kept", cx).await?;
 
-    view.update(cx, |view, window, cx| view.open_amount_field("invasion", None, window, cx)).map_err(gone)?;
+    view.update(cx, |view, window, cx| view.open_amount_field("invasion", Typing::Amount, None, window, cx)).map_err(gone)?;
     pause(cx, TICK).await;
     post(hwnd, WM_CHAR, '3' as usize, 0);
     key(hwnd, VK_ESCAPE, cx).await;
@@ -394,21 +399,7 @@ async fn change_opens_settings(model: &Entity<MeterModel>, cx: &mut AsyncApp) ->
     close(WindowKind::Settings, cx).await
 }
 
-/// The meter's "…" menu with the "1 full" after "To-dos".
-async fn shoot_menu(meter: WindowHandle<MeterView>, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
-    let hwnd = meter
-        .update(cx, |view, window, cx| {
-            view.force_hover(None, true, false, cx);
-            overlay::hwnd(window)
-        })
-        .map_err(|error| format!("overlay window gone: {error:#}"))??;
-    capture::shoot_hwnd(hwnd, dir, "todos-08-menu-full", cx).await?;
-    meter
-        .update(cx, |view, _, cx| view.force_hover(None, false, false, cx))
-        .map_err(|error| format!("overlay window gone: {error:#}"))
-}
-
-fn amount_of(todos: &Entity<Todos>, id: CharacterId, row: &'static str, cx: &mut AsyncApp) -> Option<u32> {
+pub(crate) fn amount_of(todos: &Entity<Todos>, id: CharacterId, row: &'static str, cx: &mut AsyncApp) -> Option<u32> {
     let list = cx.update(|cx| todos.read(cx).list_of(id))?;
     list.sections.iter().flat_map(|section| &section.rows).find_map(|candidate| match &candidate.kind {
         todos::RowKind::Amount(amount) if candidate.id == RowId::Builtin(row) && amount.tracked => Some(amount.value),
@@ -416,31 +407,31 @@ fn amount_of(todos: &Entity<Todos>, id: CharacterId, row: &'static str, cx: &mut
     })
 }
 
-fn row_bounds(view: &WindowHandle<TodoView>, key: &str, cx: &mut AsyncApp) -> Result<(gpui::Bounds<gpui::Pixels>, f32)> {
+pub(crate) fn row_bounds(view: &WindowHandle<TodoView>, key: &str, cx: &mut AsyncApp) -> Result<(gpui::Bounds<gpui::Pixels>, f32)> {
     view.update(cx, |view, window, _| view.row_bounds(key).map(|bounds| (bounds, window.scale_factor())))
         .map_err(gone)?
         .ok_or_else(|| format!("the {key} row is not drawn"))
 }
 
 /// Window coordinates (logical) as client device pixels.
-fn device(x: f32, y: f32, scale: f32) -> (i32, i32) {
+pub(crate) fn device(x: f32, y: f32, scale: f32) -> (i32, i32) {
     ((x * scale).round() as i32, (y * scale).round() as i32)
 }
 
-async fn key(hwnd: windows::Win32::Foundation::HWND, vk: usize, cx: &mut AsyncApp) {
+pub(crate) async fn key(hwnd: windows::Win32::Foundation::HWND, vk: usize, cx: &mut AsyncApp) {
     post(hwnd, WM_KEYDOWN, vk, 1);
     post(hwnd, WM_KEYUP, vk, KEY_UP);
     until_handled(hwnd, cx).await;
     pause(cx, TICK).await;
 }
 
-async fn shot(dir: &Path, name: &str, cx: &mut AsyncApp) -> Result<()> {
+pub(crate) async fn shot(dir: &Path, name: &str, cx: &mut AsyncApp) -> Result<()> {
     shoot_window(WindowKind::Todos, dir, name, cx).await?;
     let hwnd = window_hwnd(WindowKind::Todos, cx)?;
     println!("{name}: {}", off_screen::frame_report(hwnd));
     Ok(())
 }
 
-fn gone(error: impl std::fmt::Display) -> String {
+pub(crate) fn gone(error: impl std::fmt::Display) -> String {
     format!("the to-do window is gone: {error:#}")
 }

@@ -3,6 +3,8 @@
 //! bring the built-in to-dos back, for every character. The rest of the
 //! to-dos lives in the to-do window.
 
+use gpui::{HighlightStyle, StyledText};
+
 use super::*;
 
 /// How long "6 to-dos back" or "To-dos reset" stays beside its button.
@@ -17,7 +19,7 @@ impl SettingsView {
             .text_size(px(13.5))
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(rgba(MUTED))
-            .child(fl!("settings-todos-weekly-at", time = hour_label(settings.todos.reset_hour).to_string()));
+            .child(fl!("settings-todos-weekly-at", time = settings.todos.reset_clock_now().to_string()));
         let resets = group(vec![
             row(fl!("todos-window-daily-reset"), Some(description(fl!("settings-todos-daily-reset-text"))), reset_hour),
             row(
@@ -32,7 +34,13 @@ impl SettingsView {
             Rc::new(|on, _, cx| todos::global(cx).update(cx, |todos, cx| todos.set_membership(on, cx)));
         let membership_label = fl!("settings-todos-membership");
         let membership = switch("membership", membership_label.clone(), membership_on, &membership_focus, Some(set_membership));
-        let recharges = group(vec![row(membership_label, Some(description(fl!("settings-todos-membership-text"))), membership)]);
+        let membership_text = div()
+            .flex()
+            .flex_col()
+            .child(description(fl!("settings-todos-membership-text")))
+            .children(self.todos_seen.membership_hint.as_ref().map(|hint| membership_hint(hint, settings)))
+            .into_any_element();
+        let recharges = group(vec![row(membership_label, Some(membership_text), membership)]);
 
         let hidden = self.todos_seen.hidden;
         let restore_focus = self.focus_of("todos-restore", true, window, cx);
@@ -141,4 +149,21 @@ impl SettingsView {
             TodosDone::Reset => fl!("settings-todos-reset-done"),
         })
     }
+}
+
+/// "The game shows **18 Shugo Festival keys** on Mirelle, more than 12. Do
+/// you have a membership?": the figure and name brighter.
+fn membership_hint(hint: &todos::PoolAbovePlainCap, settings: &AppSettings) -> Div {
+    let amount = fl!("settings-todos-membership-amount", count = hint.count, label = hint.label);
+    let name = settings.overlay.display_name(&hint.character);
+    let text = fl!("settings-todos-membership-hint", amount = amount.as_str(), name = name.as_str(), cap = hint.cap);
+    let bright = HighlightStyle { color: Some(rgba(TEXT).into()), font_weight: Some(FontWeight::SEMIBOLD), ..Default::default() };
+    let mut highlights = Vec::new();
+    for part in [&amount, &name] {
+        if let Some(start) = text.find(part.as_str()) {
+            highlights.push((start..start + part.len(), bright));
+        }
+    }
+    highlights.sort_by_key(|(range, _): &(std::ops::Range<usize>, HighlightStyle)| range.start);
+    note(Icon::Info, StyledText::new(text).with_highlights(highlights), rgba(MUTED)).debug_selector(|| "membership-hint".to_string())
 }

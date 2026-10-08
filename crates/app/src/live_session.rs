@@ -48,12 +48,14 @@ pub fn backend_config(settings: &AppSettings) -> DpsMeterConfig {
 /// Creates the meter and starts capture with the backend priority and the
 /// other options of `settings`; Npcap first by default, with WinDivert as the
 /// fallback. The meter is returned even when capture fails so the caller can
-/// report why.
-pub fn start(events: Arc<dyn EventSink>, settings: &AppSettings) -> (Arc<DpsMeter>, Result<(), String>) {
+/// report why. `track_fights` is whether the meter window is open: it is set
+/// before capture starts, so a closed meter never counts a fight.
+pub fn start(events: Arc<dyn EventSink>, settings: &AppSettings, track_fights: bool) -> (Arc<DpsMeter>, Result<(), String>) {
     let logger = Arc::new(AppLogger::new(log_dir().join("aether.log"), Box::new(|_| {})));
     let meter = Arc::new(DpsMeter::new(events, logger, data_dir()));
     meter.apply_config(backend_config(settings));
     meter.set_known_characters(settings.known_characters.clone());
+    meter.set_fight_tracking(track_fights);
     let started = meter.start_dps_meter();
     (meter, started)
 }

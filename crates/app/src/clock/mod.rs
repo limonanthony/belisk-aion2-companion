@@ -8,4 +8,4 @@ pub mod testing;
 mod wall;
 
 pub use local::{now_ms, LocalZone};
-pub use wall::{clock_time, instant_of_wall_minute, wall_minute, ClockTime, Zone, MINUTE_MS};
+pub use wall::{clock_time, instant_of_wall_minute, wall_minute, ClockTime, Zone, DAY_MS, MINUTE_MS};

@@ -906,3 +906,51 @@ pub fn report_record(fixture: ReportFixture) -> HistoryRecord {
 pub fn fight_report(fixture: ReportFixture) -> meter_core::report::fight_report::FightReport {
     meter_core::report::fight_report::FightReport::from_record(&report_record(fixture)).expect("the fixture is a boss fight")
 }
+
+/// Mirelle's tickets as the approved to-do and Resources pages draw them
+/// (todos.js, hub.js): (ticket, regular pool, extra pool). Odyle 245 +380,
+/// Shugo keys 7 +3, Invasion keys 2, Nightmare 0 +3, the Conquest dungeons
+/// 10 to 13 of 14, Deus and Arkanis 4 of 4, Balaur and Fafnium 6 of 7; this
+/// week the Unknown Fissure with 9 entries left of 14 (+7), Ascension Trial
+/// with 1 left (+1), the Abyssal Forge's final boss done.
+pub const MIRELLE_TICKETS: &[(u32, u32, u32)] = &[
+    (60_000_001, 245, 380),
+    (1, 7, 3),
+    (8, 2, 0),
+    (4, 0, 3),
+    (60_000_101, 12, 0),
+    (60_001_201, 12, 0),
+    (60_002_201, 10, 0),
+    (60_003_201, 12, 0),
+    (60_007_201, 13, 0),
+    (60_009_201, 12, 0),
+    (60_005_301, 4, 0),
+    (60_006_301, 4, 0),
+    (102, 6, 0),
+    (103, 6, 0),
+    (101, 9, 7),
+    (80_000_001, 1, 1),
+    (70_000_001, 3, 0),
+    (90_000_001, 2, 0),
+    (90_000_002, 0, 0),
+    (60_000_008, 20, 0),
+];
+
+/// The game listing `character`'s tickets at login: (ticket, regular pool,
+/// extra pool).
+pub fn ticket_login(
+    character: &meter_core::identity::KnownCharacter,
+    captured_at_ms: i64,
+    tickets: &[(u32, u32, u32)],
+) -> meter_core::tickets::TicketReport {
+    use meter_core::capture::parser::ticket_record::TicketRecord;
+    let records = tickets
+        .iter()
+        .map(|&(id, count, charge)| TicketRecord { flags: 0, id, remaining_ms: None, field_b: None, count, charge })
+        .collect();
+    meter_core::tickets::TicketReport {
+        character: character.clone(),
+        captured_at: captured_at_ms as f64 / 1000.0,
+        content: meter_core::tickets::TicketContent::Snapshot(records),
+    }
+}

@@ -7,7 +7,7 @@ use std::ffi::c_void;
 use std::rc::Rc;
 
 use gpui::{
-    canvas, point, px, size, App, AppContext as _, Bounds, DispatchPhase, Div, Entity, InteractiveElement as _,
+    canvas, point, px, size, App, AppContext as _, Bounds, DispatchPhase, Div, Entity, InteractiveElement,
     IntoElement, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels, Point, Size, Styled as _, Window,
     WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions,
 };
@@ -28,7 +28,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT,
     HWND_NOTOPMOST, HWND_TOPMOST,
     LWA_ALPHA, MA_NOACTIVATE, SPI_GETCLIENTAREAANIMATION, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_NOZORDER, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
     WINDOW_STYLE, WM_MOUSEACTIVATE, WM_NCDESTROY, WS_CAPTION, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT,
     WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
@@ -103,10 +103,13 @@ unsafe extern "system" fn refuse_click_activation(
     }
 }
 
+/// Opens the meter's window, shown or not: a closed meter keeps its window,
+/// hidden, so it opens again where it was left.
 pub fn open(
     cx: &mut App,
     model: Entity<MeterModel>,
     placement: Placement,
+    shown: bool,
 ) -> Result<WindowHandle<MeterView>, String> {
     let handle = cx
         .open_window(popup_options(INITIAL_WIDTH, INITIAL_HEIGHT), |_, cx| cx.new(|cx| MeterView::new(model, cx)))
@@ -122,12 +125,14 @@ pub fn open(
                 Placement::Screen => {
                     let margin = (OVERLAY_MARGIN * scale).round() as i32;
                     place(hwnd, margin, margin, width, height)?;
-                    show_without_activating(hwnd);
-                    Ok(())
                 }
                 #[cfg(feature = "probes")]
-                Placement::OffScreen => off_screen::show(hwnd, width, height),
+                Placement::OffScreen => off_screen::place(hwnd, width, height)?,
             }
+            if shown {
+                reveal(hwnd, placement)?;
+            }
+            Ok(())
         })
         .map_err(|error| format!("cannot reach the overlay window: {error:#}"))??;
     Ok(handle)
@@ -136,6 +141,29 @@ pub fn open(
 pub fn show_without_activating(hwnd: HWND) {
     unsafe {
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    }
+}
+
+/// Shows a window `placement` put in place, without activating it; off
+/// screen it is checked to be past every monitor before and after.
+pub fn reveal(hwnd: HWND, placement: Placement) -> Result<(), String> {
+    match placement {
+        Placement::Screen => {
+            show_without_activating(hwnd);
+            Ok(())
+        }
+        #[cfg(feature = "probes")]
+        Placement::OffScreen => {
+            off_screen::ensure_off_screen(hwnd)?;
+            show_without_activating(hwnd);
+            off_screen::ensure_off_screen(hwnd)
+        }
+    }
+}
+
+pub fn hide(hwnd: HWND) {
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_HIDE);
     }
 }
 
@@ -408,6 +436,26 @@ impl WindowDrag {
         })
     }
 
+    /// [`handle`](Self::handle) for an area holding controls: a press a
+    /// control already took (`prevent_default`) does not drag, and a press
+    /// that drags is taken, so no element focuses on it. `grabbed` hears of
+    /// each drag that starts.
+    pub fn handle_around_controls<E: InteractiveElement>(
+        &self,
+        area: E,
+        grabbed: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> E {
+        let grab = self.0.clone();
+        area.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+            if window.default_prevented() {
+                return;
+            }
+            grab.set(Some(Grab::at(window, event.position)));
+            window.prevent_default();
+            grabbed(window, cx);
+        })
+    }
+
     pub fn stop(&self) {
         self.0.set(None);
     }
@@ -502,11 +550,17 @@ pub mod off_screen {
     /// Room to the left of the virtual screen, well beyond any card.
     const CLEARANCE: i32 = 4_000;
 
-    /// `width` and `height` are device pixels.
-    pub fn show(hwnd: HWND, width: f32, height: f32) -> Result<(), String> {
+    /// Moves the window past the left edge of the virtual screen, without
+    /// showing it. `width` and `height` are device pixels.
+    pub fn place(hwnd: HWND, width: f32, height: f32) -> Result<(), String> {
         let (left, top) = unsafe { (GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN)) };
         super::place(hwnd, left - CLEARANCE, top, width, height)?;
-        ensure_off_screen(hwnd)?;
+        ensure_off_screen(hwnd)
+    }
+
+    /// [`place`], then shows the window. `width` and `height` are device pixels.
+    pub fn show(hwnd: HWND, width: f32, height: f32) -> Result<(), String> {
+        place(hwnd, width, height)?;
         unsafe {
             let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         }

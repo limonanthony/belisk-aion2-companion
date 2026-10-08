@@ -389,6 +389,7 @@ impl MeterModel {
                 false
             }
             MeterEvent::CharacterSeen(_)
+            | MeterEvent::Tickets(_)
             | MeterEvent::DpsMeterStatus(_)
             | MeterEvent::DpsIdleHidden(_)
             | MeterEvent::HistoryUpdated => false,

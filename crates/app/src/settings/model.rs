@@ -114,6 +114,19 @@ pub enum DetailPlacement {
 pub struct WindowSettings {
     /// Read each time the detail window opens.
     pub detail_opens: DetailPlacement,
+    /// Off: only the toolbar opens at launch.
+    pub open_meter_at_launch: bool,
+    /// The first-open prompt was answered, either way; it is never asked again.
+    pub launch_prompt_answered: bool,
+    /// The toolbar's top-left corner in device pixels, where it was left; none
+    /// opens it at the top centre of the primary monitor.
+    pub toolbar_at: Option<ScreenPoint>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenPoint {
+    pub x: i32,
+    pub y: i32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

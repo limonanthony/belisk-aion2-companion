@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use meter_core::events::{EventSink, MeterEvent};
 use meter_core::identity::KnownCharacter;
+use meter_core::tickets::TicketReport;
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use futures::StreamExt;
 use gpui::{App, Entity, Task};
@@ -55,6 +56,13 @@ pub fn spawn_pump(
                 })
                 .collect();
             let players: Vec<todos::Identified> = batch.iter().filter_map(todos::identified_by).collect();
+            let ticket_reports: Vec<TicketReport> = batch
+                .iter()
+                .filter_map(|event| match event {
+                    MeterEvent::Tickets(report) => Some(report.clone()),
+                    _ => None,
+                })
+                .collect();
 
             let (changed, replay_just_ended, replay_over) = cx.update(|cx| {
                 model.update(cx, |model, cx| {
@@ -77,6 +85,9 @@ pub fn spawn_pump(
             }
             if !players.is_empty() {
                 cx.update(|cx| todos::follow_player(cx, players));
+            }
+            if !ticket_reports.is_empty() {
+                cx.update(|cx| todos::record_tickets(cx, ticket_reports));
             }
             if saved_a_fight {
                 cx.update(secondary::history_updated);

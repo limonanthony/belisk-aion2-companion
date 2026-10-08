@@ -1,8 +1,9 @@
 //! The reminder card (docs/gpui-mockups/approved/reminders.html, values in
 //! tokens.md, "Reminder card"): its own overlay window on the meter's left
-//! edge, up for 30 s with a thin line draining the time left. The pointer over
-//! the card pauses it; a click dismisses it. While the meter is locked the
-//! card is click-through and shows no ×.
+//! edge, or under the toolbar while the meter is closed (toolbar.html), up
+//! for 30 s with a thin line draining the time left. The pointer over the
+//! card pauses it; a click dismisses it. While the meter is locked the card
+//! is click-through and shows no ×.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -23,7 +24,7 @@ use crate::i18n::{self, fl, join_and};
 use crate::meter::{board_width, Layout, LockChanged, MeterView, OverlaySettings};
 use crate::overlay;
 use crate::secondary::chrome::{self, Look, Scale, FAINT, GAUGE_EMPTY, MUTED};
-use crate::secondary::OnMeter;
+use crate::secondary::Stacking;
 use crate::settings;
 
 pub const SHOWN_FOR: Duration = Duration::from_secs(30);
@@ -38,10 +39,10 @@ const CAPSULE_WIDTH: f32 = 220.0;
 const ONE_EVENT_HEIGHT: f32 = 84.0;
 const EVENT_HEIGHT: f32 = 39.0;
 
-/// The meter the card belongs to: its lock, and the window the card sits on.
+/// The meter the card belongs to: its lock, and where the card sits.
 pub struct MeterLink {
     pub window: WindowHandle<MeterView>,
-    pub placement: Rc<OnMeter>,
+    pub placement: Rc<Stacking>,
 }
 
 /// 30 s that stand still while paused.
@@ -365,7 +366,7 @@ impl ReminderView {
         GAP * self.appearance.scale
     }
 
-    /// Keeps the card on the meter, and the line and the time-out running.
+    /// Keeps the card in its place, and the line and the time-out running.
     fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let (Some(link), Some(card)) = (&self.meter, self.card_size.get()) {
             link.placement.place(card, self.gap(), window, cx);

@@ -1,6 +1,6 @@
 //! Off-screen captures and checks of the Settings window, run by `--capture
 //! --fixtures` after the other windows'. The window is opened from the
-//! meter's "…" menu, placed past every monitor, and driven with keys and
+//! toolbar's gear, placed past every monitor, and driven with keys and
 //! clicks posted to our own window; nothing asks Windows for the foreground.
 //! The meter's state the page shows (capture status, recordings, personal
 //! bests, the capture check) is invented and held still.
@@ -33,9 +33,9 @@ use crate::settings::{
     RuntimeModel, Section, SettingsView, StorageState, StorageSummary,
 };
 use crate::todos;
+use crate::capture_toolbar;
+use crate::toolbar::{Slot, Tool};
 
-/// The menu's fourth entry at 100% scale, in the meter's client area.
-const SETTINGS_ITEM_POINT: (i32, i32) = (150, 125);
 /// Inside the page's top-left padding, where no control is.
 const BACKGROUND_POINT: (i32, i32) = (216, 44);
 const TICK: Duration = Duration::from_millis(150);
@@ -90,7 +90,7 @@ pub async fn from_fixtures(
     dir: &Path,
     cx: &mut AsyncApp,
 ) -> Result<()> {
-    open_from_menu(meter, model, cx).await?;
+    open_from_toolbar(model, cx).await?;
     let page = Page {
         hwnd: window_hwnd(WindowKind::Settings, cx)?,
         view: window_handle::<SettingsView>(WindowKind::Settings, cx)?,
@@ -121,26 +121,16 @@ pub async fn from_fixtures(
     Ok(())
 }
 
-/// The real entry point: a click on "Settings" in the meter's "…" menu.
-/// Opening it again makes no second window.
-async fn open_from_menu(meter: WindowHandle<MeterView>, model: &Entity<MeterModel>, cx: &mut AsyncApp) -> Result<()> {
+/// The real entry point: a click on the toolbar's gear. Opening it again
+/// makes no second window.
+async fn open_from_toolbar(model: &Entity<MeterModel>, cx: &mut AsyncApp) -> Result<()> {
     show_scene(model, fixtures::open_world(), cx);
-    let meter_hwnd = meter
-        .update(cx, |view, window, cx| {
-            view.forced_pointer = None;
-            view.force_hover(None, true, false, cx);
-            overlay::hwnd(window)
-        })
-        .map_err(|error| format!("overlay window gone: {error:#}"))??;
-    pause(cx, TICK).await;
-    post(meter_hwnd, WM_MOUSEMOVE, 0, pack(SETTINGS_ITEM_POINT));
-    post(meter_hwnd, WM_LBUTTONDOWN, MK_LBUTTON, pack(SETTINGS_ITEM_POINT));
-    post(meter_hwnd, WM_LBUTTONUP, 0, pack(SETTINGS_ITEM_POINT));
-    pause(cx, TICK * 3).await;
+    capture_toolbar::click(Slot::Tool(Tool::Settings), cx).await?;
+    pause(cx, TICK * 2).await;
     let open = cx.update(|cx| secondary::window_of(WindowKind::Settings, cx).is_some());
-    println!("entry point: click on \"Settings\" in the menu: Settings window open {open}");
+    println!("entry point: click on Settings on the toolbar: Settings window open {open}");
     if !open {
-        return Err("the Settings window did not open from the menu".to_string());
+        return Err("the Settings window did not open from the toolbar".to_string());
     }
     let before = cx.update(|cx| cx.windows().len());
     cx.update(|cx| secondary::open_settings(model, cx));
@@ -188,6 +178,8 @@ async fn overlay_page(page: &Page, meter: WindowHandle<MeterView>, dir: &Path, c
     page.tab_to("total-damage", cx).await?;
     page.key(VK_SPACE, cx).await;
     shoot_window(WindowKind::Settings, dir, "settings-06-total-damage-on", cx).await?;
+    page.tab_to("detail-opens", cx).await?;
+    shoot_window(WindowKind::Settings, dir, "settings-06b-overlay-window", cx).await?;
     page.tab_to("layout", cx).await?;
     let damage = cx.update(|cx| settings::global(cx).read(cx).get().overlay.show_damage);
     println!("keyboard: Space on Total damage: shown {damage}");
@@ -389,9 +381,24 @@ async fn todos_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
             }
         })
     });
+    let login = |tickets: &[(u32, u32, u32)], cx: &mut AsyncApp| {
+        let report = crate::fixtures::ticket_login(&crate::capture_todos::known("Mirelle"), crate::clock::now_ms(), tickets);
+        cx.update(|cx| todos.update(cx, |todos, cx| todos.apply_tickets(&[report], cx)));
+    };
+    login(crate::fixtures::MIRELLE_TICKETS, cx);
     page.show(Section::Todos, cx).await?;
     page.blur(cx).await;
     shoot_window(WindowKind::Settings, dir, "settings-25-todos", cx).await?;
+
+    login(&[(1, 18, 3)], cx);
+    pause(cx, TICK).await;
+    let hint = cx.update(|cx| todos.read(cx).membership_hint());
+    println!("todos: the game shows 18 Shugo keys with the membership off: hint {hint:?}");
+    if hint.is_none() {
+        return Err("Settings → To-dos did not ask about the membership".to_string());
+    }
+    shoot_window(WindowKind::Settings, dir, "settings-25b-todos-membership-hint", cx).await?;
+    login(crate::fixtures::MIRELLE_TICKETS, cx);
 
     page.tab_to("reset-hour", cx).await?;
     page.key(VK_DOWN, cx).await;

@@ -7,7 +7,9 @@ pub enum WindowKind {
     Report,
     Pvp,
     Todos,
+    Resources,
     Settings,
+    Prompt,
     Reminder,
 }
 
@@ -46,6 +48,10 @@ impl<W> Registry<W> {
 
     pub fn remove(&mut self, kind: WindowKind) -> Option<W> {
         self.open.remove(&kind)
+    }
+
+    pub fn all(&self) -> impl Iterator<Item = &W> {
+        self.open.values()
     }
 
     pub fn drain(&mut self) -> Vec<W> {

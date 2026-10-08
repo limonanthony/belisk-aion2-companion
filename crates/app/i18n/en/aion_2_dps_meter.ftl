@@ -1,8 +1,13 @@
 ## AION 2 DPS Meter, English (the fallback language). Every message exists in
 ## fr/aion_2_dps_meter.ftl too, with the same arguments; a test checks it.
 ## Keys are prefixed by their area: common-, unit-, duration-, weekday-,
-## month-, day-, list-, todos-, reminder-, settings-, meter-, history-,
-## detail-, pvp-.
+## month-, day-, list-, todos-, resources-, reminder-, settings-, meter-,
+## history-, detail-, report-, pvp-, tray-, toolbar-, prompt-.
+
+## Product name, used by every message that says it (the tray, later the
+## window titles): renaming the product is this one line in each language.
+
+-app-name = AION 2 DPS Meter
 
 ## Common
 
@@ -85,6 +90,9 @@ todos-amounts-optional = amounts optional
 todos-weekly-on-wednesday = Weekly on Wednesday
 todos-not-tracked = not tracked
 todos-value-of = { $value } of { $cap }
+todos-value-of-each = { $value } of { $cap } each
+todos-range-of-each = { $low }–{ $high } of { $cap } each
+todos-dungeons = { $count } dungeons
 
 todos-resets-in = resets in { $time }
 todos-next-full-in = next full in { $time }
@@ -98,6 +106,28 @@ todos-amount-full-note = { $label } is full in { $time }.
 todos-removed-note = Removed { $name }.
 todos-added-note = Added { $name } to { $section }.
 
+todos-source-live = From the game, live · logged in at { $time }
+todos-source-live-now = From the game, live
+todos-source-earlier = From the game at login, { $stamp } · refills since estimated
+todos-source-shared = { $name } not seen at login yet · Account rows from { $from }
+todos-source-none = No game values yet. Log in with { $name } while { -app-name } runs.
+
+todos-tip-live = From the game, live.
+todos-tip-extra = +{ $extra } extra from items: they never refill and are not part of the { $cap }.
+todos-tip-extra-entries = +{ $extra } extra entries from items.
+todos-tip-at-login = { $value } at your login { $stamp }.
+todos-tip-game-value = { $value } from the game, { $stamp }.
+todos-tip-refills =
+    +{ $added } since: { $refills ->
+        [one] one refill
+       *[other] { $refills } refills
+    } of { $add }, estimated.
+todos-tip-game-at = From the game, { $stamp }.
+todos-tip-restarted = Started over at the weekly reset.
+todos-tip-shared = From another character of this server, { $stamp }.
+todos-tip-typed = Typed by you. The game said { $value }.
+todos-tip-typed-detail = Its next value replaces yours: a spend, a refill or your next login.
+
 todos-back =
     { $count ->
         [one] { $count } to-do back
@@ -110,15 +140,15 @@ todos-hidden-description =
         [one] { $characters } character
        *[other] { $characters } characters
     }. { todos-restore-keeps }
-todos-reset-dialog-body = On every character: every hidden to-do comes back, and every count and amount you entered is emptied.
-todos-reset-dialog-body-with-own = On every character: your own to-dos ({ $own }) are removed, every hidden to-do comes back, and every count and amount you entered is emptied.
+todos-reset-dialog-body = On every character: every hidden to-do comes back, and every count and amount you typed is emptied. Values from the game stay.
+todos-reset-dialog-body-with-own = On every character: your own to-dos ({ $own }) are removed, every hidden to-do comes back, and every count and amount you typed is emptied. Values from the game stay.
 todos-reset-dialog-keeps = The reset hour and the membership stay. This cannot be undone.
 
 todos-window-title = To-dos
 todos-window-playing = Playing
-todos-window-picker-note = Characters the meter has seen, with what each has left. Duty Missions are shared by your characters on one server.
+todos-window-picker-note = Characters { -app-name } has seen, with what each has left. Duty Missions, Shugo Festival keys, Invasion keys and the Unknown Fissure are shared by your characters on one server.
 todos-window-no-character-title = No character yet
-todos-window-no-character-line = Your to-dos appear once the meter has seen your character. Start it before login, or relog via character select.
+todos-window-no-character-line = Your to-dos appear once { -app-name } has seen your character. Start it before login, or relog via character select.
 todos-window-undo = Undo
 todos-window-change = Change
 todos-window-change-name = Change the daily reset hour in Settings, To-dos
@@ -163,6 +193,20 @@ todos-window-how-many = How many
 todos-window-of = of
 todos-window-stop-tracking = Stop tracking { $label }
 todos-window-amount-input = { $label }: how many you have now
+todos-window-back-to-game = Back to the game's value: { $label }
+todos-window-figure-from-game = { $label }, { $value }, from the game. Type over it
+todos-window-figure-typed = { $label }, { $value }, typed by you. Type over it
+todos-window-count-from-game = { $label }, { $progress }, from the game
+todos-window-row-done-from-game = { $label }, done, from the game
+todos-window-row-not-done-from-game = { $label }, not done, from the game
+todos-window-with-extra = { $value }, { $extra } extra
+todos-window-login-note = Filled from the game at login.
+todos-window-login-note-replaced = Filled from the game at login. Values you typed were replaced.
+
+resources-window-title = Resources
+resources-window-membership-caps = Membership caps
+resources-window-plain-caps = Caps without membership
+resources-window-no-character-line = Your resources appear once { -app-name } has seen your character. Start it before login, or relog via character select.
 
 ## Event reminders
 
@@ -249,9 +293,17 @@ settings-overlay-fight-summary-text = When a boss dies: your DPS and place, top 
 settings-overlay-pace = Pace against your personal best
 settings-overlay-pace-text = After 10 s of a boss fight, ahead or behind your best on that boss.
 settings-overlay-window = Window
+settings-overlay-open-meter = Open the meter at launch
+settings-overlay-open-meter-text = When { -app-name } starts. Off: only the toolbar opens, and the meter opens from its icon.
 settings-overlay-lock = Lock overlay
-settings-overlay-lock-text = Clicks pass through to the game and the controls hide. Alt+CapsLock switches it.
+settings-overlay-lock-text = Clicks pass through to the game and the controls hide. Alt+CapsLock switches it. The toolbar always takes clicks.
 settings-overlay-lock-unavailable = Alt+CapsLock could not be registered, so nothing could unlock the overlay.
+settings-overlay-show-hide = Show or hide everything
+settings-overlay-show-hide-text = Hides the toolbar and every open tool, and brings them back. The tray icon's Show toolbar brings them back too.
+settings-overlay-show-hide-keys = Alt+Shift+CapsLock
+settings-key-alt = Alt
+settings-key-shift = Shift
+settings-key-caps-lock = CapsLock
 settings-overlay-detail-opens = Player detail opens
 settings-overlay-detail-opens-text = Beside the overlay, or in the middle of the screen.
 settings-overlay-beside = Beside
@@ -396,19 +448,21 @@ settings-event-nahma-text = Friday and Sunday at 21:00. Lv 65, and the Enraged L
 settings-event-arena-text = 11:00 and 19:00, when the 10 vs 10 queue opens (until 14:00 and 21:00).
 settings-event-keys-text = 16:00. Shugo Festival and Dimensional Invasion keys.
 
-settings-todos-lead = The to-do window, opened from the meter's "…" menu.
+settings-todos-lead = The to-do window, opened from the toolbar. Counts and amounts fill from the game when you log in while { -app-name } runs.
 settings-todos-resets = Resets
 settings-todos-daily-reset-text = Reported, not confirmed. Check the countdown in game.
 settings-todos-weekly-reset = Weekly reset
 settings-todos-weekly-reset-text = This week's to-dos start over on Wednesday, at the daily reset hour.
 settings-todos-weekly-at = Wednesday { $time }
 settings-todos-membership = Membership
-settings-todos-membership-text = Odyle Energy fills up to 840 instead of 560, on every character.
+settings-todos-membership-text = Higher caps on every character: Odyle Energy 840 instead of 560, Shugo Festival keys 21 instead of 12.
+settings-todos-membership-hint = The game shows { $amount } on { $name }, more than { $cap }. Do you have a membership?
+settings-todos-membership-amount = { $count } { $label }
 settings-todos-defaults = Default to-dos
 settings-todos-hidden = Hidden to-dos
 settings-todos-restore = Restore default to-dos
 settings-todos-start-over = Start over
-settings-todos-start-over-text = Removes your own to-dos, brings back every hidden one and empties every count and amount.
+settings-todos-start-over-text = Removes your own to-dos, brings back every hidden one and empties every count and amount you typed.
 settings-todos-reset-completely = Reset to-dos completely…
 settings-todos-reset-done = To-dos reset
 settings-todos-set-aside = The stored to-dos were set aside
@@ -489,10 +543,9 @@ meter-switch-tip-pinned-session = Pinned to Session
 meter-switch-tip-pinned-target = Pinned to Target
 meter-switch-tip-unpin = Click again to switch by itself. Reset and the next boss also unpin.
 
-meter-menu-fight-history = Fight history
-meter-menu-pvp = PvP meter
-meter-menu-todos = To-dos
-meter-menu-settings = Settings
+meter-boss-setting = Boss setting
+meter-close = Close the meter
+meter-close-line = Fights are tracked only while it is open.
 meter-menu-hit-a-mob = Hit a mob to set whether it is a boss
 meter-menu-treat-as-boss = Treat { $name } as a boss
 meter-menu-treat-as-boss-unnamed = Treat as a boss
@@ -667,3 +720,62 @@ pvp-damage-dealt = Damage dealt
 pvp-damage-taken = Damage taken
 pvp-dealt-empty = No damage dealt yet.
 pvp-taken-empty = No damage taken yet.
+
+## Tray icon
+
+tray-tooltip = { -app-name }
+tray-show-toolbar = Show toolbar
+tray-quit = Quit
+
+## Toolbar
+
+toolbar-label = { -app-name }
+toolbar-grip = Drag to move
+toolbar-meter = DPS meter
+toolbar-meter-closed-line = Fights are tracked while it is open.
+toolbar-meter-open-line = Click to close. Fights stop being tracked.
+toolbar-pvp = PvP meter
+toolbar-todos = To-dos
+toolbar-history = Fight history
+toolbar-reminders = Reminders
+toolbar-reminders-paused = Paused
+toolbar-settings = Settings
+toolbar-fold = Fold the toolbar
+toolbar-unfold = Unfold the toolbar
+toolbar-quit = Quit { -app-name }
+toolbar-quit-line = Closes every tool.
+toolbar-count-of = { $value } of { $cap }
+toolbar-count-of-extra = { $value } of { $cap }, +{ $extra } extra
+toolbar-count-full-in = full in { $time }
+toolbar-count-click = Click for all resources.
+toolbar-count-no-value = No value yet. Log in while { -app-name } runs.
+toolbar-count-label = { $name }, { $value } of { $cap }. Open resources
+toolbar-count-label-extra = { $name }, { $value } of { $cap }, { $extra } extra. Open resources
+toolbar-count-label-full = { $name }, { $value } of { $cap }, full. Open resources
+toolbar-count-label-full-extra = { $name }, { $value } of { $cap }, { $extra } extra, full. Open resources
+toolbar-count-label-none = { $name }, no value yet. Open resources
+toolbar-more-full = { $count } more full
+toolbar-more-full-label = { $count ->
+        [one] { $count } more resource full
+       *[other] { $count } more resources full
+    }
+toolbar-folded-full-label = { $count ->
+        [one] { $count } resource full. Unfold the toolbar
+       *[other] { $count } resources full. Unfold the toolbar
+    }
+toolbar-full-heading = Full, a refill is coming
+toolbar-refills = refills
+toolbar-refills-label = { $name }, { $value } of { $cap }, refills at { $time }
+toolbar-all-resources = All resources
+toolbar-next-reminders = Next reminders
+toolbar-no-reminders = No event is switched on
+toolbar-pause-reminders = Pause reminders
+toolbar-reminder-settings = Reminder settings
+
+## First-open prompt
+
+prompt-title = Open the meter at launch?
+prompt-body = { -app-name } starts with the toolbar alone. Open the DPS meter each time { -app-name } starts?
+prompt-yes = Yes, at launch
+prompt-no = Not now
+prompt-done = The meter opens at launch from now on.

@@ -76,6 +76,11 @@ impl ReminderSettings {
         if !self.enabled {
             return Vec::new();
         }
+        self.switched_on_events()
+    }
+
+    /// The events switched on, whether reminders are paused or not.
+    pub fn switched_on_events(&self) -> Vec<EventId> {
         EVENTS.iter().map(|info| info.id).filter(|&id| self.event_enabled(id)).collect()
     }
 }

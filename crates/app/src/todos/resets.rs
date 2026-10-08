@@ -2,50 +2,74 @@
 //! time zone comes in through [`Zone`], so the tests run any clock, daylight
 //! saving changeovers included.
 //!
-//! A time the spring changeover skips happens at the end of the gap; a time the
-//! autumn changeover repeats happens at its first occurrence only (the same
-//! rules as the reminders, `clock::instant_of_wall_minute`).
+//! The game's own grid is 07:00 UTC every day, whatever the PC's clock does
+//! ([`Resets::following_the_game`]); the player may instead pin the reset to
+//! an hour on the PC's clock ([`Resets::new`]).
+//!
+//! A pinned time the spring changeover skips happens at the end of the gap; a
+//! one the autumn changeover repeats happens at its first occurrence only (the
+//! same rules as the reminders, `clock::instant_of_wall_minute`).
 
-use crate::clock::{instant_of_wall_minute, wall_minute, Zone};
+use crate::clock::{clock_time, instant_of_wall_minute, wall_minute, ClockTime, Zone, DAY_MS};
 
 const WEDNESDAY: i64 = 3;
+const GAME_RESET_UTC_HOUR: i64 = 7;
 
-/// The reset hour on a zone: daily at that hour, weekly on Wednesday at it.
+/// Where on the clock a reset falls.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ResetClock {
+    /// An hour on the PC's clock.
+    Local(u8),
+    /// The game's own grid, a fixed time of day in UTC.
+    Game,
+}
+
+/// The reset clock on a zone: daily at it, weekly on Wednesday at it.
 #[derive(Clone, Copy)]
 pub struct Resets<'a> {
     zone: &'a dyn Zone,
-    hour: u8,
+    clock: ResetClock,
 }
 
-/// Something that happens at `hour` o'clock on the local clock, every day or
-/// one weekday (0 is Sunday).
+/// Something that happens at a reset clock, every day or one weekday (0 is
+/// Sunday).
 #[derive(Clone, Copy)]
 struct Recurrence {
-    hour: u8,
+    clock: ResetClock,
     weekday: Option<i64>,
 }
 
 impl<'a> Resets<'a> {
+    /// Resets pinned to `hour` o'clock on the PC's clock.
     pub fn new(zone: &'a dyn Zone, hour: u8) -> Self {
-        Self { zone, hour }
+        Self { zone, clock: ResetClock::Local(hour) }
+    }
+
+    /// Resets on the game's grid, 07:00 UTC.
+    pub fn following_the_game(zone: &'a dyn Zone) -> Self {
+        Self { zone, clock: ResetClock::Game }
     }
 
     pub fn zone(&self) -> &'a dyn Zone {
         self.zone
     }
 
-    pub fn hour(&self) -> u8 {
-        self.hour
+    /// The PC's clock reading of the daily reset in force at `now_ms`.
+    pub fn clock_at(&self, now_ms: i64) -> ClockTime {
+        match self.clock {
+            ResetClock::Local(hour) => ClockTime { hour, minute: 0 },
+            ResetClock::Game => clock_time(self.zone, self.last_daily(now_ms)),
+        }
     }
 
     /// The latest daily reset at or before `now_ms`.
     pub fn last_daily(&self, now_ms: i64) -> i64 {
-        self.daily_at(self.hour).last_at_or_before(self.zone, now_ms)
+        self.daily().last_at_or_before(self.zone, now_ms)
     }
 
     /// The first daily reset after `now_ms`.
     pub fn next_daily(&self, now_ms: i64) -> i64 {
-        self.next_daily_at(self.hour, now_ms)
+        self.daily().next_after(self.zone, now_ms)
     }
 
     pub fn last_weekly(&self, now_ms: i64) -> i64 {
@@ -61,30 +85,44 @@ impl<'a> Resets<'a> {
         self.daily_at(hour).next_after(self.zone, after_ms)
     }
 
+    fn daily(&self) -> Recurrence {
+        Recurrence { clock: self.clock, weekday: None }
+    }
+
     fn daily_at(&self, hour: u8) -> Recurrence {
-        Recurrence { hour, weekday: None }
+        Recurrence { clock: ResetClock::Local(hour), weekday: None }
     }
 
     fn weekly(&self) -> Recurrence {
-        Recurrence { hour: self.hour, weekday: Some(WEDNESDAY) }
+        Recurrence { clock: self.clock, weekday: Some(WEDNESDAY) }
     }
 }
 
 impl Recurrence {
+    /// The day number the clock reads at `now_ms`: local days on the PC's
+    /// clock, UTC days on the game's.
+    fn day_of(&self, zone: &dyn Zone, now_ms: i64) -> i64 {
+        match self.clock {
+            ResetClock::Local(_) => wall_minute(zone, now_ms).div_euclid(1440),
+            ResetClock::Game => now_ms.div_euclid(DAY_MS),
+        }
+    }
+
     fn on_day(&self, zone: &dyn Zone, day: i64) -> Option<i64> {
         let weekday = (day + 4).rem_euclid(7);
-        self.weekday
-            .is_none_or(|wanted| wanted == weekday)
-            .then(|| instant_of_wall_minute(zone, day * 1440 + i64::from(self.hour) * 60))
+        self.weekday.is_none_or(|wanted| wanted == weekday).then(|| match self.clock {
+            ResetClock::Local(hour) => instant_of_wall_minute(zone, day * 1440 + i64::from(hour) * 60),
+            ResetClock::Game => day * DAY_MS + GAME_RESET_UTC_HOUR * 3_600_000,
+        })
     }
 
     fn last_at_or_before(&self, zone: &dyn Zone, now_ms: i64) -> i64 {
-        let today = wall_minute(zone, now_ms).div_euclid(1440);
+        let today = self.day_of(zone, now_ms);
         (0..).find_map(|back| self.on_day(zone, today + 1 - back).filter(|&at| at <= now_ms)).unwrap_or(now_ms)
     }
 
     fn next_after(&self, zone: &dyn Zone, now_ms: i64) -> i64 {
-        let today = wall_minute(zone, now_ms).div_euclid(1440);
+        let today = self.day_of(zone, now_ms);
         (0..).find_map(|ahead| self.on_day(zone, today - 1 + ahead).filter(|&at| at > now_ms)).unwrap_or(now_ms)
     }
 }
@@ -182,5 +220,50 @@ mod tests {
         let resets = Resets::new(&zone, 9);
         assert_eq!(resets.next_daily_at(16, local(5, 10, 0)), local(5, 16, 0));
         assert_eq!(resets.next_daily_at(16, local(5, 16, 0)), local(6, 16, 0));
+    }
+
+    #[test]
+    fn the_games_daily_reset_is_07_utc_whatever_the_clock() {
+        let zone = berlin();
+        let resets = Resets::following_the_game(&zone);
+        assert_eq!(resets.last_daily(utc(2026, 10, 5, 12, 0)), utc(2026, 10, 5, 7, 0), "09:00 CEST");
+        assert_eq!(resets.last_daily(utc(2026, 12, 5, 12, 0)), utc(2026, 12, 5, 7, 0), "08:00 CET");
+        assert_eq!(resets.last_daily(utc(2026, 12, 5, 6, 59)), utc(2026, 12, 4, 7, 0));
+        assert_eq!(resets.next_daily(utc(2026, 12, 5, 7, 0)), utc(2026, 12, 6, 7, 0));
+    }
+
+    #[test]
+    fn the_games_reset_reads_09_in_summer_and_08_in_winter_on_a_berlin_clock() {
+        let zone = berlin();
+        let resets = Resets::following_the_game(&zone);
+        assert_eq!(resets.clock_at(utc(2026, 10, 5, 12, 0)).to_string(), "09:00");
+        assert_eq!(resets.clock_at(utc(2026, 12, 5, 12, 0)).to_string(), "08:00");
+    }
+
+    #[test]
+    fn the_games_reset_does_not_move_across_a_changeover() {
+        let zone = berlin();
+        let resets = Resets::following_the_game(&zone);
+        let before = resets.last_daily(utc(2026, 10, 25, 6, 0));
+        assert_eq!(before, utc(2026, 10, 24, 7, 0), "09:00 CEST the day before the autumn changeover");
+        assert_eq!(resets.next_daily(utc(2026, 10, 25, 6, 0)), utc(2026, 10, 25, 7, 0), "08:00 CET, the same game instant");
+        assert_eq!(resets.next_daily(before) - before, 24 * HOUR);
+    }
+
+    #[test]
+    fn the_games_weekly_reset_is_wednesday_07_utc() {
+        let zone = berlin();
+        let resets = Resets::following_the_game(&zone);
+        assert_eq!(resets.last_weekly(utc(2026, 10, 27, 12, 0)), utc(2026, 10, 21, 7, 0));
+        assert_eq!(resets.next_weekly(utc(2026, 10, 27, 12, 0)), utc(2026, 10, 28, 7, 0), "08:00 CET");
+        assert_eq!(resets.last_weekly(utc(2026, 12, 9, 6, 59)), utc(2026, 12, 2, 7, 0));
+    }
+
+    #[test]
+    fn a_pinned_hour_still_moves_with_the_clock() {
+        let zone = berlin();
+        let resets = Resets::new(&zone, 9);
+        assert_eq!(resets.last_daily(utc(2026, 10, 5, 12, 0)), utc(2026, 10, 5, 7, 0));
+        assert_eq!(resets.last_daily(utc(2026, 12, 5, 12, 0)), utc(2026, 12, 5, 8, 0));
     }
 }

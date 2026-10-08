@@ -11,7 +11,7 @@ use meter_core::mobs::store::write_atomic;
 use super::model::AppSettings;
 
 pub const FILE_NAME: &str = "settings.json";
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 pub struct Loaded {
     pub settings: AppSettings,
@@ -66,7 +66,23 @@ fn parse(bytes: &[u8]) -> Result<AppSettings, String> {
     if version > u64::from(SCHEMA_VERSION) {
         return Err(format!("is schema version {version}, newer than {SCHEMA_VERSION}"));
     }
+    let mut stored = stored;
+    if version < 2 {
+        forget_the_old_default_reset_hour(&mut stored);
+    }
     Ok(keep_valid_fields(&stored))
+}
+
+/// Before version 2 the to-do reset hour defaulted to 09:00 and was saved as
+/// such, so a stored 9 was the default, not a choice: it goes back to
+/// following the game's grid. A 9 picked since is saved as version 2 and stays.
+fn forget_the_old_default_reset_hour(stored: &mut serde_json::Value) {
+    let Some(todos) = stored.get_mut("todos").and_then(serde_json::Value::as_object_mut) else {
+        return;
+    };
+    if todos.get("resetHour").and_then(serde_json::Value::as_u64) == Some(9) {
+        todos.remove("resetHour");
+    }
 }
 
 /// Starts from the defaults and takes each stored value that is a valid
@@ -405,5 +421,43 @@ mod tests {
         save(&dir.file(), &settings).unwrap();
 
         assert_eq!(load(&dir.file(), 7).settings, settings);
+    }
+
+    #[test]
+    fn a_reset_hour_of_9_saved_before_version_2_was_the_default_and_follows_the_game() {
+        let dir = TestDir::new("old-default-reset-hour");
+        fs::write(dir.file(), r#"{"version":1,"todos":{"resetHour":9,"membership":true}}"#).unwrap();
+
+        let todos = load(&dir.file(), 7).settings.todos;
+
+        assert_eq!(todos.reset_hour, None);
+        assert!(todos.membership, "the rest of the section is kept");
+    }
+
+    #[test]
+    fn a_file_without_a_version_is_migrated_too() {
+        let dir = TestDir::new("unversioned-reset-hour");
+        fs::write(dir.file(), r#"{"todos":{"resetHour":9}}"#).unwrap();
+
+        assert_eq!(load(&dir.file(), 7).settings.todos.reset_hour, None);
+    }
+
+    #[test]
+    fn another_hour_saved_before_version_2_was_a_choice_and_stays() {
+        let dir = TestDir::new("old-chosen-reset-hour");
+        fs::write(dir.file(), r#"{"version":1,"todos":{"resetHour":6}}"#).unwrap();
+
+        assert_eq!(load(&dir.file(), 7).settings.todos.reset_hour, Some(6));
+    }
+
+    #[test]
+    fn a_9_chosen_after_the_migration_stays_pinned() {
+        let dir = TestDir::new("new-chosen-reset-hour");
+        let mut settings = AppSettings::default();
+        settings.todos.reset_hour = Some(9);
+        save(&dir.file(), &settings).unwrap();
+
+        assert_eq!(load(&dir.file(), 7).settings.todos.reset_hour, Some(9));
+        assert_eq!(load(&dir.file(), 7).settings.todos.reset_hour, Some(9), "loading does not rewrite it");
     }
 }

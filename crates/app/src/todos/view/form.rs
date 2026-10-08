@@ -7,7 +7,7 @@ use gpui::{Focusable as _, MouseButton};
 
 use super::rows::{gutter, small_button};
 use super::*;
-use crate::todos::{AmountView, OWN_COUNT_RANGE};
+use crate::todos::OWN_COUNT_RANGE;
 
 impl TodoView {
     /// "+ Add a to-do", or the form in its place.
@@ -309,17 +309,23 @@ impl TodoView {
     }
 
     /// The field an amount is typed in, in place of the arrows and figure:
-    /// the figure on the right, "/cap", and the button that stops tracking.
-    pub(super) fn amount_field(&mut self, amount: &AmountView, label: &str, s: Scale, window: &Window, cx: &mut Context<Self>) -> Stateful<Div> {
+    /// the figure on the right, "/cap", and the × that stops tracking it, or
+    /// goes back to the game's value where the game gave one.
+    pub(super) fn amount_field(&mut self, cap: u32, over_game: bool, label: &str, s: Scale, window: &Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let typed = self.amount_input.read(cx).text().to_string();
         let clear_focus = self.focus_of("amount-clear", true, window, cx);
+        let clear_name = if over_game {
+            fl!("todos-window-back-to-game", label = label)
+        } else {
+            fl!("todos-window-stop-tracking", label = label)
+        };
         let clear = focusable(
             small_button("amount-clear", Icon::Close, s)
                 .size(s.px(18.))
                 .rounded(s.px(4.))
                 .role(Role::Button)
-                .aria_label(SharedString::from(fl!("todos-window-stop-tracking", label = label)))
-                .on_click(cx.listener(|this, _, window, cx| this.stop_tracking(window, cx))),
+                .aria_label(SharedString::from(clear_name))
+                .on_click(cx.listener(|this, _, window, cx| this.clear_amount(window, cx))),
             &clear_focus,
             4.,
             s,
@@ -356,7 +362,7 @@ impl TodoView {
                     .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.take_keyboard(window, cx)))
                     .child(self.amount_input.clone()),
             )
-            .child(div().flex_none().text_size(s.px(11.)).text_color(rgba(FAINT)).child(format!("/{}", amount.cap)))
+            .child(div().flex_none().text_size(s.px(11.)).text_color(rgba(FAINT)).child(format!("/{cap}")))
             .child(clear)
     }
 }

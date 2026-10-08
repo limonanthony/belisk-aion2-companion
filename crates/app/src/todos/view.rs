@@ -2,7 +2,13 @@
 //! tokens.md, "To-do window"): one character's list in three sections, Today,
 //! Recharges and This week, with the character picker above and the reset
 //! hour below. What it shows comes from the `Todos` entity, and every action
-//! goes back to it with the character the window showed.
+//! goes back to it with the character the window showed. The Resources window
+//! (resources.html, tokens.md "Resources window") is the same view showing
+//! only the Recharges rows, so both windows always agree.
+//!
+//! A line under the picker says where the values come from; a value the game
+//! gave has no arrows, a click on it types over it, and its tooltip says when
+//! the game said it.
 //!
 //! The window never activates, like the other overlays, except while a text
 //! field takes the keyboard (an amount being typed, the name of a new to-do),
@@ -31,7 +37,7 @@ use gpui::{
 use windows::Win32::Foundation::HWND;
 
 use super::copy;
-use super::{global, Cadence, CharacterId, RemovedOwnTodo, RowId, RowKind, Section, TodoList, Todos};
+use super::{global, Cadence, CharacterId, RemovedOwnTodo, RowId, RowKind, Section, Source, SourceLine, TodoList, Todos};
 use crate::assets::Icon;
 use crate::i18n::{self, fl};
 use crate::meter::{MeterModel, OverlaySettings};
@@ -43,8 +49,8 @@ use crate::secondary;
 use crate::settings::{self, reveal_marker, Reveal, Section as SettingsSection};
 
 const WIDTH: f32 = 370.0;
-/// The list scrolls past this height, so the window is at most 558 px tall
-/// at 100% (590 while a note shows).
+/// The list scrolls past this height, so the to-do window is at most 580 px
+/// tall at 100% (612 while a note shows).
 const LIST_MAX: f32 = 452.0;
 const NOTE_FOR: Duration = Duration::from_secs(4);
 /// How long the pointer may be away before typing ends.
@@ -69,6 +75,15 @@ const TRACK: u32 = crate::style::TRACK;
 const HIDDEN_OPACITY: f32 = 0.42;
 const DISABLED_OPACITY: f32 = 0.45;
 
+/// What the window lists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Contents {
+    /// The to-do window: Today, Recharges, This week and your own to-dos.
+    Todos,
+    /// The Resources window: the Recharges rows alone, nothing to hide or add.
+    Resources,
+}
+
 /// Where hidden rows are listed by "Show": a section, or an open group.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum HiddenIn {
@@ -76,10 +91,19 @@ pub enum HiddenIn {
     Group(&'static str),
 }
 
-/// An amount being typed, for the character and row the window showed.
+/// What the field types: an amount, or how much of a row the game fills is
+/// done.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Typing {
+    Amount,
+    Progress,
+}
+
+/// A figure being typed, for the character and row the window showed.
 struct AmountEdit {
     character: CharacterId,
     row: &'static str,
+    typing: Typing,
     /// What the field opened with; Enter on it unchanged keeps the amount's
     /// refill timing.
     opened_with: Option<u32>,
@@ -97,6 +121,9 @@ struct AddForm {
 enum Note {
     Removed(RemovedOwnTodo),
     Added { name: String, section: Section },
+    /// The game listed the shown character's tickets at login; `replaced`:
+    /// values typed there were dropped.
+    Login { replaced: bool },
 }
 
 /// A row in the order the window draws it, for moving the keyboard on when
@@ -117,6 +144,7 @@ struct Focus {
 }
 
 pub struct TodoView {
+    contents: Contents,
     todos: Entity<Todos>,
     meter_model: Entity<MeterModel>,
     overlay: OverlaySettings,
@@ -147,6 +175,11 @@ pub struct TodoView {
     note_timer: Option<Task<()>>,
     announcement: Option<SharedString>,
     shown_character: Option<CharacterId>,
+    /// The shown character and its last login the window knows of: a newer
+    /// login while it is shown brings the login note.
+    login_seen: (Option<CharacterId>, Option<i64>),
+    /// The last list drawn had a value the player typed.
+    typed_shown: bool,
     drawn: Vec<Drawn>,
     controls: HashMap<String, FocusHandle>,
     root_focus: FocusHandle,
@@ -170,7 +203,7 @@ pub struct TodoView {
 }
 
 impl TodoView {
-    pub fn new(meter_model: Entity<MeterModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(contents: Contents, meter_model: Entity<MeterModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let todos = global(cx);
         let store = settings::global(cx);
         let overlay = store.read(cx).get().overlay.clone();
@@ -180,6 +213,7 @@ impl TodoView {
         let form_group = cx.focus_handle();
         let root_focus = cx.focus_handle();
         let shown_character = todos.read(cx).selected();
+        let login_seen = (shown_character, shown_character.and_then(|id| todos.read(cx).logged_in_ms(id)));
         let locale = i18n::locale(cx);
         let subscriptions = vec![
             cx.observe(&locale, |this, _, cx| {
@@ -188,6 +222,8 @@ impl TodoView {
             cx.observe_in(&todos, window, |this, todos, window, cx| {
                 let selected = todos.read(cx).selected();
                 this.follow_character(selected, window, cx);
+                let logged_in_ms = selected.and_then(|id| todos.read(cx).logged_in_ms(id));
+                this.note_login(selected, logged_in_ms, cx);
                 cx.notify();
             }),
             cx.observe(&store, |this, store, cx| {
@@ -230,6 +266,7 @@ impl TodoView {
         .detach();
         window.focus(&root_focus, cx);
         Self {
+            contents,
             todos,
             meter_model,
             overlay,
@@ -254,6 +291,8 @@ impl TodoView {
             note_timer: None,
             announcement: None,
             shown_character,
+            login_seen,
+            typed_shown: false,
             drawn: Vec::new(),
             controls: HashMap::new(),
             root_focus,
@@ -282,6 +321,15 @@ impl TodoView {
         self.listing_hidden.clear();
         self.pointer_row = None;
         self.picker = None;
+    }
+
+    /// The game listed the shown character's tickets again since the window
+    /// last looked: what it filled, and whether values typed were replaced.
+    fn note_login(&mut self, shown: Option<CharacterId>, logged_in_ms: Option<i64>, cx: &mut Context<Self>) {
+        let (seen_character, seen_login) = std::mem::replace(&mut self.login_seen, (shown, logged_in_ms));
+        if shown.is_some() && seen_character == shown && logged_in_ms > seen_login {
+            self.show_note(Note::Login { replaced: self.typed_shown }, cx);
+        }
     }
 
     // ---- Focus ----
@@ -483,7 +531,7 @@ impl TodoView {
 
     // ---- Amounts ----
 
-    fn open_amount(&mut self, row: &'static str, tracked: Option<u32>, from_keyboard: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_amount(&mut self, row: &'static str, typing: Typing, tracked: Option<u32>, from_keyboard: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(character) = self.shown_character else {
             return;
         };
@@ -491,7 +539,7 @@ impl TodoView {
         if self.adding.is_some() && self.form_is_blank(cx) {
             self.close_form(false, window, cx);
         }
-        self.amount_edit = Some(AmountEdit { character, row, opened_with: tracked, from_keyboard });
+        self.amount_edit = Some(AmountEdit { character, row, typing, opened_with: tracked, from_keyboard });
         self.amount_input.update(cx, |input, cx| match tracked {
             Some(value) => input.set_text_selected(&value.to_string(), cx),
             None => input.clear(cx),
@@ -519,12 +567,14 @@ impl TodoView {
         cx.notify();
     }
 
-    fn stop_tracking(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// The field's ×: what the player typed goes, so the row stops being
+    /// tracked, or shows the game's value again where the game gave one.
+    fn clear_amount(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(edit) = self.amount_edit.as_ref() else {
             return;
         };
-        let (character, row) = (edit.character, edit.row);
-        self.todos.update(cx, |todos, cx| todos.set_amount(character, row, None, cx));
+        let (character, row, typing) = (edit.character, edit.row, edit.typing);
+        set_typed(&self.todos, character, row, typing, None, cx);
         self.close_amount(false, true, window, cx);
     }
 
@@ -799,8 +849,14 @@ impl TodoView {
 
     fn header(&mut self, list: Option<&TodoList>, s: Scale, window: &Window, cx: &mut Context<Self>) -> Div {
         let full_chip = list.and_then(|list| list.full_text.clone()).map(|text| warn_chip(text, s));
-        let title = chrome::title(Icon::ListChecks, fl!("todos-window-title"), list.map(|list| SharedString::from(list.left_text.clone())), s)
-            .children(full_chip);
+        let title = match self.contents {
+            Contents::Todos => {
+                let left = list.map(|list| SharedString::from(list.left_text.clone()));
+                chrome::title(Icon::ListChecks, fl!("todos-window-title"), left, s)
+            }
+            Contents::Resources => chrome::title(Icon::Package, fl!("resources-window-title"), None, s),
+        }
+        .children(full_chip);
         let close_focus = self.focus_of("close", false, window, cx);
         let close = focusable(
             chrome::tool_button("close", Icon::Close, false, s)
@@ -952,22 +1008,27 @@ impl TodoView {
         let (glyph, good, text, bold) = match &self.note {
             Some(Note::Removed(removed)) => {
                 let name = removed.todo.name.clone();
-                (Icon::Trash, false, copy::removed_note(&name), name)
+                (Icon::Trash, false, copy::removed_note(&name), Some(name))
             }
-            Some(Note::Added { name, section }) => (Icon::Check, true, copy::added_note(name, &section.title()), name.clone()),
-            None => {
+            Some(Note::Added { name, section }) => (Icon::Check, true, copy::added_note(name, &section.title()), Some(name.clone())),
+            Some(Note::Login { replaced }) => {
+                let text = if *replaced { fl!("todos-window-login-note-replaced") } else { fl!("todos-window-login-note") };
+                (Icon::Check, true, text, None)
+            }
+            None if self.contents == Contents::Todos => {
                 let done = list.everything_done.as_ref()?;
                 let first = copy::everything_done(&self.overlay.display_name(&list.character.name));
                 let text = match &done.fills_first {
                     Some(fills) => format!("{first} {fills}"),
                     None => first.clone(),
                 };
-                (Icon::Check, true, text, first)
+                (Icon::Check, true, text, Some(first))
             }
+            None => return None,
         };
-        let highlights: Vec<_> = text
-            .find(&bold)
-            .map(|start| (start..start + bold.len(), HighlightStyle { font_weight: Some(FontWeight::BOLD), ..Default::default() }))
+        let highlights: Vec<_> = bold
+            .and_then(|bold| text.find(&bold).map(|start| start..start + bold.len()))
+            .map(|range| (range, HighlightStyle { font_weight: Some(FontWeight::BOLD), ..Default::default() }))
             .into_iter()
             .collect();
         let colour: gpui::Hsla = if good { rgb(GOOD).into() } else { rgba(MUTED).into() };
@@ -1008,7 +1069,66 @@ impl TodoView {
         )
     }
 
+    /// "From the game, live · logged in at 19:02": where the values come from,
+    /// times and names brighter, cut off with an ellipsis.
+    fn source_line(&self, list: &TodoList, s: Scale) -> Stateful<Div> {
+        let name = self.overlay.display_name(&list.character.name);
+        let (text, strong): (String, Vec<String>) = match &list.source_line {
+            SourceLine::Live { logged_in_at: Some(time) } => (fl!("todos-source-live", time = time.as_str()), vec![time.clone()]),
+            SourceLine::Live { logged_in_at: None } => (fl!("todos-source-live-now"), Vec::new()),
+            SourceLine::Earlier { at } => (fl!("todos-source-earlier", stamp = at.as_str()), vec![at.clone()]),
+            SourceLine::Shared { from } => {
+                let from = self.overlay.display_name(from);
+                (fl!("todos-source-shared", name = name.as_str(), from = from.as_str()), vec![name, from])
+            }
+            SourceLine::NoneYet => (fl!("todos-source-none", name = name.as_str()), vec![name]),
+        };
+        let bright = HighlightStyle { color: Some(rgba(TEXT).into()), font_weight: Some(FontWeight::SEMIBOLD), ..Default::default() };
+        let dim = HighlightStyle { color: Some(rgba(FAINT).into()), ..Default::default() };
+        let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
+        let mut from = 0;
+        for part in strong.iter().filter(|part| !part.is_empty()) {
+            if let Some(start) = text[from..].find(part.as_str()).map(|at| from + at) {
+                highlights.push((start..start + part.len(), bright));
+                from = start + part.len();
+            }
+        }
+        highlights.extend(text.match_indices('\u{b7}').map(|(start, dot)| (start..start + dot.len(), dim)));
+        highlights.sort_by_key(|(range, _)| range.start);
+        div()
+            .id("source-line")
+            .debug_selector(|| "source-line".to_string())
+            .role(Role::Status)
+            .aria_label(SharedString::from(text.clone()))
+            .flex_none()
+            .h(s.px(20.))
+            .mt(s.px(-2.))
+            .mb(s.px(4.))
+            .px(s.px(4.))
+            .flex()
+            .items_center()
+            .gap(s.px(6.))
+            .text_size(s.px(11.5))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(rgba(MUTED))
+            .child(chrome::icon(Icon::Gamepad, 12., rgba(FAINT), s))
+            .child(div().flex_1().min_w_0().truncate().child(StyledText::new(text).with_highlights(highlights)))
+    }
+
     fn footer(&mut self, reset_time: String, weekly: String, s: Scale, window: &Window, cx: &mut Context<Self>) -> Div {
+        let footer = chrome::footer(s)
+            .gap(s.px(5.))
+            .child(chrome::icon(Icon::Clock, 12., rgba(FAINT), s))
+            .child(fl!("todos-window-daily-reset"))
+            .child(div().text_color(rgba(TEXT)).font_weight(FontWeight::SEMIBOLD).child(reset_time));
+        if self.contents == Contents::Resources {
+            let caps = if self.todos.read(cx).membership() {
+                fl!("resources-window-membership-caps")
+            } else {
+                fl!("resources-window-plain-caps")
+            };
+            return footer.child(div().flex_1()).child(div().flex_none().text_color(rgba(FAINT)).child(caps));
+        }
         let focus = self.focus_of("change", false, window, cx);
         let change = focusable(
             link("change", fl!("todos-window-change"), s).role(Role::Link).aria_label(fl!("todos-window-change-name")).on_click(cx.listener(|this, _, _, cx| {
@@ -1018,11 +1138,7 @@ impl TodoView {
             4.,
             s,
         );
-        chrome::footer(s)
-            .gap(s.px(5.))
-            .child(chrome::icon(Icon::Clock, 12., rgba(FAINT), s))
-            .child(fl!("todos-window-daily-reset"))
-            .child(div().text_color(rgba(TEXT)).font_weight(FontWeight::SEMIBOLD).child(reset_time))
+        footer
             .child(div().text_color(rgba(FAINT)).child("\u{b7}"))
             .child(change)
             .child(div().flex_1())
@@ -1037,26 +1153,36 @@ impl Render for TodoView {
         let s = look.s;
         let list = self.todos.read(cx).list();
         self.drawn.clear();
+        self.typed_shown = list.as_ref().is_some_and(has_typed_value);
 
+        let (selector, title) = match self.contents {
+            Contents::Todos => ("todos", fl!("todos-window-title")),
+            Contents::Resources => ("resources", fl!("resources-window-title")),
+        };
         let header = self.header(list.as_ref(), s, window, cx);
         let card = chrome::card(WIDTH, look)
-            .id("todos")
-            .debug_selector(|| "todos".to_string())
+            .id(selector)
+            .debug_selector(move || selector.to_string())
             .role(Role::Dialog)
-            .aria_label(fl!("todos-window-title"))
+            .aria_label(title)
             .child(header);
         let card = match &list {
             Some(list) => {
                 let selector = self.selector(list, s, window, cx);
+                let source = self.source_line(list, s);
                 let note = self.note_line(list, s, window, cx);
                 let body = self.list_body(list, s, window, cx);
                 let footer = self.footer(list.footer.reset_time.clone(), list.footer.weekly.clone(), s, window, cx);
-                card.child(selector).children(note).child(body).child(footer)
+                card.child(selector).child(source).children(note).child(body).child(footer)
             }
             None => {
-                let reset_time = format!("{:02}:00", self.todos.read(cx).reset_hour());
+                let reset_time = self.todos.read(cx).reset_clock().to_string();
                 let footer = self.footer(reset_time, copy::weekly_on_wednesday(), s, window, cx);
-                card.child(chrome::empty(Some(fl!("todos-window-no-character-title").into()), fl!("todos-window-no-character-line"), s)).child(footer)
+                let line = match self.contents {
+                    Contents::Todos => fl!("todos-window-no-character-line"),
+                    Contents::Resources => fl!("resources-window-no-character-line"),
+                };
+                card.child(chrome::empty(Some(fl!("todos-window-no-character-title").into()), line, s)).child(footer)
             }
         };
         let picker = self.picker_layer(s, cx);
@@ -1072,6 +1198,14 @@ impl Render for TodoView {
             .children(picker.into_iter().flatten())
             .children(announcement)
     }
+}
+
+/// A row shows a value the player typed.
+fn has_typed_value(list: &TodoList) -> bool {
+    list.sections.iter().flat_map(|section| &section.rows).any(|row| match &row.kind {
+        RowKind::Group(group) => group.children.iter().any(|child| child.source == Source::Typed),
+        _ => row.source == Source::Typed,
+    })
 }
 
 /// Saves what the amount field holds, unless it still holds what it opened
@@ -1092,8 +1226,14 @@ fn commit_amount(todos: &Entity<Todos>, edit: &AmountEdit, typed: &str, cx: &mut
     if value == edit.opened_with {
         return;
     }
-    let (character, row) = (edit.character, edit.row);
-    todos.update(cx, |todos, cx| todos.set_amount(character, row, value, cx));
+    set_typed(todos, edit.character, edit.row, edit.typing, value, cx);
+}
+
+fn set_typed(todos: &Entity<Todos>, character: CharacterId, row: &'static str, typing: Typing, value: Option<u32>, cx: &mut App) {
+    todos.update(cx, |todos, cx| match typing {
+        Typing::Amount => todos.set_amount(character, row, value, cx),
+        Typing::Progress => todos.set_progress(character, row, value, cx),
+    });
 }
 
 fn find_kind(row: super::RowView, id: RowId) -> Option<RowKind> {
@@ -1197,8 +1337,8 @@ impl TodoView {
         cx.notify();
     }
 
-    pub fn open_amount_field(&mut self, row: &'static str, tracked: Option<u32>, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_amount(row, tracked, false, window, cx);
+    pub fn open_amount_field(&mut self, row: &'static str, typing: Typing, tracked: Option<u32>, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_amount(row, typing, tracked, false, window, cx);
     }
 
     pub fn open_add_form(&mut self, counted: bool, cadence: Cadence, window: &mut Window, cx: &mut Context<Self>) {

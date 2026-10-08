@@ -48,6 +48,8 @@ const SEGMENT_TRACK: u32 = 0x00000052;
 const SELECT_FILL: u32 = 0x0000004d;
 const OPEN_BORDER: u32 = 0xfff6ec8c;
 const SCROLL_THUMB: u32 = 0xfff0e138;
+const KBD_FILL: u32 = 0xfff0e10f;
+const KBD_BORDER: u32 = 0xfff0e129;
 /// Not in tokens.md: the mockups show no keyboard focus. Cream, as the open
 /// select's border, but solid enough to stand out on every surface.
 const FOCUS_RING: u32 = 0xf3ebe1e6;
@@ -194,20 +196,34 @@ pub fn group(rows: Vec<Div>) -> Div {
 
 /// A label and its sentence on the left, the control on a stable right edge.
 pub fn row(label: impl IntoElement, description: Option<AnyElement>, control: impl IntoElement) -> Div {
-    row_of(label, description, control, false)
+    row_of(label, description, control, RowLook::Plain)
 }
 
 /// A row under a master switch that is off: the label and sentence at half
 /// strength; the caller passes the control disabled.
 pub fn dimmed_row(label: impl IntoElement, description: Option<AnyElement>, control: impl IntoElement) -> Div {
-    row_of(label, description, control, true)
+    row_of(label, description, control, RowLook::Dimmed)
 }
 
-fn row_of(label: impl IntoElement, description: Option<AnyElement>, control: impl IntoElement, dimmed: bool) -> Div {
+/// A row whose control sits under its label and sentence, 10 px apart.
+pub fn stacked_row(label: impl IntoElement, description: Option<AnyElement>, control: impl IntoElement) -> Div {
+    row_of(label, description, control, RowLook::Stacked)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RowLook {
+    Plain,
+    Dimmed,
+    Stacked,
+}
+
+fn row_of(label: impl IntoElement, description: Option<AnyElement>, control: impl IntoElement, look: RowLook) -> Div {
     div()
         .flex()
-        .items_center()
-        .gap(px(20.))
+        .map(|row| match look {
+            RowLook::Stacked => row.flex_col().items_start().gap(px(10.)),
+            RowLook::Plain | RowLook::Dimmed => row.items_center().gap(px(20.)),
+        })
         .min_h(px(54.))
         .py(px(11.))
         .px(px(16.))
@@ -218,7 +234,7 @@ fn row_of(label: impl IntoElement, description: Option<AnyElement>, control: imp
                 .flex()
                 .flex_col()
                 .gap(px(2.))
-                .when(dimmed, |text| text.opacity(0.5))
+                .when(look == RowLook::Dimmed, |text| text.opacity(0.5))
                 .child(
                     div()
                         .flex()
@@ -233,6 +249,41 @@ fn row_of(label: impl IntoElement, description: Option<AnyElement>, control: imp
         .child(div().flex_none().flex().items_center().gap(px(8.)).child(control))
 }
 
+/// A fixed shortcut as Kbd keys joined by a faint "+", read-only.
+pub fn keys(id: &'static str, label: impl Into<SharedString>, keys: Vec<String>) -> AnyElement {
+    let mut row = div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .role(Role::Group)
+        .aria_label(label.into())
+        .text_size(px(11.))
+        .text_color(rgba(FAINT));
+    for (index, key) in keys.into_iter().enumerate() {
+        if index > 0 {
+            row = row.child("+");
+        }
+        row = row.child(
+            div()
+                .h(px(22.))
+                .px(px(7.))
+                .flex()
+                .items_center()
+                .rounded(px(5.))
+                .border_1()
+                .border_color(rgba(KBD_BORDER))
+                .bg(rgba(KBD_FILL))
+                .font_family(DISPLAY_FONT)
+                .text_size(px(12.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgba(TEXT))
+                .child(key),
+        );
+    }
+    row.into_any_element()
+}
+
 pub fn description(text: impl Into<SharedString>) -> AnyElement {
     div()
         .max_w(px(400.))
@@ -244,7 +295,7 @@ pub fn description(text: impl Into<SharedString>) -> AnyElement {
 }
 
 /// A line under a row's sentence: `glyph` and `text` in `colour`.
-pub fn note(glyph: Icon, text: impl Into<SharedString>, colour: impl Into<Hsla>) -> Div {
+pub fn note(glyph: Icon, text: impl IntoElement, colour: impl Into<Hsla>) -> Div {
     let colour = colour.into();
     div()
         .flex()
@@ -256,7 +307,7 @@ pub fn note(glyph: Icon, text: impl Into<SharedString>, colour: impl Into<Hsla>)
         .line_height(relative(1.4))
         .text_color(colour)
         .child(icon(glyph, 13., colour).mt(px(2.)))
-        .child(div().flex_1().min_w_0().child(text.into()))
+        .child(div().flex_1().min_w_0().child(text))
 }
 
 /// A list row: icon, two lines, actions on the right.

@@ -9,12 +9,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use meter_core::identity::KnownCharacter;
+use meter_core::tickets::{TicketContent, TicketReport};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use super::amount::{self, Standing, TypedAmount};
 use super::catalogue::{self, AmountSpec, Kind, Section};
 use super::resets::Resets;
+use super::tickets::{GameTicket, KnownTicket, ServerTicket};
 use crate::clock::Zone;
 
 pub const MAX_OWN_NAME_CHARS: usize = 40;
@@ -26,19 +28,32 @@ pub struct Moment<'a> {
     pub resets: Resets<'a>,
     pub now_ms: i64,
     pub membership: bool,
+    /// When this run of the app began: a game value captured since, on the
+    /// character being played, is live.
+    pub run_started_ms: i64,
 }
 
 impl<'a> Moment<'a> {
     pub fn new(zone: &'a dyn Zone, reset_hour: u8, membership: bool, now_ms: i64) -> Self {
-        Self { resets: Resets::new(zone, reset_hour), now_ms, membership }
+        Self { resets: Resets::new(zone, reset_hour), now_ms, membership, run_started_ms: 0 }
+    }
+
+    /// Resets on the game's own grid, 07:00 UTC.
+    pub fn following_the_game(zone: &'a dyn Zone, membership: bool, now_ms: i64) -> Self {
+        Self { resets: Resets::following_the_game(zone), now_ms, membership, run_started_ms: 0 }
+    }
+
+    pub fn running_since(self, run_started_ms: i64) -> Self {
+        Self { run_started_ms, ..self }
     }
 
     pub fn cap_of(&self, spec: &AmountSpec) -> u32 {
         spec.cap_for(self.membership)
     }
 
-    pub fn standing(&self, spec: &AmountSpec, typed: TypedAmount) -> Standing {
-        amount::standing(spec, self.cap_of(spec), typed, self.now_ms, &self.resets)
+    /// An amount of `value` known at `at_ms`, as it stands now.
+    pub fn standing(&self, spec: &AmountSpec, value: u32, at_ms: i64) -> Standing {
+        amount::standing(spec, self.cap_of(spec), value, at_ms, self.now_ms, &self.resets)
     }
 }
 
@@ -132,6 +147,15 @@ pub struct HiddenSummary {
     pub characters: usize,
 }
 
+/// "The game shows 18 Shugo Festival keys on Mirelle, more than 12."
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PoolAbovePlainCap {
+    pub character: String,
+    pub label: &'static str,
+    pub count: u32,
+    pub cap: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CharacterState {
@@ -146,6 +170,7 @@ pub struct CharacterState {
     /// Count (or 0/1 for a tick) of the built-in rows, by id; absent is 0.
     #[serde(default, deserialize_with = "lenient_map")]
     pub(super) progress: BTreeMap<String, u32>,
+    /// What the player typed over a row, by id.
     #[serde(default, deserialize_with = "lenient_map")]
     pub(super) amounts: BTreeMap<String, TypedAmount>,
     #[serde(default, deserialize_with = "lenient_set")]
@@ -154,6 +179,12 @@ pub struct CharacterState {
     pub(super) own: Vec<OwnTodo>,
     #[serde(default, deserialize_with = "lenient")]
     next_own_id: u32,
+    /// What the game said about this character's own tickets, by ticket id.
+    #[serde(default, deserialize_with = "lenient_map")]
+    tickets: BTreeMap<String, GameTicket>,
+    /// When the game last listed every ticket on this character (Unix ms); 0 if never.
+    #[serde(default, deserialize_with = "lenient")]
+    logged_in_ms: i64,
 }
 
 impl CharacterState {
@@ -169,6 +200,22 @@ impl CharacterState {
             hidden: catalogue::hidden_by_default().map(str::to_string).collect(),
             own: Vec::new(),
             next_own_id: 1,
+            tickets: BTreeMap::new(),
+            logged_in_ms: 0,
+        }
+    }
+
+    /// When the game last listed every ticket on this character; none before the first.
+    pub fn logged_in_ms(&self) -> Option<i64> {
+        (self.logged_in_ms != 0).then_some(self.logged_in_ms)
+    }
+
+    /// What the player typed or counted over rows following `ticket` is gone:
+    /// the game has spoken.
+    fn drop_manual_values(&mut self, ticket: u32) {
+        for builtin in catalogue::rows_of_ticket(ticket) {
+            self.amounts.remove(builtin.id);
+            self.progress.remove(builtin.id);
         }
     }
 
@@ -214,12 +261,11 @@ impl CharacterState {
             *count = (*count).min(target);
             *count > 0 && !catalogue::builtin(id).is_some_and(|builtin| builtin.account_wide)
         });
-        self.amounts.retain(|id, typed| match catalogue::builtin(id).map(|builtin| builtin.kind) {
-            Some(Kind::Amount(spec)) => {
-                typed.value = typed.value.min(spec.membership_cap.unwrap_or(spec.cap).max(spec.cap));
-                true
-            }
-            _ => false,
+        self.amounts.retain(|id, _| matches!(catalogue::builtin(id).map(|builtin| builtin.kind), Some(Kind::Amount(_))));
+        self.tickets.retain(|id, _| {
+            id.parse::<u32>().is_ok_and(|ticket| {
+                catalogue::rows_of_ticket(ticket).next().is_some() && !catalogue::is_server_ticket(ticket)
+            })
         });
         self.hidden.retain(|id| catalogue::builtin(id).is_some());
         let mut seen = BTreeSet::new();
@@ -256,6 +302,9 @@ pub struct TodoData {
     /// Duty Missions done, by server id.
     #[serde(deserialize_with = "lenient_map")]
     duty_missions: BTreeMap<String, u32>,
+    /// What the game said about the tickets it counts for the server.
+    #[serde(deserialize_with = "lenient_vec")]
+    server_tickets: Vec<ServerTicket>,
     /// Sections folded shut, by [`Section::key`].
     #[serde(deserialize_with = "lenient_set")]
     folded: BTreeSet<String>,
@@ -321,6 +370,12 @@ impl TodoData {
         self.duty_missions.retain(|server, count| {
             *count = (*count).min(target);
             server.parse::<u32>().is_ok() && *count > 0
+        });
+        let mut seen = BTreeSet::new();
+        self.server_tickets.retain(|known| {
+            catalogue::is_server_ticket(known.ticket)
+                && catalogue::rows_of_ticket(known.ticket).next().is_some()
+                && seen.insert((known.server_id, known.ticket))
         });
         self.folded.retain(|key| Section::from_key(key).is_some());
         self.open_groups.retain(|id| catalogue::builtin(id).is_some_and(|builtin| builtin.kind == Kind::Group));
@@ -391,6 +446,96 @@ impl TodoData {
             },
             RowId::Own(id) => character.own.iter().find(|todo| todo.id == id).map_or(0, |todo| todo.done),
         }
+    }
+
+    /// What the game last said about `ticket`, as `character` sees it: its
+    /// own value, or for a ticket the game counts for the server, the value
+    /// whichever character of the server gave last.
+    pub fn game_ticket(&self, character: &CharacterState, ticket: u32) -> Option<KnownTicket> {
+        if catalogue::is_server_ticket(ticket) {
+            return self
+                .server_tickets
+                .iter()
+                .find(|known| known.server_id == character.server_id && known.ticket == ticket)
+                .map(|known| KnownTicket { value: known.value, shared_from: (known.by != character.id).then_some(known.by) });
+        }
+        character.tickets.get(&ticket.to_string()).map(|&value| KnownTicket { value, shared_from: None })
+    }
+
+    /// A regular pool the game shows above its plain cap, on any character,
+    /// for a ticket the membership raises: the player probably has the
+    /// membership.
+    pub fn pool_above_plain_cap(&self) -> Option<PoolAbovePlainCap> {
+        let mut raised = catalogue::CATALOGUE.iter().filter_map(|builtin| match (builtin.kind, builtin.ticket) {
+            (Kind::Amount(spec), Some(ticket)) if spec.membership_cap.is_some() => Some((builtin.label, spec.cap, ticket)),
+            _ => None,
+        });
+        raised.find_map(|(label, cap, ticket)| {
+            self.characters.iter().find_map(|character| {
+                let count = self.game_ticket(character, ticket)?.value.count;
+                (count > cap).then(|| PoolAbovePlainCap { character: character.name.clone(), label, count, cap })
+            })
+        })
+    }
+
+    /// Keeps what the game said: a snapshot fills every ticket it lists, a
+    /// change replaces one. What the player typed or counted over a ticket's
+    /// rows is dropped (on every character of the server for a server ticket).
+    /// Returns whether anything changed.
+    pub fn apply_tickets(&mut self, report: &TicketReport) -> bool {
+        let at_ms = (report.captured_at * 1000.0).round() as i64;
+        if self.find(&report.character).is_none() {
+            self.sync_characters(std::slice::from_ref(&report.character));
+        }
+        let Some(id) = self.find(&report.character) else {
+            return false;
+        };
+        match &report.content {
+            TicketContent::Snapshot(records) => {
+                for record in records {
+                    self.store_ticket(id, record.id, record.count, record.charge, at_ms);
+                }
+                if let Some(character) = self.character_mut(id).filter(|character| character.logged_in_ms <= at_ms) {
+                    character.logged_in_ms = at_ms;
+                }
+                true
+            }
+            TicketContent::Change { record, .. } => self.store_ticket(id, record.id, record.count, record.charge, at_ms),
+        }
+    }
+
+    fn store_ticket(&mut self, id: CharacterId, ticket: u32, count: u32, charge: u32, at_ms: i64) -> bool {
+        if catalogue::rows_of_ticket(ticket).next().is_none() {
+            return false;
+        }
+        let value = GameTicket { count, charge, at_ms };
+        let Some(server_id) = self.character(id).map(|character| character.server_id) else {
+            return false;
+        };
+        if catalogue::is_server_ticket(ticket) {
+            let known = self.server_tickets.iter_mut().find(|known| known.server_id == server_id && known.ticket == ticket);
+            match known {
+                Some(known) if known.value.at_ms > at_ms => return false,
+                Some(known) => {
+                    known.value = value;
+                    known.by = id;
+                }
+                None => self.server_tickets.push(ServerTicket { server_id, ticket, value, by: id }),
+            }
+            for character in self.characters.iter_mut().filter(|character| character.server_id == server_id) {
+                character.drop_manual_values(ticket);
+            }
+            return true;
+        }
+        let Some(character) = self.character_mut(id) else {
+            return false;
+        };
+        if character.tickets.get(&ticket.to_string()).is_some_and(|known| known.at_ms > at_ms) {
+            return false;
+        }
+        character.tickets.insert(ticket.to_string(), value);
+        character.drop_manual_values(ticket);
+        true
     }
 
     pub fn is_folded(&self, section: Section) -> bool {
@@ -473,6 +618,30 @@ impl TodoData {
         })
     }
 
+    /// Types how much of a row the game fills is done (`Some`, up to its
+    /// target), or goes back to what the game said (`None`). The game's next
+    /// value for the ticket replaces it. Rows the game does not fill are
+    /// counted with [`Self::toggle_tick`] and [`Self::adjust_count`].
+    pub fn set_progress(&mut self, id: CharacterId, row: &'static str, value: Option<u32>) -> bool {
+        let Some(character) = self.character(id) else {
+            return false;
+        };
+        let Some((_, target)) = shape_of(character, RowId::Builtin(row)) else {
+            return false;
+        };
+        let followed = catalogue::builtin(row).and_then(|builtin| builtin.ticket);
+        if !followed.is_some_and(|ticket| self.game_ticket(character, ticket).is_some()) {
+            return false;
+        }
+        let Some(character) = self.character_mut(id) else {
+            return false;
+        };
+        match value {
+            Some(value) => character.progress.insert(row.to_string(), value.min(target)) != Some(value.min(target)),
+            None => character.progress.remove(row).is_some(),
+        }
+    }
+
     fn change_progress(
         &mut self,
         id: CharacterId,
@@ -484,6 +653,12 @@ impl TodoData {
         let (shape, target) = shape_of(character, row)?;
         if !allowed(shape) {
             return None;
+        }
+        if let RowId::Builtin(builtin_id) = row {
+            let followed = catalogue::builtin(builtin_id)?.ticket;
+            if followed.is_some_and(|ticket| self.game_ticket(character, ticket).is_some()) {
+                return None;
+            }
         }
         let done = self.progress_of(character, row);
         let next = change(done, target).min(target);
@@ -514,18 +689,19 @@ impl TodoData {
         self.character_mut(id).is_some_and(|character| character.hidden.remove(row))
     }
 
-    /// Types what the player has (`Some`), or stops tracking it (`None`).
+    /// Types what the player has (`Some`), or goes back to what the game said
+    /// (`None`). A typed amount may be above the cap. The game's next value
+    /// for the ticket replaces it.
     pub fn set_amount(&mut self, id: CharacterId, row: &'static str, value: Option<u32>, moment: &Moment) -> bool {
-        let Some(spec) = amount_spec(row) else {
+        if amount_spec(row).is_none() {
             return false;
-        };
-        let cap = moment.cap_of(&spec);
+        }
         let Some(character) = self.character_mut(id) else {
             return false;
         };
         match value {
             Some(value) => {
-                let typed = TypedAmount { value: value.min(cap), at_ms: moment.now_ms };
+                let typed = TypedAmount { value, at_ms: moment.now_ms };
                 character.amounts.insert(row.to_string(), typed) != Some(typed)
             }
             None => character.amounts.remove(row).is_some(),
@@ -542,30 +718,13 @@ impl TodoData {
         let Some(typed) = self.character(id).and_then(|character| character.typed_amount(row)) else {
             return false;
         };
-        let now = moment.standing(&spec, typed).value;
+        let now = moment.standing(&spec, typed.value, typed.at_ms).value;
         let stepped = i64::from(now) + i64::from(direction.signum()) * i64::from(spec.step);
-        let next = stepped.clamp(0, i64::from(moment.cap_of(&spec))) as u32;
+        let next = stepped.clamp(0, i64::from(moment.cap_of(&spec).max(now))) as u32;
         if next == now {
             return false;
         }
         self.set_amount(id, row, Some(next), moment)
-    }
-
-    /// Membership went off: what was typed above the plain cap is cut to it.
-    pub fn cut_amounts_to_plain_caps(&mut self) -> bool {
-        let mut changed = false;
-        for character in &mut self.characters {
-            for (id, typed) in &mut character.amounts {
-                let Some(Kind::Amount(spec)) = catalogue::builtin(id).map(|builtin| builtin.kind) else {
-                    continue;
-                };
-                if typed.value > spec.cap {
-                    typed.value = spec.cap;
-                    changed = true;
-                }
-            }
-        }
-        changed
     }
 
     pub fn add_own(&mut self, id: CharacterId, request: NewOwnTodo) -> Result<u32, AddError> {
@@ -679,6 +838,8 @@ pub fn amount_spec(row: &str) -> Option<AmountSpec> {
 
 #[cfg(test)]
 mod tests {
+    use meter_core::capture::parser::ticket_record::{TicketReason, TicketRecord};
+
     use super::*;
     use crate::clock::testing::{berlin, utc, TestZone};
 
@@ -923,12 +1084,12 @@ mod tests {
     }
 
     #[test]
-    fn a_typed_amount_is_clamped_to_the_cap_and_can_be_cleared() {
+    fn a_typed_amount_may_be_above_the_cap_and_can_be_cleared() {
         let zone = summer();
         let (mut data, id, _) = two_characters();
         let now = moment(&zone, local(5, 12, 0));
         assert!(data.set_amount(id, "odyle", Some(9_999), &now));
-        assert_eq!(data.character(id).unwrap().typed_amount("odyle"), Some(TypedAmount { value: 560, at_ms: now.now_ms }));
+        assert_eq!(data.character(id).unwrap().typed_amount("odyle"), Some(TypedAmount { value: 9_999, at_ms: now.now_ms }));
         assert!(!data.set_amount(id, "odyle", Some(9_999), &now), "same value, same time");
         assert!(data.set_amount(id, "odyle", None, &now));
         assert_eq!(data.character(id).unwrap().typed_amount("odyle"), None);
@@ -958,7 +1119,7 @@ mod tests {
         let (mut data, id, _) = two_characters();
         let now = moment(&zone, local(5, 12, 0));
         assert!(!data.step_amount(id, "shugo", 1, &now), "not tracked: nothing to step");
-        data.set_amount(id, "shugo", Some(27), &now);
+        data.set_amount(id, "shugo", Some(11), &now);
         assert!(data.step_amount(id, "shugo", 1, &now));
         assert!(!data.step_amount(id, "shugo", 1, &now), "at the cap");
         data.set_amount(id, "shugo", Some(0), &now);
@@ -969,15 +1130,24 @@ mod tests {
     }
 
     #[test]
-    fn membership_raises_the_cap_and_turning_it_off_cuts_stored_amounts() {
+    fn stepping_down_from_above_the_cap_keeps_the_rest() {
+        let zone = summer();
+        let (mut data, id, _) = two_characters();
+        let now = moment(&zone, local(5, 12, 0));
+        data.set_amount(id, "shugo", Some(24), &now);
+        assert!(!data.step_amount(id, "shugo", 1, &now), "above the cap, up does nothing");
+        assert!(data.step_amount(id, "shugo", -1, &now));
+        assert_eq!(data.character(id).unwrap().typed_amount("shugo").map(|typed| typed.value), Some(23));
+    }
+
+    #[test]
+    fn turning_the_membership_off_keeps_every_typed_amount() {
         let zone = summer();
         let (mut data, id, _) = two_characters();
         let member = Moment::new(&zone, 9, true, local(5, 12, 0));
         data.set_amount(id, "odyle", Some(800), &member);
+        data.apply_resets(&Moment::new(&zone, 9, false, local(5, 13, 0)));
         assert_eq!(data.character(id).unwrap().typed_amount("odyle").map(|typed| typed.value), Some(800));
-        assert!(data.cut_amounts_to_plain_caps());
-        assert_eq!(data.character(id).unwrap().typed_amount("odyle").map(|typed| typed.value), Some(560));
-        assert!(!data.cut_amounts_to_plain_caps());
     }
 
     #[test]
@@ -1094,6 +1264,13 @@ mod tests {
                   "progress": { "trial": 2, "nonsense": 4, "fissure": "many", "duty": 3 },
                   "amounts": { "odyle": { "value": 9999, "atMs": 5 }, "shugo": { "value": "x" }, "trial": { "value": 1, "atMs": 1 } },
                   "hidden": ["trial", "gone", 7],
+                  "tickets": {
+                    "4": { "count": 3, "charge": 1, "atMs": 100 },
+                    "999": { "count": 1, "charge": 0, "atMs": 100 },
+                    "8": { "count": 1, "charge": 0, "atMs": 100 },
+                    "60000001": { "count": "many" }
+                  },
+                  "loggedInMs": 77,
                   "own": [
                     { "id": 1, "name": "Fine", "kind": "tick", "cadence": "daily", "done": 0 },
                     { "id": 2, "name": "Broken", "kind": "sideways", "cadence": "daily", "done": 0 },
@@ -1104,6 +1281,13 @@ mod tests {
                 { "id": 4, "name": "Birch", "serverId": 1002, "progress": 7 }
             ],
             "dutyMissions": { "1001": 9, "oops": 2, "1002": "x" },
+            "serverTickets": [
+                { "serverId": 1001, "ticket": 8, "value": { "count": 2, "charge": 0, "atMs": 50 }, "by": 1 },
+                { "serverId": 1001, "ticket": 4, "value": { "count": 2, "charge": 0, "atMs": 50 }, "by": 1 },
+                { "serverId": 1001, "ticket": 8, "value": { "count": 5, "charge": 0, "atMs": 60 }, "by": 1 },
+                { "serverId": "x", "ticket": 8 },
+                "junk"
+            ],
             "folded": ["today", "bogus"],
             "openGroups": ["sanct", "trial"]
         });
@@ -1116,7 +1300,11 @@ mod tests {
         let alder = &data.characters[0];
         assert_eq!(alder.progress.iter().map(|(id, count)| (id.as_str(), *count)).collect::<Vec<_>>(), [("trial", 2)]);
         assert_eq!(alder.amounts.keys().collect::<Vec<_>>(), ["odyle"]);
-        assert_eq!(alder.amounts["odyle"].value, 840, "held to the largest cap");
+        assert_eq!(alder.amounts["odyle"].value, 9999, "a typed amount above the cap is kept");
+        assert_eq!(alder.tickets.iter().map(|(id, ticket)| (id.as_str(), ticket.count)).collect::<Vec<_>>(), [("4", 3)]);
+        assert_eq!(alder.logged_in_ms(), Some(77));
+        assert_eq!(data.server_tickets.len(), 1);
+        assert_eq!((data.server_tickets[0].ticket, data.server_tickets[0].by), (8, CharacterId(1)));
         assert_eq!(alder.hidden.iter().collect::<Vec<_>>(), ["trial"]);
         assert_eq!(alder.own.iter().map(|todo| todo.name.as_str()).collect::<Vec<_>>(), ["Fine", "Big"]);
         assert_eq!(alder.own[1].kind, OwnKind::Count(99));
@@ -1135,5 +1323,171 @@ mod tests {
         let mut data = serde_json::from_value::<TodoData>(stored).unwrap().sanitised();
         data.sync_characters(&[character("Birch", 1001, None)]);
         assert_eq!(data.characters[1].id, CharacterId(8));
+    }
+
+    fn record(id: u32, count: u32, charge: u32) -> TicketRecord {
+        TicketRecord { flags: 0, id, remaining_ms: None, field_b: None, count, charge }
+    }
+
+    fn snapshot(who: &KnownCharacter, at_secs: f64, records: Vec<TicketRecord>) -> TicketReport {
+        TicketReport { character: who.clone(), captured_at: at_secs, content: TicketContent::Snapshot(records) }
+    }
+
+    fn change(who: &KnownCharacter, at_secs: f64, record: TicketRecord) -> TicketReport {
+        let content = TicketContent::Change { record, reason: TicketReason::Spend, delta: Some(1) };
+        TicketReport { character: who.clone(), captured_at: at_secs, content }
+    }
+
+    fn game_count(data: &TodoData, id: CharacterId, ticket: u32) -> Option<(u32, u32)> {
+        let known = data.game_ticket(data.character(id)?, ticket)?;
+        Some((known.value.count, known.value.charge))
+    }
+
+    #[test]
+    fn a_snapshot_fills_every_covered_ticket_and_replaces_what_was_typed() {
+        let (mut data, alder, _) = two_characters();
+        let zone = summer();
+        let now = moment(&zone, local(5, 12, 0));
+        data.set_amount(alder, "odyle", Some(425), &now);
+        data.adjust_count(alder, RowId::Builtin("trial"), 2);
+        data.adjust_count(alder, RowId::Builtin("subj"), 1);
+
+        let listed = vec![record(60_000_001, 0, 245), record(80_000_001, 3, 1), record(4, 0, 3), record(999_999, 5, 5)];
+        assert!(data.apply_tickets(&snapshot(&character("Alder", 1001, None), 1_000.0, listed)));
+
+        let state = data.character(alder).unwrap();
+        assert_eq!(game_count(&data, alder, 60_000_001), Some((0, 245)));
+        assert_eq!(game_count(&data, alder, 4), Some((0, 3)));
+        assert_eq!(game_count(&data, alder, 999_999), None, "no row follows it");
+        assert_eq!(state.typed_amount("odyle"), None, "the game's value replaces the typed one");
+        assert_eq!(count_of(&data, alder, "trial"), 0, "so does a count the player kept");
+        assert_eq!(count_of(&data, alder, "subj"), 1, "a ticket the snapshot does not list is left alone");
+        assert_eq!(state.logged_in_ms(), Some(1_000_000));
+    }
+
+    #[test]
+    fn a_change_replaces_one_ticket_and_drops_only_what_was_typed_over_it() {
+        let (mut data, alder, _) = two_characters();
+        let who = character("Alder", 1001, None);
+        data.apply_tickets(&snapshot(&who, 1_000.0, vec![record(60_000_001, 100, 0), record(4, 14, 0)]));
+        let zone = summer();
+        let now = moment(&zone, local(5, 12, 0));
+        data.set_amount(alder, "odyle", Some(300), &now);
+        data.set_amount(alder, "nightmare", Some(2), &now);
+
+        assert!(data.apply_tickets(&change(&who, 1_100.0, record(4, 13, 0))));
+
+        assert_eq!(game_count(&data, alder, 4), Some((13, 0)));
+        assert_eq!(game_count(&data, alder, 60_000_001), Some((100, 0)), "the other ticket stays");
+        assert_eq!(data.character(alder).unwrap().typed_amount("nightmare"), None);
+        assert_eq!(data.character(alder).unwrap().typed_amount("odyle").map(|typed| typed.value), Some(300));
+        assert_eq!(data.character(alder).unwrap().logged_in_ms(), Some(1_000_000), "a change is not a login");
+    }
+
+    #[test]
+    fn an_older_snapshot_does_not_move_the_login_back() {
+        let (mut data, alder, _) = two_characters();
+        let who = character("Alder", 1001, None);
+        data.apply_tickets(&snapshot(&who, 2_000.0, vec![record(4, 10, 0)]));
+
+        data.apply_tickets(&snapshot(&who, 1_000.0, vec![record(4, 14, 0)]));
+
+        assert_eq!(data.character(alder).unwrap().logged_in_ms(), Some(2_000_000));
+        assert_eq!(game_count(&data, alder, 4), Some((10, 0)), "the older value is ignored too");
+
+        data.apply_tickets(&snapshot(&who, 3_000.0, vec![record(4, 9, 0)]));
+        assert_eq!(data.character(alder).unwrap().logged_in_ms(), Some(3_000_000));
+    }
+
+    #[test]
+    fn a_ticket_older_than_the_stored_one_is_ignored() {
+        let (mut data, alder, _) = two_characters();
+        let who = character("Alder", 1001, None);
+        data.apply_tickets(&change(&who, 2_000.0, record(4, 10, 0)));
+        assert!(!data.apply_tickets(&change(&who, 1_000.0, record(4, 14, 0))));
+        assert_eq!(game_count(&data, alder, 4), Some((10, 0)));
+    }
+
+    #[test]
+    fn server_tickets_are_shared_by_the_characters_of_one_server_only() {
+        let mut data = TodoData::default();
+        data.sync_characters(&[character("Alder", 1001, None), character("Birch", 1001, None), character("Cedar", 2001, None)]);
+        let (alder, birch, cedar) = (data.characters[0].id, data.characters[1].id, data.characters[2].id);
+        let zone = summer();
+        let now = moment(&zone, local(5, 12, 0));
+        data.set_amount(birch, "shugo", Some(9), &now);
+
+        let listed = vec![record(8, 2, 12), record(1, 6, 0), record(101, 14, 7), record(4, 14, 0)];
+        data.apply_tickets(&snapshot(&character("Alder", 1001, None), 1_000.0, listed));
+
+        for ticket in [8, 1, 101] {
+            assert_eq!(game_count(&data, alder, ticket), game_count(&data, birch, ticket), "ticket {ticket}");
+            assert!(game_count(&data, alder, ticket).is_some());
+            assert_eq!(game_count(&data, cedar, ticket), None, "another server");
+        }
+        assert_eq!(game_count(&data, birch, 8), Some((2, 12)));
+        assert_eq!(game_count(&data, birch, 4), None, "a character's own ticket stays its own");
+        let known = data.game_ticket(data.character(birch).unwrap(), 8).unwrap();
+        assert_eq!(known.shared_from, Some(alder));
+        assert_eq!(data.game_ticket(data.character(alder).unwrap(), 8).unwrap().shared_from, None);
+        assert_eq!(data.character(birch).unwrap().typed_amount("shugo"), None, "typed over a shared ticket is replaced too");
+    }
+
+    #[test]
+    fn the_last_character_to_log_in_gives_the_server_tickets() {
+        let mut data = TodoData::default();
+        data.sync_characters(&[character("Alder", 1001, None), character("Birch", 1001, None)]);
+        let (alder, birch) = (data.characters[0].id, data.characters[1].id);
+        data.apply_tickets(&snapshot(&character("Alder", 1001, None), 1_000.0, vec![record(8, 2, 0)]));
+        data.apply_tickets(&snapshot(&character("Birch", 1001, None), 2_000.0, vec![record(8, 1, 0)]));
+        assert_eq!(game_count(&data, alder, 8), Some((1, 0)));
+        assert_eq!(data.game_ticket(data.character(alder).unwrap(), 8).unwrap().shared_from, Some(birch));
+    }
+
+    #[test]
+    fn a_character_the_tracker_has_not_met_is_added() {
+        let mut data = TodoData::default();
+        assert!(data.apply_tickets(&snapshot(&character("Alder", 1001, None), 1_000.0, vec![record(4, 14, 0)])));
+        assert_eq!(data.characters.len(), 1);
+        assert_eq!(game_count(&data, data.characters[0].id, 4), Some((14, 0)));
+    }
+
+    #[test]
+    fn a_count_the_game_fills_is_no_longer_counted_by_hand() {
+        let (mut data, alder, _) = two_characters();
+        let trial = RowId::Builtin("trial");
+        assert!(data.adjust_count(alder, trial, 1).is_some(), "before the game says, the player counts");
+        data.apply_tickets(&snapshot(&character("Alder", 1001, None), 1_000.0, vec![record(80_000_001, 3, 0)]));
+        assert_eq!(data.adjust_count(alder, trial, 1), None);
+        assert_eq!(data.adjust_count(alder, trial, -1), None);
+    }
+
+    #[test]
+    fn a_count_typed_over_the_game_stays_until_the_games_next_value() {
+        let (mut data, alder, _) = two_characters();
+        let who = character("Alder", 1001, None);
+        let typed = |data: &TodoData| data.character(alder).unwrap().progress.get("trial").copied();
+        assert!(!data.set_progress(alder, "trial", Some(2)), "before the game says, the arrows count");
+        data.apply_tickets(&snapshot(&who, 1_000.0, vec![record(80_000_001, 3, 0)]));
+        assert!(data.set_progress(alder, "trial", Some(0)));
+        assert_eq!(typed(&data), Some(0), "a typed 0 is kept");
+        assert!(data.set_progress(alder, "trial", Some(9)));
+        assert_eq!(typed(&data), Some(3), "never past the target");
+        data.apply_tickets(&change(&who, 1_100.0, record(80_000_001, 2, 0)));
+        assert_eq!(typed(&data), None, "the game's next value replaces it");
+        data.set_progress(alder, "trial", Some(1));
+        assert!(data.set_progress(alder, "trial", None));
+        assert_eq!(typed(&data), None, "back to the game's value");
+    }
+
+    #[test]
+    fn the_game_showing_more_than_the_plain_cap_suggests_a_membership() {
+        let (mut data, _, _) = two_characters();
+        let who = character("Alder", 1001, None);
+        data.apply_tickets(&snapshot(&who, 1_000.0, vec![record(1, 12, 0), record(60_000_001, 560, 0), record(4, 14, 0)]));
+        assert_eq!(data.pool_above_plain_cap(), None, "at the cap is not above it");
+        data.apply_tickets(&change(&who, 1_100.0, record(60_000_001, 600, 0)));
+        let hint = PoolAbovePlainCap { character: "Alder".to_string(), label: "Odyle Energy", count: 600, cap: 560 };
+        assert_eq!(data.pool_above_plain_cap(), Some(hint));
     }
 }

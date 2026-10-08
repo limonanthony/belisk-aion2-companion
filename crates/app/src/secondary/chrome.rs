@@ -87,7 +87,7 @@ pub fn surface(look: Look) -> Div {
 
 pub fn card(width: f32, look: Look) -> Div {
     let s = look.s;
-    div()
+    frame(look, 14.)
         .flex_none()
         .w(s.px(width))
         .flex()
@@ -95,7 +95,12 @@ pub fn card(width: f32, look: Look) -> Div {
         .pt(s.px(6.))
         .px(s.px(8.))
         .pb(s.px(8.))
-        .rounded(s.px(14.))
+}
+
+/// The card's fill at the user's opacity and its border, at `radius`.
+pub fn frame(look: Look, radius: f32) -> Div {
+    div()
+        .rounded(look.s.px(radius))
         .border_1()
         .border_color(rgba(CARD_BORDER))
         .bg(rgba((CARD_RGB << 8) | u32::from(look.alpha)))
@@ -609,11 +614,17 @@ pub fn scrim(id: &'static str) -> Stateful<Div> {
 
 /// A GPUI tooltip in the popover colours, for `.tooltip(...)`.
 pub fn tooltip(text: SharedString, s: Scale) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
-    move |_, cx| cx.new(|_| Tip { text: text.clone(), s }).into()
+    move |_, cx| cx.new(|_| Tip { text: text.clone(), detail: None, s }).into()
+}
+
+/// [`tooltip`] with a second line in `faint`, both wrapping at 250 px.
+pub fn tooltip_with_detail(text: SharedString, detail: Option<SharedString>, s: Scale) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    move |_, cx| cx.new(|_| Tip { text: text.clone(), detail: detail.clone(), s }).into()
 }
 
 struct Tip {
     text: SharedString,
+    detail: Option<SharedString>,
     s: Scale,
 }
 
@@ -632,5 +643,8 @@ impl Render for Tip {
             .font_weight(FontWeight::MEDIUM)
             .text_color(rgba(TEXT))
             .child(self.text.clone())
+            .when_some(self.detail.clone(), |tip, detail| {
+                tip.flex().flex_col().max_w(s.px(250.)).whitespace_normal().child(div().text_color(rgba(FAINT)).child(detail))
+            })
     }
 }

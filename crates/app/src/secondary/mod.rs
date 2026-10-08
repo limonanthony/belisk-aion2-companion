@@ -1,15 +1,19 @@
-//! The windows besides the meter: fight history, player detail, the fight
-//! report, PvP, the to-dos, Settings and the event reminder.
+//! The windows besides the meter and the toolbar: fight history, player
+//! detail, the fight report, PvP, the to-dos, the resources, Settings, the
+//! first-open prompt and the event reminder.
 //!
 //! Each kind has at most one window. Opening one that is already open brings
 //! it forward, and the player detail window is pointed at the new player
 //! instead, as the report window is at another fight; a newer reminder takes
-//! the place of the one up. A window closes with its own × or when the app
-//! quits.
-//! Like the meter's, the history, detail, report, PvP, to-do and reminder
-//! windows are frameless, topmost, out of the taskbar and non-activating, and
-//! are exactly as large as their card; they are placed beside the meter the
-//! first time they open, and the reminder keeps to the meter while it is up.
+//! the place of the one up. A window closes with its own ×, from the toolbar,
+//! or when the app quits.
+//! Like the meter's, the history, detail, report, PvP, to-do, resources,
+//! prompt and reminder windows are frameless, topmost, out of the taskbar and
+//! non-activating, and are exactly as large as their card. A tool opens
+//! beside the meter while the meter is open, else under the toolbar. The
+//! prompt keeps to the meter, and the reminder card keeps above the meter (or
+//! the prompt on it) while the meter is open, and under the toolbar while it
+//! is closed.
 //! Settings is a normal window instead: it takes the keyboard focus, has a
 //! taskbar button and opens in the middle of the screen. While it is the
 //! active window it is topmost like the overlays, in front of the game; once
@@ -44,8 +48,10 @@ use crate::pvp::{PvpModel, PvpView};
 use crate::reminders::{self, MeterLink, ReminderView, ShowReminder};
 use crate::report::{ReportModel, ReportRequest, ReportView};
 use crate::settings::{self, DetailPlacement, RuntimeModel, Section, SettingsView};
-use crate::todos::TodoView;
-use placement::{Anchor, Side};
+use crate::todos::{Contents, TodoView};
+use crate::toolbar::{self, PromptView};
+pub(crate) use monitor::window_and_work_area;
+use placement::{Anchor, Side, Stack};
 pub use placement::Rect;
 pub use registry::WindowKind;
 use registry::{Opened, Registry};
@@ -55,12 +61,15 @@ const DETAIL_SIZE: (f32, f32) = (520.0, 420.0);
 const REPORT_SIZE: (f32, f32) = (520.0, 420.0);
 const PVP_SIZE: (f32, f32) = (340.0, 420.0);
 /// The tallest the to-do window gets at 100%; it fits its card from the
-/// first frame on.
-const TODOS_SIZE: (f32, f32) = (370.0, 558.0);
+/// first frame on. The Resources window, the same view with fewer rows,
+/// starts from it too.
+const TODOS_SIZE: (f32, f32) = (370.0, 580.0);
 
 #[derive(Clone)]
 struct Open {
     window: AnyWindowHandle,
+    /// None only for a window whose handle could not be read.
+    hwnd: Option<HWND>,
     /// What the window shows, kept by the registry; none when the view is
     /// all there is, so closing the window releases it.
     model: Option<AnyEntity>,
@@ -70,9 +79,14 @@ struct Secondary {
     registry: Rc<RefCell<Registry<Open>>>,
     meter_hwnd: HWND,
     placement: Placement,
+    changes: Entity<OpenWindows>,
 }
 
 impl Global for Secondary {}
+
+/// Notifies whenever a window of this layer opens or closes, for the
+/// toolbar's lit icons; [`is_open`] says which are open.
+pub struct OpenWindows;
 
 /// Sets the layer up once the meter's window exists: the windows are placed
 /// next to it, the summary card's report button opens the report, and all of
@@ -89,7 +103,8 @@ pub fn init(
     let meter_view = meter.entity(cx).map_err(|error| format!("cannot reach the meter view: {error:#}"))?;
     text_input::bind_keys(cx);
     let registry = Rc::new(RefCell::new(Registry::default()));
-    cx.set_global(Secondary { registry: registry.clone(), meter_hwnd, placement });
+    let changes = cx.new(|_| OpenWindows);
+    cx.set_global(Secondary { registry: registry.clone(), meter_hwnd, placement, changes });
     cx.subscribe(&reminders::global(cx), |_, request: &ShowReminder, cx| show_reminder(request, cx)).detach();
     let model = meter_model.clone();
     cx.subscribe(&meter_view, move |_, request: &ReportRequest, cx| open_report(&model, request, cx)).detach();
@@ -104,17 +119,93 @@ pub fn init(
     Ok(())
 }
 
+/// The entity that notifies as windows of this layer open and close; none
+/// before [`init`].
+pub fn open_windows(cx: &App) -> Option<Entity<OpenWindows>> {
+    cx.try_global::<Secondary>().map(|secondary| secondary.changes.clone())
+}
+
+pub fn is_open(kind: WindowKind, cx: &App) -> bool {
+    cx.try_global::<Secondary>().is_some_and(|secondary| secondary.registry.borrow().get(kind).is_some())
+}
+
+/// Closes the window of `kind`, if one is open.
+pub fn close(kind: WindowKind, cx: &mut App) {
+    let Some(open) = cx.try_global::<Secondary>().and_then(|secondary| secondary.registry.borrow().get(kind).cloned()) else {
+        return;
+    };
+    if let Err(error) = open.window.update(cx, |_, window, _| window.remove_window()) {
+        eprintln!("cannot close the {kind:?} window: {error:#}");
+    }
+}
+
+/// The native handle of the open window of `kind`. None while a window is
+/// being opened: its first frame is drawn inside the registry's change, and
+/// a card placing itself then tries again at its next tick.
+pub fn hwnd_of(kind: WindowKind, cx: &App) -> Option<HWND> {
+    cx.try_global::<Secondary>()?.registry.try_borrow().ok()?.get(kind)?.hwnd
+}
+
+/// The native handles of every open window of this layer.
+pub fn open_hwnds(cx: &App) -> Vec<HWND> {
+    cx.try_global::<Secondary>()
+        .map(|secondary| secondary.registry.borrow().all().filter_map(|open| open.hwnd).collect())
+        .unwrap_or_default()
+}
+
+fn changed(cx: &mut App) {
+    if let Some(changes) = open_windows(cx) {
+        changes.update(cx, |_, cx| cx.notify());
+    }
+}
+
+/// The window a tool opens against, with where: beside the meter while it is
+/// open, else under the toolbar.
+fn tool_anchor(preferred: Anchor, cx: &App) -> (HWND, Anchor) {
+    let meter_hwnd = cx.global::<Secondary>().meter_hwnd;
+    if toolbar::meter_is_open(cx) {
+        return (meter_hwnd, preferred);
+    }
+    match (toolbar::toolbar_hwnd(cx), preferred) {
+        (Some(toolbar), Anchor::Beside(_)) => (toolbar, Anchor::Beside(Side::Below)),
+        (Some(toolbar), anchor) => (toolbar, anchor),
+        (None, anchor) => (meter_hwnd, anchor),
+    }
+}
+
+/// A card stacked on another window and kept there as both move.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Card {
+    /// The first-open prompt, on the meter.
+    Prompt,
+    /// The reminder card: on the meter (or the prompt on it) while the meter
+    /// is open, else under the toolbar.
+    Reminder,
+}
+
+fn card_anchor(card: Card, cx: &App) -> Option<(HWND, Stack)> {
+    let meter_hwnd = cx.try_global::<Secondary>()?.meter_hwnd;
+    match card {
+        Card::Prompt => Some((meter_hwnd, Stack::Above)),
+        Card::Reminder if toolbar::meter_is_open(cx) => {
+            Some((hwnd_of(WindowKind::Prompt, cx).unwrap_or(meter_hwnd), Stack::Above))
+        }
+        Card::Reminder => Some((toolbar::toolbar_hwnd(cx).unwrap_or(meter_hwnd), Stack::Below)),
+    }
+}
+
 pub fn open_history(meter_model: &Entity<MeterModel>, cx: &mut App) {
     let registry = registry(cx);
     let meter = meter_model.read(cx).meter().cloned();
+    let place = tool_anchor(Anchor::Beside(Side::Below), cx);
     let opened = registry.borrow_mut().open(WindowKind::History, || {
         let model = cx.new(|cx| HistoryModel::new(meter, meter_model, cx));
         let meter_model = meter_model.clone();
         let view_model = model.clone();
-        let window = create_window(
+        let (window, hwnd) = create_window(
             WindowKind::History,
             HISTORY_SIZE,
-            Anchor::Beside(Side::Below),
+            place,
             move |window, cx| {
                 let view = cx.new(|cx| HistoryView::new(view_model, meter_model.clone(), window, cx));
                 cx.subscribe(&view, move |_, request: &ReportRequest, cx| open_report(&meter_model, request, cx)).detach();
@@ -123,7 +214,7 @@ pub fn open_history(meter_model: &Entity<MeterModel>, cx: &mut App) {
             |_| {},
             cx,
         )?;
-        Ok(Open { window, model: Some(model.into()) })
+        Ok(Open { window, hwnd: Some(hwnd), model: Some(model.into()) })
     });
     finish(WindowKind::History, opened, cx);
 }
@@ -167,18 +258,19 @@ pub fn open_report(meter_model: &Entity<MeterModel>, request: &ReportRequest, cx
 /// Shows `report` in the report window, opening it if needed.
 pub fn show_report(meter_model: &Entity<MeterModel>, report: Arc<FightReport>, cx: &mut App) {
     let registry = registry(cx);
+    let place = tool_anchor(Anchor::Beside(Side::Right), cx);
     let opened = registry.borrow_mut().open(WindowKind::Report, || {
         let model = cx.new(|cx| ReportModel::new(meter_model.clone(), report.clone(), cx));
         let view_model = model.clone();
-        let window = create_window(
+        let (window, hwnd) = create_window(
             WindowKind::Report,
             REPORT_SIZE,
-            Anchor::Beside(Side::Right),
+            place,
             move |window, cx| cx.new(|cx| ReportView::new(view_model, window, cx)),
             |_| {},
             cx,
         )?;
-        Ok(Open { window, model: Some(model.into()) })
+        Ok(Open { window, hwnd: Some(hwnd), model: Some(model.into()) })
     });
     if opened == Ok(Opened::Existing) {
         let existing = registry.borrow().get(WindowKind::Report).and_then(|open| open.model.clone());
@@ -191,15 +283,16 @@ pub fn show_report(meter_model: &Entity<MeterModel>, report: Arc<FightReport>, c
 
 pub fn open_pvp(meter_model: &Entity<MeterModel>, cx: &mut App) {
     let registry = registry(cx);
+    let place = tool_anchor(Anchor::Beside(Side::Left), cx);
     let opened = registry.borrow_mut().open(WindowKind::Pvp, || {
         let meter = meter_model.read(cx).meter().cloned();
         let model = cx.new(|cx| PvpModel::new(meter_model.clone(), cx));
         let view_model = model.clone();
         let pvp_mode_to_reset = meter.clone();
-        let window = create_window(
+        let (window, hwnd) = create_window(
             WindowKind::Pvp,
             PVP_SIZE,
-            Anchor::Beside(Side::Left),
+            place,
             move |window, cx| cx.new(|cx| PvpView::new(view_model, window, cx)),
             move |_| {
                 if let Some(meter) = &pvp_mode_to_reset {
@@ -211,26 +304,37 @@ pub fn open_pvp(meter_model: &Entity<MeterModel>, cx: &mut App) {
         if let Some(meter) = &meter {
             meter.set_pvp_mode(true);
         }
-        Ok(Open { window, model: Some(model.into()) })
+        Ok(Open { window, hwnd: Some(hwnd), model: Some(model.into()) })
     });
     finish(WindowKind::Pvp, opened, cx);
 }
 
 pub fn open_todos(meter_model: &Entity<MeterModel>, cx: &mut App) {
+    open_todo_view(WindowKind::Todos, Contents::Todos, Side::Right, meter_model, cx);
+}
+
+/// The Resources window: the to-do window's Recharges rows in a window of
+/// their own, opened below the meter so both can be open side by side.
+pub fn open_resources(meter_model: &Entity<MeterModel>, cx: &mut App) {
+    open_todo_view(WindowKind::Resources, Contents::Resources, Side::Below, meter_model, cx);
+}
+
+fn open_todo_view(kind: WindowKind, contents: Contents, side: Side, meter_model: &Entity<MeterModel>, cx: &mut App) {
     let registry = registry(cx);
-    let opened = registry.borrow_mut().open(WindowKind::Todos, || {
+    let place = tool_anchor(Anchor::Beside(side), cx);
+    let opened = registry.borrow_mut().open(kind, || {
         let meter_model = meter_model.clone();
-        let window = create_window(
-            WindowKind::Todos,
+        let (window, hwnd) = create_window(
+            kind,
             TODOS_SIZE,
-            Anchor::Beside(Side::Right),
-            move |window, cx| cx.new(|cx| TodoView::new(meter_model, window, cx)),
+            place,
+            move |window, cx| cx.new(|cx| TodoView::new(contents, meter_model, window, cx)),
             |_| {},
             cx,
         )?;
-        Ok(Open { window, model: None })
+        Ok(Open { window, hwnd: Some(hwnd), model: None })
     });
-    finish(WindowKind::Todos, opened, cx);
+    finish(kind, opened, cx);
 }
 
 /// Opens the player detail window on `source`, or points the open one at it.
@@ -240,18 +344,19 @@ pub fn open_detail(meter_model: &Entity<MeterModel>, source: DetailSource, cx: &
         DetailPlacement::Beside => Anchor::Beside(Side::Right),
         DetailPlacement::Centred => Anchor::Centre,
     };
+    let place = tool_anchor(anchor, cx);
     let opened = registry.borrow_mut().open(WindowKind::Detail, || {
         let model = cx.new(|cx| DetailModel::new(meter_model.clone(), source.clone(), cx));
         let view_model = model.clone();
-        let window = create_window(
+        let (window, hwnd) = create_window(
             WindowKind::Detail,
             DETAIL_SIZE,
-            anchor,
+            place,
             move |_, cx| cx.new(|cx| DetailView::new(view_model, cx)),
             |_| {},
             cx,
         )?;
-        Ok(Open { window, model: Some(model.into()) })
+        Ok(Open { window, hwnd: Some(hwnd), model: Some(model.into()) })
     });
     if opened == Ok(Opened::Existing) {
         let existing = registry.borrow().get(WindowKind::Detail).and_then(|open| open.model.clone());
@@ -295,11 +400,13 @@ fn open_settings_now(meter_model: &Entity<MeterModel>, section: Option<Section>,
                 .map_err(|error| format!("cannot reach the Settings window: {error:#}"))?;
         }
         let forget = registry.clone();
-        cx.observe_release(&view, move |_, _| {
+        cx.observe_release(&view, move |_, cx| {
             forget.borrow_mut().remove(WindowKind::Settings);
+            changed(cx);
         })
         .detach();
-        Ok(Open { window: handle.into(), model: Some(runtime.into()) })
+        let hwnd = handle.update(cx, |_, window, _| overlay::hwnd(window).ok()).ok().flatten();
+        Ok(Open { window: handle.into(), hwnd, model: Some(runtime.into()) })
     });
     if let (Some(section), Ok(_)) = (section, &opened) {
         let window = registry.borrow().get(WindowKind::Settings).and_then(|open| open.window.downcast::<SettingsView>());
@@ -377,29 +484,27 @@ pub fn show_reminder(request: &ShowReminder, cx: &mut App) {
         registry.borrow_mut().remove(WindowKind::Reminder);
         log_card(request, "the open card's window was gone, opening a new one", cx);
     }
-    let (meter_hwnd, placement) = {
-        let secondary = cx.global::<Secondary>();
-        (secondary.meter_hwnd, secondary.placement)
-    };
+    let placement = cx.global::<Secondary>().placement;
     let overlay = settings::global(cx).read(cx).get().overlay.clone();
     let expected = reminders::expected_size(request, &overlay);
     let gap = reminders::GAP * overlay.scale();
+    let place = card_place(Card::Reminder, gap, cx);
     let meter_window = meter::window(cx);
     let for_window = request.clone();
     let opened: Result<Opened, String> = registry.borrow_mut().open(WindowKind::Reminder, || {
-        let on_meter = Rc::new(OnMeter { meter_hwnd, placement, placed: Cell::new(None) });
-        let handle = create_window(
+        let stacking = Rc::new(Stacking { card: Card::Reminder, placement, placed: Cell::new(None) });
+        let (window, hwnd) = create_window(
             WindowKind::Reminder,
             (expected.width.as_f32(), expected.height.as_f32()),
-            Anchor::Stacked { gap },
+            place,
             move |window, cx| {
-                let link = MeterLink { window: meter_window, placement: on_meter };
+                let link = MeterLink { window: meter_window, placement: stacking };
                 cx.new(|cx| ReminderView::new(&for_window, Some(link), window, cx))
             },
             |_| {},
             cx,
         )?;
-        Ok(Open { window: handle, model: None })
+        Ok(Open { window, hwnd: Some(hwnd), model: None })
     });
     match opened {
         Ok(Opened::Created) => log_card(request, "opened a card window", cx),
@@ -415,26 +520,61 @@ fn log_card(request: &ShowReminder, outcome: &str, cx: &App) {
     reminders::global(cx).read(cx).log_card(|| format!("{:?} at {}: {outcome}", request.events, request.starts_at));
 }
 
-/// Keeps a window on the meter's left edge, a gap above it, or below it when
-/// its monitor has no room above, as the meter moves and the window's card
-/// changes size. Off screen (dev captures) the meter is past every monitor,
-/// and the window with it.
-pub struct OnMeter {
-    meter_hwnd: HWND,
+/// Opens the first-open prompt on the meter; nothing when it is up already.
+pub fn open_prompt(cx: &mut App) {
+    let Some(secondary) = cx.try_global::<Secondary>() else {
+        return;
+    };
+    let (registry, placement) = (secondary.registry.clone(), secondary.placement);
+    let overlay = settings::global(cx).read(cx).get().overlay.clone();
+    let expected = toolbar::prompt_size(&overlay);
+    let place = card_place(Card::Prompt, reminders::GAP * overlay.scale(), cx);
+    let opened = registry.borrow_mut().open(WindowKind::Prompt, || {
+        let stacking = Rc::new(Stacking { card: Card::Prompt, placement, placed: Cell::new(None) });
+        let (window, hwnd) = create_window(
+            WindowKind::Prompt,
+            (expected.width.as_f32(), expected.height.as_f32()),
+            place,
+            move |window, cx| cx.new(|cx| PromptView::new(stacking, window, cx)),
+            |_| {},
+            cx,
+        )?;
+        Ok(Open { window, hwnd: Some(hwnd), model: None })
+    });
+    finish(WindowKind::Prompt, opened, cx);
+}
+
+/// Where a card's window first goes: as [`Stacking`] keeps it.
+fn card_place(card: Card, gap: f32, cx: &mut App) -> (HWND, Anchor) {
+    let meter_hwnd = cx.global::<Secondary>().meter_hwnd;
+    let (against, preferred) = card_anchor(card, cx).unwrap_or((meter_hwnd, Stack::Above));
+    (against, Anchor::Stacked { gap, preferred })
+}
+
+/// Keeps a card's window `gap` from the window it is stacked on, left edges
+/// aligned, on the preferred side or the other one when its monitor has no
+/// room there, as that window moves and the card changes size. Off screen
+/// (dev captures) the meter and the toolbar are past every monitor, and the
+/// card with them.
+pub struct Stacking {
+    card: Card,
     placement: Placement,
     /// Where the window was last put, in device pixels.
     placed: Cell<Option<Rect>>,
 }
 
-impl OnMeter {
+impl Stacking {
     /// `card` and `gap` are logical pixels at the window's scale.
     pub fn place(&self, card: Size<Pixels>, gap: f32, window: &Window, cx: &mut App) {
-        let Some((meter, work)) = monitor::window_and_work_area(self.meter_hwnd) else {
+        let Some((against, preferred)) = card_anchor(self.card, cx) else {
+            return;
+        };
+        let Some((anchor, work)) = monitor::window_and_work_area(against) else {
             return;
         };
         let scale = window.scale_factor();
         let size = ((card.width.as_f32() * scale).ceil() as i32, (card.height.as_f32() * scale).ceil() as i32);
-        let (x, y) = Anchor::Stacked { gap }.corner(meter, size, work, scale);
+        let (x, y) = Anchor::Stacked { gap, preferred }.corner(anchor, size, work, scale);
         let target = Rect { left: x, top: y, right: x + size.0, bottom: y + size.1 };
         if self.placed.replace(Some(target)) == Some(target) {
             return;
@@ -442,11 +582,13 @@ impl OnMeter {
         let hwnd = match overlay::hwnd(window) {
             Ok(hwnd) => hwnd,
             Err(error) => {
-                eprintln!("cannot place the reminder: {error}");
+                eprintln!("cannot place the {:?} card: {error}", self.card);
                 return;
             }
         };
         let placement = self.placement;
+        #[cfg(feature = "probes")]
+        let card_kind = self.card;
         // After the current frame: SetWindowPos sends WM_SIZE back into GPUI.
         cx.spawn(async move |_| {
             if let Err(error) = overlay::place(hwnd, x, y, size.0 as f32, size.1 as f32) {
@@ -457,7 +599,7 @@ impl OnMeter {
                 #[cfg(feature = "probes")]
                 Placement::OffScreen => {
                     if let Err(error) = overlay::off_screen::ensure_off_screen(hwnd) {
-                        eprintln!("the reminder: {error}");
+                        eprintln!("the {card_kind:?} card: {error}");
                     }
                 }
             }
@@ -511,6 +653,9 @@ fn finish(kind: WindowKind, opened: Result<Opened, String>, cx: &mut App) {
             return;
         }
     };
+    if opened == Opened::Created {
+        changed(cx);
+    }
     let action = forward(kind, opened, cx.global::<Secondary>().placement);
     if action == Forward::Nothing {
         return;
@@ -546,20 +691,20 @@ fn forward(kind: WindowKind, opened: Opened, placement: Placement) -> Forward {
     }
 }
 
-/// Opens a transparent pop-up like the meter's, places it, shows it without
-/// activating it, and forgets it in the registry when its view is released
-/// (however the window ends).
+/// Opens a transparent pop-up like the meter's, places it against the window
+/// `against` as `anchor` says, shows it without activating it, and forgets it
+/// in the registry when its view is released (however the window ends).
 fn create_window<V: Render + 'static>(
     kind: WindowKind,
     (width, height): (f32, f32),
-    anchor: Anchor,
+    (against, anchor): (HWND, Anchor),
     build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
     on_close: impl FnOnce(&mut App) + 'static,
     cx: &mut App,
-) -> Result<AnyWindowHandle, String> {
-    let (placement, meter_hwnd, registry) = {
+) -> Result<(AnyWindowHandle, HWND), String> {
+    let (placement, registry) = {
         let secondary = cx.global::<Secondary>();
-        (secondary.placement, secondary.meter_hwnd, secondary.registry.clone())
+        (secondary.placement, secondary.registry.clone())
     };
     let handle = cx
         .open_window(overlay::popup_options(width, height), build)
@@ -569,7 +714,7 @@ fn create_window<V: Render + 'static>(
         .map_err(|error| format!("cannot reach the window's view: {error:#}"))
         .and_then(|view| {
             handle
-                .update(cx, |_, window, _| -> Result<(), String> {
+                .update(cx, |_, window, _| -> Result<HWND, String> {
                     let hwnd = overlay::hwnd(window)?;
                     overlay::make_overlay(hwnd)?;
                     let scale = window.scale_factor();
@@ -577,23 +722,23 @@ fn create_window<V: Render + 'static>(
                     match placement {
                         Placement::Screen => {
                             let size = (device_width.ceil() as i32, device_height.ceil() as i32);
-                            let (x, y) = monitor::window_and_work_area(meter_hwnd)
-                                .map_or((64, 64), |(meter, work)| anchor.corner(meter, size, work, scale));
+                            let (x, y) = monitor::window_and_work_area(against)
+                                .map_or((64, 64), |(against, work)| anchor.corner(against, size, work, scale));
                             overlay::place(hwnd, x, y, device_width, device_height)?;
                             overlay::show_without_activating(hwnd);
-                            Ok(())
                         }
                         #[cfg(feature = "probes")]
-                        Placement::OffScreen => overlay::off_screen::show(hwnd, device_width, device_height),
+                        Placement::OffScreen => overlay::off_screen::show(hwnd, device_width, device_height)?,
                     }
+                    Ok(hwnd)
                 })
-                .map_err(|error| format!("cannot reach the window: {error:#}"))??;
-            Ok(view)
+                .map_err(|error| format!("cannot reach the window: {error:#}"))?
+                .map(|hwnd| (view, hwnd))
         });
     // A window that could not be set up is closed, so the registry (which
     // does not keep it) and the screen agree, and the next open makes one.
-    let view = match set_up {
-        Ok(view) => view,
+    let (view, hwnd) = match set_up {
+        Ok(set_up) => set_up,
         Err(error) => {
             let _ = handle.update(cx, |_, window, _| window.remove_window());
             return Err(error);
@@ -602,9 +747,10 @@ fn create_window<V: Render + 'static>(
     cx.observe_release(&view, move |_, cx| {
         registry.borrow_mut().remove(kind);
         on_close(cx);
+        changed(cx);
     })
     .detach();
-    Ok(handle.into())
+    Ok((handle.into(), hwnd))
 }
 
 #[cfg(test)]
@@ -619,7 +765,7 @@ mod tests {
 
     #[test]
     fn an_overlay_opened_again_is_raised_without_focus() {
-        for kind in [WindowKind::History, WindowKind::Detail, WindowKind::Report, WindowKind::Pvp, WindowKind::Todos] {
+        for kind in [WindowKind::History, WindowKind::Detail, WindowKind::Report, WindowKind::Pvp, WindowKind::Todos, WindowKind::Resources] {
             assert_eq!(forward(kind, Opened::Created, Placement::Screen), Forward::Nothing, "{kind:?}");
             assert_eq!(forward(kind, Opened::Existing, Placement::Screen), Forward::Raise, "{kind:?}");
         }

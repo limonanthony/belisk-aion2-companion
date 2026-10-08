@@ -2,6 +2,12 @@
 ## n'est définitive. Chaque message existe aussi dans en/aion_2_dps_meter.ftl,
 ## avec les mêmes arguments ; un test le vérifie.
 
+## Nom du produit, repris par chaque message qui le cite (la zone de
+## notification, plus tard les titres de fenêtre) : renommer le produit, c'est
+## cette ligne dans chaque langue.
+
+-app-name = AION 2 DPS Meter
+
 ## Common
 
 common-you = Vous
@@ -99,6 +105,9 @@ todos-amounts-optional = montants facultatifs
 todos-weekly-on-wednesday = Hebdo le mercredi
 todos-not-tracked = non suivi
 todos-value-of = { $value } sur { $cap }
+todos-value-of-each = { $value } sur { $cap } chacun
+todos-range-of-each = { $low }–{ $high } sur { $cap } chacun
+todos-dungeons = { $count } donjons
 
 todos-resets-in = reset dans { $time }
 todos-next-full-in = prochain plein dans { $time }
@@ -111,6 +120,28 @@ todos-everything-done = Tout est fait sur { $name }.
 todos-amount-full-note = { $label } : plein dans { $time }.
 todos-removed-note = Retiré : { $name }.
 todos-added-note = Ajouté à { $section } : { $name }.
+
+todos-source-live = Depuis le jeu, en direct · connecté à { $time }
+todos-source-live-now = Depuis le jeu, en direct
+todos-source-earlier = Depuis le jeu à la connexion, { $stamp } · recharges depuis estimées
+todos-source-shared = { $name } pas encore vu à la connexion · lignes Compte de { $from }
+todos-source-none = Aucune valeur du jeu pour l'instant. Connectez-vous avec { $name } pendant que { -app-name } tourne.
+
+todos-tip-live = Depuis le jeu, en direct.
+todos-tip-extra = +{ $extra } en plus grâce aux objets : jamais rechargés, hors des { $cap }.
+todos-tip-extra-entries = +{ $extra } entrées en plus grâce aux objets.
+todos-tip-at-login = { $value } à votre connexion, { $stamp }.
+todos-tip-game-value = { $value } d'après le jeu, { $stamp }.
+todos-tip-refills =
+    +{ $added } depuis : { $refills ->
+        [one] une recharge
+       *[other] { $refills } recharges
+    } de { $add }, estimé.
+todos-tip-game-at = D'après le jeu, { $stamp }.
+todos-tip-restarted = Repartie à zéro au reset hebdomadaire.
+todos-tip-shared = D'un autre personnage de ce serveur, { $stamp }.
+todos-tip-typed = Saisi par vous. Le jeu indiquait { $value }.
+todos-tip-typed-detail = Sa prochaine valeur remplace la vôtre : une dépense, une recharge ou votre prochaine connexion.
 
 todos-back =
     { $count ->
@@ -127,15 +158,15 @@ todos-hidden-description =
         [one] { $characters } personnage
        *[other] { $characters } personnages
     }. { todos-restore-keeps }
-todos-reset-dialog-body = Sur chaque personnage : toutes les tâches masquées reviennent, et chaque compteur et chaque montant saisi est vidé.
-todos-reset-dialog-body-with-own = Sur chaque personnage : vos propres tâches ({ $own }) sont supprimées, toutes les tâches masquées reviennent, et chaque compteur et chaque montant saisi est vidé.
+todos-reset-dialog-body = Sur chaque personnage : toutes les tâches masquées reviennent, et chaque compteur et chaque montant saisi est vidé. Les valeurs du jeu restent.
+todos-reset-dialog-body-with-own = Sur chaque personnage : vos propres tâches ({ $own }) sont supprimées, toutes les tâches masquées reviennent, et chaque compteur et chaque montant saisi est vidé. Les valeurs du jeu restent.
 todos-reset-dialog-keeps = L'heure de reset et l'abonnement sont conservés. Cette action est irréversible.
 
 todos-window-title = Tâches
 todos-window-playing = En jeu
-todos-window-picker-note = Les personnages vus par le compteur, avec ce qu'il reste à chacun. Les Duty Missions sont partagées par vos personnages d'un même serveur.
+todos-window-picker-note = Les personnages vus par { -app-name }, avec ce qu'il reste à chacun. Les Duty Missions, les Shugo Festival keys, les Invasion keys et l'Unknown Fissure sont partagés par vos personnages d'un même serveur.
 todos-window-no-character-title = Aucun personnage
-todos-window-no-character-line = Vos tâches apparaissent dès que le compteur a vu votre personnage. Lancez-le avant la connexion, ou relog via le choix du perso.
+todos-window-no-character-line = Vos tâches apparaissent dès que { -app-name } a vu votre personnage. Lancez-le avant la connexion, ou relog via le choix du perso.
 todos-window-undo = Annuler
 todos-window-change = Modifier
 todos-window-change-name = Modifier l'heure du reset quotidien dans Paramètres, Tâches
@@ -180,6 +211,20 @@ todos-window-how-many = Combien
 todos-window-of = sur
 todos-window-stop-tracking = Ne plus suivre { $label }
 todos-window-amount-input = { $label } : combien vous en avez maintenant
+todos-window-back-to-game = Revenir à la valeur du jeu : { $label }
+todos-window-figure-from-game = { $label }, { $value }, d'après le jeu. Saisir par-dessus
+todos-window-figure-typed = { $label }, { $value }, saisi par vous. Saisir par-dessus
+todos-window-count-from-game = { $label }, { $progress }, d'après le jeu
+todos-window-row-done-from-game = { $label }, faite, d'après le jeu
+todos-window-row-not-done-from-game = { $label }, à faire, d'après le jeu
+todos-window-with-extra = { $value }, { $extra } en plus
+todos-window-login-note = Rempli depuis le jeu à la connexion.
+todos-window-login-note-replaced = Rempli depuis le jeu à la connexion. Les valeurs saisies ont été remplacées.
+
+resources-window-title = Ressources
+resources-window-membership-caps = Plafonds avec abonnement
+resources-window-plain-caps = Plafonds sans abonnement
+resources-window-no-character-line = Vos ressources apparaissent dès que { -app-name } a vu votre personnage. Lancez-le avant la connexion, ou relog via le choix du perso.
 
 ## Event reminders
 
@@ -266,9 +311,17 @@ settings-overlay-fight-summary-text = À la mort d'un boss : votre DPS et votre
 settings-overlay-pace = Rythme face à votre record perso
 settings-overlay-pace-text = Après 10 s de combat contre un boss, votre avance ou votre retard sur votre record contre ce boss.
 settings-overlay-window = Fenêtre
+settings-overlay-open-meter = Ouvrir le compteur au lancement
+settings-overlay-open-meter-text = Au démarrage de { -app-name }. Désactivé : seule la barre d'outils s'ouvre, et le compteur s'ouvre depuis son icône.
 settings-overlay-lock = Verrouiller l'overlay
-settings-overlay-lock-text = Les clics passent au jeu et les commandes se masquent. Alt+Verr. Maj l'active ou le désactive.
-settings-overlay-lock-unavailable = Alt+Verr. Maj n'a pas pu être enregistré : rien ne pourrait déverrouiller l'overlay.
+settings-overlay-lock-text = Les clics passent au jeu et les commandes se masquent. Alt+Verr. Maj l'active ou le désactive. La barre d'outils prend toujours les clics.
+settings-overlay-lock-unavailable = Alt+Verr. Maj n'a pas pu être enregistré : rien ne pourrait déverrouiller l'overlay.
+settings-overlay-show-hide = Afficher ou masquer tout
+settings-overlay-show-hide-text = Masque la barre d'outils et chaque outil ouvert, puis les fait revenir. « Afficher la barre d'outils » de l'icône de notification les fait revenir aussi.
+settings-overlay-show-hide-keys = Alt+Maj+Verr. Maj
+settings-key-alt = Alt
+settings-key-shift = Maj
+settings-key-caps-lock = Verr. Maj
 settings-overlay-detail-opens = Ouverture du détail joueur
 settings-overlay-detail-opens-text = À côté de l'overlay, ou au milieu de l'écran.
 settings-overlay-beside = À côté
@@ -410,19 +463,21 @@ settings-event-nahma-text = Vendredi et dimanche à 21:00. Niv. 65, et l'Enragé
 settings-event-arena-text = 11:00 et 19:00, à l'ouverture de la file 10 contre 10 (jusqu'à 14:00 et 21:00).
 settings-event-keys-text = 16:00. Clés du Shugo Festival et de la Dimensional Invasion.
 
-settings-todos-lead = La fenêtre des tâches, ouverte depuis le menu « … » du compteur.
+settings-todos-lead = La fenêtre des tâches, ouverte depuis la barre d'outils. Les compteurs et les montants se remplissent depuis le jeu quand vous vous connectez pendant que { -app-name } tourne.
 settings-todos-resets = Resets
 settings-todos-daily-reset-text = Signalé, non confirmé. Vérifiez le compte à rebours en jeu.
 settings-todos-weekly-reset = Reset hebdomadaire
 settings-todos-weekly-reset-text = Les tâches de la semaine repartent le mercredi, à l'heure du reset quotidien.
 settings-todos-weekly-at = Mercredi { $time }
 settings-todos-membership = Abonnement
-settings-todos-membership-text = L'Odyle Energy monte jusqu'à 840 au lieu de 560, sur chaque personnage.
+settings-todos-membership-text = Plafonds plus hauts sur chaque personnage : Odyle Energy 840 au lieu de 560, Shugo Festival keys 21 au lieu de 12.
+settings-todos-membership-hint = Le jeu affiche { $amount } sur { $name }, plus que { $cap }. Avez-vous un abonnement ?
+settings-todos-membership-amount = { $count } { $label }
 settings-todos-defaults = Tâches par défaut
 settings-todos-hidden = Tâches masquées
 settings-todos-restore = Restaurer les tâches par défaut
 settings-todos-start-over = Repartir de zéro
-settings-todos-start-over-text = Supprime vos propres tâches, fait revenir toutes celles qui sont masquées et vide chaque compteur et chaque montant.
+settings-todos-start-over-text = Supprime vos propres tâches, fait revenir toutes celles qui sont masquées et vide chaque compteur et chaque montant saisi.
 settings-todos-reset-completely = Tout réinitialiser…
 settings-todos-reset-done = Tâches réinitialisées
 settings-todos-set-aside = Les tâches enregistrées ont été mises de côté
@@ -503,10 +558,9 @@ meter-switch-tip-pinned-session = Épinglé sur Session
 meter-switch-tip-pinned-target = Épinglé sur Cible
 meter-switch-tip-unpin = Cliquez à nouveau pour revenir au choix automatique. La réinitialisation et le prochain boss désépinglent aussi.
 
-meter-menu-fight-history = Historique des combats
-meter-menu-pvp = Compteur PvP
-meter-menu-todos = Tâches
-meter-menu-settings = Paramètres
+meter-boss-setting = Réglage du boss
+meter-close = Fermer le compteur
+meter-close-line = Les combats ne sont suivis que tant qu'il est ouvert.
 meter-menu-hit-a-mob = Frappez un mob pour indiquer si c'est un boss
 meter-menu-treat-as-boss = { $name } est un boss
 meter-menu-treat-as-boss-unnamed = C'est un boss
@@ -685,3 +739,65 @@ pvp-damage-dealt = Dégâts infligés
 pvp-damage-taken = Dégâts subis
 pvp-dealt-empty = Aucun dégât infligé pour l'instant.
 pvp-taken-empty = Aucun dégât subi pour l'instant.
+
+## Tray icon
+
+tray-tooltip = { -app-name }
+tray-show-toolbar = Afficher la barre d'outils
+tray-quit = Quitter
+
+## Toolbar
+
+toolbar-label = { -app-name }
+toolbar-grip = Glisser pour déplacer
+toolbar-meter = Compteur DPS
+toolbar-meter-closed-line = Les combats sont suivis tant qu'il est ouvert.
+toolbar-meter-open-line = Cliquer pour le fermer. Les combats ne sont plus suivis.
+toolbar-pvp = Compteur PvP
+toolbar-todos = Tâches
+toolbar-history = Historique des combats
+toolbar-reminders = Rappels
+toolbar-reminders-paused = En pause
+toolbar-settings = Paramètres
+toolbar-fold = Replier la barre
+toolbar-unfold = Déplier la barre
+toolbar-quit = Quitter { -app-name }
+toolbar-quit-line = Ferme tous les outils.
+toolbar-count-of = { $value } sur { $cap }
+toolbar-count-of-extra = { $value } sur { $cap }, +{ $extra } en plus
+toolbar-count-full-in = max dans { $time }
+toolbar-count-click = Cliquer pour toutes les ressources.
+toolbar-count-no-value = Pas encore de valeur. Connectez-vous pendant que { -app-name } tourne.
+toolbar-count-label = { $name }, { $value } sur { $cap }. Ouvrir les ressources
+toolbar-count-label-extra = { $name }, { $value } sur { $cap }, { $extra } en plus. Ouvrir les ressources
+toolbar-count-label-full = { $name }, { $value } sur { $cap }, plein. Ouvrir les ressources
+toolbar-count-label-full-extra = { $name }, { $value } sur { $cap }, { $extra } en plus, plein. Ouvrir les ressources
+toolbar-count-label-none = { $name }, pas encore de valeur. Ouvrir les ressources
+toolbar-more-full = { $count ->
+        [one] { $count } autre pleine
+       *[other] { $count } autres pleines
+    }
+toolbar-more-full-label = { $count ->
+        [one] { $count } autre ressource pleine
+       *[other] { $count } autres ressources pleines
+    }
+toolbar-folded-full-label = { $count ->
+        [one] { $count } ressource pleine. Déplier la barre
+       *[other] { $count } ressources pleines. Déplier la barre
+    }
+toolbar-full-heading = Pleines, une recharge arrive
+toolbar-refills = recharge
+toolbar-refills-label = { $name }, { $value } sur { $cap }, recharge à { $time }
+toolbar-all-resources = Toutes les ressources
+toolbar-next-reminders = Prochains rappels
+toolbar-no-reminders = Aucun événement activé
+toolbar-pause-reminders = Mettre les rappels en pause
+toolbar-reminder-settings = Paramètres des rappels
+
+## First-open prompt
+
+prompt-title = Ouvrir le compteur au lancement ?
+prompt-body = { -app-name } démarre avec la barre d'outils seule. Ouvrir le compteur DPS à chaque lancement de { -app-name } ?
+prompt-yes = Oui, au lancement
+prompt-no = Pas maintenant
+prompt-done = Le compteur s'ouvre désormais au lancement.

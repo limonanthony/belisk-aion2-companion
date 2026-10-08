@@ -240,7 +240,7 @@ impl Render for PvpView {
                 cx.notify();
             }))
             .into_any_element();
-        let header = chrome::header(chrome::title(Icon::Swords, fl!("pvp-title"), None, s), vec![info], &self.drag, s);
+        let header = chrome::header(chrome::title(Icon::Crosshair, fl!("pvp-title"), None, s), vec![info], &self.drag, s);
 
         let watching = model.watch().len();
         let watch_head = chrome::section(s)

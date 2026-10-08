@@ -52,34 +52,49 @@ pub fn beside(anchor: Rect, (width, height): (i32, i32), work: Rect, preferred: 
     )
 }
 
-/// Where a window `gap` above `anchor` goes, sharing its left edge, or `gap`
-/// below it when the work area has no room above. It is never moved
-/// sideways, so it stays with an anchor that sits partly off the work area.
-pub fn stacked(anchor: Rect, (_, height): (i32, i32), work: Rect, gap: i32) -> (i32, i32) {
+/// Which side of its anchor a stacked window takes when both have room.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stack {
+    Above,
+    Below,
+}
+
+/// Where a window `gap` from `anchor` goes, sharing its left edge: on the
+/// `preferred` side, or the other one when the work area has no room there.
+/// It is never moved sideways, so it stays with an anchor that sits partly
+/// off the work area.
+pub fn stacked(anchor: Rect, (_, height): (i32, i32), work: Rect, gap: i32, preferred: Stack) -> (i32, i32) {
     let above = anchor.top - gap - height;
     let below = anchor.bottom + gap;
     let fits_above = above >= work.top;
     let fits_below = below + height <= work.bottom;
-    (anchor.left, if fits_above || !fits_below { above } else { below })
+    let y = match preferred {
+        Stack::Above if fits_above || !fits_below => above,
+        Stack::Above => below,
+        Stack::Below if fits_below || !fits_above => below,
+        Stack::Below => above,
+    };
+    (anchor.left, y)
 }
 
-/// Where a window opens: next to the meter, or in the middle of its screen.
+/// Where a window opens: next to its anchor window, or in the middle of its
+/// screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Anchor {
     Beside(Side),
     Centre,
-    /// On the meter's left edge, `gap` logical pixels above or below it.
-    Stacked { gap: f32 },
+    /// On the anchor's left edge, `gap` logical pixels from it.
+    Stacked { gap: f32, preferred: Stack },
 }
 
 impl Anchor {
-    /// `meter`, `size` and `work` are in device pixels, at `scale` device
+    /// `anchor`, `size` and `work` are in device pixels, at `scale` device
     /// pixels per logical one.
-    pub fn corner(self, meter: Rect, size: (i32, i32), work: Rect, scale: f32) -> (i32, i32) {
+    pub fn corner(self, anchor: Rect, size: (i32, i32), work: Rect, scale: f32) -> (i32, i32) {
         match self {
-            Self::Beside(side) => beside(meter, size, work, side),
+            Self::Beside(side) => beside(anchor, size, work, side),
             Self::Centre => centred(size, work),
-            Self::Stacked { gap } => stacked(meter, size, work, (gap * scale).round() as i32),
+            Self::Stacked { gap, preferred } => stacked(anchor, size, work, (gap * scale).round() as i32, preferred),
         }
     }
 }
@@ -141,19 +156,32 @@ mod tests {
 
     #[test]
     fn a_stacked_window_sits_above_the_meter_on_its_left_edge() {
-        assert_eq!(stacked(meter(64, 400), (310, 84), WORK, 6), (64, 310));
-        assert_eq!(Anchor::Stacked { gap: 6.0 }.corner(meter(64, 400), (465, 126), WORK, 1.5), (64, 265));
+        assert_eq!(stacked(meter(64, 400), (310, 84), WORK, 6, Stack::Above), (64, 310));
+        let anchor = Anchor::Stacked { gap: 6.0, preferred: Stack::Above };
+        assert_eq!(anchor.corner(meter(64, 400), (465, 126), WORK, 1.5), (64, 265));
     }
 
     #[test]
     fn a_stacked_window_goes_below_a_meter_at_the_top_of_the_screen() {
-        assert_eq!(stacked(meter(64, 40), (310, 84), WORK, 6), (64, 326));
+        assert_eq!(stacked(meter(64, 40), (310, 84), WORK, 6, Stack::Above), (64, 326));
     }
 
     #[test]
     fn a_stacked_window_never_overlaps_the_meter_and_follows_it_off_the_work_area() {
         let tall = Rect { left: 64, top: 40, right: 374, bottom: 1000 };
-        assert_eq!(stacked(tall, (310, 84), WORK, 6), (64, -50), "no room either side: above, off the top");
-        assert_eq!(stacked(meter(-4000, 0), (310, 84), WORK, 6), (-4000, 286), "kept beside a meter outside every monitor");
+        assert_eq!(stacked(tall, (310, 84), WORK, 6, Stack::Above), (64, -50), "no room either side: above, off the top");
+        assert_eq!(
+            stacked(meter(-4000, 0), (310, 84), WORK, 6, Stack::Above),
+            (-4000, 286),
+            "kept beside a meter outside every monitor"
+        );
+    }
+
+    #[test]
+    fn a_window_stacked_under_the_toolbar_goes_above_it_when_the_toolbar_is_low() {
+        let toolbar = Rect { left: 800, top: 8, right: 1230, bottom: 42 };
+        assert_eq!(stacked(toolbar, (310, 84), WORK, 6, Stack::Below), (800, 48));
+        let low = Rect { left: 800, top: 990, right: 1230, bottom: 1024 };
+        assert_eq!(stacked(low, (310, 84), WORK, 6, Stack::Below), (800, 900));
     }
 }

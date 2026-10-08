@@ -7,11 +7,15 @@ mod capture_reminders;
 #[cfg(feature = "probes")]
 mod capture_report;
 #[cfg(feature = "probes")]
+mod capture_resources;
+#[cfg(feature = "probes")]
 mod capture_secondary;
 #[cfg(feature = "probes")]
 mod capture_settings;
 #[cfg(feature = "probes")]
 mod capture_todos;
+#[cfg(feature = "probes")]
+mod capture_toolbar;
 mod cli;
 mod clock;
 mod decision_log;
@@ -42,6 +46,8 @@ mod settings;
 mod single_instance;
 mod style;
 mod todos;
+mod toolbar;
+mod tray;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -130,14 +136,17 @@ fn start(args: Args, instance: Option<single_instance::Running>, cx: &mut App) -
         Settings::in_memory(non_live_settings(overlay, args.replay.is_some(), capture_language(&args)))
     };
     let initial = settings.get().clone();
+    // A live run follows Settings › Overlay; replays and captures are about
+    // the meter, so it opens with them.
+    let meter_open = !args.wants_live() || initial.windows.open_meter_at_launch;
 
     let (sink, events) = bridge::channel();
     let sink = Arc::new(sink);
     let mut unavailable = None;
     let meter: Option<Arc<DpsMeter>> = match &args.replay {
-        Some(recording) => Some(replay::start(sink, recording, args.speed)?),
+        Some(recording) => Some(replay::start(sink, recording, args.speed, meter_open)?),
         None if args.wants_live() => {
-            let (meter, started) = live_session::start(sink, &initial);
+            let (meter, started) = live_session::start(sink, &initial, meter_open);
             match started {
                 Ok(()) => Some(meter),
                 Err(reason) => {
@@ -186,12 +195,13 @@ fn start(args: Args, instance: Option<single_instance::Running>, cx: &mut App) -
     bridge::spawn_pump(model.clone(), events, args.exit_after_replay, cx).detach();
     #[cfg(feature = "probes")]
     let foreground_before_open = probe::foreground_window();
-    let window = overlay::open(cx, model.clone(), placement)?;
+    let window = overlay::open(cx, model.clone(), placement, meter_open)?;
     meter::install_window(window, cx);
+    secondary::init(&window, &model, placement, cx)?;
+    toolbar::install(window, model.clone(), placement, meter_open, cx)?;
     if let Some(instance) = instance {
         instance.serve(cx).detach();
     }
-    secondary::init(&window, &model, placement, cx)?;
 
     #[cfg(feature = "probes")]
     if let Some(dir) = args.capture.clone() {
@@ -205,11 +215,36 @@ fn start(args: Args, instance: Option<single_instance::Running>, cx: &mut App) -
         return Ok(());
     }
 
-    match hotkey::register_lock_toggle(window, cx) {
-        Ok(()) => window
-            .update(cx, |view, _, cx| view.enable_lock_shortcut(cx))
-            .map_err(|error| format!("cannot reach the overlay window: {error:#}"))?,
+    let actions = [hotkey::HotkeyAction::ToggleLock, hotkey::HotkeyAction::ToggleToolbar];
+    let shortcuts = hotkey::register(&actions, cx, |action, cx| match action {
+        hotkey::HotkeyAction::ToggleLock => {
+            // A closed meter has nothing to lock.
+            if let Some(meter_window) = toolbar::meter_window_if_open(cx) {
+                let _ = meter_window.update(cx, |view, window, cx| view.toggle_lock(window, cx));
+            }
+        }
+        hotkey::HotkeyAction::ToggleToolbar => toolbar::toggle_everything(cx),
+    });
+    match shortcuts {
+        Ok(registration) => {
+            for failure in &registration.failures {
+                eprintln!("{failure}");
+            }
+            if registration.has(hotkey::HotkeyAction::ToggleLock) {
+                window
+                    .update(cx, |view, _, cx| view.enable_lock_shortcut(cx))
+                    .map_err(|error| format!("cannot reach the overlay window: {error:#}"))?;
+            } else {
+                eprintln!("the lock button is hidden, since nothing could unlock it");
+            }
+        }
         Err(error) => eprintln!("{error}; the lock button is hidden, since nothing could unlock it"),
+    }
+    if let Err(error) = tray::install(cx, |action, cx| match action {
+        tray::TrayAction::ShowToolbar => toolbar::show_toolbar(cx),
+        tray::TrayAction::Quit => cx.quit(),
+    }) {
+        eprintln!("{error}; the toolbar's × still quits");
     }
 
     #[cfg(feature = "probes")]

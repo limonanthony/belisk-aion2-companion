@@ -4,16 +4,18 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use meter_core::events::MeterEvent;
 use meter_core::identity::KnownCharacter;
+use meter_core::tickets::TicketReport;
 use gpui::{App, AppContext as _, Context, Entity, Global, Task};
 
 use super::catalogue::Section;
 use super::data::{
-    AddError, Cadence, CharacterId, HiddenSummary, Moment, NewOwnTodo, ProgressChange, RemovedOwnTodo, RowId, TodoData,
+    AddError, Cadence, CharacterId, HiddenSummary, Moment, NewOwnTodo, PoolAbovePlainCap, ProgressChange, RemovedOwnTodo,
+    RowId, TodoData,
 };
-use super::list::{self, CharacterSummary, TodoList};
+use super::list::{self, CharacterSummary, FullResource, TodoList};
 use super::settings::TodoSettings;
 use super::store;
-use crate::clock::{now_ms, LocalZone};
+use crate::clock::{now_ms, ClockTime, LocalZone};
 use crate::settings::Settings;
 
 /// A change is written to disk once nothing has changed for this long, so a
@@ -84,6 +86,9 @@ pub struct Todos {
     /// finishing late, never replaces a newer one on disk.
     written: Arc<Mutex<u64>>,
     ticker: Option<Task<()>>,
+    /// When this run began: what the game said since, about the character
+    /// being played, is live.
+    run_started_ms: i64,
 }
 
 struct TodosHandle(Entity<Todos>);
@@ -140,6 +145,7 @@ impl Todos {
             revision: 0,
             written: Arc::default(),
             ticker: None,
+            run_started_ms: now_ms(),
         };
         let moment = todos.moment();
         let synced = todos.data.sync_characters(&todos.remembered);
@@ -159,7 +165,12 @@ impl Todos {
     }
 
     fn moment(&self) -> Moment<'static> {
-        Moment::new(&LOCAL_ZONE, self.config.reset_hour, self.config.membership, now_ms())
+        let now = now_ms();
+        let moment = match self.config.reset_hour {
+            Some(hour) => Moment::new(&LOCAL_ZONE, hour, self.config.membership, now),
+            None => Moment::following_the_game(&LOCAL_ZONE, self.config.membership, now),
+        };
+        moment.running_since(self.run_started_ms)
     }
 
     /// Applies the resets that are due, then notifies so countdowns redraw.
@@ -186,9 +197,6 @@ impl Todos {
             let previous = std::mem::replace(&mut self.config, config);
             if previous.reset_hour != self.config.reset_hour {
                 dirty |= self.data.rebase_resets(&self.moment());
-            }
-            if previous.membership && !self.config.membership {
-                dirty |= self.data.cut_amounts_to_plain_caps();
             }
             seen = true;
         }
@@ -310,14 +318,35 @@ impl Todos {
         Some(list::build(&self.data, character, Some(id) == self.playing, &self.moment()))
     }
 
-    /// How many amounts the selected character has full, for "To-dos · N full"
-    /// in the meter's menu.
-    pub fn full_count(&self) -> usize {
-        self.list().map_or(0, |list| list.full)
+    /// When the game last listed the character's tickets at login (Unix ms).
+    pub fn logged_in_ms(&self, id: CharacterId) -> Option<i64> {
+        self.data.character(id)?.logged_in_ms()
     }
 
-    pub fn reset_hour(&self) -> u8 {
-        self.config.reset_hour
+    /// What the selected character has at its cap with a refill coming, in
+    /// the window's order, for the toolbar's warning.
+    pub fn full_resources(&self) -> Vec<FullResource> {
+        let Some(id) = self.selected() else {
+            return Vec::new();
+        };
+        let Some(character) = self.data.character(id) else {
+            return Vec::new();
+        };
+        list::full_resources(&self.data, character, Some(id) == self.playing, &self.moment())
+    }
+
+    /// The game shows more than the plain cap in a pool the membership raises
+    /// while the membership switch is off: Settings asks if the player has it.
+    pub fn membership_hint(&self) -> Option<PoolAbovePlainCap> {
+        if self.config.membership {
+            return None;
+        }
+        self.data.pool_above_plain_cap()
+    }
+
+    /// The daily reset on the PC's clock now.
+    pub fn reset_clock(&self) -> ClockTime {
+        self.config.reset_clock_now()
     }
 
     pub fn membership(&self) -> bool {
@@ -361,6 +390,15 @@ impl Todos {
     pub fn set_amount(&mut self, id: CharacterId, row: &'static str, value: Option<u32>, cx: &mut Context<Self>) -> bool {
         self.edit(cx, |data, moment| {
             let changed = data.set_amount(id, row, value, moment);
+            (changed, changed)
+        })
+    }
+
+    /// Types how much of a row the game fills is done (`Some`), or goes back
+    /// to the game's value (`None`).
+    pub fn set_progress(&mut self, id: CharacterId, row: &'static str, value: Option<u32>, cx: &mut Context<Self>) -> bool {
+        self.edit(cx, |data, _| {
+            let changed = data.set_progress(id, row, value);
             (changed, changed)
         })
     }
@@ -421,6 +459,18 @@ impl Todos {
         })
     }
 
+    // --- What the game says ---
+
+    /// Keeps the tickets the game listed or changed, each on the character it
+    /// named (and on every character of the server for a server ticket). Runs
+    /// on the UI thread with the batch the bridge drained.
+    pub fn apply_tickets(&mut self, reports: &[TicketReport], cx: &mut Context<Self>) {
+        self.edit(cx, |data, _| {
+            let changed = reports.iter().fold(false, |changed, report| data.apply_tickets(report) | changed);
+            ((), changed)
+        });
+    }
+
     // --- View state, kept across runs ---
 
     pub fn set_section_folded(&mut self, section: Section, folded: bool, cx: &mut Context<Self>) {
@@ -438,7 +488,8 @@ impl Todos {
     // --- Settings → To-dos ---
 
     pub fn set_reset_hour(&mut self, hour: u8, cx: &mut Context<Self>) {
-        self.settings.update(cx, |settings, cx| settings.update(cx, |all| all.todos.reset_hour = hour));
+        let choice = TodoSettings::choice_of_hour(hour, &LOCAL_ZONE, now_ms());
+        self.settings.update(cx, |settings, cx| settings.update(cx, |all| all.todos.reset_hour = choice));
     }
 
     pub fn set_membership(&mut self, on: bool, cx: &mut Context<Self>) {
@@ -562,6 +613,12 @@ pub fn follow_player(cx: &mut App, identified: Vec<Identified>) {
             todos.player_identified(identified, cx);
         }
     });
+}
+
+/// Hands the tracker what the game said about the tickets, in the order the
+/// events came; the bridge calls it after the character is remembered.
+pub fn record_tickets(cx: &mut App, reports: Vec<TicketReport>) {
+    global(cx).update(cx, |todos, cx| todos.apply_tickets(&reports, cx));
 }
 
 #[cfg(test)]
@@ -745,19 +802,65 @@ mod tests {
             })
         });
         cx.update(|cx| todos.update(cx, |todos, cx| todos.reset_completely(cx)));
-        assert_eq!((cx.update(|cx| todos.read(cx).reset_hour()), cx.update(|cx| todos.read(cx).membership())), (6, true));
+        assert_eq!(
+            (cx.update(|cx| todos.read(cx).reset_clock().to_string()), cx.update(|cx| todos.read(cx).membership())),
+            ("06:00".to_string(), true)
+        );
     }
 
     #[gpui::test]
-    fn turning_membership_off_cuts_odyle_to_the_plain_cap(cx: &mut TestAppContext) {
+    fn turning_membership_off_keeps_what_was_typed(cx: &mut TestAppContext) {
         let settings = settings_with(vec![known("Alder", 1001, None)], cx);
         let todos = open(&settings, cx);
         let id = cx.update(|cx| todos.read(cx).selected()).unwrap();
         cx.update(|cx| todos.update(cx, |todos, cx| todos.set_membership(true, cx)));
         cx.update(|cx| todos.update(cx, |todos, cx| todos.set_amount(id, "odyle", Some(800), cx)));
-        assert_eq!(cx.update(|cx| todos.read(cx).data().character(id).unwrap().typed_amount("odyle")).map(|t| t.value), Some(800));
         cx.update(|cx| todos.update(cx, |todos, cx| todos.set_membership(false, cx)));
-        assert_eq!(cx.update(|cx| todos.read(cx).data().character(id).unwrap().typed_amount("odyle")).map(|t| t.value), Some(560));
+        assert_eq!(cx.update(|cx| todos.read(cx).data().character(id).unwrap().typed_amount("odyle")).map(|t| t.value), Some(800));
+    }
+
+    #[gpui::test]
+    fn the_games_tickets_reach_the_rows_the_resources_and_the_membership_hint(cx: &mut TestAppContext) {
+        use meter_core::capture::parser::ticket_record::TicketRecord;
+        use meter_core::tickets::TicketContent;
+
+        let record = |id: u32, count: u32, charge: u32| TicketRecord { flags: 0, id, remaining_ms: None, field_b: None, count, charge };
+        let settings = settings_with(vec![known("Alder", 1001, None)], cx);
+        let todos = open(&settings, cx);
+        let player = Identified::Named(PlayerRef { name: "Alder".to_string(), server_id: Some(1001), key: None });
+        cx.update(|cx| todos.update(cx, |todos, cx| todos.player_identified(&player, cx)));
+        let report = TicketReport {
+            character: known("Alder", 1001, None),
+            captured_at: now_ms() as f64 / 1000.0,
+            content: TicketContent::Snapshot(vec![record(60_000_001, 600, 100), record(1, 12, 3), record(4, 0, 3)]),
+        };
+        cx.update(|cx| todos.update(cx, |todos, cx| todos.apply_tickets(&[report], cx)));
+
+        let recharges = |cx: &mut TestAppContext| cx.update(|cx| todos.read(cx).list()).unwrap().sections.remove(1).rows;
+        let rows = recharges(cx);
+        let amount = |id: &'static str| match &rows.iter().find(|row| row.id == RowId::Builtin(id)).unwrap().kind {
+            crate::todos::RowKind::Amount(amount) => amount.clone(),
+            other => panic!("{id} is {other:?}"),
+        };
+        let odyle = amount("odyle");
+        assert_eq!((odyle.value, odyle.cap, odyle.full, odyle.above_plain_cap), (600, 560, false, true));
+        assert_eq!(rows[0].extra, 100);
+        assert_eq!(rows[0].source, crate::todos::Source::GameLive);
+        let hint = cx.update(|cx| todos.read(cx).membership_hint()).expect("the membership hint");
+        assert_eq!((hint.character.as_str(), hint.label, hint.count, hint.cap), ("Alder", "Odyle Energy", 600, 560));
+        let full: Vec<String> = cx.update(|cx| todos.read(cx).full_resources()).into_iter().map(|resource| resource.label).collect();
+        assert_eq!(full, ["Shugo Festival keys"], "Odyle is above its plain cap, not full");
+        let nightmare = amount("nightmare");
+        assert_eq!((nightmare.tracked, nightmare.value), (true, 0));
+
+        cx.update(|cx| todos.update(cx, |todos, cx| todos.set_membership(true, cx)));
+        assert_eq!(cx.update(|cx| todos.read(cx).membership_hint()), None);
+        let odyle = match &recharges(cx)[0].kind {
+            crate::todos::RowKind::Amount(amount) => amount.clone(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!((odyle.value, odyle.cap, odyle.full, odyle.above_plain_cap), (600, 840, false, false));
+        assert!(cx.update(|cx| todos.read(cx).full_resources()).is_empty(), "Shugo keys are 12 of 21 now");
     }
 
     #[test]
@@ -796,9 +899,9 @@ mod tests {
     fn the_reset_hour_in_settings_reaches_the_footer(cx: &mut TestAppContext) {
         let settings = settings_with(vec![known("Alder", 1001, None)], cx);
         let todos = open(&settings, cx);
-        cx.update(|cx| settings.update(cx, |settings, cx| settings.update(cx, |all| all.todos.reset_hour = 21)));
+        cx.update(|cx| settings.update(cx, |settings, cx| settings.update(cx, |all| all.todos.reset_hour = Some(21))));
         let list = cx.update(|cx| todos.read(cx).list()).unwrap();
-        assert_eq!((list.footer.reset_hour, list.footer.reset_time.as_str()), (21, "21:00"));
+        assert_eq!(list.footer.reset_time, "21:00");
     }
 
     #[gpui::test]

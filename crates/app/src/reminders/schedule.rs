@@ -41,6 +41,22 @@ pub fn next_reminder(zone: &impl Zone, events: &[EventId], lead_minutes: u8, aft
     Some(Reminder { start_ms, notify_ms: start_ms - i64::from(lead_minutes) * MINUTE_MS, events: due })
 }
 
+/// The next `count` starts of `events` after `after_ms`, one per event and
+/// start, soonest first; events sharing a start come in catalogue order.
+pub fn upcoming(zone: &impl Zone, events: &[EventId], after_ms: i64, count: usize) -> Vec<(EventId, i64)> {
+    let mut found = Vec::with_capacity(count);
+    let mut after = after_ms;
+    while found.len() < count {
+        let Some(next) = next_reminder(zone, events, 0, after).filter(|next| next.start_ms != i64::MAX) else {
+            break;
+        };
+        found.extend(next.events.iter().map(|&id| (id, next.start_ms)));
+        after = next.start_ms;
+    }
+    found.truncate(count);
+    found
+}
+
 fn next_start(zone: &impl Zone, rule: Rule, after_ms: i64) -> i64 {
     match rule {
         Rule::Hourly { minute } => next_hourly_start(zone, i64::from(minute), after_ms),
@@ -118,6 +134,16 @@ mod tests {
     fn a_start_exactly_now_is_past_and_the_following_one_is_next() {
         assert_eq!(next(&[DimensionalInvasion], 1, local(5, 10, 30)).start_ms, local(5, 11, 30));
         assert_eq!(next(&[DimensionalInvasion], 1, local(5, 10, 30) - 1).start_ms, local(5, 10, 30));
+    }
+
+    #[test]
+    fn the_next_three_starts_list_each_event_at_its_own_time() {
+        let found = upcoming(&fixed_summer_zone(), &[ShugoFestival, DimensionalInvasion], local(5, 10, 10), 3);
+        assert_eq!(
+            found,
+            vec![(DimensionalInvasion, local(5, 10, 30)), (ShugoFestival, local(5, 11, 0)), (DimensionalInvasion, local(5, 11, 30))]
+        );
+        assert!(upcoming(&fixed_summer_zone(), &[], local(5, 10, 10), 3).is_empty());
     }
 
     #[test]

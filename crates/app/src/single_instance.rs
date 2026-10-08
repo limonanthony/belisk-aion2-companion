@@ -18,8 +18,6 @@ use windows::core::{Owned, HSTRING};
 use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, HANDLE, WAIT_OBJECT_0};
 use windows::Win32::System::Threading::{CreateEventW, CreateMutexW, SetEvent, WaitForSingleObject, INFINITE};
 
-use crate::{meter, overlay};
-
 const INSTANCE_NAME: &str = "Local\\AION2DpsMeter.SingleInstance";
 
 pub enum Claim {
@@ -82,22 +80,16 @@ impl RunningMeter {
 }
 
 impl Running {
-    /// Brings the meter's own window forward each time a later launch asks.
-    /// Requests that arrive before the window exists wait in the queue.
+    /// Brings the toolbar, and what Alt+Shift+CapsLock hid, forward each time
+    /// a later launch asks, as the tray's Show toolbar does. Requests that
+    /// arrive before the toolbar exists wait in the queue.
     pub fn serve(self, cx: &App) -> gpui::Task<()> {
         let Running { _lock: lock, mut raise_requests } = self;
         cx.spawn(async move |cx| {
             let _lock = lock;
             while raise_requests.next().await.is_some() {
                 while raise_requests.try_recv().is_ok() {}
-                cx.update(|cx| {
-                    let brought = meter::window(cx).update(cx, |_, window, _| {
-                        overlay::hwnd(window).map(overlay::bring_forward)
-                    });
-                    if let Err(error) = brought.map_err(|error| format!("{error:#}")).and_then(|result| result) {
-                        eprintln!("cannot bring the meter forward: {error}");
-                    }
-                });
+                cx.update(crate::toolbar::show_toolbar);
             }
         })
     }
