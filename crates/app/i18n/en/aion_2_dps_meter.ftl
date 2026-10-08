@@ -177,7 +177,7 @@ reminder-event-arena-of-tactics = Arena of Tactics
 reminder-event-reward-keys = Reward keys refill
 
 reminder-detail-shugo-festival = 3 min to join
-reminder-detail-dimensional-invasion = Somewhere in the field · 3 min to join
+reminder-detail-dimensional-invasion = Verteron · Altgard · 3 min to join
 reminder-detail-rift-portals = Altgard · Verteron · Morheim · Eltnen
 reminder-detail-watcher-kaira = Field boss · Chaotic Lower Reshanta
 reminder-detail-artifact-siege = Chaotic Lower Reshanta
@@ -387,7 +387,7 @@ settings-reminders-weekly = Weekly
 settings-reminders-daily = Daily
 settings-event-arena-opens = Arena of Tactics opens
 settings-event-shugo-text = At :00. The minigames, with 3 min to join; which games are open shows only in the game.
-settings-event-invasion-text = At :30. Somewhere in the field, with 3 min to join.
+settings-event-invasion-text = At :30. One of three invasions, at a random spot in Verteron or Altgard, with 3 min to join; check the map, it may not be near you.
 settings-event-rifts-text = 02:00, 05:00, 08:00, 11:00, 14:00, 17:00, 20:00 and 23:00. Altgard, Verteron, Morheim and Eltnen.
 settings-event-kaira-text = 01:00, 04:00, 07:00, 10:00, 13:00, 16:00, 19:00 and 22:00. Field boss in Chaotic Lower Reshanta.
 settings-event-siege-text = Monday, Thursday and Saturday at 21:00. Chaotic Lower Reshanta.

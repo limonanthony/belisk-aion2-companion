@@ -194,7 +194,7 @@ reminder-event-arena-of-tactics = Arena of Tactics
 reminder-event-reward-keys = Recharge des clés de récompense
 
 reminder-detail-shugo-festival = 3 min pour rejoindre
-reminder-detail-dimensional-invasion = Quelque part sur le terrain · 3 min pour rejoindre
+reminder-detail-dimensional-invasion = Verteron · Altgard · 3 min pour rejoindre
 reminder-detail-rift-portals = Altgard · Verteron · Morheim · Eltnen
 reminder-detail-watcher-kaira = Boss de terrain · Chaotic Lower Reshanta
 reminder-detail-artifact-siege = Chaotic Lower Reshanta
@@ -401,7 +401,7 @@ settings-reminders-weekly = Chaque semaine
 settings-reminders-daily = Chaque jour
 settings-event-arena-opens = Ouverture de l'Arena of Tactics
 settings-event-shugo-text = À :00. Les mini-jeux, avec 3 min pour rejoindre ; les jeux ouverts ne s'affichent que dans le jeu.
-settings-event-invasion-text = À :30. Quelque part sur le terrain, avec 3 min pour rejoindre.
+settings-event-invasion-text = À :30. Une des trois invasions, à un endroit au hasard de Verteron ou d'Altgard, avec 3 min pour rejoindre ; vérifiez la carte, elle n'est peut-être pas près de vous.
 settings-event-rifts-text = 02:00, 05:00, 08:00, 11:00, 14:00, 17:00, 20:00 et 23:00. Altgard, Verteron, Morheim et Eltnen.
 settings-event-kaira-text = 01:00, 04:00, 07:00, 10:00, 13:00, 16:00, 19:00 et 22:00. Boss de terrain dans Chaotic Lower Reshanta.
 settings-event-siege-text = Lundi, jeudi et samedi à 21:00. Chaotic Lower Reshanta.
