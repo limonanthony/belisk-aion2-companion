@@ -4,6 +4,7 @@ title: Record whole play sessions for investigating game events
 status: In Progress
 assignee: []
 created_date: '2026-10-07 17:21'
+updated_date: '2026-10-07 22:53'
 labels:
   - feature
 dependencies: []
@@ -36,3 +37,9 @@ Related: TASK-16 (needs a full Thamon recording). Not in scope: per-boss-fight r
 - [ ] #4 Recordings started by hand and unfamiliar-server recordings are never removed by the clean-up.
 - [ ] #5 With the switch off, nothing extra is recorded; the switch is off by default for new installs.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-07 finding: two whole-session files stopped at the 512 MB per-file limit after about 20 minutes (22:37-22:59 and 23:07-23:18), instead of covering 30 minutes, because HTTPS downloads (port 443) were recorded as game traffic. Fixed (agent-tested): a whole-session file now continues into a new file when it reaches the limit, and HTTPS traffic is no longer recorded. Not yet confirmed by the user with a new build.
+<!-- SECTION:NOTES:END -->

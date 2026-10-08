@@ -4,6 +4,7 @@ title: The meter stops reading the game for minutes after a lost packet
 status: In Progress
 assignee: []
 created_date: '2026-10-07 19:23'
+updated_date: '2026-10-07 22:53'
 labels:
   - bug
 dependencies: []
@@ -31,3 +32,10 @@ The meter stopped reading the game for about 9 minutes during play, even though 
 - [ ] #3 Totals of other recordings are unchanged.
 - [ ] #4 The user sees no long blind periods in play.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-07 finding: on 22:57-23:18 the Transcendence bosses were not detected for about 6 minutes, twice. Cause: the running exe was the 19:50 release build, which does not have this fix (its log has none of the fix's messages). Replaying the recording with the fix gives continuous data.
+Also found: HTTPS downloads (port 443) that happened to contain the game's marker were taken for game traffic (log "capture target detected ... port=443") and probably overloaded the capture. Fixed (agent-tested): ports 443 and 80 are never treated as the game. The user still has to confirm with a build that has the fix.
+<!-- SECTION:NOTES:END -->

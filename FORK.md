@@ -365,6 +365,17 @@ heartbeat (the fallback when the lookup finds nothing, as with a replayed
 source). Packets before the heartbeat on a flow the lookup cannot see are not
 kept; the dispatcher ignores them as well.
 
+A rolling file also ends when the next packet would pass the per-file size cap
+(512 MB, the recorder's own), and a new file starts with that packet, so the
+recording never stops until the 30-minute rotation. The 2 GB prune applies as
+after any start. Manual and automatic recordings still stop at the cap.
+
+Flows on port 80 or 443 (either side) are never game traffic: the rolling
+recorder's heartbeat fallback ignores them, and so do the dispatcher, the Npcap
+magic probe and WinDivert's candidate set. A CDN download on 443 carries the
+`0E 00 36` bytes by chance (seen at 34, 19 and 4 packets in three 443 flows of
+one evening) and was taken for the game, filling a 512 MB file in 20 minutes.
+
 ### On Early Access day
 
 1. Start the meter and play. The first two minutes are recorded automatically.
@@ -882,7 +893,11 @@ builds the report; the report window is TASK-15.3 and 15.4.
   recordings before and after gives identical targets, boss focus and damage.
 - **Hits taken**: a `04 38` record with an amount whose skill is not a player's,
   and a `05 38` damage tick (mode `0x0A`) of such a skill, on a target that is
-  not a monster, from a source that is not a known player or a summon.
+  not a monster, from a source that is not a known player or a player's summon.
+  A boss's adds are summons owned by the boss (or by a monster not yet seen
+  spawning), so their hits count at the full amount, one-shots and the last hit
+  of a death included; the owner chain is followed four steps and a hit is
+  skipped only when it ends at a player (a pet's hit on someone in PvP).
 - **Heals**, kept per skill and kind (`HealKind`): *Direct*, a hit of a skill in
   `healing_skill_code.json` with an amount on a non-monster target (heals of
   others and of oneself; seen from a Cleric's Radiant Benediction, Healing
