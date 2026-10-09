@@ -59,7 +59,9 @@ pub async fn from_fixtures(
     capture_todos::from_fixtures(model, dir, cx).await?;
     capture_settings::from_fixtures(meter, model, dir, cx).await?;
     capture_reminders::from_fixtures(meter, model, dir, cx).await?;
-    capture_toolbar::from_fixtures(dir, cx).await
+    capture_toolbar::from_fixtures(dir, cx).await?;
+    crate::capture_whats_new::from_fixtures(model, dir, cx).await?;
+    crate::capture_updates::from_fixtures(dir, cx).await
 }
 
 /// After a replay: the detail window on the recording's local player, on both

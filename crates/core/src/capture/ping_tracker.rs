@@ -76,7 +76,6 @@ impl PingTracker {
 
     pub fn reset(&self) {
         let mut inner = self.inner.lock().unwrap();
-        // inner.last_ping_ms = None;
         inner.history.clear();
     }
 }

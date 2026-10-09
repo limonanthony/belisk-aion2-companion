@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
+use meter_core::engine::meter::{CaptureBackend, CaptureStartError};
 use meter_core::events::MeterEvent;
 use meter_core::models::diagnostics::MemorySnapshot;
 use gpui::{App, AsyncApp, Context, Entity, WindowHandle};
@@ -119,7 +120,7 @@ struct Fixture {
     menu: bool,
     copied: bool,
     correct: Option<BossChoice>,
-    unavailable: Option<&'static str>,
+    unavailable: Option<CaptureStartError>,
     /// The pointer on the summary card's report button.
     report_hover: bool,
 }
@@ -206,9 +207,11 @@ async fn capture_fixtures(
             ..fixture("settings-scaled-damage", Scene::Boss)
         },
         Fixture {
-            unavailable: Some(
-                "No capture backend available; Npcap: Npcap is not installed; WinDivert: Access is denied (os error 5)",
-            ),
+            unavailable: Some(CaptureStartError::NoBackend {
+                tried_first: CaptureBackend::Npcap,
+                npcap: "Npcap is not installed".to_string(),
+                windivert: "Access is denied (os error 5)".to_string(),
+            }),
             ..fixture("unavailable", Scene::Waiting)
         },
         Fixture { settings: capsule.clone(), ..fixture("capsule-unidentified", Scene::Unidentified) },
@@ -540,8 +543,8 @@ fn show_fixture(
             let now = Instant::now();
             let quiet = now - Duration::from_secs(125);
             model.apply(MeterEvent::DpsMemory(sample_memory()), now);
-            if let Some(reason) = fixture.unavailable {
-                model.set_unavailable(reason.to_string());
+            if let Some(reason) = &fixture.unavailable {
+                model.set_unavailable(reason.clone());
             }
             let snapshots = match fixture.scene {
                 Scene::Waiting => vec![],

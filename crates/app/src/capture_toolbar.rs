@@ -35,7 +35,7 @@ const TICK: Duration = Duration::from_millis(150);
 /// How far above the bottom of its work area the toolbar goes to be low.
 const LOW: i32 = 40;
 
-fn toolbar_window(cx: &mut AsyncApp) -> Result<(WindowHandle<ToolbarView>, HWND)> {
+pub(crate) fn toolbar_window(cx: &mut AsyncApp) -> Result<(WindowHandle<ToolbarView>, HWND)> {
     let window = cx.update(|cx| toolbar::toolbar_window(cx)).ok_or("the toolbar is not open")?;
     let hwnd = window
         .update(cx, |_, window, _| overlay::hwnd(window))
@@ -43,12 +43,12 @@ fn toolbar_window(cx: &mut AsyncApp) -> Result<(WindowHandle<ToolbarView>, HWND)
     Ok((window, hwnd))
 }
 
-fn view(cx: &mut AsyncApp, change: impl FnOnce(&mut ToolbarView, &mut gpui::Context<ToolbarView>)) -> Result<()> {
+pub(crate) fn view(cx: &mut AsyncApp, change: impl FnOnce(&mut ToolbarView, &mut gpui::Context<ToolbarView>)) -> Result<()> {
     let (window, _) = toolbar_window(cx)?;
     window.update(cx, |view, _, cx| change(view, cx)).map_err(|error| format!("the toolbar window is gone: {error:#}"))
 }
 
-async fn shot(dir: &Path, name: &str, cx: &mut AsyncApp) -> Result<()> {
+pub(crate) async fn shot(dir: &Path, name: &str, cx: &mut AsyncApp) -> Result<()> {
     pause(cx, SETTLE).await;
     let (_, hwnd) = toolbar_window(cx)?;
     off_screen::ensure_off_screen(hwnd)?;
@@ -71,13 +71,13 @@ pub(crate) async fn click(slot: Slot, cx: &mut AsyncApp) -> Result<()> {
     Ok(())
 }
 
-fn login(tickets: &[(u32, u32, u32)], cx: &mut AsyncApp) {
+pub(crate) fn login(tickets: &[(u32, u32, u32)], cx: &mut AsyncApp) {
     let report = fixtures::ticket_login(&known("Mirelle"), now_ms(), tickets);
     cx.update(|cx| todos::global(cx).update(cx, |todos, cx| todos.apply_tickets(&[report], cx)));
 }
 
 /// Mirelle's tickets with `changes` (ticket, regular pool, extra pool).
-fn tickets(changes: &[(u32, u32, u32)]) -> Vec<(u32, u32, u32)> {
+pub(crate) fn tickets(changes: &[(u32, u32, u32)]) -> Vec<(u32, u32, u32)> {
     fixtures::MIRELLE_TICKETS
         .iter()
         .map(|&(id, count, charge)| changes.iter().find(|change| change.0 == id).copied().unwrap_or((id, count, charge)))

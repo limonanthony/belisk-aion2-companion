@@ -10,7 +10,9 @@ mod tests;
 
 use std::sync::Arc;
 
+use gpui::App;
 use meter_core::history::HistoryRecord;
+use meter_core::report::fight_report::FightReport;
 
 #[cfg(feature = "probes")]
 pub use data::Column;
@@ -29,5 +31,20 @@ pub enum ReportRequest {
     Saved(Arc<HistoryRecord>),
     /// A report already built, such as a wiped attempt's: the boss entity may
     /// have been pulled again since.
-    Held(Arc<meter_core::report::fight_report::FightReport>),
+    Held(Arc<FightReport>),
 }
+
+/// Runs `build` on the background executor and hands its result to `then` on
+/// the UI thread.
+pub fn build_off_thread(
+    build: impl FnOnce() -> Option<FightReport> + Send + 'static,
+    then: impl FnOnce(Option<FightReport>, &mut App) + 'static,
+    cx: &mut App,
+) {
+    cx.spawn(async move |cx| {
+        let report = cx.background_executor().spawn(async move { build() }).await;
+        cx.update(|cx| then(report, cx))
+    })
+    .detach();
+}
+

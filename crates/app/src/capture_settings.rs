@@ -10,10 +10,10 @@ use std::time::Duration;
 
 use meter_core::preflight::{Check, CheckId, Report, Weight};
 use gpui::{AsyncApp, Bounds, Entity, Pixels, WindowHandle};
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::UI::WindowsAndMessaging::{
-    MA_ACTIVATE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WS_EX_APPWINDOW,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    GetWindowRect, MA_ACTIVATE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 
 use crate::capture::{self, shoot_hwnd, MK_LBUTTON};
@@ -477,6 +477,50 @@ async fn about_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
     println!("dialog: Tab goes to {second:?}, then back to {:?}", page.focused(cx));
     page.key(VK_ESCAPE, cx).await;
     println!("dialog: Escape: open {}, focused {:?}", page.dialog_open(cx), page.focused(cx));
+    changelog_page(page, dir, cx).await
+}
+
+/// About's Changelog page: reached with Tab and Enter from About on this
+/// build's own changelog, then drawn on the approved mockup's ten invented
+/// versions as a 1.5.1 build: the newest open, another opened, then all of
+/// them after "Show older", and back to About.
+async fn changelog_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
+    page.tab_to("open-changelog", cx).await?;
+    page.key(VK_RETURN, cx).await;
+    let state = page.changelog(cx);
+    println!("changelog: Enter on Open changelog: page {state:?} (open version, shown, of), focused {:?}", page.focused(cx));
+    if state.is_none() {
+        return Err("Open changelog did not open the Changelog page".to_string());
+    }
+
+    let language = crate::i18n::language();
+    page.view
+        .update(cx, |view, window, cx| {
+            view.show_changelog_of(fixtures::changelog(language), crate::changelog::Version::new(1, 5, 1), window, cx)
+        })
+        .map_err(|error| format!("the Settings window is gone: {error:#}"))?;
+    page.blur(cx).await;
+    shoot_window(WindowKind::Settings, dir, "changelog-01-newest-open", cx).await?;
+
+    page.tab_to("changelog-1.4.0", cx).await?;
+    page.key(VK_RETURN, cx).await;
+    println!("changelog: Enter on 1.4.0: {:?}", page.changelog(cx));
+    page.blur(cx).await;
+    shoot_window(WindowKind::Settings, dir, "changelog-02-other-open", cx).await?;
+
+    page.tab_to("changelog-older", cx).await?;
+    page.key(VK_RETURN, cx).await;
+    println!("changelog: Enter on Show older: {:?}, focused {:?}", page.changelog(cx), page.focused(cx));
+    page.blur(cx).await;
+    page.wheel_down(10, cx).await?;
+    shoot_window(WindowKind::Settings, dir, "changelog-03-show-older", cx).await?;
+
+    page.tab_to("changelog-back", cx).await?;
+    page.key(VK_RETURN, cx).await;
+    println!("changelog: Enter on the back button: page {:?}, focused {:?}", page.changelog(cx), page.focused(cx));
+    if page.changelog(cx).is_some() {
+        return Err("the back button did not return to About".to_string());
+    }
     Ok(())
 }
 
@@ -504,6 +548,18 @@ impl Page {
     /// A press on the page's background, so a shot shows no focus.
     async fn blur(&self, cx: &mut AsyncApp) {
         self.click(BACKGROUND_POINT, cx).await;
+    }
+
+    /// The wheel turned `notches` toward the user over the page, as the mouse
+    /// sends it: at a screen point, the window's own past every monitor.
+    async fn wheel_down(&self, notches: i16, cx: &mut AsyncApp) -> Result<()> {
+        let mut rect = RECT::default();
+        unsafe { GetWindowRect(self.hwnd, &mut rect) }.map_err(|error| format!("GetWindowRect failed: {error}"))?;
+        let delta = (-120 * notches) as u16 as usize;
+        post(self.hwnd, WM_MOUSEWHEEL, delta << 16, pack((rect.left + 600, rect.top + 300)));
+        until_handled(self.hwnd, cx).await;
+        pause(cx, TICK).await;
+        Ok(())
     }
 
     async fn tab_to(&self, key: &str, cx: &mut AsyncApp) -> Result<()> {
@@ -537,6 +593,10 @@ impl Page {
 
     fn dialog_open(&self, cx: &mut AsyncApp) -> bool {
         self.view.update(cx, |view, _, _| view.reset_dialog_is_open()).unwrap_or(false)
+    }
+
+    fn changelog(&self, cx: &mut AsyncApp) -> Option<(Option<crate::changelog::Version>, usize, usize)> {
+        self.view.update(cx, |view, _, _| view.changelog_state()).ok().flatten()
     }
 
     fn bounds_of(&self, key: &str, cx: &mut AsyncApp) -> Result<gpui::Bounds<gpui::Pixels>> {
@@ -600,9 +660,9 @@ fn running_capture() -> CaptureStatus {
 
 fn recordings() -> Vec<RecordingItem> {
     [
-        ("manual-2026-10-03-2142.aetherpc", 2, 2_516_582, RecordingOrigin::Manual),
-        ("rolling-1790000000000.aetherpc", 5, 412_483_912, RecordingOrigin::Rolling),
-        ("auto-2026-10-02-2031.aetherpc", 27, 3_250_585, RecordingOrigin::UnfamiliarServer),
+        ("manual-2026-10-03-2142.belisk", 2, 2_516_582, RecordingOrigin::Manual),
+        ("rolling-1790000000000.belisk", 5, 412_483_912, RecordingOrigin::Rolling),
+        ("auto-2026-10-02-2031.belisk", 27, 3_250_585, RecordingOrigin::UnfamiliarServer),
         ("manual-2026-09-29-2210.aetherpc", 100, 1_887_436, RecordingOrigin::Manual),
     ]
     .into_iter()

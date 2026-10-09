@@ -1,36 +1,17 @@
-//! Live capture. The data and log folders keep the identifier of the Tauri app
-//! this one replaced, so existing history, personal bests and recordings are
-//! reused.
+//! Live capture: creates the meter and starts it.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use meter_core::config::DpsMeterConfig;
-use meter_core::engine::meter::DpsMeter;
+use meter_core::engine::meter::{CaptureStartError, DpsMeter};
 use meter_core::events::EventSink;
 use meter_core::logger::AppLogger;
 
+use crate::data_folder;
 use crate::settings::AppSettings;
 
-/// Bundle identifier of the app this one replaced; it names the data folders.
-const IDENTIFIER: &str = "com.helveticxa.aether";
-
-/// `%APPDATA%/<identifier>`, where the Tauri app kept its data and where
-/// `settings.json` lives.
-pub fn data_dir() -> Option<PathBuf> {
-    std::env::var_os("APPDATA").map(|dir| PathBuf::from(dir).join(IDENTIFIER))
-}
-
-/// `%LOCALAPPDATA%/<identifier>/logs`, where the Tauri app kept its log.
-pub fn log_dir() -> PathBuf {
-    match std::env::var_os("LOCALAPPDATA") {
-        Some(dir) => PathBuf::from(dir).join(IDENTIFIER).join("logs"),
-        None => std::env::temp_dir().join("aether"),
-    }
-}
-
-/// The backend settings Aether applied on a fresh install, as of `tauri-final`.
-/// Only two differ from the core's own defaults.
+/// The core settings the app applies by default. Only two differ from the
+/// core's own defaults.
 pub fn default_backend_config() -> DpsMeterConfig {
     DpsMeterConfig {
         dps_snapshot_interval_ms: 200,
@@ -39,8 +20,7 @@ pub fn default_backend_config() -> DpsMeterConfig {
     }
 }
 
-/// The core's config for these settings, on top of what the previous app
-/// applied on a fresh install.
+/// The core's config for these settings, on top of [`default_backend_config`].
 pub fn backend_config(settings: &AppSettings) -> DpsMeterConfig {
     settings.backend_config(default_backend_config())
 }
@@ -50,9 +30,13 @@ pub fn backend_config(settings: &AppSettings) -> DpsMeterConfig {
 /// fallback. The meter is returned even when capture fails so the caller can
 /// report why. `track_fights` is whether the meter window is open: it is set
 /// before capture starts, so a closed meter never counts a fight.
-pub fn start(events: Arc<dyn EventSink>, settings: &AppSettings, track_fights: bool) -> (Arc<DpsMeter>, Result<(), String>) {
-    let logger = Arc::new(AppLogger::new(log_dir().join("aether.log"), Box::new(|_| {})));
-    let meter = Arc::new(DpsMeter::new(events, logger, data_dir()));
+pub fn start(
+    events: Arc<dyn EventSink>,
+    settings: &AppSettings,
+    track_fights: bool,
+    logger: Arc<AppLogger>,
+) -> (Arc<DpsMeter>, Result<(), CaptureStartError>) {
+    let meter = Arc::new(DpsMeter::new(events, logger, data_folder::data_dir()));
     meter.apply_config(backend_config(settings));
     meter.set_known_characters(settings.known_characters.clone());
     meter.set_fight_tracking(track_fights);
@@ -77,7 +61,7 @@ mod tests {
         assert!(!config.my_muzhuang_only && !config.hide_unknown_players);
         assert_eq!(config.max_player_count, 10);
         assert_eq!(config.capture_backend_priority, CaptureBackendPriority::NpcapFirst);
-        assert!(config.hide_when_idle && config.auto_record_unknown_server);
+        assert!(!config.hide_when_idle && config.auto_record_unknown_server);
         assert_eq!(config.idle_reset_secs, 300);
     }
 

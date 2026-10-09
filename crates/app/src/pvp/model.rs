@@ -11,11 +11,33 @@ use crate::meter::MeterModel;
 /// How often the watch list and the kill stats are read from the meter.
 const POLL_EVERY: Duration = Duration::from_millis(500);
 
+/// What the window reads from the meter; each read takes the capture lock, so
+/// it runs off the UI thread.
+trait PvpSource: Send + Sync {
+    fn watch_info(&self, names: &[String]) -> PvpWatchInfoResponse;
+    fn combat_stats(&self) -> Vec<PvpCombatStatsRow>;
+    fn clear_combat_stats(&self);
+}
+
+impl PvpSource for DpsMeter {
+    fn watch_info(&self, names: &[String]) -> PvpWatchInfoResponse {
+        self.get_pvp_watch_info(names)
+    }
+
+    fn combat_stats(&self) -> Vec<PvpCombatStatsRow> {
+        self.get_pvp_combat_stats()
+    }
+
+    fn clear_combat_stats(&self) {
+        self.clear_pvp_combat_stats();
+    }
+}
+
 /// The PvP window's state. The watch names live here and nowhere else (they
 /// are not saved yet); everything else is read from the meter.
 pub struct PvpModel {
     meter_model: Entity<MeterModel>,
-    meter: Option<Arc<DpsMeter>>,
+    source: Option<Arc<dyn PvpSource>>,
     names: Vec<String>,
     /// The meter's last answer for `names`, which the rows are built from.
     response: PvpWatchInfoResponse,
@@ -26,13 +48,24 @@ pub struct PvpModel {
     received: Vec<DamageRow>,
     main_actor_id: Option<u32>,
     main_actor_name: Option<String>,
+    /// Changes whenever `names` or the tally are changed by the window, so a
+    /// read begun before is recognised as out of date.
+    epoch: u64,
+    /// The read in flight; dropped with the window, which ends it.
+    reading: Option<Task<()>>,
+    /// "Clear" was pressed and the meter has not been told yet.
+    clear_pending: bool,
     _poll: Task<()>,
     _snapshots: Subscription,
 }
 
 impl PvpModel {
     pub fn new(meter_model: Entity<MeterModel>, cx: &mut Context<Self>) -> Self {
-        let meter = meter_model.read(cx).meter().cloned();
+        let source = meter_model.read(cx).meter().map(|meter| meter.clone() as Arc<dyn PvpSource>);
+        Self::with_source(meter_model, source, cx)
+    }
+
+    fn with_source(meter_model: Entity<MeterModel>, source: Option<Arc<dyn PvpSource>>, cx: &mut Context<Self>) -> Self {
         let snapshots = cx.observe(&meter_model, |this, _, cx| this.read_snapshot(cx));
         let poll = cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(POLL_EVERY).await;
@@ -42,7 +75,7 @@ impl PvpModel {
         });
         let mut model = Self {
             meter_model,
-            meter,
+            source,
             names: Vec::new(),
             response: PvpWatchInfoResponse { watch_info: Vec::new(), known_players: Vec::new(), last_dealt_player: None },
             watch: Vec::new(),
@@ -52,6 +85,9 @@ impl PvpModel {
             received: Vec::new(),
             main_actor_id: None,
             main_actor_name: None,
+            epoch: 0,
+            reading: None,
+            clear_pending: false,
             _poll: poll,
             _snapshots: snapshots,
         };
@@ -102,6 +138,7 @@ impl PvpModel {
     pub fn add_name(&mut self, name: &str, cx: &mut Context<Self>) -> bool {
         let added = data::add_name(&mut self.names, name);
         if added {
+            self.epoch += 1;
             self.rebuild_watch(cx);
             self.poll(cx);
         }
@@ -110,6 +147,7 @@ impl PvpModel {
 
     pub fn remove_name(&mut self, name: &str, cx: &mut Context<Self>) {
         if data::remove_name(&mut self.names, name) {
+            self.epoch += 1;
             self.rebuild_watch(cx);
             self.poll(cx);
         }
@@ -123,24 +161,52 @@ impl PvpModel {
         }
     }
 
-    /// Empties the running tally at once, as Aether did.
+    /// Empties the running tally at once.
     pub fn clear_stats(&mut self, cx: &mut Context<Self>) {
-        if let Some(meter) = &self.meter {
-            meter.clear_pvp_combat_stats();
-        }
+        self.epoch += 1;
+        self.clear_pending = true;
         self.stats.clear();
+        self.poll(cx);
         cx.notify();
     }
 
-    /// Reads the watch list and the kill stats from the meter, and redraws
-    /// only when something differs.
+    /// Starts reading the watch list and the kill stats from the meter on the
+    /// background executor, unless the previous read is still running. A
+    /// pending clear of the tally goes first, in the same task, so the read
+    /// cannot see the old tally.
     fn poll(&mut self, cx: &mut Context<Self>) {
-        let Some(meter) = &self.meter else {
+        let Some(source) = self.source.clone() else {
             return;
         };
-        let response = meter.get_pvp_watch_info(&self.names);
-        let stats = meter.get_pvp_combat_stats();
-        self.take(response, stats, cx);
+        if self.reading.is_some() {
+            return;
+        }
+        let names = self.names.clone();
+        let epoch = self.epoch;
+        let clear_first = std::mem::take(&mut self.clear_pending);
+        self.reading = Some(cx.spawn(async move |this, cx| {
+            let (response, stats) = cx
+                .background_executor()
+                .spawn(async move {
+                    if clear_first {
+                        source.clear_combat_stats();
+                    }
+                    (source.watch_info(&names), source.combat_stats())
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| this.finish_read(epoch, response, stats, cx));
+        }));
+    }
+
+    /// An answer to a read that began before the names or the tally changed
+    /// is out of date: it is dropped and the meter is asked again.
+    fn finish_read(&mut self, epoch: u64, response: PvpWatchInfoResponse, stats: Vec<PvpCombatStatsRow>, cx: &mut Context<Self>) {
+        self.reading = None;
+        if epoch == self.epoch {
+            self.take(response, stats, cx);
+        } else {
+            self.poll(cx);
+        }
     }
 
     fn take(&mut self, response: PvpWatchInfoResponse, mut stats: Vec<PvpCombatStatsRow>, cx: &mut Context<Self>) {
@@ -209,4 +275,136 @@ fn stats_differ(new: &[PvpCombatStatsRow], old: &[PvpCombatStatsRow]) -> bool {
             (&a.actor_name, &a.server_id, a.damage, a.kills, a.assists, a.deaths)
                 != (&b.actor_name, &b.server_id, b.damage, b.kills, b.assists, b.deaths)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use gpui::{AppContext as _, TestAppContext};
+    use meter_core::models::combat::PvpWatchInfo;
+
+    use super::*;
+    use crate::meter::OverlaySettings;
+
+    #[derive(Debug, PartialEq)]
+    enum Call {
+        Clear,
+        Read(Vec<String>),
+    }
+
+    #[derive(Default)]
+    struct FakeSource {
+        calls: Mutex<Vec<Call>>,
+    }
+
+    impl FakeSource {
+        fn reads(&self) -> usize {
+            self.calls.lock().unwrap().iter().filter(|call| matches!(call, Call::Read(_))).count()
+        }
+    }
+
+    impl PvpSource for FakeSource {
+        fn watch_info(&self, names: &[String]) -> PvpWatchInfoResponse {
+            self.calls.lock().unwrap().push(Call::Read(names.to_vec()));
+            let watch_info = names
+                .iter()
+                .map(|name| PvpWatchInfo {
+                    query_name: name.clone(),
+                    actor_id: Some(7),
+                    actor_name: Some(name.clone()),
+                    server_id: Some("1001".to_string()),
+                    actor_class: Some("Sorcerer".to_string()),
+                    current_hp: Some(50),
+                    max_hp: Some(100),
+                })
+                .collect();
+            PvpWatchInfoResponse { watch_info, known_players: Vec::new(), last_dealt_player: None }
+        }
+
+        fn combat_stats(&self) -> Vec<PvpCombatStatsRow> {
+            let reads = self.reads() as u64;
+            vec![PvpCombatStatsRow { actor_name: "Kael".to_string(), server_id: "1001".to_string(), damage: reads, kills: 1, assists: 0, deaths: 0 }]
+        }
+
+        fn clear_combat_stats(&self) {
+            self.calls.lock().unwrap().push(Call::Clear);
+        }
+    }
+
+    fn open(cx: &mut TestAppContext) -> (Entity<PvpModel>, Arc<FakeSource>) {
+        let source = Arc::new(FakeSource::default());
+        let meter_model = cx.new(|_| MeterModel::new(OverlaySettings::default(), None));
+        let model = cx.new(|cx| PvpModel::with_source(meter_model, Some(source.clone() as Arc<dyn PvpSource>), cx));
+        (model, source)
+    }
+
+    fn tick(cx: &mut TestAppContext) {
+        cx.executor().advance_clock(POLL_EVERY);
+        cx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn the_meters_answer_reaches_the_model_off_the_ui_thread(cx: &mut TestAppContext) {
+        let (model, source) = open(cx);
+        assert_eq!(source.reads(), 0, "opening the window reads nothing on the UI thread");
+        model.read_with(cx, |model, _| assert!(model.stats().is_empty()));
+
+        cx.run_until_parked();
+
+        assert_eq!(source.reads(), 1);
+        model.read_with(cx, |model, _| {
+            assert_eq!(model.stats().len(), 1);
+            assert_eq!(model.stats()[0].actor_name, "Kael");
+        });
+    }
+
+    #[gpui::test]
+    fn a_tick_is_skipped_while_the_previous_read_is_running(cx: &mut TestAppContext) {
+        let (model, source) = open(cx);
+        model.update(cx, |model, cx| model.poll(cx));
+        model.update(cx, |model, cx| model.poll(cx));
+        cx.run_until_parked();
+        assert_eq!(source.reads(), 1, "three polls while the first read runs make one read");
+
+        tick(cx);
+        assert_eq!(source.reads(), 2, "the next tick reads again once the read is over");
+        model.read_with(cx, |model, _| assert_eq!(model.stats()[0].damage, 2));
+    }
+
+    #[gpui::test]
+    fn closing_the_window_stops_the_polling(cx: &mut TestAppContext) {
+        let (model, source) = open(cx);
+        cx.run_until_parked();
+        tick(cx);
+        assert_eq!(source.reads(), 2);
+
+        drop(model);
+        tick(cx);
+        tick(cx);
+
+        assert_eq!(source.reads(), 2);
+    }
+
+    #[gpui::test]
+    fn a_name_added_while_a_read_runs_is_read_again_at_once(cx: &mut TestAppContext) {
+        let (model, source) = open(cx);
+        model.update(cx, |model, cx| assert!(model.add_name("Vaelith", cx)));
+        cx.run_until_parked();
+
+        assert_eq!(*source.calls.lock().unwrap(), vec![Call::Read(Vec::new()), Call::Read(vec!["Vaelith".to_string()])]);
+        model.read_with(cx, |model, _| assert!(model.watch().iter().any(|row| row.query_name == "Vaelith" && row.in_range())));
+    }
+
+    #[gpui::test]
+    fn clearing_the_tally_reaches_the_meter_before_the_next_read(cx: &mut TestAppContext) {
+        let (model, source) = open(cx);
+        cx.run_until_parked();
+
+        model.update(cx, |model, cx| model.clear_stats(cx));
+        model.read_with(cx, |model, _| assert!(model.stats().is_empty(), "the rows go at once"));
+        cx.run_until_parked();
+
+        assert_eq!(*source.calls.lock().unwrap(), vec![Call::Read(Vec::new()), Call::Clear, Call::Read(Vec::new())]);
+    }
 }

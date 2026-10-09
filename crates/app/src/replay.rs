@@ -13,9 +13,8 @@ pub fn start(
     recording: &Path,
     speed: f64,
     track_fights: bool,
+    logger: Arc<AppLogger>,
 ) -> Result<Arc<DpsMeter>, String> {
-    let log_path = std::env::temp_dir().join("aether").join("gpui-app.log");
-    let logger = Arc::new(AppLogger::new(log_path, Box::new(|_| {})));
     let meter = Arc::new(DpsMeter::new(events, logger, None));
 
     let mut config = meter.current_config();
@@ -26,7 +25,7 @@ pub fn start(
     meter.apply_config(config);
     meter.set_fight_tracking(track_fights);
 
-    meter.start_for_replay()?;
+    meter.start_for_replay();
     meter.replay_packet_recording_paced(recording.to_string_lossy().into_owned(), speed)?;
     Ok(meter)
 }

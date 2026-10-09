@@ -80,7 +80,7 @@ mod tests {
     fn logger(name: &str) -> (Arc<AppLogger>, Arc<Mutex<Vec<String>>>) {
         let lines = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&lines);
-        let path = std::env::temp_dir().join(format!("aether-decisions-{}-{name}.log", std::process::id()));
+        let path = std::env::temp_dir().join(format!("belisk-decisions-{}-{name}.log", std::process::id()));
         let logger = Arc::new(AppLogger::new(
             path,
             Box::new(move |event| sink.lock().unwrap().push(event.message)),

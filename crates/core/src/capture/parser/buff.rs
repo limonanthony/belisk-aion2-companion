@@ -7,7 +7,6 @@ use crate::capture::processor::StreamProcessor;
 
 impl StreamProcessor {
     pub(crate) fn parse_buff_packet(&mut self, packet: &[u8], _is_compressed_bundle: bool) -> bool {
-        // self.log_packet_source(packet, is_compressed_bundle);
         if packet.len() < 2 || !matches!(packet[0], 0x2A | 0x2B) || packet[1] != 0x38 {
             return false;
         }
@@ -61,18 +60,6 @@ impl StreamProcessor {
         }
 
         if duration == u32::MAX as u64 {
-            // self.logger.debug(format!(
-            //     "[{}] buff skipped permanent target={} actor={} skill={} duration={} server_time={} opcode={:02X}38 packet_len={} packet_hex={}",
-            //     self.port,
-            //     target_info.value,
-            //     actor_info.value,
-            //     skill_code,
-            //     duration,
-            //     server_time,
-            //     opcode,
-            //     packet.len(),
-            //     bytes_to_hex(packet)
-            // ));
             return true;
         }
 

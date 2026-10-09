@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::ffi::{c_char, c_int, c_uint, CStr, CString};
 use std::ptr;
 use std::sync::{
@@ -393,6 +391,7 @@ impl PcapCapturer {
                             channel.clone(),
                             Arc::clone(&running),
                             Arc::clone(&capture_threads),
+                            Arc::clone(&logger),
                         );
                     }
                 }
@@ -442,11 +441,7 @@ impl Drop for PcapCapturer {
     }
 }
 
-pub fn check_npcap_available() -> Result<(), String> {
-    NpcapLib::load().map(|_| ())
-}
-
-/// A stricter check than [`check_npcap_available`], for the startup gate.
+/// A stricter check than loading `wpcap.dll`, for the startup gate.
 ///
 /// Loading `wpcap.dll` only proves a file is on the search path. It keeps
 /// succeeding after the Npcap service is stopped or its driver is uninstalled
@@ -592,12 +587,13 @@ fn start_capture_thread(
     channel: Channel<CapturedPacket>,
     running: Arc<AtomicBool>,
     capture_threads: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    logger: Arc<AppLogger>,
 ) {
     let handle = thread::spawn(move || {
         let capture_handle = match npcap.open_live_handle(&device_name, 100) {
             Ok(handle) => handle,
             Err(error) => {
-                eprintln!("Failed to open capture on {device_name}: {error}");
+                logger.error(format!("Failed to open capture on {device_name}: {error}"));
                 return;
             }
         };

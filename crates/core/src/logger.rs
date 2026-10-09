@@ -60,7 +60,10 @@ impl AppLogger {
         self.write_line("INFO", message.as_ref());
     }
 
-    #[allow(dead_code)]
+    pub fn warn(&self, message: impl AsRef<str>) {
+        self.write_line("WARN", message.as_ref());
+    }
+
     pub fn error(&self, message: impl AsRef<str>) {
         self.write_line("ERROR", message.as_ref());
     }

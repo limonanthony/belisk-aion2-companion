@@ -3,16 +3,17 @@ use std::sync::Arc;
 
 use gpui::{point, AppContext as _, Entity, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, Point, TestAppContext, VisualTestContext};
 use meter_core::history::HistoryRecord;
-use meter_core::models::combat::{CombatInfos, PlayerOverviewStat, SkillStats, TargetInfo};
+use meter_core::models::combat::{BuffSummary, CombatInfos, PlayerOverviewStat, SkillStats, TargetInfo};
 use meter_core::report::events::HealKind;
 use meter_core::report::fight_report::{FightOutcome, FightReport};
 use meter_core::report::ledger::{
-    FightLedger, FightWindow, HealSkill, KillerKind, LedgerDeath, LedgerKiller, LedgerLastHit, LedgerPlayer, TakenSkill,
+    BuffUptime, FightLedger, FightWindow, HealSkill, KillerKind, LedgerDeath, LedgerKiller, LedgerLastHit, LedgerPlayer, TakenSkill,
 };
 
 use super::data::{Column, ReportData};
+use super::{build_off_thread, ReportModel, ReportView};
 use super::view::{Pointed, Tab};
-use super::{ReportModel, ReportView};
+use crate::game_data;
 use crate::meter::{MeterModel, OverlaySettings};
 
 const BOSS: u32 = 900;
@@ -137,6 +138,39 @@ fn report(with_ledger: bool) -> Arc<FightReport> {
     Arc::new(FightReport::from_record(&record(with_ledger)).expect("a boss fight"))
 }
 
+#[gpui::test]
+fn a_saved_report_is_built_off_the_ui_thread_and_matches_the_synchronous_build(cx: &mut TestAppContext) {
+    let saved = Arc::new(record(true));
+    let built = Arc::new(std::cell::RefCell::new(None));
+
+    cx.update(|cx| {
+        let saved = saved.clone();
+        let built = built.clone();
+        build_off_thread(move || FightReport::from_record(&saved), move |report, _| *built.borrow_mut() = Some(report), cx);
+    });
+    assert!(built.borrow().is_none(), "nothing is built before the executor runs");
+
+    cx.run_until_parked();
+
+    let expected = FightReport::from_record(&saved).expect("a boss fight");
+    assert_eq!(built.borrow_mut().take().expect("the report arrived"), Some(expected));
+}
+
+#[gpui::test]
+fn a_record_without_a_boss_fight_builds_no_report(cx: &mut TestAppContext) {
+    let mut not_a_boss = record(true);
+    not_a_boss.target_info = None;
+    let built = Arc::new(std::cell::RefCell::new(None));
+
+    cx.update(|cx| {
+        let built = built.clone();
+        build_off_thread(move || FightReport::from_record(&not_a_boss), move |report, _| *built.borrow_mut() = Some(report), cx);
+    });
+    cx.run_until_parked();
+
+    assert_eq!(built.borrow_mut().take(), Some(None));
+}
+
 #[test]
 fn a_wiped_attempts_report_carries_the_health_the_boss_had_left() {
     let mut wiped = record(true);
@@ -149,6 +183,68 @@ fn a_wiped_attempts_report_carries_the_health_the_boss_had_left() {
     let data = ReportData::build(&report, &OverlaySettings::default(), false);
 
     assert_eq!(data.outcome, FightOutcome::Wiped { hp_left: 300, max_hp: 1_000 });
+}
+
+const SPIRITS_DESCENT_SHORT: u32 = 167_300_011;
+const SPIRITS_DESCENT_LONG: u32 = 167_300_012;
+
+fn buffs_on_mirelle(record: &HistoryRecord) -> Vec<(String, String, Option<u64>, Option<f64>)> {
+    let report = FightReport::from_record(record).expect("a boss fight");
+    let data = ReportData::build(&report, &OverlaySettings::default(), false);
+    let detail = data.player(&report, MIRELLE, &OverlaySettings::default()).expect("Mirelle is in the table");
+    detail
+        .buffs_on_player
+        .into_iter()
+        .map(|buff| (buff.name, buff.caster, buff.uptime_secs.map(|secs| (secs * 1000.0) as u64), buff.share))
+        .collect()
+}
+
+#[test]
+fn two_skill_ids_with_one_name_from_one_caster_are_one_buff_line() {
+    let mut fight = record(true);
+    let ledger = fight.ledger.as_mut().expect("a ledger");
+    for (caster_id, skill_code, uptime_ms) in [
+        (SAEBRIN, SPIRITS_DESCENT_SHORT, 41_000),
+        (SAEBRIN, SPIRITS_DESCENT_LONG, 35_000),
+        (DOVREK, SPIRITS_DESCENT_SHORT, 20_000),
+    ] {
+        ledger.buffs.push(BuffUptime { target_id: MIRELLE, caster_id, skill_code, uptime_ms });
+    }
+
+    let name = game_data::skill_name(SPIRITS_DESCENT_SHORT);
+    assert_eq!(name, game_data::skill_name(SPIRITS_DESCENT_LONG), "the two ids show one name");
+    assert_eq!(
+        buffs_on_mirelle(&fight),
+        [
+            (name.clone(), "Saebrin".to_string(), Some(41_000), Some(0.41)),
+            (name, "Dovrek".to_string(), Some(20_000), Some(0.2)),
+        ],
+        "one line per caster, the longest uptime of the merged ids, never their sum"
+    );
+}
+
+#[test]
+fn a_fight_saved_before_the_ledger_shows_merged_buff_lines_too() {
+    let mut fight = record(false);
+    fight.use_buffs_by_target.insert(
+        MIRELLE,
+        [SPIRITS_DESCENT_SHORT, SPIRITS_DESCENT_LONG]
+            .map(|skill_code| BuffSummary {
+                target_id: MIRELLE,
+                actor_id: SAEBRIN,
+                skill_code,
+                coverage: 0.5,
+                active: false,
+                last_start_ms: 0,
+                last_end_ms: 0,
+            })
+            .to_vec(),
+    );
+
+    let buffs = buffs_on_mirelle(&fight);
+
+    assert_eq!(buffs.len(), 1);
+    assert_eq!((buffs[0].2, buffs[0].3), (None, None));
 }
 
 struct Opened<'a> {

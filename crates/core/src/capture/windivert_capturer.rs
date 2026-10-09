@@ -26,16 +26,16 @@ const TCP_MIN_HEADER_LEN: usize = 20;
 const CANDIDATE_STALE_AFTER: Duration = Duration::from_secs(30);
 const CANDIDATE_CLEANUP_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Set when Aether's own open loaded the WinDivert driver.
+/// Set when Belisk's own open loaded the WinDivert driver.
 ///
 /// WinDivert is a kernel driver, and once loaded it stays loaded until reboot
 /// unless its service is stopped. Some anti-cheats treat a loaded WinDivert as
-/// a warning sign, because lag switches are built on it -- even though Aether
-/// only ever opens it read-only. So the driver is unloaded as soon as Aether is
-/// done with it, but only when Aether is the one that loaded it: a VPN or
+/// a warning sign, because lag switches are built on it -- even though Belisk
+/// only ever opens it read-only. So the driver is unloaded as soon as Belisk is
+/// done with it, but only when Belisk is the one that loaded it: a VPN or
 /// another tool relying on WinDivert keeps its driver.
 static LOADED_BY_US: AtomicBool = AtomicBool::new(false);
-/// Handles Aether holds; the driver is only unloaded once none is left, so a
+/// Handles Belisk holds; the driver is only unloaded once none is left, so a
 /// status probe never pulls it out from under a running capture.
 static OPEN_HANDLES: AtomicUsize = AtomicUsize::new(0);
 
@@ -249,7 +249,7 @@ fn load_library() -> std::io::Result<()> {
     Ok(())
 }
 
-/// Sniff and receive-only: WinDivert hands Aether copies of packets and can
+/// Sniff and receive-only: WinDivert hands Belisk copies of packets and can
 /// neither drop, delay, alter, nor inject any. The game's traffic is untouched.
 fn open_handle() -> std::io::Result<HANDLE> {
     load_library()?;
@@ -278,8 +278,8 @@ fn close_handle(handle: HANDLE) {
     }
 }
 
-/// Unload the WinDivert driver if Aether loaded it and holds no handle to it.
-/// Runs when Aether's last handle closes, and on exit.
+/// Unload the WinDivert driver if Belisk loaded it and holds no handle to it.
+/// Runs when Belisk's last handle closes, and on exit.
 pub fn unload_driver() {
     if OPEN_HANDLES.load(Ordering::SeqCst) == 0 && LOADED_BY_US.swap(false, Ordering::SeqCst) {
         service::stop();

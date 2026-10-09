@@ -109,18 +109,6 @@ impl TcpReassembler {
         self.gap_skips
     }
 
-    pub fn next_sequence(&self) -> Option<u32> {
-        self.next_sequence
-    }
-
-    pub fn pending_segments(&self) -> usize {
-        self.pending.len()
-    }
-
-    pub fn held_bytes(&self) -> usize {
-        self.held_bytes
-    }
-
     fn advance_and_drain(&mut self, emitted: &mut Vec<Vec<u8>>) {
         if let Some(last) = emitted.last() {
             let next = self
@@ -316,7 +304,7 @@ mod tests {
         assert_eq!(gap_skip.missing_bytes, 2);
         assert!((gap_skip.waited_secs - 3.0).abs() < 1e-9);
         assert_eq!(reassembler.gap_skips(), 1);
-        assert_eq!(reassembler.pending_segments(), 0);
+        assert!(reassembler.pending.is_empty());
 
         let next = reassembler.feed(109, vec![10], 13.2);
         assert_eq!(next.segments, vec![vec![10]]);
