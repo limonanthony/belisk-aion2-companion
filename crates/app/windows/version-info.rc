@@ -1,0 +1,26 @@
+#define BELISK_STRING_OF(text) #text
+#define BELISK_TEXT(text) BELISK_STRING_OF(text)
+
+1 VERSIONINFO
+FILEVERSION BELISK_VERSION_NUMBERS
+PRODUCTVERSION BELISK_VERSION_NUMBERS
+FILEOS 0x40004L
+FILETYPE 0x1L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "ProductName", "Belisk"
+            VALUE "FileDescription", "Belisk"
+            VALUE "InternalName", "belisk"
+            VALUE "OriginalFilename", "belisk.exe"
+            VALUE "FileVersion", BELISK_TEXT(BELISK_VERSION_TEXT)
+            VALUE "ProductVersion", BELISK_TEXT(BELISK_VERSION_TEXT)
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

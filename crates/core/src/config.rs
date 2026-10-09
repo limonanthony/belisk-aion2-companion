@@ -79,7 +79,7 @@ pub struct DpsMeterConfig {
     #[serde(default)]
     pub region: RegionId,
     /// Keep the DPS overlay hidden until you are in a fight.
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub hide_when_idle: bool,
     /// Seconds without a hit of yours before the fight is saved to history
     /// and the meter starts over. 0 never resets.
@@ -119,7 +119,7 @@ impl Default for DpsMeterConfig {
             max_player_count: 10,
             capture_backend_priority: CaptureBackendPriority::default(),
             region: RegionId::default(),
-            hide_when_idle: true,
+            hide_when_idle: false,
             idle_reset_secs: DEFAULT_IDLE_RESET_SECS,
             auto_record_unknown_server: true,
             collect_mobs: false,
@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn an_older_config_without_the_idle_fields_gets_the_defaults() {
         let config: DpsMeterConfig = serde_json::from_str("{}").expect("parse");
-        assert!(config.hide_when_idle);
+        assert!(!config.hide_when_idle);
         assert_eq!(config.idle_reset_secs, DEFAULT_IDLE_RESET_SECS);
         assert!(config.auto_record_unknown_server);
     }

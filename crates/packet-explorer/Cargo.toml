@@ -2,7 +2,7 @@
 name = "packet-explorer"
 version = "0.0.0"
 license = "GPL-3.0-only"
-description = "Developer-only explorer for .aetherpc recordings; not part of the app and never shipped"
+description = "Developer-only explorer for Belisk recordings; not part of the app and never shipped"
 edition = "2021"
 publish = false
 

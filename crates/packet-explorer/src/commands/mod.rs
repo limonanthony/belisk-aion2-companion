@@ -16,12 +16,12 @@ use crate::capture::{self, Capture, Packet};
 use crate::clock;
 
 const USAGE: &str = "\
-packet-explorer: developer-only explorer for AION 2 .aetherpc recordings (never shipped)
+packet-explorer: developer-only explorer for Belisk recordings (.belisk, and the older .aetherpc) (never shipped)
 
 usage: packet-explorer <command> <recording>... [options]
 
-  A recording is a path, a folder (all its .aetherpc files), or part of a file
-  name in %APPDATA%/com.helveticxa.aether/recordings. Packet ids (#n) count
+  A recording is a path, a folder (all its recordings), or part of a file
+  name in %APPDATA%/Belisk/recordings (or the older com.helveticxa.aether/recordings). Packet ids (#n) count
   across the recordings in the order given, so they are stable for one command line.
 
 commands:

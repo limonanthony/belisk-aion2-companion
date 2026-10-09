@@ -1,10 +1,10 @@
-AION 2 DPS Meter {version}
-=========================
+Belisk {version}
+================
 
-A real-time DPS meter for AION 2 (global servers). A small overlay shows who
-is dealing damage, live, and summarises boss fights. It works by passively
-reading network packets. It does not read or write the game's memory, inject
-anything, or send input to the game.
+Belisk is a combat meter and companion for AION 2 (global servers). A small
+overlay shows who is dealing damage, live, and summarises boss fights. It
+works by passively reading network packets. It does not read or write the
+game's memory, inject anything, or send input to the game.
 
 This is a pre-release. Expect rough edges.
 
@@ -24,24 +24,29 @@ REQUIREMENTS
 STARTING
 --------
 1. Unzip the whole folder somewhere (not inside the zip), for example
-   C:\Tools\aion-2-dps-meter.
+   C:\Tools\belisk.
 2. Keep WinDivert.dll and WinDivert64.sys next to the exe. They are only used
    when Npcap cannot capture; with Npcap installed the meter runs without them.
-3. Double-click aion-2-dps-meter.exe and accept the Administrator prompt.
-4. Start the meter BEFORE you log in to your character, or go back to the
+3. Double-click belisk.exe and accept the Administrator prompt.
+4. Start Belisk BEFORE you log in to your character, or go back to the
    character select screen and log in again. That is how it learns which
    character is yours. Until it knows, it shows a hint.
 
 
 CONTROLS
 --------
-- Drag the overlay by its header to move it.
-- Alt+CapsLock locks or unlocks the overlay. While it is locked, mouse clicks
+- Belisk opens as a small floating toolbar. Its icons open the DPS meter, the
+  PvP meter, the to-dos, the fight history, the event reminders and Settings;
+  beside them are your Odyle Energy and Shugo keys counts. Drag the toolbar by
+  its grip to move it; the last icon quits Belisk.
+- Alt+Shift+CapsLock shows or hides the toolbar and every open tool.
+- Drag the meter by its header to move it.
+- Alt+CapsLock locks or unlocks the meter. While it is locked, mouse clicks
   go through it to the game.
-- Move the pointer over the header to see the buttons: reset, capsule, lock,
-  copy, the "..." menu and close.
-- The "..." menu holds fight history, the PvP meter, Settings and the boss
-  corrections ("Treat as a boss" / "Not a boss").
+- Move the pointer over the meter's header to see the buttons: reset, capsule,
+  lock, copy, the "..." menu and close.
+- The meter's "..." menu holds the boss corrections ("Treat as a boss" / "Not a
+  boss" / automatic).
 - The Session / Target switch in the footer chooses between everything you
   fought since the last reset and the single target (a boss) you are on.
   Normally it switches by itself. A pin marks a manual choice; click the
@@ -50,7 +55,7 @@ CONTROLS
 
 SETTINGS
 --------
-The "..." menu opens Settings: how the overlay looks, what the meter counts,
+The toolbar's gear opens Settings: how the overlay looks, what the meter counts,
 capture and recordings, personal bests, event reminders. Changes apply at
 once and are kept in settings.json (see below). Two switches on the Capture
 page are off by default: "Collect mob data" records the monsters you fight
@@ -65,10 +70,31 @@ Escape closes a list.
 
 WHERE DATA IS STORED
 --------------------
-  %APPDATA%\com.helveticxa.aether                   settings and fight history
-  %LOCALAPPDATA%\com.helveticxa.aether\logs         log files
+  %APPDATA%\Belisk                   settings, to-dos, fight history, recordings
+  %LOCALAPPDATA%\Belisk\logs         log files (belisk.log)
 
 Paste these paths into the Explorer address bar to open them.
+
+Builds from before Belisk kept these in %APPDATA%\com.helveticxa.aether and
+%LOCALAPPDATA%\com.helveticxa.aether\logs. The first time Belisk starts it
+moves them to the folders above by itself, so nothing needs copying. If the
+move fails (a file is open somewhere), Belisk keeps using the old folder for
+that run and tries again at the next start. If both folders already exist it
+uses the new one and leaves the old one untouched; copy anything you still
+want from it by hand. Recordings made by earlier builds (.aetherpc) still
+open; new ones are .belisk files.
+
+
+UPDATES
+-------
+The meter asks GitHub once an hour (and at start) whether a newer release
+exists, and that is the only thing it contacts: nothing about you or your game
+is sent. A new version is downloaded in the background at 1 MB/s at most, and
+not while you fight; Settings > About > Updates can turn that off, and then
+you click Update yourself. The download is checked (SHA-256 and a signature)
+before anything is unpacked, and nothing is installed until you click
+"Restart to update". The files go into an update-staging folder beside the
+exe while they wait.
 
 
 WINDOWS WARNINGS
@@ -87,7 +113,7 @@ service when the meter closes; a restart clears it for certain.
 
 LICENCE AND SOURCE
 ------------------
-AION 2 DPS Meter is free software under the GNU General Public License,
+Belisk is free software under the GNU General Public License,
 version 3 (LICENSE.txt). {source_statement}
 
 It builds on Aether (Helveticxa), NOIA2 (ZDYoung0519) and data from

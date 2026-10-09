@@ -1,6 +1,6 @@
 //! Build steps: lists the skill icons to compile into the binary, and on
-//! Windows embeds the manifest and icon in it and copies the WinDivert driver
-//! files beside it.
+//! Windows embeds the manifest, the icon and the version information in it
+//! and copies the WinDivert driver files beside it.
 //!
 //! Capture needs Administrator, so the shipped binary asks for it; a build with
 //! the `probes` feature asks for nothing, so the development checks run from an
@@ -59,7 +59,11 @@ fn embed_manifest_and_icon() {
         "windows/admin.rc"
     };
     println!("cargo:rerun-if-changed=windows");
-    embed_resource::compile(resource, embed_resource::NONE)
+    let version = |part: &str| std::env::var(format!("CARGO_PKG_VERSION_{part}")).unwrap();
+    let numbers = format!("{},{},{},0", version("MAJOR"), version("MINOR"), version("PATCH"));
+    let text = format!("{}.{}.{}", version("MAJOR"), version("MINOR"), version("PATCH"));
+    let macros = [format!("BELISK_VERSION_NUMBERS={numbers}"), format!("BELISK_VERSION_TEXT={text}")];
+    embed_resource::compile(resource, macros)
         .manifest_required()
         .unwrap();
 }

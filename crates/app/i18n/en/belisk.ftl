@@ -1,13 +1,13 @@
-## AION 2 DPS Meter, English (the fallback language). Every message exists in
-## fr/aion_2_dps_meter.ftl too, with the same arguments; a test checks it.
-## Keys are prefixed by their area: common-, unit-, duration-, weekday-,
-## month-, day-, list-, todos-, resources-, reminder-, settings-, meter-,
-## history-, detail-, report-, pvp-, tray-, toolbar-, prompt-.
+## Belisk, English (the fallback language). Every message exists in
+## fr/belisk.ftl too, with the same arguments; a test checks it.
+## Keys are prefixed by their area: common-, unit-, class-, duration-, weekday-,
+## month-, day-, date-, list-, todos-, resources-, reminder-, settings-, stored-,
+## meter-, history-, detail-, report-, pvp-, tray-, toolbar-, prompt-, whatsnew-.
 
-## Product name, used by every message that says it (the tray, later the
+## Product name, used by every message that says it (the tray, the
 ## window titles): renaming the product is this one line in each language.
 
--app-name = AION 2 DPS Meter
+-app-name = Belisk
 
 ## Common
 
@@ -30,13 +30,31 @@ common-close = Close
 common-dismiss = Dismiss
 common-character = Character
 common-server = Server
+common-skill-numbered = Skill { $code }
+common-unknown-time = --
 
-## Sizes (the value is already formatted)
+## Units (sizes take an already formatted value)
 
 unit-bytes = { $value } B
 unit-kilobytes = { $value } KB
 unit-megabytes = { $value } MB
 unit-gigabytes = { $value } GB
+unit-per-second = /s
+unit-damage-billions = { $value }B
+unit-decimal = { $whole }.{ $tenth }
+unit-percent = { $value }%
+
+## Classes, as the game names them
+
+class-assassin = Assassin
+class-chanter = Chanter
+class-cleric = Cleric
+class-elementalist = Spiritmaster
+class-fighter = Brawler
+class-gladiator = Gladiator
+class-ranger = Ranger
+class-sorcerer = Sorcerer
+class-templar = Templar
 
 ## Durations, dates and lists
 
@@ -66,6 +84,8 @@ month-short-11 = Nov
 month-short-12 = Dec
 
 day-stamp = { $weekday } { $time }
+date-day-month-year = { $day } { $month } { $year }
+date-day-month = { $day } { $month }
 list-and = { $rest } and { $last }
 
 ## To-dos
@@ -232,7 +252,9 @@ reminder-none-on = No event is switched on
 
 settings-end-fight-never = Never
 
-settings-window-title = AION 2 DPS Meter Settings
+settings-window-title = { -app-name } Settings
+settings-app-name = { -app-name }
+settings-minimise = Minimise
 settings-sidebar-title = Settings
 settings-sections = Settings sections
 settings-section-overlay = Overlay
@@ -249,6 +271,7 @@ settings-status-stopped = Stopped
 settings-status-not-running = Not running
 settings-set-aside = The stored settings were set aside
 settings-not-saved = Settings could not be saved
+settings-using-defaults = The default settings are used.
 
 settings-overlay-lead = How the meter overlay looks. Changes show in the overlay at once.
 settings-overlay-look = Look
@@ -282,6 +305,8 @@ settings-overlay-pace-text = After 10 s of a boss fight, ahead or behind your be
 settings-overlay-window = Window
 settings-overlay-open-meter = Open the meter at launch
 settings-overlay-open-meter-text = When { -app-name } starts. Off: only the toolbar opens, and the meter opens from its icon.
+settings-overlay-hide-between-fights = Hide between fights
+settings-overlay-hide-between-fights-text = The meter steps aside when you are not fighting and comes back at your first hit. Its toolbar icon shows it for { $seconds } s.
 settings-overlay-lock = Lock overlay
 settings-overlay-lock-text = Clicks pass through to the game and the controls hide. Alt+CapsLock switches it. The toolbar always takes clicks.
 settings-overlay-lock-unavailable = Alt+CapsLock could not be registered, so nothing could unlock the overlay.
@@ -375,6 +400,7 @@ settings-capture-replay = Replay
 settings-capture-no-recordings = No recordings yet
 settings-capture-no-recordings-line = Start one above, or let an unfamiliar server start one.
 settings-capture-replay-failed = The replay failed: { $error }
+settings-capture-recording-failed = The recording failed: { $error }
 settings-capture-replayed =
     { $count ->
         [one] Replayed { $packets } packet.
@@ -454,6 +480,7 @@ settings-todos-reset-completely = Reset to-dos completely…
 settings-todos-reset-done = To-dos reset
 settings-todos-set-aside = The stored to-dos were set aside
 settings-todos-not-saved = The to-dos could not be saved
+settings-todos-starting-empty = The to-dos start empty.
 settings-todos-reset-title = Reset the to-dos completely?
 settings-todos-reset-confirm = Reset to-dos
 
@@ -462,7 +489,7 @@ settings-language = Language
 settings-language-text = Game data (skill, boss and monster names) stays in English.
 settings-language-system = System ({ $language })
 
-settings-about-description = A real-time DPS meter for AION 2, built for the global servers.
+settings-about-description = Belisk — combat meter and companion for AION 2
 settings-about-source = Source and notice
 settings-about-licence = Licence: GPL-3.0-only
 settings-about-licence-text = Free software: you may share and change it under the GNU General Public License, version 3.
@@ -472,7 +499,7 @@ settings-about-forked-from = Forked from
 settings-about-upstream = Upstream
 settings-about-aether = This meter is a fork of Aether, by Helveticxa. GPL-3.0-only.
 settings-about-noia2 = By zdyoung. Aether, which this meter is forked from, is itself a fork of NOIA2: the capture pipeline, packet parsers, overlay and game-data catalogues come from it. GPL-3.0-only.
-settings-about-kuroukihime = English monster and boss names, the Fighter's skill names, and the server codes. GPL-3.0.
+settings-about-kuroukihime = English monster and boss names, the Brawler's skill names, and the server codes. GPL-3.0.
 settings-about-references = References
 settings-about-built-with = Built with
 settings-about-built-with-text = GPUI (Apache-2.0) · Lucide icons (ISC) · Barlow Semi Condensed (SIL OFL 1.1) · WinDivert, the bundled fallback capture driver
@@ -489,11 +516,82 @@ settings-about-storage-line =
        *[other] { $files } files
     }, { $recordings }
 settings-about-open-folder = Open folder
+settings-open-no-data-folder = The data folder is unknown: %APPDATA% is not set.
+settings-open-not-live = This run keeps no files, so there is no folder to open.
+settings-open-not-created = { $path } could not be created: { $error }
+settings-open-failed = { $target } could not be opened: { $error }
 settings-about-reset = Reset settings
 settings-about-reset-text = Settings go back to their defaults.
 settings-about-reset-button = Reset settings…
 settings-reset-title = Reset settings?
 settings-reset-body = Settings go back to their defaults, including the Capture switches. Fight history, personal bests, recordings and boss corrections are kept.
+settings-about-updates = Updates
+settings-about-changelog = Changelog
+settings-about-changelog-text = What changed in each version.
+settings-about-open-changelog = Open changelog
+settings-changelog-lead = What changed in each version. You have { $version }.
+settings-changelog-show-older = Show older
+settings-changelog-shown = { $shown } of { $total } versions
+settings-changelog-row = { $version }, { $date }: { $summary }
+settings-changelog-all = { $total ->
+        [one] { $total } version
+       *[other] All { $total } versions
+    }
+settings-changelog-unreadable = The changelog could not be read; belisk.log says why.
+settings-open-not-web-page = { $target } is not a web page, so it was not opened.
+settings-updates-note = Asks GitHub for the latest release; nothing about you or your game is sent.
+settings-updates-disabled = Updates are off: this build has no place to get them from, or it is replaying a recording.
+settings-updates-up-to-date = Up to date
+settings-updates-up-to-date-text = { $version } is the latest version. Checked at { $time }; checked again at launch and every hour.
+settings-updates-just-checked-text = { $version } is the latest version. Checked just now; you can check again in a minute.
+settings-updates-checking = Checking for updates…
+settings-updates-checking-text = Asking GitHub for the latest release.
+settings-updates-checking-badge = Checking
+settings-updates-check-now = Check now
+settings-updates-available = Version { $version } is available
+settings-updates-available-text = Released { $date } · { $size }. Its notes are on GitHub until you update; then What's new shows them.
+settings-updates-available-undated-text = { $size }. Its notes are on GitHub until you update; then What's new shows them.
+settings-updates-release-notes = Release notes
+settings-updates-update-to = Update to { $version }
+settings-updates-downloading = Downloading { $version }
+settings-updates-downloading-text = { $done } of { $total } · at most 1 MB/s, paused while you fight
+settings-updates-paused = Download paused
+settings-updates-paused-text = { $done } of { $total } · resumes when the fight ends
+settings-updates-progress = Download progress
+settings-updates-cancel = Cancel
+settings-updates-verifying = Checking the download
+settings-updates-verifying-text = Making sure { $version } is complete and genuine.
+settings-updates-ready = { $version } is ready to install
+settings-updates-ready-text = Downloaded and checked. Restart to install it: the app closes and opens again in { $version }, with your settings, to-dos and history.
+settings-updates-restart = Restart to update
+settings-updates-try-again = Try again
+settings-updates-not-checked = Could not check for updates
+settings-updates-last-checked = Last checked at { $time }.
+settings-updates-unreachable = GitHub could not be reached: no internet, or GitHub is down. Next try at { $time }.
+settings-updates-rate-limited = GitHub allows 60 update checks an hour per internet address, and your network has used them up (other PCs on the same connection count too). Next check at { $time }.
+settings-updates-auto = Download updates automatically
+settings-updates-auto-text = New versions download in the background: speed-capped, and paused while you fight. Installing always waits for your Restart.
+settings-updates-failed-hash = The last download did not pass its check (hash mismatch), so it was deleted. Nothing was installed.
+settings-updates-failed-signature = The last download did not pass its check (signature mismatch), so it was deleted. Nothing was installed.
+settings-updates-failed-no-hash = This release has no hash to check the download against, so nothing was installed.
+settings-updates-failed-no-signature = This release has no signature to check the download against, so nothing was installed.
+settings-updates-failed-download = The download stopped before it was complete, so it was deleted. Nothing was installed.
+settings-updates-failed-unpack = The update could not be unpacked beside the app, so nothing was installed.
+settings-updates-failed-check = GitHub answered, but not with a release this app can read. The next check is within the hour.
+settings-updates-failed-restart = The new version could not be started, so the app kept running. Nothing was changed.
+
+## Stored files (settings.json, todos.json): the path and the system's or the
+## JSON reader's own error come as they are
+
+stored-unreadable = { $file } could not be read: { $error }.
+stored-set-aside = { $file } { $problem }. It was renamed { $aside }.
+stored-not-moved = { $file } { $problem }, and it could not be renamed: { $error }.
+stored-not-json = is not valid JSON ({ $error })
+stored-not-object = is not a JSON object
+stored-newer = was written by a newer version (schema { $version }; this one reads { $supported })
+stored-wrong-shape = cannot be read ({ $error })
+stored-encode-failed = The data could not be encoded: { $error }
+stored-write-failed = { $file } could not be written: { $error }
 
 ## Meter
 
@@ -509,15 +607,23 @@ meter-copy-best-behind = PB { $best }/s { $pace }
 meter-copy-party = Party { $dps }/s · { $damage } damage
 meter-copy-top = Top: { $skills }
 meter-copy-party-list = Party: { $players }
+meter-copy-player = { $name } · { $damage } · { $dps }/s
+meter-copy-you-dps = { $name } { $dps }/s
+meter-copy-sign-off = — { -app-name }
 
 meter-status-standing-by = Standing by
 meter-status-stopped = Stopped
 meter-waiting-title = Waiting for the first hit
 meter-stopped-title = The meter is not running
+meter-capture-no-backend = No capture backend available; { $first }; { $fallback }
+meter-capture-driver-error = { $driver }: { $error }
 meter-lock-hint = Alt+CapsLock locks and unlocks the meter
 meter-unidentified-hint = Start before login, or relog via character select
 meter-copy = Copy
 meter-copied = Copied
+meter-reset = Reset the meter
+meter-capsule = Capsule layout
+meter-lock = Lock the meter
 meter-pace-versus-best = { $pace } vs PB
 meter-capsule-damage = damage
 meter-capsule-party-damage = party damage
@@ -585,6 +691,7 @@ history-no-match = No record matches the filters.
 history-all-targets = All targets
 history-all-players = All players
 history-delete-one = Delete?
+history-delete-record = Delete this record
 history-damage = damage
 history-player-hint = Click a player to open their details from this record
 history-saved-when = Saved when you reset the meter
@@ -696,6 +803,9 @@ pvp-title = PvP
 pvp-watching = Watching
 pvp-watch-empty = No one watched yet. Add a name, or get hit: your last attacker appears here on its own.
 pvp-add-placeholder = Add a player to watch
+pvp-about-capture = How PvP capture works
+pvp-watch-player = Watch { $name }
+pvp-stop-watching = Stop watching { $name }
 pvp-seen-this-session = seen this session
 pvp-not-in-range = Not in range
 pvp-last-attacker = Last attacker
@@ -726,6 +836,7 @@ toolbar-grip = Drag to move
 toolbar-meter = DPS meter
 toolbar-meter-closed-line = Fights are tracked while it is open.
 toolbar-meter-open-line = Click to close. Fights stop being tracked.
+toolbar-meter-aside-line = Hidden between fights. Click to show it for { $seconds } s.
 toolbar-pvp = PvP meter
 toolbar-todos = To-dos
 toolbar-history = Fight history
@@ -763,6 +874,19 @@ toolbar-next-reminders = Next reminders
 toolbar-no-reminders = No event is switched on
 toolbar-pause-reminders = Pause reminders
 toolbar-reminder-settings = Reminder settings
+toolbar-update-available = Update available: { $version }
+toolbar-update-available-line = Click to download it. It installs only when you restart.
+toolbar-update-failed-line = The last download failed its check and was deleted. Click to try again.
+toolbar-update-retry-line = The last download did not work. Click to try again.
+toolbar-update-downloading = Downloading { $version } · { $percent }
+toolbar-update-downloading-line = Speed-capped, paused while you fight. Click for details.
+toolbar-update-paused = Download paused · { $percent }
+toolbar-update-paused-line = Resumes when the fight ends. Click for details.
+toolbar-update-verifying = Checking { $version }…
+toolbar-update-verifying-line = Making sure the download is complete and genuine.
+toolbar-update-ready = Restart to update to { $version }
+toolbar-update-ready-line = Closes and opens again in the new version. Nothing is lost.
+toolbar-update-ready-fight-line = You are fighting: restarting now splits this fight in History.
 
 ## First-open prompt
 
@@ -771,3 +895,10 @@ prompt-body = { -app-name } starts with the toolbar alone. Open the DPS meter ea
 prompt-yes = Yes, at launch
 prompt-no = Not now
 prompt-done = The meter opens at launch from now on.
+
+## What's new, opened once after an update
+
+whatsnew-title = What's new
+whatsnew-updated = Updated to { $version }
+whatsnew-since = Since { $version }, the last version you ran
+whatsnew-full-changelog = Full changelog

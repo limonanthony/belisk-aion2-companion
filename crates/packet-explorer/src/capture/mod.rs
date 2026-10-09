@@ -1,4 +1,4 @@
-//! Turns `.aetherpc` files into server packets the way the meter's dispatcher
+//! Turns recording files (`.belisk` and the older `.aetherpc`) into server packets the way the meter's dispatcher
 //! does: the core's recording reader and TCP reassembler, the TLS filter, and
 //! the heartbeat that identifies the game server. Framing is `framer`.
 

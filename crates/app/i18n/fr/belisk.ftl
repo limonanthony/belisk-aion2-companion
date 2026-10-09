@@ -1,12 +1,12 @@
-## AION 2 DPS Meter, français. Brouillon à relire : aucune de ces phrases
-## n'est définitive. Chaque message existe aussi dans en/aion_2_dps_meter.ftl,
+## Belisk, français. Brouillon à relire : aucune de ces phrases
+## n'est définitive. Chaque message existe aussi dans en/belisk.ftl,
 ## avec les mêmes arguments ; un test le vérifie.
 
 ## Nom du produit, repris par chaque message qui le cite (la zone de
-## notification, plus tard les titres de fenêtre) : renommer le produit, c'est
+## notification, les titres de fenêtre) : renommer le produit, c'est
 ## cette ligne dans chaque langue.
 
--app-name = AION 2 DPS Meter
+-app-name = Belisk
 
 ## Common
 
@@ -29,13 +29,31 @@ common-close = Fermer
 common-dismiss = Fermer
 common-character = Personnage
 common-server = Serveur
+common-skill-numbered = Compétence { $code }
+common-unknown-time = --
 
-## Sizes (the value is already formatted)
+## Units (sizes take an already formatted value)
 
 unit-bytes = { $value } o
 unit-kilobytes = { $value } Ko
 unit-megabytes = { $value } Mo
 unit-gigabytes = { $value } Go
+unit-per-second = /s
+unit-damage-billions = { $value }Md
+unit-decimal = { $whole },{ $tenth }
+unit-percent = { $value } %
+
+## Classes, as the game names them
+
+class-assassin = Assassin
+class-chanter = Aède
+class-cleric = Clerc
+class-elementalist = Spiritualiste
+class-fighter = Bagarreur
+class-gladiator = Gladiateur
+class-ranger = Rôdeur
+class-sorcerer = Sorcier
+class-templar = Templier
 
 ## Durations, dates and lists
 
@@ -65,6 +83,8 @@ month-short-11 = nov.
 month-short-12 = déc.
 
 day-stamp = { $weekday } { $time }
+date-day-month-year = { $day } { $month } { $year }
+date-day-month = { $day } { $month }
 list-and = { $rest } et { $last }
 
 ## To-dos
@@ -246,7 +266,9 @@ reminder-none-on = Aucun événement n'est activé
 
 settings-end-fight-never = Jamais
 
-settings-window-title = Paramètres d'AION 2 DPS Meter
+settings-window-title = Paramètres de { -app-name }
+settings-app-name = { -app-name }
+settings-minimise = Réduire
 settings-sidebar-title = Paramètres
 settings-sections = Sections des paramètres
 settings-section-overlay = Overlay
@@ -263,6 +285,7 @@ settings-status-stopped = Arrêté
 settings-status-not-running = À l'arrêt
 settings-set-aside = Les paramètres enregistrés ont été mis de côté
 settings-not-saved = Les paramètres n'ont pas pu être enregistrés
+settings-using-defaults = Les paramètres par défaut sont utilisés.
 
 settings-overlay-lead = L'apparence de l'overlay du compteur. Les changements s'y affichent aussitôt.
 settings-overlay-look = Apparence
@@ -296,6 +319,8 @@ settings-overlay-pace-text = Après 10 s de combat contre un boss, votre avance 
 settings-overlay-window = Fenêtre
 settings-overlay-open-meter = Ouvrir le compteur au lancement
 settings-overlay-open-meter-text = Au démarrage de { -app-name }. Désactivé : seule la barre d'outils s'ouvre, et le compteur s'ouvre depuis son icône.
+settings-overlay-hide-between-fights = Masquer entre les combats
+settings-overlay-hide-between-fights-text = Le compteur s'efface quand vous ne combattez pas et revient à votre premier coup. Son icône dans la barre d'outils l'affiche { $seconds } s.
 settings-overlay-lock = Verrouiller l'overlay
 settings-overlay-lock-text = Les clics passent au jeu et les commandes se masquent. Alt+Verr. Maj l'active ou le désactive. La barre d'outils prend toujours les clics.
 settings-overlay-lock-unavailable = Alt+Verr. Maj n'a pas pu être enregistré : rien ne pourrait déverrouiller l'overlay.
@@ -389,6 +414,7 @@ settings-capture-replay = Rejouer
 settings-capture-no-recordings = Aucun enregistrement
 settings-capture-no-recordings-line = Démarrez-en un ci-dessus, ou laissez un serveur inconnu en démarrer un.
 settings-capture-replay-failed = La relecture a échoué : { $error }
+settings-capture-recording-failed = L'enregistrement a échoué : { $error }
 settings-capture-replayed =
     { $count ->
         [one] { $packets } paquet rejoué.
@@ -465,6 +491,7 @@ settings-todos-reset-completely = Tout réinitialiser…
 settings-todos-reset-done = Tâches réinitialisées
 settings-todos-set-aside = Les tâches enregistrées ont été mises de côté
 settings-todos-not-saved = Les tâches n'ont pas pu être enregistrées
+settings-todos-starting-empty = Les tâches repartent de zéro.
 settings-todos-reset-title = Réinitialiser toutes les tâches ?
 settings-todos-reset-confirm = Réinitialiser les tâches
 
@@ -473,7 +500,7 @@ settings-language = Langue
 settings-language-text = Les données du jeu (noms des compétences, des boss et des monstres) restent en anglais.
 settings-language-system = Système ({ $language })
 
-settings-about-description = Un compteur de DPS en temps réel pour AION 2, conçu pour les serveurs internationaux.
+settings-about-description = Belisk — compteur de combat et compagnon pour AION 2
 settings-about-source = Source et mentions
 settings-about-licence = Licence : GPL-3.0-only
 settings-about-licence-text = Logiciel libre : vous pouvez le partager et le modifier selon la GNU General Public License, version 3.
@@ -483,7 +510,7 @@ settings-about-forked-from = Dérivé de
 settings-about-upstream = Origine
 settings-about-aether = Ce compteur est un fork d'Aether, par Helveticxa. GPL-3.0-only.
 settings-about-noia2 = Par zdyoung. Aether, dont ce compteur est un fork, est lui-même un fork de NOIA2 : la chaîne de capture, les analyseurs de paquets, l'overlay et les catalogues de données du jeu en viennent. GPL-3.0-only.
-settings-about-kuroukihime = Les noms anglais des monstres et des boss, les noms des compétences du Fighter et les codes des serveurs. GPL-3.0.
+settings-about-kuroukihime = Les noms anglais des monstres et des boss, les noms des compétences du Bagarreur et les codes des serveurs. GPL-3.0.
 settings-about-references = Références
 settings-about-built-with = Réalisé avec
 settings-about-built-with-text = GPUI (Apache-2.0) · icônes Lucide (ISC) · Barlow Semi Condensed (SIL OFL 1.1) · WinDivert, le pilote de capture de secours fourni
@@ -500,11 +527,82 @@ settings-about-storage-line =
        *[other] { $files } fichiers
     }, { $recordings }
 settings-about-open-folder = Ouvrir le dossier
+settings-open-no-data-folder = Le dossier des données est inconnu : %APPDATA% n'est pas défini.
+settings-open-not-live = Cette exécution ne garde aucun fichier : il n'y a pas de dossier à ouvrir.
+settings-open-not-created = { $path } n'a pas pu être créé : { $error }
+settings-open-failed = { $target } n'a pas pu être ouvert : { $error }
 settings-about-reset = Réinitialiser les paramètres
 settings-about-reset-text = Les paramètres reviennent à leurs valeurs par défaut.
 settings-about-reset-button = Réinitialiser les paramètres…
 settings-reset-title = Réinitialiser les paramètres ?
 settings-reset-body = Les paramètres reviennent à leurs valeurs par défaut, y compris les interrupteurs de la page Capture. L'historique des combats, les records perso, les enregistrements et les corrections de boss sont conservés.
+settings-about-updates = Mises à jour
+settings-about-changelog = Journal des modifications
+settings-about-changelog-text = Ce qui a changé à chaque version.
+settings-about-open-changelog = Ouvrir le journal
+settings-changelog-lead = Ce qui a changé à chaque version. Vous avez la { $version }.
+settings-changelog-show-older = Afficher les plus anciennes
+settings-changelog-shown = { $shown } versions sur { $total }
+settings-changelog-row = { $version }, { $date } : { $summary }
+settings-changelog-all = { $total ->
+        [one] { $total } version
+       *[other] Les { $total } versions
+    }
+settings-changelog-unreadable = Le journal des modifications n'a pas pu être lu ; belisk.log dit pourquoi.
+settings-open-not-web-page = { $target } n'est pas une page web ; rien n'a été ouvert.
+settings-updates-note = Demande la dernière version à GitHub ; rien sur vous ni sur votre jeu n'est envoyé.
+settings-updates-disabled = Mises à jour désactivées : cette version n'a pas de source d'où les obtenir, ou elle rejoue un enregistrement.
+settings-updates-up-to-date = À jour
+settings-updates-up-to-date-text = { $version } est la dernière version. Vérifié à { $time } ; vérifié à nouveau au lancement et toutes les heures.
+settings-updates-just-checked-text = { $version } est la dernière version. Vérifié à l'instant ; nouvelle vérification possible dans une minute.
+settings-updates-checking = Recherche de mises à jour…
+settings-updates-checking-text = Demande la dernière version à GitHub.
+settings-updates-checking-badge = Recherche
+settings-updates-check-now = Vérifier maintenant
+settings-updates-available = La version { $version } est disponible
+settings-updates-available-text = Publiée le { $date } · { $size }. Ses notes sont sur GitHub jusqu'à la mise à jour ; ensuite, Nouveautés les affiche.
+settings-updates-available-undated-text = { $size }. Ses notes sont sur GitHub jusqu'à la mise à jour ; ensuite, Nouveautés les affiche.
+settings-updates-release-notes = Notes de version
+settings-updates-update-to = Mettre à jour en { $version }
+settings-updates-downloading = Téléchargement de { $version }
+settings-updates-downloading-text = { $done } sur { $total } · 1 Mo/s au plus, en pause pendant les combats
+settings-updates-paused = Téléchargement en pause
+settings-updates-paused-text = { $done } sur { $total } · reprend à la fin du combat
+settings-updates-progress = Progression du téléchargement
+settings-updates-cancel = Annuler
+settings-updates-verifying = Vérification du téléchargement
+settings-updates-verifying-text = On vérifie que { $version } est complète et authentique.
+settings-updates-ready = { $version } est prête à être installée
+settings-updates-ready-text = Téléchargée et vérifiée. Redémarrez pour l'installer : l'application se ferme et se rouvre en { $version }, avec vos paramètres, tâches et historique.
+settings-updates-restart = Redémarrer pour mettre à jour
+settings-updates-try-again = Réessayer
+settings-updates-not-checked = Impossible de vérifier les mises à jour
+settings-updates-last-checked = Dernière vérification à { $time }.
+settings-updates-unreachable = GitHub est injoignable : pas d'internet, ou GitHub est en panne. Prochain essai à { $time }.
+settings-updates-rate-limited = GitHub autorise 60 vérifications par heure et par adresse internet, et votre réseau les a épuisées (les autres PC sur la même connexion comptent aussi). Prochaine vérification à { $time }.
+settings-updates-auto = Télécharger les mises à jour automatiquement
+settings-updates-auto-text = Les nouvelles versions se téléchargent en arrière-plan : débit limité, et en pause pendant les combats. L'installation attend toujours votre clic sur Redémarrer.
+settings-updates-failed-hash = Le dernier téléchargement n'a pas passé la vérification (empreinte incorrecte) ; il a été supprimé. Rien n'a été installé.
+settings-updates-failed-signature = Le dernier téléchargement n'a pas passé la vérification (signature incorrecte) ; il a été supprimé. Rien n'a été installé.
+settings-updates-failed-no-hash = Cette version n'a pas d'empreinte pour vérifier le téléchargement ; rien n'a été installé.
+settings-updates-failed-no-signature = Cette version n'a pas de signature pour vérifier le téléchargement ; rien n'a été installé.
+settings-updates-failed-download = Le téléchargement s'est arrêté avant la fin ; il a été supprimé. Rien n'a été installé.
+settings-updates-failed-unpack = La mise à jour n'a pas pu être décompressée à côté de l'application ; rien n'a été installé.
+settings-updates-failed-check = GitHub a répondu, mais pas avec une version que l'application sait lire. La prochaine vérification a lieu dans l'heure.
+settings-updates-failed-restart = La nouvelle version n'a pas pu démarrer ; l'application continue de tourner. Rien n'a été modifié.
+
+## Stored files (settings.json, todos.json): the path and the system's or the
+## JSON reader's own error come as they are
+
+stored-unreadable = { $file } n'a pas pu être lu : { $error }.
+stored-set-aside = { $file } { $problem }. Il a été renommé { $aside }.
+stored-not-moved = { $file } { $problem }, et il n'a pas pu être renommé : { $error }.
+stored-not-json = n'est pas un JSON valide ({ $error })
+stored-not-object = n'est pas un objet JSON
+stored-newer = a été écrit par une version plus récente (schéma { $version } ; celle-ci lit { $supported })
+stored-wrong-shape = ne peut pas être lu ({ $error })
+stored-encode-failed = Les données n'ont pas pu être encodées : { $error }
+stored-write-failed = { $file } n'a pas pu être écrit : { $error }
 
 ## Meter
 
@@ -520,15 +618,23 @@ meter-copy-best-behind = Record perso { $best }/s { $pace }
 meter-copy-party = Groupe { $dps }/s · { $damage } de dégâts
 meter-copy-top = Top : { $skills }
 meter-copy-party-list = Groupe : { $players }
+meter-copy-player = { $name } · { $damage } · { $dps }/s
+meter-copy-you-dps = { $name } { $dps }/s
+meter-copy-sign-off = — { -app-name }
 
 meter-status-standing-by = En attente
 meter-status-stopped = Arrêté
 meter-waiting-title = En attente du premier coup
 meter-stopped-title = Le compteur ne tourne pas
+meter-capture-no-backend = Aucun pilote de capture disponible ; { $first } ; { $fallback }
+meter-capture-driver-error = { $driver } : { $error }
 meter-lock-hint = Alt+Verr. Maj verrouille et déverrouille le compteur
 meter-unidentified-hint = Lancez avant la connexion, ou relog via le choix du perso
 meter-copy = Copier
 meter-copied = Copié
+meter-reset = Réinitialiser le compteur
+meter-capsule = Disposition capsule
+meter-lock = Verrouiller le compteur
 meter-pace-versus-best = { $pace } vs record
 meter-capsule-damage = dégâts
 meter-capsule-party-damage = dégâts du groupe
@@ -596,6 +702,7 @@ history-no-match = Aucun enregistrement ne correspond aux filtres.
 history-all-targets = Toutes les cibles
 history-all-players = Tous les joueurs
 history-delete-one = Supprimer ?
+history-delete-record = Supprimer cet enregistrement
 history-damage = dégâts
 history-player-hint = Cliquez sur un joueur pour ouvrir ses détails dans cet enregistrement
 history-saved-when = Enregistré quand vous réinitialisez le compteur
@@ -711,6 +818,9 @@ pvp-title = PvP
 pvp-watching = Surveillés
 pvp-watch-empty = Personne n'est surveillé. Ajoutez un nom, ou faites-vous frapper : votre dernier attaquant apparaît ici de lui-même.
 pvp-add-placeholder = Ajouter un joueur à surveiller
+pvp-about-capture = Fonctionnement de la capture PvP
+pvp-watch-player = Surveiller { $name }
+pvp-stop-watching = Ne plus surveiller { $name }
 pvp-seen-this-session = vu cette session
 pvp-not-in-range = Hors de portée
 pvp-last-attacker = Dernier attaquant
@@ -741,6 +851,7 @@ toolbar-grip = Glisser pour déplacer
 toolbar-meter = Compteur DPS
 toolbar-meter-closed-line = Les combats sont suivis tant qu'il est ouvert.
 toolbar-meter-open-line = Cliquer pour le fermer. Les combats ne sont plus suivis.
+toolbar-meter-aside-line = Masqué entre les combats. Cliquer pour l'afficher { $seconds } s.
 toolbar-pvp = Compteur PvP
 toolbar-todos = Tâches
 toolbar-history = Historique des combats
@@ -781,6 +892,19 @@ toolbar-next-reminders = Prochains rappels
 toolbar-no-reminders = Aucun événement activé
 toolbar-pause-reminders = Mettre les rappels en pause
 toolbar-reminder-settings = Paramètres des rappels
+toolbar-update-available = Mise à jour disponible : { $version }
+toolbar-update-available-line = Cliquer pour la télécharger. Elle s'installe seulement au redémarrage.
+toolbar-update-failed-line = Le dernier téléchargement n'a pas passé la vérification. Cliquer pour réessayer.
+toolbar-update-retry-line = Le dernier téléchargement n'a pas abouti. Cliquer pour réessayer.
+toolbar-update-downloading = Téléchargement de { $version } · { $percent }
+toolbar-update-downloading-line = Débit limité, en pause pendant les combats. Cliquer pour les détails.
+toolbar-update-paused = Téléchargement en pause · { $percent }
+toolbar-update-paused-line = Reprend à la fin du combat. Cliquer pour les détails.
+toolbar-update-verifying = Vérification de { $version }…
+toolbar-update-verifying-line = On vérifie que le fichier est complet et authentique.
+toolbar-update-ready = Redémarrer pour passer à { $version }
+toolbar-update-ready-line = Ferme et rouvre dans la nouvelle version. Rien n'est perdu.
+toolbar-update-ready-fight-line = Combat en cours : redémarrer maintenant le coupe en deux dans l'historique.
 
 ## First-open prompt
 
@@ -789,3 +913,10 @@ prompt-body = { -app-name } démarre avec la barre d'outils seule. Ouvrir le com
 prompt-yes = Oui, au lancement
 prompt-no = Pas maintenant
 prompt-done = Le compteur s'ouvre désormais au lancement.
+
+## What's new, opened once after an update
+
+whatsnew-title = Nouveautés
+whatsnew-updated = Mis à jour en { $version }
+whatsnew-since = Depuis la { $version }, la dernière version que vous avez lancée
+whatsnew-full-changelog = Journal complet

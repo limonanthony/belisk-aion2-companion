@@ -1,9 +1,8 @@
 [package]
 name = "meter-core"
-version = "2.4.0"
+version = "1.0.0"
 license = "GPL-3.0-only"
-description = "Packet capture, parsing and DPS engine behind Aether, with no UI dependency"
-authors = ["Helveticxa"]
+description = "Packet capture, parsing and DPS engine behind Belisk, with no UI dependency"
 edition = "2021"
 
 [lib]

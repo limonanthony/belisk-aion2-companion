@@ -2,11 +2,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use meter_core::capture::recorder::is_recording_path;
+
 use crate::capture::{labels::format_opcode, Direction, FileInfo, Packet};
 use crate::clock::TimeSpec;
 
 const BOOLEAN_FLAGS: &[&str] = &["json", "show-text", "all", "c2s-sizes", "help", "changes-only"];
-const RECORDINGS_SUBPATH: &str = "com.helveticxa.aether/recordings";
+const RECORDINGS_SUBPATHS: [&str; 2] = ["Belisk/recordings", "com.helveticxa.aether/recordings"];
 
 pub struct Args {
     pub command: String,
@@ -75,8 +77,13 @@ impl Args {
     }
 }
 
-fn recordings_dir() -> Option<PathBuf> {
-    std::env::var_os("APPDATA").map(|appdata| PathBuf::from(appdata).join(RECORDINGS_SUBPATH))
+/// The recordings folder under the current name, then the one an install that
+/// has not moved to the Belisk folder yet still uses.
+fn recordings_dirs() -> Vec<PathBuf> {
+    let Some(appdata) = std::env::var_os("APPDATA") else {
+        return Vec::new();
+    };
+    RECORDINGS_SUBPATHS.iter().map(|subpath| PathBuf::from(&appdata).join(subpath)).collect()
 }
 
 fn recordings_in(dir: &std::path::Path) -> Vec<PathBuf> {
@@ -85,13 +92,17 @@ fn recordings_in(dir: &std::path::Path) -> Vec<PathBuf> {
         .flatten()
         .flatten()
         .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|extension| extension == "aetherpc"))
+        .filter(|path| is_recording_path(path))
         .collect();
     files.sort();
     files
 }
 
 fn resolve_input(argument: &str) -> Result<Vec<PathBuf>, String> {
+    resolve_input_in(argument, &recordings_dirs())
+}
+
+fn resolve_input_in(argument: &str, recordings_dirs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
     let path = PathBuf::from(argument);
     if path.is_dir() {
         return Ok(recordings_in(&path));
@@ -99,10 +110,9 @@ fn resolve_input(argument: &str) -> Result<Vec<PathBuf>, String> {
     if path.is_file() {
         return Ok(vec![path]);
     }
-    let matches: Vec<PathBuf> = recordings_dir()
-        .map(|dir| recordings_in(&dir))
-        .unwrap_or_default()
-        .into_iter()
+    let matches: Vec<PathBuf> = recordings_dirs
+        .iter()
+        .flat_map(|dir| recordings_in(dir))
         .filter(|candidate| {
             candidate
                 .file_name()
@@ -254,5 +264,21 @@ mod tests {
         assert_eq!("8D".parse(), Ok(OpSel::FirstByte(0x8d)));
         assert_eq!("C2S".parse(), Ok(OpSel::ClientToServer));
         assert!("123".parse::<OpSel>().is_err());
+    }
+
+    #[test]
+    fn a_name_part_finds_new_and_old_recordings_in_both_folders() {
+        let root = std::env::temp_dir().join(format!("belisk-explorer-args-{}", std::process::id()));
+        let (new, old) = (root.join("new"), root.join("old"));
+        for (dir, name) in [(&new, "rolling-1.belisk"), (&new, "notes.txt"), (&old, "rolling-2.aetherpc")] {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join(name), b"x").unwrap();
+        }
+
+        let found = resolve_input_in("rolling", &[new.clone(), old.clone()]).unwrap();
+
+        assert_eq!(found, [new.join("rolling-1.belisk"), old.join("rolling-2.aetherpc")]);
+        assert!(resolve_input_in("notes", &[new, old]).is_err(), "only recordings are listed");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

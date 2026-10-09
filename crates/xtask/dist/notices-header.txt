@@ -1,7 +1,7 @@
 THIRD-PARTY NOTICES
 ===================
 
-AION 2 DPS Meter is licensed under the GNU General Public License, version 3
+Belisk is licensed under the GNU General Public License, version 3
 (see LICENSE.txt). {source_statement}
 
 It includes or links the components below, under their own licences.

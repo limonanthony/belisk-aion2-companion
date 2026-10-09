@@ -1,7 +1,17 @@
-# AION 2 DPS Meter
+# Belisk
 
-A real-time DPS meter for AION 2, built for the global servers: a small native
-overlay that shows who is dealing damage, live, and summarises boss fights.
+Belisk — combat meter and companion for AION 2, built for the global servers: a
+small native overlay that shows who is dealing damage, live, and summarises boss
+fights, with to-dos, resource counts and event reminders beside it.
+
+Built from **[Aether](https://github.com/Helveticxa/Aether-Aion2-DPS-meter-Global)**
+by Helveticxa, which is itself a fork of **[NOIA2](https://github.com/ZDYoung0519/NOIA2)**
+by [zdyoung](https://github.com/ZDYoung0519). Thank you both. This project forked
+Aether at version 2.4.0 (commit `d9f1d98`, 2026-09-24) and has been modified
+since. It has no upstream now; the fork was only the starting point. The Rust
+capture pipeline, the packet parsers and the game-data catalogues come from
+them. Like both, it is
+[GPL-3.0](./LICENSE).
 
 > [!IMPORTANT]
 > **Pre-release.** Nothing here has been confirmed against a long global
@@ -18,7 +28,8 @@ of the game. It is a monitor.
 - A boss kill summary: your DPS and place, top skills, personal best.
 - Finds the game, your character and the server on its own.
 - English names for about 8,000 monsters and bosses. Runs fully offline.
-- Alt+CapsLock shows or hides the overlay.
+- Alt+CapsLock locks the overlay; Alt+Shift+CapsLock shows or hides the toolbar
+  and the open tools.
 
 ## What it never does
 
@@ -50,22 +61,27 @@ third-party tool is its call.
 Build from source with the MSVC Rust toolchain:
 
 ```
-cargo run --release -p aion-2-dps-meter     # from an elevated terminal
-cargo run -p aion-2-dps-meter -- --replay <file.aetherpc>   # replay a recording
+cargo run --release -p belisk     # from an elevated terminal
+cargo run -p belisk -- --replay <recording>   # replay a recording (.belisk, or .aetherpc from earlier builds)
 cargo test --workspace
 ```
 
-Settings (the "..." menu on the meter) has the switches "Collect mob data",
+Settings (from the toolbar) has the switches "Collect mob data",
 which records the mobs fought into `mobs.json`, and "Decision log", which
-writes the meter's decisions to `aether.log`. Both are off by default.
+writes the meter's decisions to `belisk.log`. Both are off by default. Belisk
+keeps its files in `%APPDATA%\Belisk` and `%LOCALAPPDATA%\Belisk\logs`; builds
+before the rename used `com.helveticxa.aether` there, and the first launch moves
+that folder over by itself.
 [AGENTS.md](./AGENTS.md) has the layout and the gotchas;
 [docs/GPUI_MIGRATION.md](./docs/GPUI_MIGRATION.md) the plan and status;
-[FORK.md](./FORK.md) what differs from upstream and why.
+[FORK.md](./FORK.md) is the history of how this project differs from the Aether
+fork it started from.
 
 ## Credits
 
 - Forked from **[Aether](https://github.com/Helveticxa/Aether-Aion2-DPS-meter-Global)**
-  by Helveticxa, itself a fork of **[NOIA2](https://github.com/ZDYoung0519/NOIA2)** by
+  (version 2.4.0, 2026-09-24) by Helveticxa, itself a fork of
+  **[NOIA2](https://github.com/ZDYoung0519/NOIA2)** by
   [zdyoung](https://github.com/ZDYoung0519): the Rust capture pipeline, packet
   parsers and game-data catalogues come from there.
 - English monster and boss names, the Fighter's skill names and the server codes
