@@ -14,7 +14,7 @@
 //! one `CapturedPacket`:
 //!
 //! ```text
-//! header:  magic "AETHERPC" | u16 version | u16 reserved
+//! header:  magic "BELISKRC" | u16 version | u16 reserved
 //! record:  f64 captured_at | [u8;4] src_ip | [u8;4] dst_ip
 //!          u16 src_port    | u16 dst_port  | u32 sequence
 //!          u32 payload_len | payload bytes
@@ -23,18 +23,39 @@
 //! Little-endian throughout. A truncated trailing record is treated as the end
 //! of the file rather than an error, because a recording is most likely to be
 //! cut short by the app exiting mid-write.
+//!
+//! Files written before the rename to Belisk start with the magic "AETHERPC"
+//! and use the extension `.aetherpc`; the layout is the same and they stay
+//! readable permanently. A later layout gets a new version number and its own
+//! decoder rather than changing what version 1 means.
 
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
 use crate::capture::capturer::CapturedPacket;
+use crate::capture::recording_queue::RecordingSink;
 
-const MAGIC: &[u8; 8] = b"AETHERPC";
+const MAGIC: &[u8; 8] = b"BELISKRC";
+const LEGACY_MAGIC: &[u8; 8] = b"AETHERPC";
+
+/// Extension of the recordings written now.
+pub const RECORDING_EXTENSION: &str = "belisk";
+/// Extension of the recordings written before the rename; still read, never written.
+pub const LEGACY_RECORDING_EXTENSION: &str = "aetherpc";
+
+/// Whether `path` names a recording, new or legacy.
+pub fn is_recording_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension == RECORDING_EXTENSION || extension == LEGACY_RECORDING_EXTENSION)
+}
+
 const FORMAT_VERSION: u16 = 1;
 const FILE_HEADER_LEN: usize = 12;
 const RECORD_HEADER_LEN: usize = 28;
@@ -73,10 +94,13 @@ struct ActiveRecording {
     capped: bool,
 }
 
-/// Records packets to disk while enabled. Cheap to call when it is not: one
-/// uncontended mutex and an early return.
+/// Records packets to disk while enabled.
 pub struct PacketRecorder {
     active: Mutex<Option<ActiveRecording>>,
+    /// Whether a packet offered now would be written. Kept apart from
+    /// `active`, which the writer thread holds while it waits on the disk, so
+    /// asking never waits on the disk.
+    accepting: AtomicBool,
     max_bytes: u64,
 }
 
@@ -92,7 +116,7 @@ impl PacketRecorder {
     }
 
     pub fn with_max_bytes(max_bytes: u64) -> Self {
-        Self { active: Mutex::new(None), max_bytes }
+        Self { active: Mutex::new(None), accepting: AtomicBool::new(false), max_bytes }
     }
 
     /// Whether `packet` no longer fits in the file being written, so the
@@ -139,6 +163,7 @@ impl PacketRecorder {
             bytes: FILE_HEADER_LEN as u64,
             capped: false,
         });
+        self.accepting.store(true, Ordering::Release);
 
         Ok(path)
     }
@@ -146,6 +171,7 @@ impl PacketRecorder {
     /// Finish the current recording and return where it landed.
     pub fn stop(&self) -> Result<Option<RecordingStatus>, String> {
         let mut active = self.active.lock().map_err(|_| "recorder lock poisoned")?;
+        self.accepting.store(false, Ordering::Release);
         let Some(mut recording) = active.take() else {
             return Ok(None);
         };
@@ -175,17 +201,30 @@ impl PacketRecorder {
         let record_len = encoded_len(packet);
         if recording.bytes + record_len > self.max_bytes {
             recording.capped = true;
+            self.accepting.store(false, Ordering::Release);
             let _ = recording.writer.flush();
             return;
         }
 
         if write_record(&mut recording.writer, packet).is_err() {
             recording.capped = true;
+            self.accepting.store(false, Ordering::Release);
             return;
         }
 
         recording.packets += 1;
         recording.bytes += record_len;
+    }
+
+    /// Pushes what is buffered to the file, so a crash or a quit right after
+    /// loses nothing that was recorded.
+    pub fn flush(&self) {
+        let Ok(mut active) = self.active.lock() else {
+            return;
+        };
+        if let Some(recording) = active.as_mut() {
+            let _ = recording.writer.flush();
+        }
     }
 
     pub fn status(&self) -> RecordingStatus {
@@ -212,6 +251,20 @@ impl PacketRecorder {
                 bytes: 0,
             },
         }
+    }
+}
+
+impl RecordingSink for PacketRecorder {
+    fn wants(&self, _packet: &CapturedPacket) -> bool {
+        self.accepting.load(Ordering::Acquire)
+    }
+
+    fn write(&self, packet: &CapturedPacket) {
+        self.record(packet);
+    }
+
+    fn flush(&self) {
+        PacketRecorder::flush(self);
     }
 }
 
@@ -250,7 +303,7 @@ where
     reader
         .read_exact(&mut header)
         .map_err(|_| "Not a recording: file is too short.".to_string())?;
-    if &header[0..8] != MAGIC {
+    if &header[0..8] != MAGIC && &header[0..8] != LEGACY_MAGIC {
         return Err("Not a recording: wrong magic bytes.".to_string());
     }
     let version = u16::from_le_bytes([header[8], header[9]]);
@@ -401,7 +454,7 @@ pub fn list_recordings(dir: &Path) -> Vec<RecordingFile> {
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let path = entry.path();
-            if path.extension()?.to_str()? != "aetherpc" {
+            if !is_recording_path(&path) {
                 return None;
             }
             let metadata = entry.metadata().ok()?;
@@ -437,7 +490,7 @@ fn unix_millis() -> u128 {
 fn unused_recording_path(dir: &Path, prefix: &str) -> PathBuf {
     let mut stamp = unix_millis();
     loop {
-        let path = dir.join(format!("{prefix}-{stamp}.aetherpc"));
+        let path = dir.join(format!("{prefix}-{stamp}.{RECORDING_EXTENSION}"));
         if !path.exists() {
             return path;
         }
@@ -462,7 +515,7 @@ mod tests {
     }
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("aether-recorder-test-{name}"));
+        let dir = std::env::temp_dir().join(format!("belisk-recorder-test-{name}"));
         let _ = fs::remove_dir_all(&dir);
         dir
     }
@@ -568,6 +621,78 @@ mod tests {
     }
 
     #[test]
+    fn new_recordings_use_the_belisk_extension_and_magic() {
+        let dir = temp_dir("new-format");
+        let recorder = PacketRecorder::new();
+        let path = recorder.start(&dir).expect("start");
+        recorder.record(&packet(1, &[1]));
+        recorder.stop().expect("stop");
+
+        assert_eq!(path.extension().and_then(|extension| extension.to_str()), Some("belisk"));
+        assert_eq!(&fs::read(&path).expect("read")[..8], b"BELISKRC");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A version 1 file as the builds before the rename wrote it: the magic
+    /// "AETHERPC", then two records. If this stops decoding to these values,
+    /// players' old recordings no longer open.
+    const LEGACY_V1_FILE: &[u8] = &[
+        b'A', b'E', b'T', b'H', b'E', b'R', b'P', b'C', 1, 0, 0, 0, // header
+        0, 0, 0, 0, 0, 0, 0xF8, 0x3F, // captured_at 1.5
+        10, 0, 0, 1, 192, 168, 1, 2, // src, dst
+        0x10, 0x34, 0x38, 0xC7, // ports 13328 -> 51000
+        7, 0, 0, 0, 3, 0, 0, 0, // sequence 7, 3 payload bytes
+        0x0E, 0x00, 0x36, // payload
+        0, 0, 0, 0, 0, 0, 0, 0x40, // captured_at 2.0
+        192, 168, 1, 2, 10, 0, 0, 1, // src, dst
+        0x38, 0xC7, 0x10, 0x34, // ports 51000 -> 13328
+        9, 0, 0, 0, 0, 0, 0, 0, // sequence 9, empty payload
+    ];
+
+    #[test]
+    fn a_legacy_aetherpc_version_1_file_still_decodes_to_its_known_packets() {
+        let dir = temp_dir("legacy-fixture");
+        fs::create_dir_all(&dir).expect("mkdir");
+        let path = dir.join("rolling-1.aetherpc");
+        fs::write(&path, LEGACY_V1_FILE).expect("write");
+
+        let mut packets = Vec::new();
+        let count = replay_recording(&path, |packet| {
+            packets.push(packet);
+            true
+        })
+        .expect("replay");
+
+        assert_eq!(count, 2);
+        assert_eq!(packets[0].captured_at, 1.5);
+        assert_eq!((packets[0].src_ip, packets[0].src_port), ([10, 0, 0, 1], 13328));
+        assert_eq!((packets[0].dst_ip, packets[0].dst_port), ([192, 168, 1, 2], 51000));
+        assert_eq!((packets[0].sequence, packets[0].data.as_slice()), (7, &[0x0E, 0x00, 0x36][..]));
+        assert_eq!(packets[1].captured_at, 2.0);
+        assert_eq!((packets[1].src_port, packets[1].dst_port, packets[1].sequence), (51000, 13328, 9));
+        assert!(packets[1].data.is_empty());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_recordings_list_holds_both_extensions_and_nothing_else() {
+        let dir = temp_dir("list-both");
+        fs::create_dir_all(&dir).expect("mkdir");
+        for name in ["a.belisk", "b.aetherpc", "c.txt", "d.belisk.bak"] {
+            fs::write(dir.join(name), b"x").expect("write");
+        }
+
+        let mut names: Vec<String> = list_recordings(&dir).into_iter().map(|file| file.name).collect();
+        names.sort();
+
+        assert_eq!(names, ["a.belisk", "b.aetherpc"]);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn refuses_to_start_twice() {
         let dir = temp_dir("double");
         let recorder = PacketRecorder::new();
@@ -597,7 +722,7 @@ mod prune_tests {
 
     #[test]
     fn keeps_the_newest_automatic_recordings_and_nothing_else_is_touched() {
-        let dir = std::env::temp_dir().join("aether-recorder-test-prune");
+        let dir = std::env::temp_dir().join("belisk-recorder-test-prune");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("dir");
 
@@ -622,7 +747,7 @@ mod prune_tests {
 
     #[test]
     fn size_pruning_keeps_the_newest_files_that_fit_and_touches_no_other_prefix() {
-        let dir = std::env::temp_dir().join("aether-recorder-test-prune-size");
+        let dir = std::env::temp_dir().join("belisk-recorder-test-prune-size");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("dir");
         for (name, age) in [
@@ -651,6 +776,38 @@ mod prune_tests {
             left,
             vec!["auto-1.aetherpc", "rolling-3.aetherpc", "rolling-4.aetherpc", "session-1.aetherpc"]
         );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pruning_counts_old_aetherpc_and_new_belisk_files_together() {
+        let dir = std::env::temp_dir().join("belisk-recorder-test-prune-mixed");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("dir");
+        for (name, age) in [
+            ("rolling-1.aetherpc", 40),
+            ("rolling-2.aetherpc", 30),
+            ("rolling-3.belisk", 20),
+            ("rolling-4.belisk", 10),
+            ("session-1.aetherpc", 50),
+            ("notes.txt", 60),
+        ] {
+            fs::write(dir.join(name), vec![0u8; 100]).expect("size");
+            let when = SystemTime::now() - Duration::from_secs(age);
+            fs::File::options()
+                .write(true)
+                .open(dir.join(name))
+                .and_then(|file| file.set_modified(when))
+                .expect("set modified");
+        }
+
+        let removed = prune_recordings_to_size(&dir, "rolling-", 250);
+
+        assert_eq!(removed, 2);
+        let mut left: Vec<String> = fs::read_dir(&dir).unwrap().map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        left.sort();
+        assert_eq!(left, ["notes.txt", "rolling-3.belisk", "rolling-4.belisk", "session-1.aetherpc"]);
 
         let _ = fs::remove_dir_all(&dir);
     }

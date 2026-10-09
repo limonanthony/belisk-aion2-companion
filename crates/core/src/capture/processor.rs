@@ -260,10 +260,6 @@ impl StreamProcessor {
             offset += total_packet_bytes;
         }
 
-        // if buffer.len() >= 4 {
-        //     self.scan_for_embedded_048d(buffer);
-        // }
-
         if offset == 0 && !buffer.is_empty() {
             let candidate: StallCandidate = inspect_stall_candidate(buffer);
             let is_known_or_undetermined = candidate
@@ -550,7 +546,7 @@ mod own_actor_tests {
 
     fn processor_over(storage: &Arc<DataStorage>) -> StreamProcessor {
         let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
-        let log = std::env::temp_dir().join("aether-own-actor-tests").join("aether.log");
+        let log = std::env::temp_dir().join("belisk-own-actor-tests").join("belisk.log");
         let logger = Arc::new(AppLogger::new(log, Box::new(|_| {})));
         StreamProcessor::new(Arc::clone(storage), logger, "test".to_string(), config)
     }
@@ -1019,19 +1015,35 @@ mod own_actor_tests {
         assert_eq!(wipes[0].hp_left, 20_000);
     }
 
-    fn dot_tick_of_skill(target: u32, mode: u8, actor: u32, skill_code: u32, damage: u8) -> Vec<u8> {
+    const DOT_EFFECT: u32 = 1_614_000_011;
+
+    fn dot_tick_of(target: u32, mode: u8, actor: u32, effect: u32, skill_code: u32, damage: u8) -> Vec<u8> {
         let mut payload = vec![0x05, 0x38];
         payload.extend(varint(target));
         payload.push(mode);
         payload.extend(varint(actor));
         payload.push(1);
-        payload.extend_from_slice(&skill_code.to_le_bytes());
-        payload.push(damage);
+        payload.extend_from_slice(&effect.to_le_bytes());
+        if mode & 0x01 != 0 {
+            payload.push(1);
+        }
+        if mode & 0x02 != 0 {
+            payload.push(damage);
+        }
+        if mode & 0x08 != 0 {
+            payload.extend_from_slice(&skill_code.to_le_bytes());
+        }
+        if mode & 0x10 != 0 {
+            payload.push(1);
+        }
+        if mode & 0x20 != 0 {
+            payload.extend_from_slice(&[0; 4]);
+        }
         frame(&payload)
     }
 
     fn dot_tick(target: u32, mode: u8, actor: u32, damage: u8) -> Vec<u8> {
-        dot_tick_of_skill(target, mode, actor, RANGER_SKILL, damage)
+        dot_tick_of(target, mode, actor, DOT_EFFECT, RANGER_SKILL, damage)
     }
 
     fn damage_dealt_by(connection: &Connection, actor: u32) -> u64 {
@@ -1060,7 +1072,10 @@ mod own_actor_tests {
     }
 
     const THAMON_ABSORPTION_RECOVERY: u32 = 160_467_011;
-    const PLAYER_DAMAGE_OVER_TIME: u32 = 1_709_014_011;
+    const PLAYER_DOT_SKILL: u32 = 17_090_140;
+    const PLAYER_DOT_EFFECT: u32 = 1_709_014_011;
+    const MONSTER_DOT_SKILL: u32 = 1_217_330;
+    const MONSTER_DOT_EFFECT: u32 = 120_001_211;
 
     #[test]
     fn a_thamon_absorption_recovery_hit_is_no_damage_dealt_and_moves_no_target() {
@@ -1077,13 +1092,22 @@ mod own_actor_tests {
 
     #[test]
     fn a_thamon_absorption_recovery_tick_is_no_damage_dealt_and_moves_no_target() {
-        let mut connection = connection();
-        connection.processor.set_combat_damage_enabled(true);
+        for (effect, skill) in [
+            (DOT_EFFECT, THAMON_ABSORPTION_RECOVERY),
+            (THAMON_ABSORPTION_RECOVERY, PLAYER_DOT_SKILL),
+            (THAMON_ABSORPTION_RECOVERY, MONSTER_DOT_SKILL),
+        ] {
+            let mut connection = connection();
+            connection.processor.set_combat_damage_enabled(true);
+            connection.storage.append_actor(PLAYER, "Victim", None);
+            connection.storage.append_mob(18, 2_300_810);
 
-        feed(&mut connection, &[dot_tick_of_skill(MOB, 0x0A, 18, THAMON_ABSORPTION_RECOVERY, 50)]);
+            feed(&mut connection, &[dot_tick_of(PLAYER, 0x0A, 18, effect, skill, 50)]);
 
-        assert_eq!(damage_dealt_by(&connection, 18), 0);
-        assert_eq!(connection.storage.last_target(), None);
+            assert_eq!(damage_dealt_by(&connection, 18), 0, "effect {effect} skill {skill}");
+            assert_eq!(connection.storage.last_target(), None, "effect {effect} skill {skill}");
+            assert!(connection.storage.combat_events(0.0, f64::MAX).hits.is_empty(), "effect {effect} skill {skill}");
+        }
     }
 
     #[test]
@@ -1091,9 +1115,30 @@ mod own_actor_tests {
         let mut connection = connection();
         connection.processor.set_combat_damage_enabled(true);
 
-        feed(&mut connection, &[dot_tick_of_skill(MOB, 0x0A, 18, PLAYER_DAMAGE_OVER_TIME, 50)]);
+        feed(&mut connection, &[dot_tick_of(MOB, 0x0A, 18, PLAYER_DOT_EFFECT, PLAYER_DOT_SKILL, 50)]);
 
         assert_eq!(damage_dealt_by(&connection, 18), 50);
+        assert!(connection.storage.combat_events(0.0, f64::MAX).hits.is_empty());
+    }
+
+    #[test]
+    fn a_monster_damage_over_time_tick_on_a_player_is_damage_taken_and_no_damage_dealt() {
+        let mut connection = connection();
+        connection.processor.set_combat_damage_enabled(true);
+        connection.storage.append_actor(PLAYER, "Victim", None);
+        connection.storage.append_mob(18, 2_300_810);
+
+        feed(&mut connection, &[dot_tick_of(PLAYER, 0x0A, 18, MONSTER_DOT_EFFECT, MONSTER_DOT_SKILL, 50)]);
+
+        assert_eq!(damage_dealt_by(&connection, 18), 0);
+        assert_eq!(damage_dealt_by(&connection, PLAYER), 0);
+        assert_eq!(connection.storage.last_target(), None);
+        let hits = connection.storage.combat_events(0.0, f64::MAX).hits;
+        assert_eq!(hits.len(), 1);
+        assert_eq!(
+            (hits[0].victim_id, hits[0].source_mob_code, hits[0].skill_code, hits[0].amount),
+            (PLAYER, Some(2_300_810), MONSTER_DOT_SKILL, 50)
+        );
     }
 
     #[test]
@@ -1565,7 +1610,7 @@ mod framing_tests {
         let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
         let storage = Arc::new(DataStorage::new(Arc::new(Discard), Arc::clone(&config), mobs));
         storage.set_fight_tracking(true);
-        let log = std::env::temp_dir().join("aether-framing-tests").join("aether.log");
+        let log = std::env::temp_dir().join("belisk-framing-tests").join("belisk.log");
         let logger = Arc::new(AppLogger::new(log, Box::new(|_| {})));
         StreamAssembler::new(storage, logger, "test".to_string(), config)
     }

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -9,6 +7,7 @@ struct ChannelState<T> {
     queue: VecDeque<T>,
     closed_for_send: bool,
     capacity: Option<usize>,
+    rejected_when_full: u64,
 }
 
 #[derive(Debug)]
@@ -37,6 +36,7 @@ impl<T> Channel<T> {
                     queue: VecDeque::new(),
                     closed_for_send: false,
                     capacity: normalized_capacity,
+                    rejected_when_full: 0,
                 }),
                 not_empty: Condvar::new(),
                 not_full: Condvar::new(),
@@ -52,6 +52,7 @@ impl<T> Channel<T> {
 
         if let Some(capacity) = state.capacity {
             if state.queue.len() >= capacity {
+                state.rejected_when_full += 1;
                 return false;
             }
         }
@@ -61,13 +62,10 @@ impl<T> Channel<T> {
         true
     }
 
-    pub fn try_receive(&self) -> Option<T> {
-        let mut state = self.inner.state.lock().unwrap();
-        let value = state.queue.pop_front();
-        if value.is_some() {
-            self.inner.not_full.notify_one();
-        }
-        value
+    /// Packets `try_send` refused because the queue was full, since the
+    /// channel was created. A closed channel does not count.
+    pub fn rejected_when_full(&self) -> u64 {
+        self.inner.state.lock().unwrap().rejected_when_full
     }
 
     pub fn receive(&self, timeout: Option<Duration>) -> Option<T> {
@@ -134,10 +132,6 @@ impl<T> Channel<T> {
         true
     }
 
-    pub fn is_closed_for_send(&self) -> bool {
-        self.inner.state.lock().unwrap().closed_for_send
-    }
-
     pub fn is_empty(&self) -> bool {
         self.inner.state.lock().unwrap().queue.is_empty()
     }
@@ -184,5 +178,21 @@ mod tests {
         assert!(channel.try_send(2));
         assert_eq!(channel.clear(), 2);
         assert!(channel.is_empty());
+    }
+
+    #[test]
+    fn counts_the_packets_refused_because_the_queue_was_full() {
+        let channel = Channel::new(2);
+        assert!(channel.try_send(1));
+        assert!(channel.try_send(2));
+        assert_eq!(channel.rejected_when_full(), 0);
+
+        assert!(!channel.try_send(3));
+        assert!(!channel.try_send(4));
+        assert_eq!(channel.rejected_when_full(), 2);
+
+        assert_eq!(channel.receive(Some(Duration::ZERO)), Some(1));
+        assert!(channel.try_send(5));
+        assert_eq!(channel.rejected_when_full(), 2);
     }
 }

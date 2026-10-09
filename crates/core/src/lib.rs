@@ -1,3 +1,4 @@
+pub mod background_save;
 pub mod capture;
 pub mod config;
 pub mod engine;

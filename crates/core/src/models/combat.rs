@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillStats {
     pub counts: u32,
@@ -108,7 +108,7 @@ impl Default for SkillStats {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActorInfo {
     pub id: u32,
@@ -120,7 +120,7 @@ pub struct ActorInfo {
     pub actor_skill_spec: HashMap<u32, Vec<u32>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetInfo {
     pub id: u32,
@@ -145,7 +145,7 @@ pub struct CombatInfos {
     pub time_now: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerOverviewStat {
     pub actor_id: u32,
@@ -165,7 +165,7 @@ pub struct PlayerOverviewStat {
     pub damage_contribution: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PvpDamageOverviewStat {
     pub player_id: u32,
@@ -200,4 +200,137 @@ pub struct CombatSnapshot {
     pub main_actor_dealt_player_overview_stats: Vec<PvpDamageOverviewStat>,
     #[serde(default)]
     pub session: SessionSummary,
+}
+
+impl CombatSnapshot {
+    /// Whether `other` shows the overlay the same picture: every field equal,
+    /// except the two that follow the wall clock and change with no new
+    /// event. `combat_infos.time_now` is the moment the frame was built, and
+    /// a buff's `coverage` is measured up to that moment. A change in either
+    /// alone is not worth a frame; the next frame that differs for any other
+    /// reason carries the fresh values. A buff starting, ending or expiring
+    /// still differs (`active`, `last_start_ms`, `last_end_ms`).
+    ///
+    /// Every field is named, so a field added to the snapshot cannot be left
+    /// out of the comparison without the compiler saying so.
+    pub fn shows_the_same_as(&self, other: &Self) -> bool {
+        let Self {
+            total_damage,
+            by_target_player_skill_stats,
+            by_target_player_stats,
+            use_buffs_by_target,
+            combat_infos,
+            last_target_info,
+            last_target_all_players_overview_stats,
+            main_actor_received_player_overview_stats,
+            main_actor_dealt_player_overview_stats,
+            session,
+        } = self;
+        *total_damage == other.total_damage
+            && *by_target_player_stats == other.by_target_player_stats
+            && *by_target_player_skill_stats == other.by_target_player_skill_stats
+            && same_buffs(use_buffs_by_target, &other.use_buffs_by_target)
+            && combat_infos.shows_the_same_as(&other.combat_infos)
+            && *last_target_info == other.last_target_info
+            && *last_target_all_players_overview_stats == other.last_target_all_players_overview_stats
+            && *main_actor_received_player_overview_stats == other.main_actor_received_player_overview_stats
+            && *main_actor_dealt_player_overview_stats == other.main_actor_dealt_player_overview_stats
+            && *session == other.session
+    }
+}
+
+impl CombatInfos {
+    fn shows_the_same_as(&self, other: &Self) -> bool {
+        let Self {
+            actor_infos,
+            target_infos,
+            main_actor_id,
+            main_actor_name,
+            last_target_by_main_actor,
+            last_target,
+            time_now: _,
+        } = self;
+        *actor_infos == other.actor_infos
+            && *target_infos == other.target_infos
+            && *main_actor_id == other.main_actor_id
+            && *main_actor_name == other.main_actor_name
+            && *last_target_by_main_actor == other.last_target_by_main_actor
+            && *last_target == other.last_target
+    }
+}
+
+fn same_buffs(a: &HashMap<u32, Vec<BuffSummary>>, b: &HashMap<u32, Vec<BuffSummary>>) -> bool {
+    a.len() == b.len()
+        && a.iter().all(|(target, buffs)| {
+            b.get(target).is_some_and(|other| {
+                buffs.len() == other.len()
+                    && buffs.iter().zip(other).all(|(buff, other)| {
+                        let BuffSummary { target_id, actor_id, skill_code, coverage: _, active, last_start_ms, last_end_ms } = buff;
+                        *target_id == other.target_id
+                            && *actor_id == other.actor_id
+                            && *skill_code == other.skill_code
+                            && *active == other.active
+                            && *last_start_ms == other.last_start_ms
+                            && *last_end_ms == other.last_end_ms
+                    })
+            })
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame() -> CombatSnapshot {
+        CombatSnapshot {
+            total_damage: 10,
+            by_target_player_skill_stats: HashMap::new(),
+            by_target_player_stats: HashMap::new(),
+            use_buffs_by_target: HashMap::from([(
+                1,
+                vec![BuffSummary { target_id: 1, actor_id: 2, skill_code: 3, coverage: 0.5, active: true, last_start_ms: 100, last_end_ms: 900 }],
+            )]),
+            combat_infos: CombatInfos {
+                actor_infos: HashMap::new(),
+                target_infos: HashMap::new(),
+                main_actor_id: Some(2),
+                main_actor_name: None,
+                last_target_by_main_actor: None,
+                last_target: None,
+                time_now: 1_000.0,
+            },
+            last_target_info: None,
+            last_target_all_players_overview_stats: Vec::new(),
+            main_actor_received_player_overview_stats: Vec::new(),
+            main_actor_dealt_player_overview_stats: Vec::new(),
+            session: SessionSummary::default(),
+        }
+    }
+
+    #[test]
+    fn the_clock_and_buff_coverage_alone_do_not_make_a_frame_new() {
+        let before = frame();
+        let mut later = frame();
+        later.combat_infos.time_now += 30.0;
+        later.use_buffs_by_target.get_mut(&1).unwrap()[0].coverage = 0.4;
+
+        assert!(before.shows_the_same_as(&later));
+    }
+
+    #[test]
+    fn a_buff_that_expired_or_a_name_that_arrived_makes_a_frame_new() {
+        let before = frame();
+
+        let mut expired = frame();
+        expired.use_buffs_by_target.get_mut(&1).unwrap()[0].active = false;
+        assert!(!before.shows_the_same_as(&expired));
+
+        let mut named = frame();
+        named.combat_infos.main_actor_name = Some("Rin".to_string());
+        assert!(!before.shows_the_same_as(&named));
+
+        let mut gained_a_buff = frame();
+        gained_a_buff.use_buffs_by_target.insert(9, Vec::new());
+        assert!(!before.shows_the_same_as(&gained_a_buff));
+    }
 }

@@ -29,9 +29,10 @@ use crate::capture::capturer::CapturedPacket;
 use crate::capture::dispatcher::{is_web_flow, MAGIC};
 use crate::capture::game_connections::{query_game_connections, GameConnection};
 use crate::capture::recorder::{prune_recordings_to_size, PacketRecorder};
+use crate::capture::recording_queue::RecordingSink;
 use crate::logger::AppLogger;
 
-/// Rolling files are named `rolling-<unix ms>.aetherpc`.
+/// Rolling files are named `rolling-<unix ms>.belisk`.
 pub const ROLLING_FILE_PREFIX: &str = "rolling-";
 const ROLLING_NAME_PREFIX: &str = "rolling";
 
@@ -100,9 +101,11 @@ impl GameTrafficFilter {
     }
 }
 
-struct RollingSession {
+/// The files being written. Only the writer thread and `enable`/`disable`
+/// touch this; the dispatcher never does, because rotating and pruning wait
+/// on the disk.
+struct RollingFiles {
     dir: PathBuf,
-    filter: GameTrafficFilter,
     file: PacketRecorder,
     file_opened_at: Option<Instant>,
     rotation_interval: Duration,
@@ -110,11 +113,10 @@ struct RollingSession {
     logger: Arc<AppLogger>,
 }
 
-impl RollingSession {
+impl RollingFiles {
     fn new(dir: PathBuf, logger: Arc<AppLogger>) -> Self {
         Self {
             dir,
-            filter: GameTrafficFilter::default(),
             file: PacketRecorder::new(),
             file_opened_at: None,
             rotation_interval: ROTATION_INTERVAL,
@@ -124,10 +126,6 @@ impl RollingSession {
     }
 
     fn record(&mut self, packet: &CapturedPacket, now: Instant) {
-        if !self.filter.accepts(packet) {
-            return;
-        }
-
         let rotation_due = self
             .file_opened_at
             .is_some_and(|opened_at| now.saturating_duration_since(opened_at) >= self.rotation_interval);
@@ -172,7 +170,11 @@ impl RollingSession {
 }
 
 pub struct RollingRecorder {
-    session: Arc<Mutex<Option<RollingSession>>>,
+    /// Asked on the dispatcher for every packet, written by the refresh
+    /// thread once a second; memory only, never held across the disk.
+    filter: Arc<Mutex<GameTrafficFilter>>,
+    enabled: AtomicBool,
+    files: Mutex<Option<RollingFiles>>,
     stop_refresh: Mutex<Option<Arc<AtomicBool>>>,
     /// Set while a recording is being replayed through the live pipeline, whose
     /// packets are not this PC's traffic.
@@ -183,7 +185,9 @@ pub struct RollingRecorder {
 impl RollingRecorder {
     pub fn new(logger: Arc<AppLogger>, replaying: Arc<AtomicBool>) -> Self {
         Self {
-            session: Arc::new(Mutex::new(None)),
+            filter: Arc::new(Mutex::new(GameTrafficFilter::default())),
+            enabled: AtomicBool::new(false),
+            files: Mutex::new(None),
             stop_refresh: Mutex::new(None),
             replaying,
             logger,
@@ -192,59 +196,71 @@ impl RollingRecorder {
 
     /// Start recording into `dir`. Does nothing while already recording.
     pub fn enable(&self, dir: PathBuf) {
-        if !self.install(RollingSession::new(dir.clone(), Arc::clone(&self.logger))) {
+        if !self.install(RollingFiles::new(dir.clone(), Arc::clone(&self.logger))) {
             return;
         }
 
         let stop = Arc::new(AtomicBool::new(false));
         *self.stop_refresh.lock().unwrap() = Some(Arc::clone(&stop));
-        let session = Arc::clone(&self.session);
+        let filter = Arc::clone(&self.filter);
         let logger = Arc::clone(&self.logger);
         thread::spawn(move || {
             prune_recordings_to_size(&dir, ROLLING_FILE_PREFIX, MAX_ROLLING_BYTES);
-            refresh_game_connections(&session, &stop, &logger);
+            refresh_game_connections(&filter, &stop, &logger);
         });
     }
 
-    /// Close the current file and stop recording.
+    /// Close the current file and stop recording. What is still queued for the
+    /// writer is lost unless it was flushed first.
     pub fn disable(&self) {
         if let Some(stop) = self.stop_refresh.lock().unwrap().take() {
             stop.store(true, Ordering::SeqCst);
         }
-        let Some(mut session) = self.session.lock().unwrap().take() else {
+        self.enabled.store(false, Ordering::Release);
+        let Some(mut files) = self.files.lock().unwrap().take() else {
             return;
         };
-        session.close_file();
+        files.close_file();
     }
 
-    pub fn record(&self, packet: &CapturedPacket) {
-        self.record_at(packet, Instant::now());
-    }
-
-    fn record_at(&self, packet: &CapturedPacket, now: Instant) {
-        if self.replaying.load(Ordering::Relaxed) {
-            return;
-        }
-        let Ok(mut session) = self.session.lock() else {
-            return;
-        };
-        if let Some(session) = session.as_mut() {
-            session.record(packet, now);
+    fn write_at(&self, packet: &CapturedPacket, now: Instant) {
+        if let Some(files) = self.files.lock().unwrap().as_mut() {
+            files.record(packet, now);
         }
     }
 
-    fn install(&self, session: RollingSession) -> bool {
-        let mut current = self.session.lock().unwrap();
+    fn install(&self, files: RollingFiles) -> bool {
+        let mut current = self.files.lock().unwrap();
         if current.is_some() {
             return false;
         }
-        *current = Some(session);
+        *self.filter.lock().unwrap() = GameTrafficFilter::default();
+        *current = Some(files);
+        self.enabled.store(true, Ordering::Release);
         true
     }
 }
 
+impl RecordingSink for RollingRecorder {
+    fn wants(&self, packet: &CapturedPacket) -> bool {
+        self.enabled.load(Ordering::Acquire)
+            && !self.replaying.load(Ordering::Relaxed)
+            && self.filter.lock().unwrap().accepts(packet)
+    }
+
+    fn write(&self, packet: &CapturedPacket) {
+        self.write_at(packet, Instant::now());
+    }
+
+    fn flush(&self) {
+        if let Some(files) = self.files.lock().unwrap().as_ref() {
+            files.file.flush();
+        }
+    }
+}
+
 fn refresh_game_connections(
-    session: &Mutex<Option<RollingSession>>,
+    filter: &Mutex<GameTrafficFilter>,
     stop: &AtomicBool,
     logger: &AppLogger,
 ) {
@@ -253,9 +269,7 @@ fn refresh_game_connections(
         match query_game_connections() {
             Ok(connections) => {
                 last_error = None;
-                if let Some(session) = session.lock().unwrap().as_mut() {
-                    session.filter.set_connections(&connections);
-                }
+                filter.lock().unwrap().set_connections(&connections);
             }
             Err(error) => {
                 if last_error.as_deref() != Some(error.as_str()) {
@@ -287,7 +301,7 @@ mod tests {
     const CLIENT: [u8; 4] = [192, 168, 1, 20];
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("aether-rolling-test-{name}"));
+        let dir = std::env::temp_dir().join(format!("belisk-rolling-test-{name}"));
         let _ = fs::remove_dir_all(&dir);
         dir
     }
@@ -298,19 +312,25 @@ mod tests {
 
     fn recorder(dir: &Path) -> RollingRecorder {
         let recorder = RollingRecorder::new(logger(dir), Arc::new(AtomicBool::new(false)));
-        assert!(recorder.install(RollingSession::new(dir.to_path_buf(), logger(dir))));
+        assert!(recorder.install(RollingFiles::new(dir.to_path_buf(), logger(dir))));
         recorder
     }
 
     fn connect(recorder: &RollingRecorder, connections: &[GameConnection]) {
-        recorder
-            .session
-            .lock()
-            .unwrap()
-            .as_mut()
-            .expect("enabled")
-            .filter
-            .set_connections(connections);
+        recorder.filter.lock().unwrap().set_connections(connections);
+    }
+
+    /// What the dispatcher and the writer thread do between them for one packet.
+    trait RecordAt {
+        fn record_at(&self, packet: &CapturedPacket, now: Instant);
+    }
+
+    impl RecordAt for RollingRecorder {
+        fn record_at(&self, packet: &CapturedPacket, now: Instant) {
+            if self.wants(packet) {
+                self.write_at(packet, now);
+            }
+        }
     }
 
     fn game_connection(local_port: u16, server: [u8; 4], server_port: u16) -> GameConnection {
@@ -448,7 +468,7 @@ mod tests {
         let rolling = recorder(&dir);
         connect(&rolling, &[game_connection(50_000, GAME_SERVER, 13_328)]);
         let two_five_byte_packets = 12 + 2 * (28 + 5);
-        rolling.session.lock().unwrap().as_mut().unwrap().file =
+        rolling.files.lock().unwrap().as_mut().unwrap().file =
             PacketRecorder::with_max_bytes(two_five_byte_packets);
         let now = Instant::now();
         let packet = |data: &[u8]| to_server(GAME_SERVER, 13_328, 50_000, data);
@@ -504,7 +524,7 @@ mod tests {
                 .expect("set modified");
         }
         let rolling = recorder(&dir);
-        rolling.session.lock().unwrap().as_mut().unwrap().max_bytes = 500;
+        rolling.files.lock().unwrap().as_mut().unwrap().max_bytes = 500;
         connect(&rolling, &[game_connection(50_000, GAME_SERVER, 13_328)]);
 
         rolling.record_at(&to_server(GAME_SERVER, 13_328, 50_000, b"now"), Instant::now());
@@ -564,7 +584,7 @@ mod tests {
         rolling.record_at(&packet, now);
         assert!(list_recordings(&dir).is_empty(), "disabled");
 
-        assert!(rolling.install(RollingSession::new(dir.clone(), logger(&dir))));
+        assert!(rolling.install(RollingFiles::new(dir.clone(), logger(&dir))));
         replaying.store(true, Ordering::SeqCst);
         rolling.record_at(&packet, now);
         assert!(list_recordings(&dir).is_empty(), "replaying");
@@ -573,6 +593,24 @@ mod tests {
         rolling.record_at(&packet, now);
         rolling.disable();
         assert_eq!(recorded_payloads(&dir).len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn asking_whether_a_packet_is_wanted_does_not_wait_for_the_files() {
+        let dir = temp_dir("wants-while-writing");
+        let rolling = Arc::new(recorder(&dir));
+        connect(&rolling, &[game_connection(50_000, GAME_SERVER, 13_328)]);
+        let packet = to_server(GAME_SERVER, 13_328, 50_000, b"live");
+
+        let writer_busy = rolling.files.lock().unwrap();
+        let (asked, answer) = std::sync::mpsc::channel();
+        let asking = Arc::clone(&rolling);
+        thread::spawn(move || asked.send(asking.wants(&packet)).unwrap());
+        let wanted = answer.recv_timeout(Duration::from_secs(5));
+        drop(writer_busy);
+
+        assert_eq!(wanted, Ok(true));
         let _ = fs::remove_dir_all(&dir);
     }
 }

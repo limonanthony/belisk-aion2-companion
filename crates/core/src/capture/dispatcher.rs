@@ -9,8 +9,7 @@ use std::time::{Duration, Instant};
 use crate::capture::assembler::StreamAssembler;
 use crate::capture::capturer::CapturedPacket;
 use crate::capture::channel::Channel;
-use crate::capture::recorder::PacketRecorder;
-use crate::capture::rolling_recorder::RollingRecorder;
+use crate::capture::recording_queue::RecordingQueue;
 use crate::capture::ping_tracker::PingTracker;
 use crate::capture::tcp_reassembler::{TcpFlowKey, TcpReassembler};
 use crate::config::SharedDpsMeterConfig;
@@ -64,7 +63,6 @@ struct DispatcherState {
     magic_hits: HashMap<String, VecDeque<Instant>>,
     recent_ports: RecentPortWindow,
     logged_packets: usize,
-    logged_magic_packets: usize,
 }
 
 struct TrackedAssembler {
@@ -75,33 +73,6 @@ struct TrackedAssembler {
 struct TrackedTcpReassembler {
     reassembler: TcpReassembler,
     last_seen_at: Instant,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TcpReassemblyFlowStatus {
-    pub connection: String,
-    pub source: String,
-    pub destination: String,
-    pub next_sequence: Option<u32>,
-    pub pending_segments: usize,
-    pub held_bytes: usize,
-    pub retransmits: u64,
-    pub gap_skips: u64,
-    pub idle_ms: u64,
-    pub is_combat_flow: bool,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TcpReassemblyStatus {
-    pub combat_connection: Option<String>,
-    pub total_flows: usize,
-    pub total_pending_segments: usize,
-    pub total_held_bytes: usize,
-    pub total_retransmits: u64,
-    pub total_gap_skips: u64,
-    pub flows: Vec<TcpReassemblyFlowStatus>,
 }
 
 impl TrackedAssembler {
@@ -132,13 +103,10 @@ impl DispatcherState {
             magic_hits: HashMap::new(),
             recent_ports: RecentPortWindow::new(Duration::from_secs(2)),
             logged_packets: 0,
-            logged_magic_packets: 0,
         }
     }
 
     fn clear(&mut self) {
-        // self.unified.clear();
-        // self.unified1.clear();
         for assembler in self.assemblers.values() {
             assembler.assembler.clear();
         }
@@ -151,7 +119,6 @@ impl DispatcherState {
         self.magic_hits.clear();
         self.recent_ports.entries.clear();
         self.logged_packets = 0;
-        self.logged_magic_packets = 0;
     }
 
     fn tracked_assemblers_mut(
@@ -195,8 +162,7 @@ impl DispatcherState {
 #[derive(Clone)]
 pub struct CaptureDispatcher {
     channel: Channel<CapturedPacket>,
-    recorder: Arc<PacketRecorder>,
-    rolling_recorder: Arc<RollingRecorder>,
+    recordings: Vec<Arc<RecordingQueue>>,
     logger: Arc<AppLogger>,
     ping_tracker: Arc<PingTracker>,
     running: Arc<AtomicBool>,
@@ -208,8 +174,7 @@ pub struct CaptureDispatcher {
 impl CaptureDispatcher {
     pub fn new(
         channel: Channel<CapturedPacket>,
-        recorder: Arc<PacketRecorder>,
-        rolling_recorder: Arc<RollingRecorder>,
+        recordings: Vec<Arc<RecordingQueue>>,
         data_storage: Arc<DataStorage>,
         logger: Arc<AppLogger>,
         ping_tracker: Arc<PingTracker>,
@@ -223,8 +188,7 @@ impl CaptureDispatcher {
 
         Self {
             channel,
-            recorder,
-            rolling_recorder,
+            recordings,
             logger,
             ping_tracker,
             running: Arc::new(AtomicBool::new(false)),
@@ -240,8 +204,7 @@ impl CaptureDispatcher {
         }
 
         let channel = self.channel.clone();
-        let recorder = Arc::clone(&self.recorder);
-        let rolling_recorder = Arc::clone(&self.rolling_recorder);
+        let recordings = self.recordings.clone();
         let logger = Arc::clone(&self.logger);
         let ping_tracker = Arc::clone(&self.ping_tracker);
         let running = Arc::clone(&self.running);
@@ -257,8 +220,11 @@ impl CaptureDispatcher {
 
                 // Tapped here, before reassembly, so a recording holds exactly
                 // what capture produced -- replay then re-runs the real pipeline.
-                recorder.record(&packet);
-                rolling_recorder.record(&packet);
+                // Offering only copies into a bounded queue; the disk is the
+                // recording thread's business.
+                for recording in &recordings {
+                    recording.offer(&packet);
+                }
 
                 if is_web_flow(packet.src_port, packet.dst_port) {
                     continue;
@@ -346,12 +312,6 @@ impl CaptureDispatcher {
                 }
 
                 if looks_like_tls_payload(&packet.data) {
-                    // logger.debug(format!(
-                    //     "dispatcher skip tls-like payload src={} dst={} len={}",
-                    //     packet.src_port,
-                    //     packet.dst_port,
-                    //     packet.data.len()
-                    // ));
                     continue;
                 }
 
@@ -364,16 +324,6 @@ impl CaptureDispatcher {
                     // Carrying the heartbeat identifies this host as the game
                     // server, which is what region detection keys off.
                     crate::region::observe_server_ip(packet.src_ip);
-                }
-
-                if contains_magic && state.logged_magic_packets < 20 {
-                    // logger.debug(format!(
-                    //     "dispatcher magic packet key={} payload_len={} head={}",
-                    //     key,
-                    //     packet.data.len(),
-                    //     format_packet_prefix(&packet.data, 24)
-                    // ));
-                    state.logged_magic_packets += 1;
                 }
 
                 let has_enough_magic_hits = if contains_magic {
@@ -486,16 +436,6 @@ impl CaptureDispatcher {
         let state = self.state.lock().unwrap();
         let mut sizes = HashMap::new();
 
-        // let unified_size = state.unified.buffer_size();
-        // if unified_size > 0 {
-        //     sizes.insert("unified".to_string(), unified_size);
-        // }
-
-        // let unified1_size = state.unified1.buffer_size();
-        // if unified1_size > 0 {
-        //     sizes.insert("unified1".to_string(), unified1_size);
-        // }
-
         for (key, assembler) in &state.assemblers {
             let size = assembler.assembler.buffer_size();
             sizes.insert(key.clone(), size);
@@ -506,52 +446,6 @@ impl CaptureDispatcher {
         }
 
         sizes
-    }
-
-    pub fn tcp_reassembly_status(&self) -> TcpReassemblyStatus {
-        let now = Instant::now();
-        let combat_connection = self.combat_port.read().unwrap().clone();
-        let state = self.state.lock().unwrap();
-        let mut flows: Vec<TcpReassemblyFlowStatus> = state
-            .tcp_reassemblers
-            .iter()
-            .map(|(key, tracked)| {
-                let connection =
-                    directional_connection_key(key.src_ip, key.src_port, key.dst_ip, key.dst_port);
-                TcpReassemblyFlowStatus {
-                    source: format!("{}:{}", format_ipv4(key.src_ip), key.src_port),
-                    destination: format!("{}:{}", format_ipv4(key.dst_ip), key.dst_port),
-                    next_sequence: tracked.reassembler.next_sequence(),
-                    pending_segments: tracked.reassembler.pending_segments(),
-                    held_bytes: tracked.reassembler.held_bytes(),
-                    retransmits: tracked.reassembler.retransmits(),
-                    gap_skips: tracked.reassembler.gap_skips(),
-                    idle_ms: now
-                        .saturating_duration_since(tracked.last_seen_at)
-                        .as_millis()
-                        .min(u128::from(u64::MAX)) as u64,
-                    is_combat_flow: combat_connection.as_deref() == Some(connection.as_str()),
-                    connection,
-                }
-            })
-            .collect();
-        flows.sort_by(|left, right| {
-            right
-                .is_combat_flow
-                .cmp(&left.is_combat_flow)
-                .then_with(|| right.held_bytes.cmp(&left.held_bytes))
-                .then_with(|| left.idle_ms.cmp(&right.idle_ms))
-        });
-
-        TcpReassemblyStatus {
-            combat_connection,
-            total_flows: flows.len(),
-            total_pending_segments: flows.iter().map(|flow| flow.pending_segments).sum(),
-            total_held_bytes: flows.iter().map(|flow| flow.held_bytes).sum(),
-            total_retransmits: flows.iter().map(|flow| flow.retransmits).sum(),
-            total_gap_skips: flows.iter().map(|flow| flow.gap_skips).sum(),
-            flows,
-        }
     }
 }
 
@@ -596,6 +490,7 @@ mod tests {
     use std::sync::RwLock;
 
     use super::*;
+    use crate::capture::recording_queue::test_support::GatedSink;
     use crate::config::DpsMeterConfig;
     use crate::events::{EventSink, MeterEvent};
     use crate::mobs::catalog::MobCatalog;
@@ -611,7 +506,11 @@ mod tests {
     }
 
     fn dispatcher() -> CaptureDispatcher {
-        let dir = std::env::temp_dir().join("aether-dispatcher-test");
+        dispatcher_recording_to(Vec::new())
+    }
+
+    fn dispatcher_recording_to(recordings: Vec<Arc<RecordingQueue>>) -> CaptureDispatcher {
+        let dir = std::env::temp_dir().join("belisk-dispatcher-test");
         let logger = Arc::new(AppLogger::new(dir.join("test.log"), Box::new(|_| {})));
         let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
         let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
@@ -619,8 +518,7 @@ mod tests {
         storage.set_fight_tracking(true);
         CaptureDispatcher::new(
             Channel::new(1_000),
-            Arc::new(PacketRecorder::new()),
-            Arc::new(RollingRecorder::new(Arc::clone(&logger), Arc::new(AtomicBool::new(false)))),
+            recordings,
             storage,
             logger,
             Arc::new(PingTracker::new()),
@@ -689,5 +587,21 @@ mod tests {
 
         assert_eq!(locked, "52.1.2.3:13328->192.168.1.20:50000");
         assert_eq!(flows.len(), 2, "the flow and its nickname assembler: {flows:?}");
+    }
+
+    #[test]
+    fn a_stalled_recording_does_not_hold_back_the_game_flow() {
+        let stalled_disk = GatedSink::blocked();
+        let recording = Arc::new(RecordingQueue::new(stalled_disk.clone(), 2));
+        let dispatcher = dispatcher_recording_to(vec![Arc::clone(&recording)]);
+        let web_packets = (0..30).map(|index| heartbeat_from(CDN, 443, 1_000 + index * 5)).collect();
+
+        let (locked, flows) = feed_then_game_flow(&dispatcher, web_packets);
+        let dropped = recording.dropped();
+        stalled_disk.release();
+
+        assert_eq!(locked, "52.1.2.3:13328->192.168.1.20:50000");
+        assert_eq!(flows.len(), 2, "the flow and its nickname assembler: {flows:?}");
+        assert!(dropped >= 29, "32 packets offered to a queue of 2 behind a stalled writer: {dropped}");
     }
 }

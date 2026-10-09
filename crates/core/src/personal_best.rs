@@ -6,17 +6,21 @@
 //! the first time it runs, so nobody starts from zero.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
+use crate::background_save::BackgroundSave;
 use crate::history::HistoryRecord;
+use crate::logger::AppLogger;
+use crate::mobs::store::{set_aside_path, write_atomic};
 
 /// Fights shorter than this do not count: a boss finished off in a few seconds
 /// gives a DPS figure no real fight can reach, and it would stand forever.
 const MIN_FIGHT_SECS: f64 = 15.0;
 const FILE_NAME: &str = "personal_bests.json";
+const FILE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,41 +35,82 @@ pub struct PersonalBest {
     pub achieved_at: u64,
 }
 
+/// What the file holds. Files written before the version field existed are a
+/// bare list of bests and still load.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum FileIn {
+    Versioned(VersionedFile),
+    Unversioned(Vec<PersonalBest>),
+}
+
+#[derive(Deserialize)]
+struct VersionedFile {
+    version: u32,
+    bests: Vec<PersonalBest>,
+}
+
+#[derive(Serialize)]
+struct FileOut<'a> {
+    version: u32,
+    bests: &'a [PersonalBest],
+}
+
+/// The bests live in memory and are what every reader sees; the file is
+/// written from a copy by `BackgroundSave`, never by the thread that changed
+/// them and never under the lock.
 #[derive(Default)]
 pub struct PersonalBestStore {
-    bests: Mutex<HashMap<String, PersonalBest>>,
-    path: Mutex<Option<PathBuf>>,
+    bests: Arc<Mutex<HashMap<String, PersonalBest>>>,
+    saver: Option<BackgroundSave>,
 }
 
 fn key(character: &str, mob_code: u32) -> String {
     format!("{character}|{mob_code}")
 }
 
+fn sorted(bests: &HashMap<String, PersonalBest>) -> Vec<PersonalBest> {
+    let mut list: Vec<PersonalBest> = bests.values().cloned().collect();
+    list.sort_by(|a, b| b.achieved_at.cmp(&a.achieved_at));
+    list
+}
+
 impl PersonalBestStore {
+    /// A store that lives in memory only.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Load from `dir`, or build from `history` when nothing was saved yet.
-    pub fn init(&self, dir: PathBuf, history: &[HistoryRecord]) {
+    /// Loads `personal_bests.json` from `dir` and saves every change back to
+    /// it. Only when there is no file at all (a first run) are the bests built
+    /// from `history`. A file that cannot be read is set aside as
+    /// `personal_bests.json.bad-<seconds>`, never overwritten, and the meter
+    /// starts with no bests: they are not rebuilt from the history, which may
+    /// hold fights the player cleared the bests of.
+    pub fn open(dir: PathBuf, history: &[HistoryRecord], logger: Arc<AppLogger>) -> Self {
         let path = dir.join(FILE_NAME);
-        let loaded = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Vec<PersonalBest>>(&bytes).ok());
-        *self.path.lock().unwrap() = Some(path);
-
-        match loaded {
-            Some(list) => {
-                let mut bests = self.bests.lock().unwrap();
-                for best in list {
-                    bests.insert(key(&best.character, best.mob_code), best);
-                }
+        let (list, rebuild) = match read_file(&path) {
+            Ok(Some(list)) => (list, false),
+            Ok(None) => (Vec::new(), true),
+            Err(problem) => {
+                logger.error(format!("{FILE_NAME}: {}", set_aside(&path, &problem)));
+                (Vec::new(), false)
             }
-            None => {
-                self.record(history);
-                self.write();
-            }
+        };
+        let bests = Arc::new(Mutex::new(
+            list.into_iter().map(|best| (key(&best.character, best.mob_code), best)).collect(),
+        ));
+        let shared = Arc::clone(&bests);
+        let saver = BackgroundSave::new(FILE_NAME, logger, move || {
+            let list = sorted(&shared.lock().unwrap());
+            write_file(&path, &FileOut { version: FILE_VERSION, bests: &list })
+        });
+        let store = Self { bests, saver: Some(saver) };
+        if rebuild {
+            store.record(history);
+            store.request_save();
         }
+        store
     }
 
     pub fn get(&self, character: &str, mob_code: u32) -> Option<PersonalBest> {
@@ -77,17 +122,15 @@ impl PersonalBestStore {
     }
 
     pub fn all(&self) -> Vec<PersonalBest> {
-        let mut list: Vec<PersonalBest> = self.bests.lock().unwrap().values().cloned().collect();
-        list.sort_by(|a, b| b.achieved_at.cmp(&a.achieved_at));
-        list
+        sorted(&self.bests.lock().unwrap())
     }
 
-    /// Learn from saved fights. Returns whether any best improved, and writes
+    /// Learn from saved fights. Returns whether any best improved, and saves
     /// the file when one did.
     pub fn record_and_save(&self, records: &[HistoryRecord]) -> bool {
         let changed = self.record(records);
         if changed {
-            self.write();
+            self.request_save();
         }
         changed
     }
@@ -99,8 +142,21 @@ impl PersonalBestStore {
             bests.clear();
             count
         };
-        self.write();
+        self.request_save();
         count
+    }
+
+    /// Writes any change not yet on disk, on the calling thread: for quitting.
+    pub fn flush(&self) {
+        if let Some(saver) = &self.saver {
+            saver.flush();
+        }
+    }
+
+    fn request_save(&self) {
+        if let Some(saver) = &self.saver {
+            saver.request();
+        }
     }
 
     fn record(&self, records: &[HistoryRecord]) -> bool {
@@ -118,18 +174,47 @@ impl PersonalBestStore {
         }
         changed
     }
+}
 
-    fn write(&self) {
-        let Some(path) = self.path.lock().unwrap().clone() else {
-            return;
-        };
-        let list = self.all();
-        if let Ok(json) = serde_json::to_vec_pretty(&list) {
-            if let Some(dir) = path.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            let _ = std::fs::write(&path, json);
-        }
+fn write_file(path: &Path, bests: &impl Serialize) -> Result<(), String> {
+    let json = serde_json::to_vec_pretty(bests).map_err(|error| format!("cannot encode the personal bests: {error}"))?;
+    write_atomic(path, &json).map_err(|error| format!("cannot write {}: {error}", path.display()))
+}
+
+/// `Ok(None)` when there is no file yet. `Err` says why a file that exists
+/// cannot be used.
+fn read_file(path: &Path) -> Result<Option<Vec<PersonalBest>>, String> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("cannot be read: {error}")),
+    };
+    match serde_json::from_slice::<FileIn>(&bytes) {
+        Ok(FileIn::Versioned(file)) if file.version <= FILE_VERSION => Ok(Some(file.bests)),
+        Ok(FileIn::Versioned(file)) => Err(format!("is version {}, this build reads up to {FILE_VERSION}", file.version)),
+        Ok(FileIn::Unversioned(list)) => Ok(Some(list)),
+        Err(error) => Err(format!("holds no readable personal bests: {error}")),
+    }
+}
+
+/// Renames a file the store cannot use to `<name>.bad-<seconds>`, so the next
+/// save does not overwrite it. Returns what the log should say.
+fn set_aside(path: &Path, problem: &str) -> String {
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+    let aside = set_aside_path(path, now_secs);
+    match std::fs::rename(path, &aside) {
+        Ok(()) => format!(
+            "{} {problem}; moved to {} and starting with no personal bests",
+            path.display(),
+            aside.display()
+        ),
+        Err(error) => format!(
+            "{} {problem}, and it could not be moved aside ({error}); starting with no personal bests",
+            path.display()
+        ),
     }
 }
 
@@ -264,5 +349,140 @@ mod tests {
 
         assert!(!store.record(&[wiped]));
         assert!(store.get("Kestrel", 7).is_none());
+    }
+
+    use crate::mobs::store::test_dir::TestDir;
+
+    fn logger_collecting(lines: Arc<Mutex<Vec<String>>>) -> Arc<AppLogger> {
+        let path = std::env::temp_dir().join(format!("meter-core-bests-{}.log", std::process::id()));
+        Arc::new(AppLogger::new(path, Box::new(move |event| lines.lock().unwrap().push(event.line))))
+    }
+
+    fn open(dir: &TestDir, history: &[HistoryRecord]) -> PersonalBestStore {
+        PersonalBestStore::open(dir.path().to_path_buf(), history, logger_collecting(Arc::default()))
+    }
+
+    fn aside_files(dir: &TestDir) -> Vec<std::path::PathBuf> {
+        std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.file_name().unwrap().to_string_lossy().starts_with("personal_bests.json.bad-"))
+            .collect()
+    }
+
+    fn one_fight() -> Vec<HistoryRecord> {
+        vec![record("Kestrel", 7, true, 8_000.0, 60.0)]
+    }
+
+    #[test]
+    fn bests_are_saved_in_a_versioned_file_and_load_back() {
+        let dir = TestDir::new();
+        let store = open(&dir, &[]);
+        assert!(store.record_and_save(&one_fight()));
+        store.flush();
+
+        let file: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.path().join(FILE_NAME)).unwrap()).unwrap();
+        assert_eq!(file["version"], FILE_VERSION);
+        assert_eq!(file["bests"].as_array().unwrap().len(), 1);
+        assert_eq!(open(&dir, &[]).get("Kestrel", 7).map(|best| best.dps), Some(8_000.0));
+    }
+
+    #[test]
+    fn a_file_from_before_the_version_field_still_loads_and_is_not_rebuilt_from_history() {
+        let dir = TestDir::new();
+        let old = PersonalBest {
+            character: "Rin".into(),
+            mob_code: 9,
+            target_name: None,
+            dps: 5_000.0,
+            total_damage: 300_000,
+            duration_secs: 60.0,
+            achieved_at: 3,
+        };
+        std::fs::write(dir.path().join(FILE_NAME), serde_json::to_vec_pretty(&vec![old.clone()]).unwrap()).unwrap();
+
+        let store = open(&dir, &one_fight());
+
+        assert_eq!(store.all(), vec![old]);
+    }
+
+    #[test]
+    fn an_unreadable_file_is_set_aside_not_rebuilt_from_history_and_not_overwritten() {
+        let newer = br#"{"version": 99, "bests": []}"#.to_vec();
+        for (why, bytes) in [("garbage", b"{ half a wri".to_vec()), ("a newer version", newer)] {
+            let dir = TestDir::new();
+            std::fs::write(dir.path().join(FILE_NAME), &bytes).unwrap();
+            let lines = Arc::new(Mutex::new(Vec::new()));
+
+            let store = PersonalBestStore::open(dir.path().to_path_buf(), &one_fight(), logger_collecting(Arc::clone(&lines)));
+
+            assert!(store.all().is_empty(), "{why}: no bests, none rebuilt from the history");
+            let aside = aside_files(&dir);
+            assert_eq!(aside.len(), 1, "{why}");
+            assert!(!dir.path().join(FILE_NAME).exists(), "{why}");
+            assert!(lines.lock().unwrap().iter().any(|line| line.contains("moved to")), "{why}: the log says so");
+
+            store.record_and_save(&[record("Rin", 9, true, 1_000.0, 60.0)]);
+            store.flush();
+
+            assert_eq!(std::fs::read(&aside[0]).unwrap(), bytes, "{why}: the set-aside file is untouched");
+            assert_eq!(open(&dir, &[]).get("Rin", 9).map(|best| best.dps), Some(1_000.0), "{why}");
+        }
+    }
+
+    #[test]
+    fn a_missing_file_is_a_first_run_and_builds_the_bests_from_history() {
+        let dir = TestDir::new();
+
+        let store = open(&dir, &one_fight());
+        store.flush();
+
+        assert_eq!(store.get("Kestrel", 7).map(|best| best.dps), Some(8_000.0));
+        assert!(aside_files(&dir).is_empty());
+        assert_eq!(open(&dir, &[]).get("Kestrel", 7).map(|best| best.dps), Some(8_000.0), "the rebuilt bests were written");
+    }
+
+    #[test]
+    fn a_cleared_best_stays_cleared_after_a_restart_even_though_the_history_still_holds_the_fight() {
+        let dir = TestDir::new();
+        let history = one_fight();
+        let store = open(&dir, &history);
+        store.flush();
+        assert_eq!(store.clear(), 1);
+        store.flush();
+
+        let restarted = open(&dir, &history);
+
+        assert!(restarted.all().is_empty());
+    }
+
+    #[test]
+    fn a_write_that_is_cut_short_leaves_the_previous_file_intact() {
+        let dir = TestDir::new();
+        let store = open(&dir, &one_fight());
+        store.flush();
+        std::fs::write(dir.path().join("personal_bests.json.tmp"), b"[{\"half").unwrap();
+
+        let restarted = open(&dir, &[]);
+
+        assert_eq!(restarted.get("Kestrel", 7).map(|best| best.dps), Some(8_000.0));
+        assert!(aside_files(&dir).is_empty());
+    }
+
+    #[test]
+    fn a_failed_write_is_logged_and_leaves_the_file_alone() {
+        let dir = TestDir::new();
+        let store = open(&dir, &one_fight());
+        store.flush();
+        let before = std::fs::read(dir.path().join(FILE_NAME)).unwrap();
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        let blocked = PersonalBestStore::open(dir.path().to_path_buf(), &[], logger_collecting(Arc::clone(&lines)));
+        std::fs::create_dir(dir.path().join("personal_bests.json.tmp")).unwrap();
+
+        blocked.record_and_save(&[record("Kestrel", 7, true, 9_000.0, 60.0)]);
+        blocked.flush();
+
+        assert!(lines.lock().unwrap().iter().any(|line| line.contains("ERROR") && line.contains("personal_bests.json: cannot save")));
+        assert_eq!(std::fs::read(dir.path().join(FILE_NAME)).unwrap(), before);
     }
 }

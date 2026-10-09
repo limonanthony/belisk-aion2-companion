@@ -12,22 +12,24 @@ use sysinfo::{
     RefreshKind, System,
 };
 
-use crate::capture::capturer::{check_npcap_available, CapturedPacket, PcapCapturer};
+use crate::capture::capturer::{CapturedPacket, PcapCapturer};
 use crate::capture::channel::Channel;
-use crate::capture::dispatcher::{CaptureDispatcher, TcpReassemblyStatus};
+use crate::capture::dispatcher::CaptureDispatcher;
+use crate::capture::drop_report::{DropReporter, PacketDropCounters, PacketDrops};
 use crate::capture::ping_tracker::PingTracker;
 use crate::capture::recorder::{
     list_recordings, prune_recordings, replay_recording, PacketRecorder, RecordingFile,
     RecordingStatus, ReplayPacer,
 };
+use crate::capture::recording_queue::{RecordingQueue, RECORDING_QUEUE_CAPACITY};
 use crate::capture::rolling_recorder::RollingRecorder;
-use crate::capture::windivert_capturer::{check_windivert_status, WinDivertCapturer};
+use crate::capture::windivert_capturer::WinDivertCapturer;
 use crate::config::{CaptureBackendPriority, DpsMeterConfig, SharedDpsMeterConfig};
 use crate::engine::calculator::DpsCalculator;
 use crate::history::HistoryStore;
 use crate::personal_best::{PersonalBest, PersonalBestStore};
 use crate::models::combat::{CombatSnapshot, PvpCombatStatsRow, PvpWatchInfoResponse};
-use crate::models::diagnostics::{DpsMeterState, MemorySnapshot};
+use crate::models::diagnostics::MemorySnapshot;
 use crate::models::session::SessionSummary;
 use crate::mobs::catalog::{MobCatalog, MobStorage};
 use crate::report::fight_report::{FightOutcome, FightReport};
@@ -38,25 +40,32 @@ use crate::logger::AppLogger;
 
 const STALE_ASSEMBLER_IDLE_SECS: u64 = 30;
 /// Replay reads from disk far faster than the dispatcher drains, so it waits
-/// whenever the queue runs this deep. `try_send` drops the packet it is handed
-/// when the channel is full, and a silently lossy replay is worse than a slow one.
-const REPLAY_BACKPRESSURE_LIMIT: usize = 50_000;
+/// whenever the queue runs this deep, half of `PACKET_CHANNEL_CAPACITY`.
+/// `try_send` drops the packet it is handed when the channel is full, and a
+/// silently lossy replay is worse than a slow one.
+const REPLAY_BACKPRESSURE_LIMIT: usize = 4_096;
 /// A paced replay sleeps in slices this long so a cancel is noticed promptly.
 const REPLAY_PACING_SLICE: Duration = Duration::from_millis(50);
 
-/// Seconds since the epoch, for filenames that sort chronologically.
-fn chrono_stamp() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-const PACKET_CHANNEL_CAPACITY: isize = 2_000_000;
+/// Packets between capture and the dispatcher. The worst burst in the
+/// recordings is 3,900 packets/s of unfiltered TCP (game traffic peaks near
+/// 150), so this is about 2 s of that burst or 55 s of game traffic; a full
+/// queue is counted, not silent. About 6.5 MB at the 800-byte average payload
+/// seen, 72 MB at the largest game payload (8.8 KB).
+const PACKET_CHANNEL_CAPACITY: isize = 8_192;
 
 /// Automatic recordings: how long each runs, and how many are kept.
 const AUTO_RECORDING_PREFIX: &str = "auto";
 const AUTO_RECORDING_DURATION: Duration = Duration::from_secs(120);
 const AUTO_RECORDINGS_KEPT: usize = 5;
+
+/// All the recording flushes of one stop or quit share this wait. The app ends
+/// the process 3 s after the quit hooks start (`quit.rs`), and the history,
+/// personal bests and mobs are written before the recordings are waited for.
+const RECORDING_QUIT_FLUSH_BUDGET: Duration = Duration::from_millis(1_500);
+/// A recording stopped on its own (the player's, an automatic one) can afford
+/// to wait longer for its last packets.
+const RECORDING_STOP_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How long the overlay stays up after Reset before hiding again, so the
 /// click visibly did something.
@@ -67,6 +76,36 @@ pub enum CaptureBackend {
     WinDivert,
     Npcap,
 }
+
+/// Why live capture could not start. The drivers' own errors are kept as they
+/// reported them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CaptureStartError {
+    /// Neither driver could capture; `tried_first` is the one the backend
+    /// priority opened first.
+    NoBackend {
+        tried_first: CaptureBackend,
+        npcap: String,
+        windivert: String,
+    },
+}
+
+impl std::fmt::Display for CaptureStartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoBackend { tried_first: CaptureBackend::Npcap, npcap, windivert } => write!(
+                f,
+                "No capture backend available; Npcap: {npcap}; WinDivert: {windivert}"
+            ),
+            Self::NoBackend { tried_first: CaptureBackend::WinDivert, npcap, windivert } => write!(
+                f,
+                "No capture backend available; WinDivert: {windivert}; Npcap: {npcap}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for CaptureStartError {}
 
 /// One automatic recording per meter session, started when game traffic
 /// arrives from a server no fingerprint matches.
@@ -94,6 +133,10 @@ pub struct DpsMeter {
     packet_channel: Channel<CapturedPacket>,
     recorder: Arc<PacketRecorder>,
     rolling_recorder: Arc<RollingRecorder>,
+    session_recording: Arc<RecordingQueue>,
+    rolling_recording: Arc<RecordingQueue>,
+    drop_counters: PacketDropCounters,
+    drop_reporter: Arc<Mutex<DropReporter>>,
     recordings_dir: PathBuf,
     replaying: Arc<AtomicBool>,
     windivert_capturer: WinDivertCapturer,
@@ -105,12 +148,10 @@ pub struct DpsMeter {
     memory_snapshot_running: Arc<AtomicBool>,
     snapshot_thread: Mutex<Option<JoinHandle<()>>>,
     memory_snapshot_thread: Mutex<Option<JoinHandle<()>>>,
-    last_emitted_total_damage: Arc<Mutex<Option<u64>>>,
-    last_snapshot: Arc<Mutex<Option<CombatSnapshot>>>,
     history: Arc<HistoryStore>,
     personal_bests: Arc<PersonalBestStore>,
     /// Until when the overlay stays up regardless of the idle rule: after
-    /// Start, after Reset, and from the show hotkey.
+    /// Reset, and whenever the host asks with `peek_overlay`.
     peek_until: Arc<Mutex<Option<Instant>>>,
     auto_record: Arc<Mutex<AutoRecordState>>,
 }
@@ -127,7 +168,10 @@ struct FightCloser {
     history: Arc<HistoryStore>,
     personal_bests: Arc<PersonalBestStore>,
     running: Arc<AtomicBool>,
-    last_emitted_total_damage: Arc<Mutex<Option<u64>>>,
+    /// The frame the overlay was last sent, to tell whether the next one has
+    /// anything new. `None` after a reset or a wipe, so the next frame with
+    /// damage goes out.
+    last_sent: Mutex<Option<CombatSnapshot>>,
 }
 
 impl FightCloser {
@@ -214,7 +258,7 @@ impl FightCloser {
             self.events.emit(MeterEvent::HistoryUpdated);
         }
         self.data_storage.forget_target(wipe.target_id);
-        *self.last_emitted_total_damage.lock().unwrap() = None;
+        self.forget_sent_frame();
         self.events.emit(MeterEvent::BossWiped(WipedAttempt {
             target_id: wipe.target_id,
             snapshot,
@@ -226,8 +270,7 @@ impl FightCloser {
         }));
         match self.snapshot(0).filter(|snapshot| snapshot.total_damage > 0) {
             Some(rest) => {
-                *self.last_emitted_total_damage.lock().unwrap() = Some(rest.total_damage);
-                self.events.emit(MeterEvent::DpsSnapshot(rest));
+                self.send_frame_if_changed(rest);
             }
             None => self.emit_empty_snap(),
         }
@@ -271,11 +314,6 @@ impl FightCloser {
         self.data_storage
             .mobs()
             .record_fight(&snapshot.combat_infos.target_infos);
-        eprintln!(
-            "[dps_meter] save: total_damage={} targets={}",
-            snapshot.total_damage,
-            snapshot.by_target_player_stats.len()
-        );
         if snapshot.total_damage == 0 {
             return;
         }
@@ -290,9 +328,29 @@ impl FightCloser {
 
     fn clear_runtime_state_nopacket(&self) {
         self.data_storage.clear();
-        self.calculator.reset_snapshot_state();
-        *self.last_emitted_total_damage.lock().unwrap() = None;
-        // Keep last_snapshot as fallback for detail window when combat ends
+        self.forget_sent_frame();
+    }
+
+    fn forget_sent_frame(&self) {
+        *self.last_sent.lock().unwrap() = None;
+    }
+
+    /// Sends the host the frame when it shows something the last frame sent
+    /// did not: any change in the picture, not only in the total damage (a
+    /// name arriving, a boss's health, a death, a buff). While nothing
+    /// changes nothing is sent, so an overlay left up over the game for hours
+    /// is not redrawn. With no frame sent yet, only one with damage goes out.
+    fn send_frame_if_changed(&self, frame: CombatSnapshot) {
+        let mut last_sent = self.last_sent.lock().unwrap();
+        let changed = match last_sent.as_ref() {
+            Some(previous) => !previous.shows_the_same_as(&frame),
+            None => frame.total_damage > 0,
+        };
+        if !changed {
+            return;
+        }
+        *last_sent = Some(frame.clone());
+        self.events.emit(MeterEvent::DpsSnapshot(frame));
     }
 
     fn emit_empty_snap(&self) {
@@ -351,30 +409,38 @@ impl DpsMeter {
         ));
         let recordings_dir = app_data_dir
             .clone()
-            .unwrap_or_else(|| std::env::temp_dir().join("aether"))
+            .unwrap_or_else(|| std::env::temp_dir().join("belisk"))
             .join("recordings");
         let windivert_capturer =
             WinDivertCapturer::new(packet_channel.clone(), Arc::clone(&logger));
         let pcap_capturer = PcapCapturer::new(packet_channel.clone(), Arc::clone(&logger));
+        let session_recording = Arc::new(RecordingQueue::new(
+            Arc::clone(&recorder) as _,
+            RECORDING_QUEUE_CAPACITY,
+        ));
+        let rolling_recording = Arc::new(RecordingQueue::new(
+            Arc::clone(&rolling_recorder) as _,
+            RECORDING_QUEUE_CAPACITY,
+        ));
+        let drop_counters = PacketDropCounters::new(
+            packet_channel.clone(),
+            vec![Arc::clone(&session_recording), Arc::clone(&rolling_recording)],
+        );
         let dispatcher = CaptureDispatcher::new(
             packet_channel.clone(),
-            Arc::clone(&recorder),
-            Arc::clone(&rolling_recorder),
+            vec![Arc::clone(&session_recording), Arc::clone(&rolling_recording)],
             Arc::clone(&data_storage),
             Arc::clone(&logger),
             Arc::clone(&ping_tracker),
             Arc::clone(&config),
         );
-        let history = Arc::new(HistoryStore::new());
-        let personal_bests = Arc::new(PersonalBestStore::new());
-        if let Some(dir) = app_data_dir {
-            history.init_dir(dir.clone());
-            history.load_from_disk();
-            personal_bests.init(dir.join("history"), &history.get_records());
-        }
+        let history = Arc::new(HistoryStore::open(app_data_dir.clone(), Arc::clone(&logger)));
+        let personal_bests = Arc::new(match app_data_dir {
+            Some(dir) => PersonalBestStore::open(dir.join("history"), &history.get_records(), Arc::clone(&logger)),
+            None => PersonalBestStore::new(),
+        });
 
         let running = Arc::new(AtomicBool::new(false));
-        let last_emitted_total_damage = Arc::new(Mutex::new(None));
         let fight = Arc::new(FightCloser {
             events: Arc::clone(&events),
             logger: Arc::clone(&logger),
@@ -384,7 +450,7 @@ impl DpsMeter {
             history: Arc::clone(&history),
             personal_bests: Arc::clone(&personal_bests),
             running: Arc::clone(&running),
-            last_emitted_total_damage: Arc::clone(&last_emitted_total_damage),
+            last_sent: Mutex::new(None),
         });
 
         // Register main-actor callback: reset meter silently when player is identified.
@@ -395,10 +461,9 @@ impl DpsMeter {
             .unwrap()
             .replace(Box::new(move |actor_id, actor_name, sid| {
                 let sid_str = sid.unwrap_or_default();
-                eprintln!(
-                    "[dps_meter] main actor detected: id={} name={} server={}",
-                    actor_id, actor_name, sid_str
-                );
+                fight_for_cb.logger.debug(format!(
+                    "main actor detected: id={actor_id} name={actor_name} server={sid_str}"
+                ));
                 fight_for_cb.reset(false);
             }));
 
@@ -413,6 +478,10 @@ impl DpsMeter {
             packet_channel,
             recorder,
             rolling_recorder,
+            session_recording,
+            rolling_recording,
+            drop_counters,
+            drop_reporter: Arc::new(Mutex::new(DropReporter::default())),
             recordings_dir,
             replaying,
             windivert_capturer,
@@ -424,8 +493,6 @@ impl DpsMeter {
             memory_snapshot_running: Arc::new(AtomicBool::new(false)),
             snapshot_thread: Mutex::new(None),
             memory_snapshot_thread: Mutex::new(None),
-            last_emitted_total_damage,
-            last_snapshot: Arc::new(Mutex::new(None)),
             history,
             personal_bests,
             peek_until: Arc::new(Mutex::new(None)),
@@ -456,11 +523,6 @@ impl DpsMeter {
     /// naming the player's actor when the game has not.
     pub fn set_known_characters(&self, characters: Vec<crate::identity::KnownCharacter>) {
         self.data_storage.set_known_characters(characters);
-    }
-
-    /// Whether an automatic recording is running right now.
-    pub fn is_auto_recording(&self) -> bool {
-        self.auto_record.lock().unwrap().active_since.is_some()
     }
 
     pub fn apply_config(&self, config: DpsMeterConfig) -> DpsMeterConfig {
@@ -508,6 +570,12 @@ impl DpsMeter {
         self.data_storage.fight_tracking()
     }
 
+    /// Whether you are in a fight the meter counts: from your first hit until
+    /// the fight ends (idle timeout, reset, or the meter closing).
+    pub fn in_fight(&self) -> bool {
+        self.data_storage.fight_tracking() && self.data_storage.activity_at().is_some()
+    }
+
     /// Turns fight counting on or off, as the DPS meter window opens or
     /// closes. Turning it off ends the fight on the meter like an idle
     /// timeout does; turning it on counts from that moment.
@@ -523,52 +591,59 @@ impl DpsMeter {
         self.logger.info(format!("fight tracking {}", if on { "on" } else { "off" }));
     }
 
-    pub fn start_dps_meter(&self) -> Result<(), String> {
-        self.start(true)
+    pub fn start_dps_meter(&self) -> Result<(), CaptureStartError> {
+        if !self.begin_start() {
+            return Ok(());
+        }
+        let capture_backend_priority =
+            self.config.read().unwrap().capture_backend_priority.clone();
+        let backend = match self.start_capture_backend(capture_backend_priority) {
+            Ok(backend) => backend,
+            Err(error) => {
+                self.dispatcher.stop();
+                self.running.store(false, Ordering::SeqCst);
+                return Err(error);
+            }
+        };
+        *self.active_capture_backend.lock().unwrap() = Some(backend);
+        self.logger
+            .info(format!("capture backend selected: {backend:?}"));
+        self.sync_rolling_recording();
+        self.finish_start();
+        Ok(())
     }
 
     /// Start the pipeline without opening a capture backend, for feeding it
     /// from a recording. No driver is loaded and no elevation is needed.
-    pub fn start_for_replay(&self) -> Result<(), String> {
-        self.start(false)
+    pub fn start_for_replay(&self) {
+        if self.begin_start() {
+            self.finish_start();
+        }
     }
 
-    fn start(&self, with_capture: bool) -> Result<(), String> {
+    /// False when the meter was already running.
+    fn begin_start(&self) -> bool {
         if self.running.swap(true, Ordering::SeqCst) {
             self.emit_running_status();
-            return Ok(());
+            return false;
         }
-
         self.clear_runtime_state();
         *self.auto_record.lock().unwrap() = AutoRecordState::default();
         self.dispatcher.start();
-        if with_capture {
-            let capture_backend_priority =
-                self.config.read().unwrap().capture_backend_priority.clone();
-            let backend = match self.start_capture_backend(capture_backend_priority) {
-                Ok(backend) => backend,
-                Err(error) => {
-                    self.dispatcher.stop();
-                    self.running.store(false, Ordering::SeqCst);
-                    return Err(error);
-                }
-            };
-            *self.active_capture_backend.lock().unwrap() = Some(backend);
-            self.logger
-                .info(format!("capture backend selected: {backend:?}"));
-            self.sync_rolling_recording();
-        }
+        true
+    }
+
+    fn finish_start(&self) {
         self.start_snapshot_loop();
         self.start_memory_snapshot_loop();
         self.emit_running_status();
         self.logger.info("dps meter started");
-        Ok(())
     }
 
     fn start_capture_backend(
         &self,
         priority: CaptureBackendPriority,
-    ) -> Result<CaptureBackend, String> {
+    ) -> Result<CaptureBackend, CaptureStartError> {
         match priority {
             CaptureBackendPriority::WinDivertFirst => match self.windivert_capturer.start() {
                 Ok(()) => Ok(CaptureBackend::WinDivert),
@@ -579,10 +654,10 @@ impl DpsMeter {
                     self.pcap_capturer
                         .start()
                         .map(|_| CaptureBackend::Npcap)
-                        .map_err(|npcap_error| {
-                            format!(
-                                "No capture backend available; WinDivert: {windivert_error}; Npcap: {npcap_error}"
-                            )
+                        .map_err(|npcap_error| CaptureStartError::NoBackend {
+                            tried_first: CaptureBackend::WinDivert,
+                            npcap: npcap_error,
+                            windivert: windivert_error,
                         })
                 }
             },
@@ -595,10 +670,10 @@ impl DpsMeter {
                     self.windivert_capturer
                         .start()
                         .map(|_| CaptureBackend::WinDivert)
-                        .map_err(|windivert_error| {
-                            format!(
-                                "No capture backend available; Npcap: {npcap_error}; WinDivert: {windivert_error}"
-                            )
+                        .map_err(|windivert_error| CaptureStartError::NoBackend {
+                            tried_first: CaptureBackend::Npcap,
+                            npcap: npcap_error,
+                            windivert: windivert_error,
                         })
                 }
             },
@@ -612,6 +687,12 @@ impl DpsMeter {
         if capturing && self.config.read().unwrap().record_every_session {
             self.rolling_recorder.enable(self.recordings_dir.clone());
         } else {
+            flush_recording(
+                &self.rolling_recording,
+                "rolling",
+                Instant::now() + RECORDING_QUIT_FLUSH_BUDGET,
+                &self.logger,
+            );
             self.rolling_recorder.disable();
         }
     }
@@ -627,16 +708,38 @@ impl DpsMeter {
         self.stop_active_capturer();
         self.dispatcher.stop();
         self.auto_record.lock().unwrap().active_since = None;
-        let _ = self.recorder.stop();
-        self.sync_rolling_recording();
         // A fight still on the meter is kept, not thrown away: stopping the
         // meter or quitting right after a boss used to lose it.
         self.fight.save_fight_to_history();
-        self.data_storage.mobs().save_now();
+        self.save_now();
+        let _ = self.recorder.stop();
+        self.sync_rolling_recording();
+        log_packet_drops(&self.drop_counters, &self.drop_reporter, &self.logger, true);
         self.clear_runtime_state();
         self.events.emit(MeterEvent::DpsIdleHidden(false));
         self.emit_running_status();
         self.logger.info("dps meter stopped");
+    }
+
+    /// Writes whatever is still waiting for the disk (history, personal bests,
+    /// mobs, then the recordings' queued packets) on the calling thread, for
+    /// quitting. Does nothing when everything is saved. The recordings are
+    /// waited for last and share one budget (`RECORDING_QUIT_FLUSH_BUDGET`); a
+    /// writer that stays stuck makes later calls return at once.
+    pub fn save_now(&self) {
+        self.history.flush();
+        self.personal_bests.flush();
+        self.data_storage.mobs().save_now();
+        let deadline = Instant::now() + RECORDING_QUIT_FLUSH_BUDGET;
+        flush_recording(&self.session_recording, "session", deadline, &self.logger);
+        flush_recording(&self.rolling_recording, "rolling", deadline, &self.logger);
+    }
+
+    /// Packets lost since the meter was created: before the dispatcher could
+    /// read them, and out of the recordings. Also logged to belisk.log, at
+    /// most once every 30 seconds while they happen.
+    pub fn packet_drops(&self) -> PacketDrops {
+        self.drop_counters.totals()
     }
 
     /// Reset asked for by the player, from the overlay or the hotkey. The
@@ -664,10 +767,6 @@ impl DpsMeter {
         self.fight.reset(emit_empty);
     }
 
-    pub fn get_last_snapshot(&self) -> Option<CombatSnapshot> {
-        self.last_snapshot.lock().unwrap().clone()
-    }
-
     pub fn get_history(&self) -> Vec<crate::history::HistoryRecord> {
         self.history.get_records()
     }
@@ -688,53 +787,8 @@ impl DpsMeter {
         &self.logger
     }
 
-    pub fn delete_history_records(&self, ids: &[String]) -> usize {
-        self.history.delete_records(ids)
-    }
-
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
-    }
-
-    pub fn check_state(&self) -> DpsMeterState {
-        let capture_backend_active = self.active_capture_backend.lock().unwrap().is_some();
-        let mut capture_available = capture_backend_active;
-        let mut capture_error = None;
-        // Npcap first: WinDivert is a driver Aether would load just to ask,
-        // so it is only asked when Npcap cannot do the job.
-        if !capture_backend_active {
-            match check_npcap_available() {
-                Ok(()) => capture_available = true,
-                Err(npcap_error) => {
-                    let windivert_status = check_windivert_status();
-                    capture_available = windivert_status.available;
-                    capture_error = (!capture_available).then(|| {
-                        format!(
-                            "{}; Npcap: {npcap_error}",
-                            windivert_status
-                                .error
-                                .unwrap_or_else(|| "WinDivert unavailable".to_string())
-                        )
-                    });
-                }
-            }
-        }
-        let meter_running = self.is_running();
-        let has_game_data = self.dispatcher.has_recent_ports();
-        let player_identified = self.data_storage.main_actor_name().is_some();
-
-        DpsMeterState {
-            npcap_available: capture_available,
-            npcap_error: capture_error,
-            boss_only_filtered: self.data_storage.boss_only_filtered(),
-            meter_running,
-            has_game_data,
-            player_identified,
-        }
-    }
-
-    pub fn tcp_reassembly_status(&self) -> TcpReassemblyStatus {
-        self.dispatcher.tcp_reassembly_status()
     }
 
     pub fn get_dps_snapshot(&self, target_damage_threshold: u64) -> Option<CombatSnapshot> {
@@ -787,8 +841,6 @@ impl DpsMeter {
         let config = Arc::clone(&self.config);
 
         let snapshot_running = Arc::clone(&self.snapshot_running);
-        let last_emitted_total_damage = Arc::clone(&self.last_emitted_total_damage);
-        let last_snapshot = Arc::clone(&self.last_snapshot);
         let data_storage = Arc::clone(&self.data_storage);
         let peek_until = Arc::clone(&self.peek_until);
 
@@ -836,28 +888,10 @@ impl DpsMeter {
                 }
 
                 if let Some(snapshot) = calculator.get_dps_snapshot(0, hide_unknown, max_count) {
-                    // Cache non-empty snapshots for detail window fallback
-                    if snapshot.total_damage > 0 {
-                        *last_snapshot.lock().unwrap() = Some(snapshot.clone());
-                    }
-                    let should_emit = {
-                        let mut last_damage = last_emitted_total_damage.lock().unwrap();
-                        let changed = last_damage
-                            .map(|previous| previous != snapshot.total_damage)
-                            .unwrap_or(snapshot.total_damage > 0);
-                        if changed {
-                            *last_damage = Some(snapshot.total_damage);
-                        }
-                        changed
-                    };
-
-                    if should_emit {
-                        events.emit(MeterEvent::DpsSnapshot(snapshot));
-                    }
+                    fight.send_frame_if_changed(snapshot);
                 }
 
                 let interval_ms = config.read().unwrap().dps_snapshot_interval_ms;
-                // logger.debug(format!("snapshot loop sleep {}ms", interval_ms));
                 thread::park_timeout(Duration::from_millis(interval_ms));
             }
         });
@@ -890,6 +924,9 @@ impl DpsMeter {
         let dispatcher = self.dispatcher.clone();
         let memory_snapshot_running = Arc::clone(&self.memory_snapshot_running);
         let recorder = Arc::clone(&self.recorder);
+        let session_recording = Arc::clone(&self.session_recording);
+        let drop_counters = self.drop_counters.clone();
+        let drop_reporter = Arc::clone(&self.drop_reporter);
         let recordings_dir = self.recordings_dir.clone();
         let auto_record = Arc::clone(&self.auto_record);
 
@@ -901,7 +938,7 @@ impl DpsMeter {
                     return;
                 }
             };
-            // Only machine totals up front, and later only Aether's own
+            // Only machine totals up front, and later only Belisk's own
             // process. `System::new_all()` would load every process, which on
             // Windows opens each one -- a running game included -- with
             // PROCESS_VM_READ, holds the handles, and reads their memory for
@@ -922,10 +959,12 @@ impl DpsMeter {
                     ));
                 }
 
+                log_packet_drops(&drop_counters, &drop_reporter, &logger, false);
                 let auto_record_enabled = config.read().unwrap().auto_record_unknown_server;
                 auto_record_tick(
                     &auto_record,
                     &recorder,
+                    &session_recording,
                     &recordings_dir,
                     &dispatcher,
                     &logger,
@@ -957,7 +996,6 @@ impl DpsMeter {
                 }
 
                 let interval_ms = config.read().unwrap().memory_snapshot_interval_ms;
-                // logger.debug(format!("memory snapshot loop sleep {}ms", interval_ms));
                 thread::park_timeout(Duration::from_millis(interval_ms));
             }
         });
@@ -975,12 +1013,10 @@ impl DpsMeter {
 
     fn clear_runtime_state(&self) {
         self.data_storage.clear();
-        self.calculator.reset_snapshot_state();
         self.packet_channel.clear();
         self.dispatcher.clear();
         self.ping_tracker.reset();
-        *self.last_emitted_total_damage.lock().unwrap() = None;
-        *self.last_snapshot.lock().unwrap() = None;
+        self.fight.forget_sent_frame();
     }
 
     // ── Packet recording and replay ──
@@ -998,6 +1034,12 @@ impl DpsMeter {
     }
 
     pub fn stop_packet_recording(&self) -> Result<Option<RecordingStatus>, String> {
+        flush_recording(
+            &self.session_recording,
+            "session",
+            Instant::now() + RECORDING_STOP_FLUSH_TIMEOUT,
+            &self.logger,
+        );
         let stopped = self.recorder.stop()?;
         if let Some(status) = &stopped {
             self.logger.info(format!(
@@ -1014,21 +1056,6 @@ impl DpsMeter {
 
     pub fn list_packet_recordings(&self) -> Vec<RecordingFile> {
         list_recordings(&self.recordings_dir)
-    }
-
-    /// Write a diagnostics report next to the recordings.
-    ///
-    /// The clipboard is the convenient path, but this runs regardless: on launch
-    /// day the report is worth having on disk even if the copy silently fails.
-    pub fn save_diagnostics_report(&self, report: &str) -> Result<String, String> {
-        std::fs::create_dir_all(&self.recordings_dir)
-            .map_err(|error| format!("Cannot create {:?}: {error}", self.recordings_dir))?;
-        let path = self
-            .recordings_dir
-            .join(format!("diagnostics-{}.txt", chrono_stamp()));
-        std::fs::write(&path, report)
-            .map_err(|error| format!("Cannot write {path:?}: {error}"))?;
-        Ok(path.to_string_lossy().into_owned())
     }
 
     pub fn is_replaying(&self) -> bool {
@@ -1137,6 +1164,7 @@ impl Drop for DpsMeter {
         self.pcap_capturer.stop();
         self.dispatcher.stop();
         self.clear_runtime_state();
+        self.save_now();
     }
 }
 
@@ -1150,6 +1178,7 @@ impl Drop for DpsMeter {
 fn auto_record_tick(
     state: &Mutex<AutoRecordState>,
     recorder: &PacketRecorder,
+    recording: &RecordingQueue,
     dir: &std::path::Path,
     dispatcher: &CaptureDispatcher,
     logger: &AppLogger,
@@ -1161,6 +1190,12 @@ fn auto_record_tick(
         if since.elapsed() >= AUTO_RECORDING_DURATION || !enabled {
             state.active_since = None;
             state.done = true;
+            flush_recording(
+                recording,
+                "auto",
+                Instant::now() + RECORDING_STOP_FLUSH_TIMEOUT,
+                logger,
+            );
             match recorder.stop() {
                 Ok(Some(status)) => logger.info(format!(
                     "auto recording finished: {} packets, {} bytes",
@@ -1195,6 +1230,31 @@ fn auto_record_tick(
             state.done = true;
             logger.info(format!("auto recording could not start: {error}"));
         }
+    }
+}
+
+/// Waits until `deadline` for the packets queued for a recording to reach its
+/// file, so that closing the recording right after loses none of them.
+fn flush_recording(recording: &RecordingQueue, name: &str, deadline: Instant, logger: &AppLogger) {
+    if !recording.flush(deadline) {
+        logger.info(format!(
+            "{name} recording writer is still busy, closing the recording without waiting for the packets queued behind it"
+        ));
+    }
+}
+
+fn log_packet_drops(
+    counters: &PacketDropCounters,
+    reporter: &Mutex<DropReporter>,
+    logger: &AppLogger,
+    force: bool,
+) {
+    let line = reporter
+        .lock()
+        .unwrap()
+        .line(counters.totals(), Instant::now(), force);
+    if let Some(line) = line {
+        logger.info(line);
     }
 }
 
@@ -1266,7 +1326,7 @@ mod tests {
         let log = std::env::temp_dir().join(format!("meter-core-stop-{}.log", std::process::id()));
         let logger = Arc::new(AppLogger::new(log.clone(), Box::new(|_| {})));
         let meter = DpsMeter::new(Arc::new(Discard), logger, None);
-        meter.start_for_replay().expect("the pipeline starts without a capture backend");
+        meter.start_for_replay();
         thread::sleep(Duration::from_millis(150));
 
         let started = Instant::now();
@@ -1319,12 +1379,15 @@ mod tests {
         let events = Arc::new(Recording(Mutex::new(Vec::new())));
         let meter = meter_with(Arc::clone(&events));
         meter.set_fight_tracking(true);
+        assert!(!meter.in_fight());
         meter.data_storage.append_damage(big_hit(7, 900));
+        assert!(meter.in_fight());
         assert!(meter.get_history().is_empty());
 
         meter.set_fight_tracking(false);
 
         assert!(!meter.fight_tracking());
+        assert!(!meter.in_fight());
         assert_eq!(meter.get_history().len(), 1);
         assert!(meter.get_dps_snapshot(0).is_none_or(|snapshot| snapshot.total_damage == 0));
         assert!(events.0.lock().unwrap().contains(&"history-updated"));
@@ -1500,5 +1563,189 @@ mod tests {
         assert!(meter.get_history().is_empty());
         assert!(wipes.0.lock().unwrap().is_empty());
         assert_eq!(total_damage_on_the_meter(&meter), 0);
+    }
+
+    #[derive(Default)]
+    struct Frames(Mutex<Vec<CombatSnapshot>>);
+
+    impl EventSink for Frames {
+        fn emit(&self, event: MeterEvent) {
+            if let MeterEvent::DpsSnapshot(frame) = event {
+                self.0.lock().unwrap().push(frame);
+            }
+        }
+    }
+
+    const OTHER_PLAYER: u32 = ME + 1;
+
+    fn meter_in_a_fight_with_an_unnamed_player() -> (DpsMeter, Arc<Frames>) {
+        let frames = Arc::new(Frames::default());
+        let meter = meter_with(Arc::clone(&frames));
+        meter.set_fight_tracking(true);
+        meter.data_storage.set_main_actor(ME, "Me");
+        meter.data_storage.append_mob(BOSS, BOSS_CODE);
+        meter.data_storage.set_mob_hp(BOSS, Some(1_000), Some(1_000));
+        meter.data_storage.append_damage(big_hit(ME, BOSS));
+        meter.data_storage.append_damage(big_hit(OTHER_PLAYER, BOSS));
+        (meter, frames)
+    }
+
+    fn send_the_current_frame(meter: &DpsMeter) {
+        let frame = meter.get_dps_snapshot(0).expect("a fight is on the meter");
+        meter.fight.send_frame_if_changed(frame);
+    }
+
+    #[test]
+    fn frames_with_nothing_new_are_not_sent_again() {
+        let (meter, frames) = meter_in_a_fight_with_an_unnamed_player();
+
+        for _ in 0..5 {
+            send_the_current_frame(&meter);
+        }
+
+        assert_eq!(frames.0.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_name_arriving_while_nobody_hits_produces_a_frame() {
+        let (meter, frames) = meter_in_a_fight_with_an_unnamed_player();
+        send_the_current_frame(&meter);
+
+        meter.data_storage.append_actor(OTHER_PLAYER, "Rin", None);
+        send_the_current_frame(&meter);
+        send_the_current_frame(&meter);
+
+        let frames = frames.0.lock().unwrap();
+        assert_eq!(frames.len(), 2);
+        let name_in = |frame: &CombatSnapshot| frame.by_target_player_stats[&BOSS][&OTHER_PLAYER].actor_name.clone();
+        assert_eq!(name_in(&frames[0]), "");
+        assert_eq!(name_in(&frames[1]), "Rin");
+        assert_eq!(frames[0].total_damage, frames[1].total_damage, "the damage did not change");
+    }
+
+    #[test]
+    fn the_boss_health_changing_while_nobody_hits_produces_a_frame() {
+        let (meter, frames) = meter_in_a_fight_with_an_unnamed_player();
+        send_the_current_frame(&meter);
+
+        meter.data_storage.set_mob_hp(BOSS, Some(900), None);
+        send_the_current_frame(&meter);
+
+        let frames = frames.0.lock().unwrap();
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[1].combat_infos.target_infos[&BOSS].current_hp, Some(900));
+    }
+
+    #[test]
+    fn a_frame_without_damage_is_not_sent_before_any_frame_was() {
+        let frames = Arc::new(Frames::default());
+        let meter = meter_with(Arc::clone(&frames));
+        meter.set_fight_tracking(true);
+        meter.data_storage.set_main_actor(ME, "Me");
+
+        if let Some(frame) = meter.get_dps_snapshot(0) {
+            meter.fight.send_frame_if_changed(frame);
+        }
+
+        assert!(frames.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn after_a_reset_the_next_frame_with_damage_goes_out_even_if_it_looks_like_the_last() {
+        let (meter, frames) = meter_in_a_fight_with_an_unnamed_player();
+        send_the_current_frame(&meter);
+
+        meter.fight.forget_sent_frame();
+        send_the_current_frame(&meter);
+
+        assert_eq!(frames.0.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_saved_fight_and_a_delete_reach_the_files_when_the_meter_saves_on_quit() {
+        let dir = crate::mobs::store::test_dir::TestDir::new();
+        let log = std::env::temp_dir().join(format!("meter-core-persist-{}.log", std::process::id()));
+        let logger = Arc::new(AppLogger::new(log, Box::new(|_| {})));
+        let on_disk = || HistoryStore::open(Some(dir.path().to_path_buf()), Arc::clone(&logger)).get_records();
+        let meter = DpsMeter::new(Arc::new(Discard), Arc::clone(&logger), Some(dir.path().to_path_buf()));
+        meter.set_fight_tracking(true);
+        meter.data_storage.append_damage(big_hit(ME, BOSS));
+
+        meter.set_fight_tracking(false);
+        meter.save_now();
+        assert_eq!(on_disk().len(), 1);
+
+        let saved = meter.get_history().remove(0).id;
+        assert!(meter.delete_history_record(&saved));
+        meter.save_now();
+        assert!(on_disk().is_empty());
+    }
+
+    #[derive(Default)]
+    struct IdleSays(Mutex<Vec<bool>>);
+
+    impl EventSink for IdleSays {
+        fn emit(&self, event: MeterEvent) {
+            if let MeterEvent::DpsIdleHidden(hidden) = event {
+                self.0.lock().unwrap().push(hidden);
+            }
+        }
+    }
+
+    impl IdleSays {
+        fn comes_to_say(&self, hidden: bool) -> bool {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while Instant::now() < deadline {
+                if self.0.lock().unwrap().last() == Some(&hidden) {
+                    return true;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            false
+        }
+    }
+
+    fn running_meter(hide_when_idle: bool) -> (DpsMeter, Arc<IdleSays>) {
+        let said = Arc::new(IdleSays::default());
+        let meter = meter_with(Arc::clone(&said));
+        meter.apply_config(DpsMeterConfig { hide_when_idle, dps_snapshot_interval_ms: 10, ..meter.current_config() });
+        meter.set_fight_tracking(true);
+        meter.start_for_replay();
+        (meter, said)
+    }
+
+    #[test]
+    fn hiding_when_idle_hides_the_meter_until_your_first_hit() {
+        let (meter, said) = running_meter(true);
+        assert!(said.comes_to_say(true), "a meter with no fight steps aside");
+
+        meter.data_storage.append_damage(big_hit(ME, BOSS));
+
+        let back = said.comes_to_say(false);
+        meter.stop_dps_meter();
+        assert!(back, "your hit brings it back");
+    }
+
+    #[test]
+    fn a_peek_shows_an_idle_meter_for_its_seconds_only() {
+        let (meter, said) = running_meter(true);
+        assert!(said.comes_to_say(true));
+
+        meter.peek_overlay(1);
+        let shown = said.0.lock().unwrap().last() == Some(&false);
+        let hidden_again = said.comes_to_say(true);
+        meter.stop_dps_meter();
+        assert!(shown, "the peek shows it at once");
+        assert!(hidden_again, "and it steps aside again when the peek is over");
+    }
+
+    #[test]
+    fn with_hiding_when_idle_off_the_meter_never_hides() {
+        let (meter, said) = running_meter(false);
+        let first = said.comes_to_say(false);
+        thread::sleep(Duration::from_millis(200));
+        meter.stop_dps_meter();
+        assert!(first, "the loop said where it stands");
+        assert!(!said.0.lock().unwrap().contains(&true));
     }
 }

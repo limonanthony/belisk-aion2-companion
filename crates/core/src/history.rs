@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::mobs::store::write_atomic;
+use crate::background_save::BackgroundSave;
+use crate::logger::AppLogger;
+use crate::mobs::store::{set_aside_path, write_atomic};
 use crate::models::combat::{
     BuffSummary, CombatInfos, CombatSnapshot, PlayerOverviewStat, SkillStats, TargetInfo,
 };
@@ -48,17 +50,56 @@ pub struct HistoryRecord {
 // Store
 // =============================================================================
 
+const FILE_NAME: &str = "combat_history.bin";
+
+/// The records live in memory and are what every reader sees; the file is
+/// written from a copy by `BackgroundSave`, never by the thread that changed
+/// them and never under the lock.
 pub struct HistoryStore {
-    records: Mutex<VecDeque<HistoryRecord>>,
-    dir: Mutex<Option<PathBuf>>,
+    records: Arc<Mutex<VecDeque<HistoryRecord>>>,
+    saver: Option<BackgroundSave>,
 }
 
 impl HistoryStore {
+    /// A store that lives in memory only.
     pub fn new() -> Self {
         Self {
-            records: Mutex::new(VecDeque::new()),
-            dir: Mutex::new(None),
+            records: Arc::new(Mutex::new(VecDeque::new())),
+            saver: None,
         }
+    }
+
+    /// Loads `history/combat_history.bin` from `app_data_dir` and saves every
+    /// change back to it. A file that cannot be read is set aside as
+    /// `combat_history.bin.bad-<seconds>` and never overwritten; the store
+    /// then starts empty. Without a folder the store lives in memory only.
+    pub fn open(app_data_dir: Option<PathBuf>, logger: Arc<AppLogger>) -> Self {
+        let Some(app_data_dir) = app_data_dir else {
+            return Self::new();
+        };
+        let path = app_data_dir.join("history").join(FILE_NAME);
+        let records = match read_file(&path) {
+            Ok(records) => records.unwrap_or_default(),
+            Err(problem) => {
+                logger.error(format!("{FILE_NAME}: {}", set_aside(&path, &problem)));
+                VecDeque::new()
+            }
+        };
+        Self::with_writer(records, logger, move |records| write_file(&path, &records))
+    }
+
+    fn with_writer(
+        initial: VecDeque<HistoryRecord>,
+        logger: Arc<AppLogger>,
+        write: impl Fn(Vec<HistoryRecord>) -> Result<(), String> + Send + Sync + 'static,
+    ) -> Self {
+        let records = Arc::new(Mutex::new(initial));
+        let shared = Arc::clone(&records);
+        let saver = BackgroundSave::new(FILE_NAME, logger, move || {
+            let copy: Vec<HistoryRecord> = shared.lock().unwrap().iter().cloned().collect();
+            write(copy)
+        });
+        Self { records, saver: Some(saver) }
     }
 
     pub fn get_records(&self) -> Vec<HistoryRecord> {
@@ -66,49 +107,40 @@ impl HistoryStore {
     }
 
     pub fn clear_all(&self) -> usize {
-        let mut stored = self.records.lock().unwrap();
-        let count = stored.len();
-        stored.clear();
-        self.write_to_disk(&[]);
+        let count = {
+            let mut stored = self.records.lock().unwrap();
+            let count = stored.len();
+            stored.clear();
+            count
+        };
+        self.request_save();
         count
     }
 
     pub fn delete_record(&self, id: &str) -> bool {
-        let mut stored = self.records.lock().unwrap();
-        let old_len = stored.len();
-        stored.retain(|r| r.id != id);
-        if stored.len() != old_len {
-            let snapshot: Vec<HistoryRecord> = stored.iter().cloned().collect();
-            self.write_to_disk(&snapshot);
-            true
-        } else {
-            false
+        let deleted = {
+            let mut stored = self.records.lock().unwrap();
+            let old_len = stored.len();
+            stored.retain(|r| r.id != id);
+            stored.len() != old_len
+        };
+        if deleted {
+            self.request_save();
         }
-    }
-
-    pub fn delete_records(&self, ids: &[String]) -> usize {
-        if ids.is_empty() {
-            return 0;
-        }
-
-        let ids: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
-        let mut stored = self.records.lock().unwrap();
-        let old_len = stored.len();
-        stored.retain(|record| !ids.contains(record.id.as_str()));
-        let deleted = old_len - stored.len();
-
-        if deleted > 0 {
-            let snapshot: Vec<HistoryRecord> = stored.iter().cloned().collect();
-            self.write_to_disk(&snapshot);
-        }
-
         deleted
     }
 
-    pub fn init_dir(&self, app_data_dir: PathBuf) {
-        let dir = app_data_dir.join("history");
-        let _ = std::fs::create_dir_all(&dir);
-        *self.dir.lock().unwrap() = Some(dir);
+    /// Writes any change not yet on disk, on the calling thread: for quitting.
+    pub fn flush(&self) {
+        if let Some(saver) = &self.saver {
+            saver.flush();
+        }
+    }
+
+    fn request_save(&self) {
+        if let Some(saver) = &self.saver {
+            saver.request();
+        }
     }
 
     /// Persist current snapshot as per-target history records, then clear.
@@ -216,97 +248,85 @@ impl HistoryStore {
     }
 
     fn push(&self, records: Vec<HistoryRecord>) {
-        let mut stored = self.records.lock().unwrap();
-        stored.extend(records);
-
-        // Trim to max
-        while stored.len() > MAX_RECORDS {
-            stored.pop_front();
-        }
-
-        // Write to disk
-        let snapshot: Vec<HistoryRecord> = stored.iter().cloned().collect();
-        self.write_to_disk(&snapshot);
-    }
-
-    // =========================================================================
-    // Disk I/O (lz4 compressed binary)
-    // =========================================================================
-
-    fn write_to_disk(&self, records: &[HistoryRecord]) {
-        let dir = match self.dir.lock().unwrap().as_ref() {
-            Some(d) => d.clone(),
-            None => return,
-        };
-
-        let json = serde_json::to_vec(records).unwrap_or_default();
-        let compressed = lz4_flex::compress_prepend_size(&json);
-
-        let crc = crc32fast::hash(&compressed);
-
-        let mut bytes = Vec::with_capacity(MAGIC.len() + 2 + 4 + compressed.len());
-        bytes.extend_from_slice(MAGIC);
-        bytes.extend_from_slice(&VERSION.to_le_bytes());
-        bytes.extend_from_slice(&crc.to_le_bytes());
-        bytes.extend_from_slice(&compressed);
-
-        let file_path = dir.join("combat_history.bin");
-        if let Err(e) = write_atomic(&file_path, &bytes) {
-            eprintln!("[history] failed to write {}: {}", file_path.display(), e);
-        }
-    }
-
-    pub fn load_from_disk(&self) {
-        let dir = match self.dir.lock().unwrap().as_ref() {
-            Some(d) => d.clone(),
-            None => return,
-        };
-
-        let file_path = dir.join("combat_history.bin");
-        let data = match std::fs::read(&file_path) {
-            Ok(d) => d,
-            Err(_) => return,
-        };
-
-        if data.len() < 10 {
-            return;
-        }
-
-        // Verify magic
-        if &data[0..4] != MAGIC {
-            eprintln!("[history] bad magic");
-            return;
-        }
-
-        // Verify version
-        let version = u16::from_le_bytes([data[4], data[5]]);
-        if version != VERSION {
-            eprintln!("[history] unsupported version: {}", version);
-            return;
-        }
-
-        // Verify CRC
-        let expected_crc = u32::from_le_bytes([data[6], data[7], data[8], data[9]]);
-        let compressed = &data[10..];
-        let actual_crc = crc32fast::hash(compressed);
-        if actual_crc != expected_crc {
-            eprintln!("[history] CRC mismatch");
-            return;
-        }
-
-        // Decompress and parse
-        match lz4_flex::decompress_size_prepended(compressed) {
-            Ok(json) => {
-                if let Ok(records) = serde_json::from_slice::<Vec<HistoryRecord>>(&json) {
-                    let mut stored = self.records.lock().unwrap();
-                    stored.clear();
-                    stored.extend(records);
-                }
-            }
-            Err(e) => {
-                eprintln!("[history] decompress failed: {}", e);
+        {
+            let mut stored = self.records.lock().unwrap();
+            stored.extend(records);
+            while stored.len() > MAX_RECORDS {
+                stored.pop_front();
             }
         }
+        self.request_save();
+    }
+}
+
+// =============================================================================
+// Disk I/O (lz4 compressed binary)
+// =============================================================================
+
+/// Encodes the records and writes them over the file. When the records cannot
+/// be encoded nothing is written: the file keeps what it holds.
+fn write_file(path: &Path, records: &impl Serialize) -> Result<(), String> {
+    let json = serde_json::to_vec(records).map_err(|error| format!("cannot encode the history: {error}"))?;
+    let compressed = lz4_flex::compress_prepend_size(&json);
+    let crc = crc32fast::hash(&compressed);
+
+    let mut bytes = Vec::with_capacity(MAGIC.len() + 2 + 4 + compressed.len());
+    bytes.extend_from_slice(MAGIC);
+    bytes.extend_from_slice(&VERSION.to_le_bytes());
+    bytes.extend_from_slice(&crc.to_le_bytes());
+    bytes.extend_from_slice(&compressed);
+
+    write_atomic(path, &bytes).map_err(|error| format!("cannot write {}: {error}", path.display()))
+}
+
+/// `Ok(None)` when there is no file yet. `Err` says why a file that exists
+/// cannot be used.
+fn read_file(path: &Path) -> Result<Option<VecDeque<HistoryRecord>>, String> {
+    let data = match std::fs::read(path) {
+        Ok(data) => data,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("cannot be read: {error}")),
+    };
+
+    if data.len() < 10 {
+        return Err(format!("is {} bytes, too short for a history file", data.len()));
+    }
+    if &data[0..4] != MAGIC {
+        return Err("has the wrong magic number".to_string());
+    }
+    let version = u16::from_le_bytes([data[4], data[5]]);
+    if version != VERSION {
+        return Err(format!("is version {version}, this build reads version {VERSION}"));
+    }
+    let expected_crc = u32::from_le_bytes([data[6], data[7], data[8], data[9]]);
+    let compressed = &data[10..];
+    if crc32fast::hash(compressed) != expected_crc {
+        return Err("fails its checksum".to_string());
+    }
+    let json = lz4_flex::decompress_size_prepended(compressed).map_err(|error| format!("cannot be decompressed: {error}"))?;
+    let records = serde_json::from_slice::<Vec<HistoryRecord>>(&json)
+        .map_err(|error| format!("holds no readable records: {error}"))?;
+    Ok(Some(records.into()))
+}
+
+/// Renames a file the store cannot use to `<name>.bad-<seconds>`, so the next
+/// save does not overwrite it. Returns what the log should say.
+fn set_aside(path: &Path, problem: &str) -> String {
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+    let aside = set_aside_path(path, now_secs);
+    match std::fs::rename(path, &aside) {
+        Ok(()) => format!(
+            "{} {problem}; moved to {} and starting with no history",
+            path.display(),
+            aside.display()
+        ),
+        Err(error) => format!(
+            "{} {problem}, and it could not be moved aside ({error}); starting with no history",
+            path.display()
+        ),
     }
 }
 
@@ -316,6 +336,18 @@ mod tests {
 
     use super::*;
 
+    fn quiet_logger() -> Arc<AppLogger> {
+        let path = std::env::temp_dir().join(format!("meter-core-history-{}.log", std::process::id()));
+        Arc::new(AppLogger::new(path, Box::new(|_| {})))
+    }
+
+    fn open(dir: &crate::mobs::store::test_dir::TestDir) -> HistoryStore {
+        HistoryStore::open(Some(dir.path().to_path_buf()), quiet_logger())
+    }
+
+    fn history_file(dir: &crate::mobs::store::test_dir::TestDir) -> PathBuf {
+        dir.path().join("history").join(FILE_NAME)
+    }
     fn fight_on(targets: &[u32]) -> CombatSnapshot {
         let player = |damage: u64| PlayerOverviewStat {
             actor_id: 1,
@@ -402,13 +434,11 @@ mod tests {
     #[test]
     fn saved_history_loads_back_in_a_new_store_and_leaves_no_temporary_file() {
         let dir = crate::mobs::store::test_dir::TestDir::new();
-        let store = HistoryStore::new();
-        store.init_dir(dir.path().to_path_buf());
+        let store = open(&dir);
         store.save_and_clear(fight_on(&[1, 2]), no_ledger);
+        store.flush();
 
-        let reloaded = HistoryStore::new();
-        reloaded.init_dir(dir.path().to_path_buf());
-        reloaded.load_from_disk();
+        let reloaded = open(&dir);
 
         assert_eq!(ids(&reloaded), ids(&store));
         assert_eq!(ids(&reloaded).len(), 2);
@@ -418,17 +448,204 @@ mod tests {
     #[test]
     fn an_interrupted_write_leaves_the_previous_history_loadable() {
         let dir = crate::mobs::store::test_dir::TestDir::new();
-        let store = HistoryStore::new();
-        store.init_dir(dir.path().to_path_buf());
+        let store = open(&dir);
         store.save_and_clear(fight_on(&[1]), no_ledger);
+        store.flush();
         std::fs::write(dir.path().join("history").join("combat_history.bin.tmp"), b"half a wri").unwrap();
 
-        let reloaded = HistoryStore::new();
-        reloaded.init_dir(dir.path().to_path_buf());
-        reloaded.load_from_disk();
+        let reloaded = open(&dir);
 
         assert_eq!(ids(&reloaded), ids(&store));
         assert_eq!(ids(&reloaded).len(), 1);
+    }
+
+    #[test]
+    fn changes_still_pending_when_the_store_is_dropped_reach_the_file() {
+        let dir = crate::mobs::store::test_dir::TestDir::new();
+        let store = open(&dir);
+        store.save_and_clear(fight_on(&[1, 2, 3]), no_ledger);
+        let doomed = ids(&store).remove(0);
+        store.delete_record(&doomed);
+        let kept = ids(&store);
+        drop(store);
+
+        assert_eq!(ids(&open(&dir)), kept);
+    }
+
+    #[test]
+    fn deletes_reach_the_file() {
+        let dir = crate::mobs::store::test_dir::TestDir::new();
+        let store = open(&dir);
+        store.save_and_clear(fight_on(&[1, 2, 3, 4]), no_ledger);
+        let all = ids(&store);
+        store.flush();
+
+        store.delete_record(&all[0]);
+        store.delete_record(&all[1]);
+        store.flush();
+        assert_eq!(ids(&open(&dir)), all[2..].to_vec());
+
+        store.clear_all();
+        store.flush();
+        assert!(open(&dir).get_records().is_empty());
+    }
+
+    fn history_bytes(version: u16, crc_of: impl Fn(&[u8]) -> u32, magic: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let mut file = Vec::new();
+        file.extend_from_slice(magic);
+        file.extend_from_slice(&version.to_le_bytes());
+        file.extend_from_slice(&crc_of(payload).to_le_bytes());
+        file.extend_from_slice(payload);
+        file
+    }
+
+    fn unreadable_files() -> Vec<(&'static str, Vec<u8>)> {
+        let good_json = lz4_flex::compress_prepend_size(b"[]");
+        let not_records = lz4_flex::compress_prepend_size(b"{\"not\":\"a list\"}");
+        let not_lz4 = b"this is not an lz4 block at all".to_vec();
+        vec![
+            ("too short", b"DPSH".to_vec()),
+            ("bad magic", history_bytes(VERSION, crc32fast::hash, b"XXXX", &good_json)),
+            ("bad version", history_bytes(VERSION + 1, crc32fast::hash, MAGIC, &good_json)),
+            ("bad crc", history_bytes(VERSION, |_| 7, MAGIC, &good_json)),
+            ("bad decompress", history_bytes(VERSION, crc32fast::hash, MAGIC, &not_lz4)),
+            ("bad json", history_bytes(VERSION, crc32fast::hash, MAGIC, &not_records)),
+        ]
+    }
+
+    fn aside_files(dir: &crate::mobs::store::test_dir::TestDir) -> Vec<PathBuf> {
+        std::fs::read_dir(dir.path().join("history"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.file_name().unwrap().to_string_lossy().starts_with("combat_history.bin.bad-"))
+            .collect()
+    }
+
+    #[test]
+    fn an_unreadable_history_file_is_set_aside_and_the_next_save_does_not_overwrite_it() {
+        for (why, bytes) in unreadable_files() {
+            let dir = crate::mobs::store::test_dir::TestDir::new();
+            std::fs::create_dir_all(dir.path().join("history")).unwrap();
+            std::fs::write(history_file(&dir), &bytes).unwrap();
+
+            let store = open(&dir);
+
+            assert!(store.get_records().is_empty(), "{why}: the store starts empty");
+            let aside = aside_files(&dir);
+            assert_eq!(aside.len(), 1, "{why}: the file is set aside");
+            assert!(!history_file(&dir).exists(), "{why}: nothing is left at the history path");
+
+            store.save_and_clear(fight_on(&[1]), no_ledger);
+            store.flush();
+
+            assert_eq!(std::fs::read(&aside[0]).unwrap(), bytes, "{why}: the set-aside file is untouched");
+            assert_eq!(ids(&open(&dir)).len(), 1, "{why}: the new history is saved");
+        }
+    }
+
+    fn logger_writing_in(dir: &crate::mobs::store::test_dir::TestDir) -> Arc<AppLogger> {
+        Arc::new(AppLogger::new(dir.path().join("belisk.log"), Box::new(|_| {})))
+    }
+
+    #[test]
+    fn an_unreadable_history_file_is_named_with_its_reason_in_the_log() {
+        let dir = crate::mobs::store::test_dir::TestDir::new();
+        std::fs::create_dir_all(dir.path().join("history")).unwrap();
+        let bytes = history_bytes(VERSION, crc32fast::hash, b"XXXX", &lz4_flex::compress_prepend_size(b"[]"));
+        std::fs::write(history_file(&dir), bytes).unwrap();
+        let logger = logger_writing_in(&dir);
+
+        HistoryStore::open(Some(dir.path().to_path_buf()), Arc::clone(&logger));
+
+        let lines = logger.tail(10);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].contains("[ERROR]"), "{}", lines[0]);
+        assert!(lines[0].contains(FILE_NAME), "{}", lines[0]);
+        assert!(lines[0].contains("has the wrong magic number"), "{}", lines[0]);
+    }
+
+    #[test]
+    fn a_failed_history_save_is_named_with_its_reason_in_the_log() {
+        use std::time::{Duration, Instant};
+
+        let dir = crate::mobs::store::test_dir::TestDir::new();
+        let logger = logger_writing_in(&dir);
+        let store = HistoryStore::with_writer(VecDeque::new(), Arc::clone(&logger), |_| Err("disk full".to_string()));
+
+        store.save_and_clear(fight_on(&[1]), no_ledger);
+        store.flush();
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while logger.tail(10).is_empty() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let lines = logger.tail(10);
+        assert!(!lines.is_empty(), "nothing was logged");
+        assert!(lines[0].contains("[ERROR]"), "{}", lines[0]);
+        assert!(lines[0].contains(FILE_NAME), "{}", lines[0]);
+        assert!(lines[0].contains("disk full"), "{}", lines[0]);
+    }
+
+    #[test]
+    fn a_missing_history_file_is_a_fresh_start_and_sets_nothing_aside() {
+        let dir = crate::mobs::store::test_dir::TestDir::new();
+
+        let store = open(&dir);
+
+        assert!(store.get_records().is_empty());
+        assert!(!dir.path().join("history").exists(), "nothing was read, set aside or written");
+    }
+
+    struct CannotBeEncoded;
+
+    impl Serialize for CannotBeEncoded {
+        fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("refuses to encode"))
+        }
+    }
+
+    #[test]
+    fn records_that_cannot_be_encoded_leave_the_file_as_it_was() {
+        let dir = crate::mobs::store::test_dir::TestDir::new();
+        let store = open(&dir);
+        store.save_and_clear(fight_on(&[1, 2]), no_ledger);
+        store.flush();
+        let before = std::fs::read(history_file(&dir)).unwrap();
+
+        let error = write_file(&history_file(&dir), &CannotBeEncoded).unwrap_err();
+
+        assert!(error.contains("cannot encode the history"), "{error}");
+        assert_eq!(std::fs::read(history_file(&dir)).unwrap(), before);
+        assert!(!dir.path().join("history").join("combat_history.bin.tmp").exists());
+    }
+
+    #[test]
+    fn the_records_lock_is_free_while_the_file_is_being_written() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let (entered, wait_entered) = mpsc::channel();
+        let (release, wait_release) = mpsc::channel::<()>();
+        let wait_release = Mutex::new(wait_release);
+        let store = HistoryStore::with_writer(VecDeque::new(), quiet_logger(), move |written| {
+            entered.send(written.len()).unwrap();
+            wait_release.lock().unwrap().recv().unwrap();
+            Ok(())
+        });
+
+        store.save_and_clear(fight_on(&[1]), no_ledger);
+        assert_eq!(wait_entered.recv_timeout(Duration::from_secs(10)).unwrap(), 1, "the writer has the records and is stuck writing");
+
+        assert_eq!(store.get_records().len(), 1);
+        let more = store.save_and_clear(fight_on(&[2]), no_ledger);
+        assert_eq!(more.len(), 1);
+        let doomed = store.get_records()[0].id.clone();
+        assert!(store.delete_record(&doomed));
+        assert_eq!(store.get_records().len(), 1);
+
+        release.send(()).unwrap();
+        assert_eq!(wait_entered.recv_timeout(Duration::from_secs(10)).unwrap(), 1, "what changed during the write is written next");
+        release.send(()).unwrap();
     }
 
     fn target(id: u32, is_boss: bool) -> TargetInfo {
@@ -485,15 +702,13 @@ mod tests {
     #[test]
     fn a_ledger_is_kept_through_the_file() {
         let dir = crate::mobs::store::test_dir::TestDir::new();
-        let store = HistoryStore::new();
-        store.init_dir(dir.path().to_path_buf());
+        let store = open(&dir);
         let mut snapshot = fight_on(&[10]);
         snapshot.combat_infos.target_infos.insert(10, target(10, true));
         store.save_and_clear(snapshot, |_, dealers| Some(ledger_with(dealers)));
+        store.flush();
 
-        let reloaded = HistoryStore::new();
-        reloaded.init_dir(dir.path().to_path_buf());
-        reloaded.load_from_disk();
+        let reloaded = open(&dir);
 
         assert_eq!(reloaded.get_records()[0].ledger, store.get_records()[0].ledger);
         assert!(reloaded.get_records()[0].ledger.is_some());
@@ -509,11 +724,10 @@ mod tests {
         file.extend_from_slice(&crc32fast::hash(&compressed).to_le_bytes());
         file.extend_from_slice(&compressed);
         let dir = crate::mobs::store::test_dir::TestDir::new();
-        let store = HistoryStore::new();
-        store.init_dir(dir.path().to_path_buf());
-        std::fs::write(dir.path().join("history").join("combat_history.bin"), file).unwrap();
+        std::fs::create_dir_all(dir.path().join("history")).unwrap();
+        std::fs::write(history_file(&dir), file).unwrap();
 
-        store.load_from_disk();
+        let store = open(&dir);
 
         let records = store.get_records();
         assert_eq!(records.len(), 1);

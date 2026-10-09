@@ -128,7 +128,7 @@ pub fn load(path: &Path, now_secs: u64) -> Loaded {
     }
 }
 
-fn set_aside_path(path: &Path, now_secs: u64) -> PathBuf {
+pub fn set_aside_path(path: &Path, now_secs: u64) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(format!(".bad-{now_secs}"));
     path.with_file_name(name)

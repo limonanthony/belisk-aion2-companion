@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use crate::engine::buff_groups::group_by_name;
 use crate::models::combat::{
     ActorInfo, BuffInterval, BuffSummary, CombatInfos, CombatSnapshot, PlayerHpInfo,
     PlayerOverviewStat, PvpDamageOverviewStat, SkillStats, TargetInfo,
@@ -11,19 +12,11 @@ use crate::storage::data_storage::{infer_actor_class, DataStorage, FightLedgerIn
 
 pub struct DpsCalculator {
     data_storage: Arc<DataStorage>,
-    last_total_damage: Arc<Mutex<Option<u64>>>,
 }
 
 impl DpsCalculator {
     pub fn new(data_storage: Arc<DataStorage>) -> Self {
-        Self {
-            data_storage,
-            last_total_damage: Arc::new(Mutex::new(None)),
-        }
-    }
-
-    pub fn reset_snapshot_state(&self) {
-        *self.last_total_damage.lock().unwrap() = None;
+        Self { data_storage }
     }
 
     /// What the party took, healed and lost in the fight against `target`, from
@@ -59,7 +52,6 @@ impl DpsCalculator {
     ) -> Option<CombatSnapshot> {
         build_combat_snapshot(
             &self.data_storage,
-            &self.last_total_damage,
             target_damage_threshold,
             hide_unknown_players,
             max_player_count,
@@ -73,7 +65,6 @@ impl DpsCalculator {
 
 fn build_combat_snapshot(
     data_storage: &DataStorage,
-    last_total_damage: &Mutex<Option<u64>>,
     target_damage_threshold: u64,
     hide_unknown_players: bool,
     max_player_count: usize,
@@ -113,9 +104,6 @@ fn build_combat_snapshot(
         .filter_map(|tid| target_damage.get(tid))
         .sum();
 
-    // 4. Always build — duplicate suppression moved to snapshot loop
-    *last_total_damage.lock().unwrap() = Some(total_damage);
-
     // 5. Filter stats to kept targets only
     let filtered_skill_stats = filter_nested_map(&merged, &kept_targets);
 
@@ -139,7 +127,7 @@ fn build_combat_snapshot(
         .and_then(|tid| per_target_overview.get(&tid))
         .map(|stats| {
             let mut sorted: Vec<_> = stats.values().cloned().collect();
-            sorted.sort_by(|a, b| b.total_damage.cmp(&a.total_damage));
+            sorted.sort_by(|a, b| b.total_damage.cmp(&a.total_damage).then_with(|| a.actor_id.cmp(&b.actor_id)));
             // Filter unknown players if configured
             let filtered: Vec<_> = if hide_unknown_players {
                 sorted
@@ -186,6 +174,7 @@ fn build_combat_snapshot(
                 a_start
                     .total_cmp(&b_start)
                     .then_with(|| b.total_damage.cmp(&a.total_damage))
+                    .then_with(|| a.actor_id.cmp(&b.actor_id))
             });
             if hide_unknown_players {
                 sorted
@@ -331,6 +320,7 @@ fn aggregate_main_actor_dealt_player_overview(
         a.battle_start_time
             .total_cmp(&b.battle_start_time)
             .then_with(|| b.total_damage.cmp(&a.total_damage))
+            .then_with(|| a.player_id.cmp(&b.player_id))
     });
     rows.truncate(max_player_count.max(5).min(20));
     rows
@@ -671,38 +661,44 @@ fn build_buff_summaries(
 
         let battle_start_ms =
             target_battle_start_ms(&target_start_times, global_start_time, target_id, now_ms);
-        let battle_duration_ms = now_ms.saturating_sub(battle_start_ms).max(1);
-        let mut summaries = Vec::new();
-
-        for (actor_id, skill_map) in &actor_map {
-            for (skill_code, intervals) in skill_map {
-                let Some(last_interval) = intervals.back() else {
-                    continue;
-                };
-                let covered_ms = covered_duration_ms(intervals, battle_start_ms, now_ms);
-                summaries.push(BuffSummary {
-                    target_id,
-                    actor_id: *actor_id,
-                    skill_code: *skill_code,
-                    coverage: (covered_ms as f64 / battle_duration_ms as f64).clamp(0.0, 1.0),
-                    active: last_interval.end_ms > now_ms,
-                    last_start_ms: last_interval.start_ms,
-                    last_end_ms: last_interval.end_ms,
-                });
-            }
-        }
-
+        let summaries = target_buff_summaries(target_id, &actor_map, battle_start_ms, now_ms);
         if !summaries.is_empty() {
-            summaries.sort_by(|a, b| {
-                a.skill_code
-                    .cmp(&b.skill_code)
-                    .then_with(|| a.actor_id.cmp(&b.actor_id))
-            });
             result.insert(target_id, summaries);
         }
     }
 
     result
+}
+
+/// The buffs on one target, one summary per caster and buff name: the
+/// coverage is the union of the intervals of the skill ids that show that name.
+fn target_buff_summaries(
+    target_id: u32,
+    actor_map: &HashMap<u32, HashMap<u32, VecDeque<BuffInterval>>>,
+    battle_start_ms: u64,
+    now_ms: u64,
+) -> Vec<BuffSummary> {
+    let battle_duration_ms = now_ms.saturating_sub(battle_start_ms).max(1);
+    let mut summaries = Vec::new();
+    for (actor_id, skill_map) in actor_map {
+        for group in group_by_name(skill_map, battle_start_ms, now_ms) {
+            let Some(last_interval) = group.last_interval() else {
+                continue;
+            };
+            let covered_ms = group.covered_ms(battle_start_ms, now_ms);
+            summaries.push(BuffSummary {
+                target_id,
+                actor_id: *actor_id,
+                skill_code: group.skill_code,
+                coverage: (covered_ms as f64 / battle_duration_ms as f64).clamp(0.0, 1.0),
+                active: last_interval.end_ms > now_ms,
+                last_start_ms: last_interval.start_ms,
+                last_end_ms: last_interval.end_ms,
+            });
+        }
+    }
+    summaries.sort_by(|a, b| a.skill_code.cmp(&b.skill_code).then_with(|| a.actor_id.cmp(&b.actor_id)));
+    summaries
 }
 
 fn target_battle_start_ms(
@@ -717,45 +713,6 @@ fn target_battle_start_ms(
         .or(global_start_time)
         .map(|seconds| (seconds * 1000.0).max(0.0) as u64)
         .unwrap_or(now_ms)
-}
-
-pub(crate) fn covered_duration_ms(
-    intervals: &VecDeque<BuffInterval>,
-    range_start_ms: u64,
-    range_end_ms: u64,
-) -> u64 {
-    if range_end_ms <= range_start_ms {
-        return 0;
-    }
-
-    let mut ranges: Vec<(u64, u64)> = intervals
-        .iter()
-        .filter_map(|interval| {
-            let start = interval.start_ms.max(range_start_ms);
-            let end = interval.end_ms.min(range_end_ms);
-            (end > start).then_some((start, end))
-        })
-        .collect();
-    ranges.sort_unstable_by_key(|(start, _)| *start);
-
-    let mut total = 0u64;
-    let mut current: Option<(u64, u64)> = None;
-    for (start, end) in ranges {
-        match current {
-            Some((current_start, current_end)) if start <= current_end => {
-                current = Some((current_start, current_end.max(end)));
-            }
-            Some((current_start, current_end)) => {
-                total = total.saturating_add(current_end.saturating_sub(current_start));
-                current = Some((start, end));
-            }
-            None => current = Some((start, end)),
-        }
-    }
-    if let Some((start, end)) = current {
-        total = total.saturating_add(end.saturating_sub(start));
-    }
-    total
 }
 
 // =============================================================================
@@ -780,4 +737,73 @@ fn current_timestamp_millis() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SPIRITS_DESCENT_SHORT: u32 = 167_300_011;
+    const SPIRITS_DESCENT_LONG: u32 = 167_300_012;
+    const ELEMENT_UNIFICATION: u32 = 167_800_011;
+    const ELEMENT_UNIFICATION_PULSE: u32 = 167_800_021;
+    const YSMERA: u32 = 1;
+    const OTHER: u32 = 2;
+    const TARGET: u32 = 10;
+
+    fn secs(from: u64, to: u64) -> BuffInterval {
+        BuffInterval { start_ms: from * 1_000, end_ms: to * 1_000 }
+    }
+
+    fn by_skill(entries: &[(u32, &[BuffInterval])]) -> HashMap<u32, VecDeque<BuffInterval>> {
+        entries.iter().map(|&(code, intervals)| (code, intervals.iter().cloned().collect())).collect()
+    }
+
+    #[test]
+    fn a_live_summary_covers_the_union_of_the_ids_that_show_one_name() {
+        let actors = HashMap::from([
+            (
+                YSMERA,
+                by_skill(&[
+                    (SPIRITS_DESCENT_SHORT, &[secs(0, 10), secs(20, 30)]),
+                    (SPIRITS_DESCENT_LONG, &[secs(5, 35)]),
+                    (ELEMENT_UNIFICATION, &[secs(0, 10)]),
+                    (ELEMENT_UNIFICATION_PULSE, &[secs(40, 41)]),
+                ]),
+            ),
+            (OTHER, by_skill(&[(SPIRITS_DESCENT_SHORT, &[secs(0, 20)])])),
+        ]);
+
+        let summaries = target_buff_summaries(TARGET, &actors, 0, 100_000);
+
+        let rows: Vec<(u32, u32, f64, bool)> = summaries
+            .iter()
+            .map(|summary| (summary.actor_id, summary.skill_code, summary.coverage, summary.active))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (OTHER, SPIRITS_DESCENT_SHORT, 0.2, false),
+                (YSMERA, SPIRITS_DESCENT_LONG, 0.35, false),
+                (YSMERA, ELEMENT_UNIFICATION, 0.11, false),
+            ],
+            "0-35 s of Spirit's Descent once (not the 30 s longest, not the 50 s sum), the two keys of \
+             Element Unification as one, the other caster apart"
+        );
+    }
+
+    #[test]
+    fn a_merged_buff_is_active_while_any_of_its_ids_is_and_shows_its_latest_interval() {
+        let actors = HashMap::from([(
+            YSMERA,
+            by_skill(&[(SPIRITS_DESCENT_SHORT, &[secs(0, 10)]), (SPIRITS_DESCENT_LONG, &[secs(20, 130)])]),
+        )]);
+
+        let summaries = target_buff_summaries(TARGET, &actors, 0, 100_000);
+
+        assert_eq!(summaries.len(), 1);
+        assert!(summaries[0].active);
+        assert_eq!((summaries[0].last_start_ms, summaries[0].last_end_ms), (20_000, 130_000));
+        assert_eq!(summaries[0].coverage, 0.9);
+    }
 }

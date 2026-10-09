@@ -1,8 +1,8 @@
-//! Replays an `.aetherpc` recording through the full pipeline and prints a
+//! Replays a recording through the full pipeline and prints a
 //! summary of the final snapshot. No capture driver is loaded and no elevation
 //! is needed.
 //!
-//!     cargo run --example replay -- <recording.aetherpc> [--names] [--tickets] [--fights on|off|from-identity|from-tickets] [--speed N]
+//!     cargo run --example replay -- <recording> [--names] [--tickets] [--fights on|off|from-identity|from-tickets] [--speed N] [--data-dir <dir> [--delete-first-record] [--record]]
 //!
 //! Other players' names are only printed with `--names`. `--tickets` lists the
 //! ticket events the core emitted, with the capture time as Unix seconds.
@@ -14,14 +14,23 @@
 //! the meter closes a wiped attempt on its snapshot tick (200 ms), so an
 //! unpaced replay would close every wipe at the end. The boss wipes the meter
 //! closed and the history it saved are listed at the end.
+//! `--data-dir` gives the meter a folder for its history and personal bests (a
+//! throwaway one, never the app's real data folder), stops the meter at the
+//! end so the fight on it is saved and every pending write goes out, and shows
+//! what the files hold; `--delete-first-record` then deletes the first history
+//! record through the meter and shows the files again.
+//! `--record` (with `--data-dir`) records the replayed packets again through the
+//! meter's recording thread into `<dir>/recordings`, then reads that file back
+//! and prints how many packets it holds and how many were dropped on the way.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use meter_core::capture::recorder::replay_recording;
 use meter_core::engine::meter::DpsMeter;
 use meter_core::events::{EventSink, MeterEvent};
 use meter_core::tickets::{TicketContent, TicketReport};
@@ -52,6 +61,8 @@ struct CollectingSink {
     outcome: Mutex<Sender<ReplayOutcome>>,
     meter: OnceLock<Arc<DpsMeter>>,
     fights: FightMode,
+    /// Total damage and named session players of the last frame sent.
+    last_frame: Mutex<(u64, usize)>,
 }
 
 impl EventSink for CollectingSink {
@@ -72,6 +83,18 @@ impl EventSink for CollectingSink {
             MeterEvent::BossWiped(_) => "boss-wiped",
         };
         *self.counts.lock().unwrap().entry(name).or_default() += 1;
+        if let MeterEvent::DpsSnapshot(frame) = &event {
+            let named = frame.session.players.iter().filter(|player| !player.actor_name.is_empty()).count();
+            let mut last = self.last_frame.lock().unwrap();
+            if frame.total_damage > 0 && frame.total_damage == last.0 {
+                let mut counts = self.counts.lock().unwrap();
+                *counts.entry("  of which sent with no new damage").or_default() += 1;
+                if named > last.1 {
+                    *counts.entry("  of which a name arrived with no new damage").or_default() += 1;
+                }
+            }
+            *last = (frame.total_damage, named);
+        }
 
         if let MeterEvent::Tickets(report) = &event {
             self.tickets.lock().unwrap().push(report.clone());
@@ -115,6 +138,9 @@ fn main() -> ExitCode {
     let mut show_tickets = false;
     let mut fights = FightMode::On;
     let mut speed = None;
+    let mut data_dir = None;
+    let mut delete_first_record = false;
+    let mut record = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -139,6 +165,15 @@ fn main() -> ExitCode {
                     }
                 };
             }
+            "--data-dir" => match args.next() {
+                Some(dir) => data_dir = Some(PathBuf::from(dir)),
+                None => {
+                    eprintln!("--data-dir takes a folder");
+                    return ExitCode::FAILURE;
+                }
+            },
+            "--delete-first-record" => delete_first_record = true,
+            "--record" => record = true,
             _ if path.is_none() => path = Some(arg),
             _ => {
                 eprintln!("unexpected argument: {arg}");
@@ -147,11 +182,15 @@ fn main() -> ExitCode {
         }
     }
     let Some(path) = path else {
-        eprintln!("usage: replay <recording.aetherpc> [--names] [--tickets] [--fights on|off|from-identity|from-tickets] [--speed N]");
+        eprintln!("usage: replay <recording> [--names] [--tickets] [--fights on|off|from-identity|from-tickets] [--speed N] [--data-dir <dir> [--delete-first-record] [--record]]");
         return ExitCode::FAILURE;
     };
+    if (delete_first_record || record) && data_dir.is_none() {
+        eprintln!("--delete-first-record and --record need --data-dir");
+        return ExitCode::FAILURE;
+    }
 
-    match run(path, show_names, show_tickets, fights, speed) {
+    match run(path, show_names, show_tickets, fights, speed, data_dir, delete_first_record, record) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("replay failed: {error}");
@@ -160,7 +199,16 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(path: String, show_names: bool, show_tickets: bool, fights: FightMode, speed: Option<f64>) -> Result<(), String> {
+fn run(
+    path: String,
+    show_names: bool,
+    show_tickets: bool,
+    fights: FightMode,
+    speed: Option<f64>,
+    data_dir: Option<PathBuf>,
+    delete_first_record: bool,
+    record: bool,
+) -> Result<(), String> {
     let (outcome_tx, outcome_rx) = mpsc::channel();
     let sink = Arc::new(CollectingSink {
         counts: Mutex::new(BTreeMap::new()),
@@ -169,10 +217,11 @@ fn run(path: String, show_names: bool, show_tickets: bool, fights: FightMode, sp
         outcome: Mutex::new(outcome_tx),
         meter: OnceLock::new(),
         fights,
+        last_frame: Mutex::new((0, 0)),
     });
-    let log_path: PathBuf = std::env::temp_dir().join("aether").join("replay-example.log");
+    let log_path: PathBuf = std::env::temp_dir().join("belisk").join("replay-example.log");
     let logger = Arc::new(AppLogger::new(log_path, Box::new(|_| {})));
-    let meter = Arc::new(DpsMeter::new(sink.clone(), logger, None));
+    let meter = Arc::new(DpsMeter::new(sink.clone(), Arc::clone(&logger), data_dir.clone()));
     let _ = sink.meter.set(Arc::clone(&meter));
     meter.set_fight_tracking(fights == FightMode::On);
 
@@ -183,7 +232,10 @@ fn run(path: String, show_names: bool, show_tickets: bool, fights: FightMode, sp
     config.max_player_count = 1_000;
     meter.apply_config(config);
 
-    meter.start_for_replay()?;
+    meter.start_for_replay();
+    if record {
+        meter.start_packet_recording()?;
+    }
     match speed {
         Some(speed) => meter.replay_packet_recording_paced(path.clone(), speed)?,
         None => meter.replay_packet_recording(path.clone())?,
@@ -303,7 +355,59 @@ fn run(path: String, show_names: bool, show_tickets: bool, fights: FightMode, sp
     }
 
     print_events(&sink, &meter);
+    if record {
+        show_recording(&meter, packets)?;
+    }
+    if let Some(dir) = data_dir {
+        save_and_show_files(&meter, &logger, &dir, delete_first_record);
+    }
     Ok(())
+}
+
+/// Closes the recording the replay made (waiting for the recording thread to
+/// catch up) and reads it back.
+fn show_recording(meter: &DpsMeter, replayed: u64) -> Result<(), String> {
+    let status = meter
+        .stop_packet_recording()?
+        .ok_or("no recording was running")?;
+    let path = status.path.ok_or("the recording has no path")?;
+    let read_back = replay_recording(Path::new(&path), |_| true)?;
+    let drops = meter.packet_drops();
+    println!(
+        "recording {path}: {} packets written, {read_back} read back, {replayed} replayed; dropped before the dispatcher {}, left out of recordings {}",
+        status.packets, drops.capture_queue, drops.recording_queue
+    );
+    Ok(())
+}
+
+/// Stops the meter, which saves the fight still on it and writes every
+/// pending file, then shows what is on disk under `dir`; with `delete_first`,
+/// deletes the first history record through the meter and shows the files again.
+fn save_and_show_files(meter: &DpsMeter, logger: &Arc<AppLogger>, dir: &std::path::Path, delete_first: bool) {
+    meter.stop_dps_meter();
+    show_files(logger, dir, "after stop");
+    if delete_first {
+        match meter.get_history().first() {
+            Some(record) => {
+                println!("deleting history record {} through the meter", record.id);
+                meter.delete_history_record(&record.id);
+                meter.save_now();
+                show_files(logger, dir, "after the delete");
+            }
+            None => println!("no history record to delete"),
+        }
+    }
+}
+
+fn show_files(logger: &Arc<AppLogger>, dir: &std::path::Path, when: &str) {
+    let size = |path: PathBuf| std::fs::metadata(path).map_or_else(|_| "missing".to_string(), |meta| format!("{} bytes", meta.len()));
+    let history = meter_core::history::HistoryStore::open(Some(dir.to_path_buf()), Arc::clone(logger));
+    println!(
+        "files {when}: combat_history.bin {}, {} records read back; personal_bests.json {}",
+        size(dir.join("history").join("combat_history.bin")),
+        history.get_records().len(),
+        size(dir.join("history").join("personal_bests.json")),
+    );
 }
 
 fn print_own_character(meter: &DpsMeter) {

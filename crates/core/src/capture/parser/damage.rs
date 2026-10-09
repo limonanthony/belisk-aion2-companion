@@ -5,9 +5,7 @@ use crate::capture::parser::damage_record::{
 use crate::capture::parser::periodic_record::{
     read_periodic_record, PeriodicRecord, MODE_DAMAGE_TICK, MODE_HEAL_TICK,
 };
-use crate::capture::parser::utils::{
-    bytes_to_hex, read_u32_le_or_default as parse_u32_le, read_varint,
-};
+use crate::capture::parser::utils::bytes_to_hex;
 use crate::capture::processor::StreamProcessor;
 use crate::models::packet::{ParsedDamagePacket, SpecialDamage};
 
@@ -60,118 +58,71 @@ impl StreamProcessor {
     }
 
     pub(crate) fn parse_dot_packet(&mut self, packet: &[u8], _is_compressed_bundle: bool) -> bool {
-        // self.log_packet_source(packet, is_compressed_bundle);
-        let mut offset = 0usize;
-        if packet.len() <= offset + 1 || packet[offset] != 0x05 || packet[offset + 1] != 0x38 {
+        let Some(tick) = read_periodic_record(packet) else {
             return false;
-        }
-        offset += 2;
-        if let Some(tick) = read_periodic_record(packet) {
-            self.record_periodic_effect(&tick);
-        }
-
-        let target_info = read_varint(packet, offset);
-        if !target_info.is_valid() {
-            return false;
-        }
-        offset += target_info.length;
-        if packet.len() <= offset {
-            return false;
-        }
-
-        let mode = packet[offset];
-        if mode != MODE_DAMAGE_TICK {
-            return true;
-        }
-        offset += 1;
-
-        let actor_info = read_varint(packet, offset);
-        if !actor_info.is_valid() {
-            return false;
-        }
-
-        if actor_info.value < 1 {
-            return false;
-        }
-
-        offset += actor_info.length;
-
-        let unknown_info = read_varint(packet, offset);
-        if !unknown_info.is_valid() {
-            return false;
-        }
-        offset += unknown_info.length;
-        if offset + 4 > packet.len() {
-            return false;
-        }
-
-        let skill_code_candidate = parse_u32_le(packet, offset);
-        if is_thamon_absorption_recovery(skill_code_candidate) {
-            return true;
-        }
-        let skill_code = normalize_skill_id(skill_code_candidate);
-        offset += 4;
-
-        let damage_info = read_varint(packet, offset);
-        if !damage_info.is_valid() {
-            return false;
-        }
-
-        let parsed = ParsedDamagePacket {
-            target_id: target_info.value as u32,
-            actor_id: actor_info.value as u32,
-            skill_code,
-            ori_skill_code: skill_code_candidate,
-            damage: damage_info.value as u64,
-            is_dot: true,
-            is_crit: false,
-            multi_hit_damage: 0,
-            multi_hit_count: 0,
-            specials: Vec::new(),
-            drain_amount: 0,
-            regeneration_amount: 0,
         };
-        let log_target_id = parsed.target_id;
-        let log_actor_id = parsed.actor_id;
-        let log_skill_code = parsed.skill_code;
-        let log_damage = parsed.damage;
-        self.data_storage.append_damage(parsed);
+        self.record_periodic_effect(&tick);
+
+        let Some(parsed) = dot_damage_event(&tick) else {
+            return true;
+        };
         self.logger.debug(format!(
             "[{}] dot target={} actor={} skill={} ori_code={}, damage={}",
-            self.port,
-            log_target_id,
-            log_actor_id,
-            log_skill_code,
-            skill_code_candidate,
-            log_damage
+            self.port, parsed.target_id, parsed.actor_id, parsed.skill_code, parsed.ori_skill_code, parsed.damage
         ));
+        self.data_storage.append_damage(parsed);
         true
     }
 
     /// Ticks of a class skill that heal are heals; damage ticks from a monster
-    /// are damage the target took. The tick still goes through the damage path
-    /// below, as before. A heal tick of a monster or system effect (a potion,
-    /// natural recovery) is not a player's healing.
+    /// are damage the target took. A heal tick of a monster or system effect (a
+    /// potion, natural recovery) is not a player's healing.
     fn record_periodic_effect(&self, tick: &PeriodicRecord) {
         let Some(amount) = tick.tick_amount else {
             return;
         };
-        let skill_code = original_skill_code(tick.skill_code.unwrap_or(tick.effect_id));
-        if is_thamon_absorption_recovery(skill_code) {
-            return;
-        }
+        let skill_code = periodic_skill_code(tick);
         match tick.mode {
-            MODE_HEAL_TICK if skill_code >= FIRST_CLASS_SKILL_CODE => self.data_storage.record_heal_tick(
-                tick.actor_id,
-                tick.target_id,
-                displayed_skill_code(skill_code),
-                amount,
-            ),
-            MODE_DAMAGE_TICK if is_monster_skill_code(skill_code) => self
+            MODE_HEAL_TICK if skill_code >= FIRST_CLASS_SKILL_CODE && !is_thamon_absorption_recovery(skill_code) => {
+                self.data_storage.record_heal_tick(
+                    tick.actor_id,
+                    tick.target_id,
+                    displayed_skill_code(skill_code),
+                    amount,
+                )
+            }
+            MODE_DAMAGE_TICK if damage_tick_source(tick) == Some(DamageTickSource::Monster) => self
                 .data_storage
                 .record_incoming_hit(tick.target_id, tick.actor_id, skill_code, amount),
             _ => {}
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DamageTickSource {
+    Player,
+    Monster,
+}
+
+fn periodic_skill_code(tick: &PeriodicRecord) -> u32 {
+    original_skill_code(tick.skill_code.unwrap_or(tick.effect_id))
+}
+
+/// Who a damage tick belongs to, from its skill; `None` for a Thamon
+/// absorption recovery (named by its skill or by its effect) and for a tick
+/// without a skill, which are neither damage dealt nor damage taken.
+fn damage_tick_source(tick: &PeriodicRecord) -> Option<DamageTickSource> {
+    let skill_code = periodic_skill_code(tick);
+    if is_thamon_absorption_recovery(skill_code) || is_thamon_absorption_recovery(tick.effect_id) {
+        return None;
+    }
+    if is_player_skill_code(skill_code) {
+        Some(DamageTickSource::Player)
+    } else if is_monster_skill_code(skill_code) {
+        Some(DamageTickSource::Monster)
+    } else {
+        None
     }
 }
 
@@ -227,6 +178,34 @@ fn damage_event(record: &DamageRecord) -> Option<ParsedDamagePacket> {
     })
 }
 
+/// A damage tick of a player's skill, stored under its effect id. Like a hit,
+/// it is no damage dealt when it belongs to a monster or is a Thamon
+/// absorption recovery.
+fn dot_damage_event(tick: &PeriodicRecord) -> Option<ParsedDamagePacket> {
+    if tick.mode != MODE_DAMAGE_TICK
+        || tick.actor_id < 1
+        || damage_tick_source(tick) != Some(DamageTickSource::Player)
+    {
+        return None;
+    }
+    let damage = tick.tick_amount?;
+
+    Some(ParsedDamagePacket {
+        target_id: tick.target_id,
+        actor_id: tick.actor_id,
+        skill_code: normalize_skill_id(tick.effect_id),
+        ori_skill_code: tick.effect_id,
+        damage,
+        is_dot: true,
+        is_crit: false,
+        multi_hit_damage: 0,
+        multi_hit_count: 0,
+        specials: Vec::new(),
+        drain_amount: 0,
+        regeneration_amount: 0,
+    })
+}
+
 fn is_player_skill_code(code: u32) -> bool {
     (1..=299_999_999).contains(&code) && !(1_000_000..=9_999_999).contains(&code)
 }
@@ -266,8 +245,12 @@ pub(crate) fn displayed_skill_code(raw: u32) -> u32 {
     }
 }
 
+/// Codes that name one skill each, not a family of variants: the Elementalist
+/// spirits' specials and 30_000_000..=30_999_999.
+const EXACT_SKILL_CODES: [std::ops::RangeInclusive<u32>; 2] = [16_001_000..=16_001_999, 30_000_000..=30_999_999];
+
 fn normalize_skill_id(raw: u32) -> u32 {
-    if (30_000_000..=30_999_999).contains(&raw) {
+    if EXACT_SKILL_CODES.iter().any(|range| range.contains(&raw)) {
         raw
     } else {
         raw - (raw % 10_000)
@@ -367,6 +350,19 @@ mod tests {
 
         assert_eq!(parsed.ori_skill_code, 11_020_151);
         assert_eq!(parsed.skill_code, 11_020_000);
+    }
+
+    #[test]
+    fn spirit_specials_keep_their_own_skill_code() {
+        for code in [16_001_104, 16_001_108, 16_001_116, 16_001_117] {
+            let mut after_action = vec![2];
+            after_action.extend(amount_tail(&[0x64]));
+
+            let parsed = event(&hit_frame_with_skill(0x0004, code, &after_action)).unwrap();
+
+            assert_eq!(parsed.skill_code, code);
+            assert_eq!(displayed_skill_code(code), code);
+        }
     }
 
     #[test]
