@@ -212,9 +212,11 @@
     </section>
 
     <script src="app.js"></script>
+    <script src="app-name.js"></script>
     <script>
       (function () {
         const { icon, C } = App;
+        const APP = window.APP_NAME;
 
         const ADMIN_OK = ["ok", "Administrator rights", "Running elevated, which packet capture requires."];
         const NPCAP_OK = ["ok", "Npcap", "Installed and answering. 3 network adapters visible."];
@@ -258,7 +260,7 @@
             case "ready":
               return win(ctx, {
                 head: "Everything is ready",
-                sub: "Opening AION 2 DPS Meter…",
+                sub: `Opening ${APP}…`,
                 checks: check(ADMIN_OK) + check(NPCAP_OK) + check(WD_FALLBACK),
                 sum: "Everything the meter needs is in place.",
                 actions: recheck() + C.btn("Continue now", { kind: "primary", ic: "chevronRight" }),
@@ -326,7 +328,7 @@
               return win(ctx, {
                 head: "The meter is not ready yet",
                 checks:
-                  check(["bad", "Administrator rights", "AION 2 DPS Meter is not running as Administrator. Capture drivers cannot be opened without it. Close it and start it again."], { block: true }) +
+                  check(["bad", "Administrator rights", `${APP} is not running as Administrator. Capture drivers cannot be opened without it. Close it and start it again.`], { block: true }) +
                   check(NPCAP_OK) +
                   check(["idle", "WinDivert", "Cannot be checked without Administrator rights."], { optional: true }),
                 sum: "Administrator rights have to be sorted out before the meter can run.",

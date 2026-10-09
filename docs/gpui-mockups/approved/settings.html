@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="shared.css" />
     <link rel="stylesheet" href="overlay.css" />
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="updates.css" />
     <style>
       /* Overlay preview column beside the overlay settings. */
       .pv {
@@ -253,9 +254,11 @@
         <a href="history.html">Fight history</a>
         <a href="reminders.html">Reminder card</a>
         <a href="todos.html">To-do window</a>
+        <a href="whatsnew.html">What's new</a>
       </nav>
-      <h1>Settings <small>approved, round 3; Reminders 2026-10-05; To-dos 2026-10-06; Overlay › Window and To-dos changed 2026-10-08; To-dos describes the Resources window, 2026-10-08</small></h1>
+      <h1>Settings <small>approved, round 3; Reminders 2026-10-05; To-dos 2026-10-06; Overlay › Window and To-dos changed 2026-10-08; To-dos describes the Resources window, 2026-10-08; About › Updates and About › Changelog, and Overlay › Window "Hide between fights", 2026-10-09</small></h1>
       <ul class="rationale">
+        <li><b>Changed 2026-10-09</b> (the updates round, <a href="../updates/README.md">updates/</a>): About gains an <b>Updates</b> group right after the app's own group (the update status with its one action, "Download updates automatically", on by default, and "Changelog"), and the <b>Changelog</b> opens as a sub-page of About with "‹ About" (states "About" to "Changelog, after Show older"; French: <a href="settings.html?lang=fr&amp;states=about,about:available,about:downloading,about:ready,about:failed,about:limited,changelog,changelog:older">the same states in French</a>). About's other rows are the build's (Fluent <code>settings-about-*</code>, English and French): its name is the app's, from one constant (<code>app-name.js</code>, the Fluent term <code>-app-name</code>), and the version is the running one. The same day, Overlay › Window gains "Hide between fights" after "Open the meter at launch", off by default.</li>
         <li><b>Changed 2026-10-08</b> (hub and to-do autofill rounds, <a href="../hub/README.md">hub/</a>, <a href="../todos-autofill/README.md">todos-autofill/</a>): Settings opens from the <a href="toolbar.html">toolbar</a>'s gear. Overlay › Window gains "Open the meter at launch" (first, off by default) and "Show or hide everything" (Alt + Shift + CapsLock, read-only), and "Lock overlay" says the toolbar always takes clicks (states "Overlay, Window" and "After Yes in the first-open prompt"). To-dos: the lead says the window opens from the toolbar; Membership names Shugo keys too (the row's name, "yeah shugo keys is ok") and asks when the game shows more than the cap; Start over keeps the game's values (states "To-dos", "Membership off, the game shows more", "Reset to-dos completely"). Then the recharges left the to-do window ("I think we can remove the recharges from the todos now no ?"): the lead, Daily reset, Weekly reset and Membership (its group renamed "Resources") say they also set the Resources window's refill times and caps, Start over says it empties the amounts typed there, and Hidden to-dos counts to-dos only.</li>
         <li>Everything kept: overlay look and rows (with a live preview beside them), meter behaviour, the three shortcuts, capture (backend, connection status, recording and replay, log folder), personal bests, language and About. Changes apply at once; there is no Save.</li>
         <li>Rows are a label and one sentence on the left, the control on a stable right edge, in titled groups. Sidebar navigation, shared with Home.</li>
@@ -274,8 +277,27 @@
         <li>Personal bests: Reset asks for a second click; bests survive deleting history. Up to six were listed before; here the whole table scrolls.</li>
         <li>Recording: the first two minutes on an unfamiliar server are recorded automatically (newest five kept, never leave the PC). Replay runs a recording through the live meter and needs the meter running.</li>
         <li>Developer tuning stays out: snapshot interval, packet size threshold and the resync delays.</li>
-        <li>Clear cache: the exact effect (what is reset, what is kept) is to be confirmed during implementation against the Rust storage; the dialog copy follows that.</li>
-        <li>About lists only what the repository grounds: GPL-3.0-only (LICENSE), the fork chain Helveticxa/Aether then ZDYoung0519/NOIA2 (both GPL-3.0-only), Kuroukihime's data (GPL-3.0), GPUI Kit (Apache-2.0) and Lucide (ISC). Npcap is a dependency the user installs; WinDivert is bundled, and no licence text for it is in the repository yet.</li>
+        <li>Reset settings (About › Storage): the build's dialog says what is reset and what is kept: "Settings go back to their defaults, including the Capture switches. Fight history, personal bests, recordings and boss corrections are kept."</li>
+        <li>About lists only what the repository grounds, as the build does: GPL-3.0-only (LICENSE), the fork chain Helveticxa/Aether then ZDYoung0519/NOIA2 (both GPL-3.0-only), Kuroukihime's data (GPL-3.0), the references, GPUI (Apache-2.0), Lucide (ISC), Barlow Semi Condensed (SIL OFL 1.1) and WinDivert. Npcap is a dependency the user installs; WinDivert is bundled, and no licence text for it is in the repository yet.</li>
+      </ul>
+      <h2>About › Updates (approved 2026-10-09)</h2>
+      <ul>
+        <li><b>Where</b>: a group "Updates" right after the app's own group, so it shows without scrolling. The group title says what is contacted: "Asks GitHub for the latest release; nothing about you or your game is sent." The app checks at launch, then once an hour, never more often (GitHub's 60 requests an hour per address); there is no switch to turn the checks off, and no beta channel. The hourly check goes on while an update is available or ready, so a newer release replaces a staged one.</li>
+        <li><b>Up to date</b>: "1.5.1 is the latest version. Checked at 21:02; checked again at launch and every hour." and "Check now". After any check, Check now is disabled for a minute ("Checked just now; you can check again in a minute.").</li>
+        <li><b>Available</b> (automatic download off): "Release notes" (ghost, opens the GitHub release page in the browser; the app does not show the release body) and the primary "Update to 1.6.0". With automatic download on, the download starts at once.</li>
+        <li><b>Downloading / paused</b>: the Slider's 4 px track as progress, "2.6 of 4.2 MB · at most 1 MB/s, paused while you fight"; always capped at 1 MB/s and paused while you fight, also after a click on Update. Cancel deletes the partial file (turning the switch off does too). Paused: the range dims.</li>
+        <li><b>Checking the download</b>: its hash and its ed25519 signature (minisign-style; the public key is in the build); the build's spinner badge.</li>
+        <li><b>Ready</b>: the primary "Restart to update"; the toolbar shows the same. Installing always waits for this click (or the toolbar's): the app closes and opens again in the new version.</li>
+        <li><b>Errors</b>, never a pop-up during play: a failed check is a field message in bad under the row ("…did not pass its check (signature mismatch), so it was deleted. Nothing was installed.") with "Try again"; GitHub unreachable or limiting is a field message in warn with the next try's time; limited also disables Check now until GitHub's reset time (never a retry loop).</li>
+        <li>One bright button per view: "Update to 1.6.0" when available, "Restart to update" when ready; otherwise secondary or ghost.</li>
+        <li>Versions and times are invented: the version resets to 1.0.0; this build runs 1.5.1 and GitHub's latest is 1.6.0.</li>
+      </ul>
+      <h2>About › Changelog (approved 2026-10-09)</h2>
+      <ul>
+        <li>A sub-page of About with a back button ("‹ About"), as the fight report opens a player in place; not a window of its own. "Open changelog" on the Updates group opens it, and so does What's new's "Full changelog".</li>
+        <li>The build's own versions only (the embedded <code>CHANGELOG.md</code> / <code>CHANGELOG.fr.md</code>), starting at 1.0.0, the version reset; Aether's history is in a file of its own, not here. A newer release's notes are on GitHub until the update.</li>
+        <li>A row: the version (display type), the summary cut to one line in muted, the date in faint, the chevron at the end; one open at a time, the newest open first. Pointer on a row: a faint lift on enter, gone on leave. The open row shows the whole summary and its bullets.</li>
+        <li>Five versions first; "Show older" adds five each time, with "5 of 9 versions" beside it; once all are shown: "All 9 versions". The list draws only what is on screen (GPUI <code>uniform_list</code> / <code>list</code>), and the files are parsed only when the page opens, never at startup.</li>
       </ul>
       <h2>Reminders</h2>
       <ul>
@@ -298,7 +320,8 @@
       </ul>
       <h2>Overlay › Window</h2>
       <ul>
-        <li><b>Open the meter at launch</b>: the group's first row, off by default: "When Kisk starts. Off: only the toolbar opens, and the meter opens from its icon." The <a href="prompt.html">first-open prompt</a>'s "Yes, at launch" turns the same switch on and names this path.</li>
+        <li><b>Open the meter at launch</b>: the group's first row, off by default: "When <span data-app-name>Belisk</span> starts. Off: only the toolbar opens, and the meter opens from its icon." The <a href="prompt.html">first-open prompt</a>'s "Yes, at launch" turns the same switch on and names this path.</li>
+        <li><b>Hide between fights</b> (added 2026-10-09): right after "Open the meter at launch", off by default: "The meter steps aside when you are not fighting and comes back at your first hit. Its toolbar icon shows it for 10 s." The meter stays open while it steps aside (fights are tracked); its <a href="toolbar.html?states=aside">toolbar icon</a> stays lit and its tooltip says "Hidden between fights. Click to show it for 10 s."</li>
         <li><b>Lock overlay</b> adds "The toolbar always takes clicks." Alt+CapsLock still locks the meter only.</li>
         <li><b>Show or hide everything</b>: Alt + Shift + CapsLock as read-only Kbd keys: "Hides the toolbar and every open tool, and brings them back. The tray icon's Show toolbar brings them back too." The build has no Shortcuts page (this design's Shortcuts page was not built), so each shortcut is described on the row it acts on.</li>
       </ul>
@@ -310,9 +333,12 @@
     </section>
 
     <script src="app.js"></script>
+    <script src="app-name.js"></script>
+    <script src="updates.js"></script>
     <script>
       (function () {
         const { icon, C } = App;
+        const APP = window.APP_NAME;
         const row = C.row;
         const group = C.group;
 
@@ -365,7 +391,8 @@
               ) +
               group(
                 "Window",
-                row("Open the meter at launch", "When Kisk starts. Off: only the toolbar opens, and the meter opens from its icon.", C.sw(launchOn)) +
+                row("Open the meter at launch", `When ${APP} starts. Off: only the toolbar opens, and the meter opens from its icon.`, C.sw(launchOn)) +
+                  row("Hide between fights", "The meter steps aside when you are not fighting and comes back at your first hit. Its toolbar icon shows it for 10 s.", C.sw(false)) +
                   row("Lock overlay", "Clicks pass through to the game and the controls hide. Alt+CapsLock switches it. The toolbar always takes clicks.", C.sw(false)) +
                   row("Show or hide everything", "Hides the toolbar and every open tool, and brings them back. The tray icon's Show toolbar brings them back too.", `<span class="keys-ro" aria-label="Alt+Shift+CapsLock">${C.kbd("Alt+Shift+CapsLock")}</span>`, " is-stack") +
                   row("Fit height to the players", "Off keeps a fixed height.", C.sw(true)) +
@@ -495,36 +522,16 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
             );
           },
 
-          about(ctx) {
-            const li = (title, desc, ctl = "", tag = "") => `<div class="li"><div class="li-main"><b>${title}${tag}</b><small>${desc}</small></div>${ctl}</div>`;
-            const ext = C.btn("", { kind: "ghost", ic: "external", size: "sm" });
-            return (
-              head("About", "") +
-              group(
-                "AION 2 DPS Meter",
-                row(`AION 2 DPS Meter <span class="faint disp" style="font-weight:600">2.4.0</span>`, "A real-time DPS meter for AION 2, built for the global servers.", C.btn("Source code", { ic: "external" })) +
-                  row("Licence: GPL-3.0-only", "Free software: you may share and change it under the GNU General Public License, version 3. Any shared build ships with its source.", C.btn("Read the licence", { ic: "scale" })),
-                true
-              ) +
-              `<div class="grp-title">Credits</div><div class="grp">${li(
-                "Helveticxa/Aether-Aion2-DPS-meter-Global",
-                "This meter is a fork of Aether, by Helveticxa. GPL-3.0-only.",
-                ext,
-                '<span class="badge is-plain credit-tag">Forked from</span>'
-              )}${li("ZDYoung0519/NOIA2", "By zdyoung. Aether, which this meter is forked from, is itself a fork of NOIA2: the capture pipeline, packet parsers, overlay and game-data catalogues come from it. GPL-3.0-only.", ext, '<span class="badge is-plain credit-tag">Upstream</span>')}${li(
-                "Kuroukihime/AIon2-Dps-Meter",
-                "English monster and boss names, the Fighter's skill names, and the server codes. GPL-3.0.",
-                ext
-              )}${li("References", "TK-open-public/Aion2-Dps-Meter · taengu/Aion2-Dps-Meter · p62003/aletheia_AION2_DPS_Meter")}${li(
-                "Built with",
-                "GPUI · GPUI Kit (Apache-2.0) · Lucide icons (ISC) · WinDivert, the bundled fallback capture driver"
-              )}${li("Npcap", "Not bundled with the meter: you install it from npcap.com, under its own licence.")}</div>` +
-              group(
-                "Storage",
-                row("Stored on this PC", "Settings 6 KB · Fight history 14 records, 2.1 MB · Recordings 5 files, 11.8 MB", C.btn("Open folder", { ic: "folder" })) +
-                  row("Clear cache", "Settings and shortcuts go back to their defaults.", C.btn("Clear cache…", { kind: "danger" }))
-              )
-            );
+          // About and its Updates group are drawn by updates.js (Up.about);
+          // st is the update status ("uptodate" when none).
+          about(ctx, st) {
+            return Up.about(ctx, st && st !== "reset" ? st : "uptodate");
+          },
+
+          // About › Changelog, a sub-page of About (Up.changelog).
+          changelog(ctx, st) {
+            const o = { other: { open: "1.4.0", hover: "1.3.1" }, older: { count: 99 } }[st] || {};
+            return Up.changelog(ctx, o);
           },
 
           reminders(ctx, st) {
@@ -621,16 +628,18 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
         function render(state, ctx) {
           const [section, sub] = state.split(":");
           const content = S[section](ctx, sub);
+          const U = Up.T[ctx.lang];
           const dialog =
-            sub === "clear"
-              ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true"><h3>Clear the cache?</h3><p>Settings, shortcuts and window positions go back to their defaults. Fight history, personal bests and recordings are kept.</p><div class="dlg-actions">${C.btn("Cancel")}${C.btn("Clear cache", { kind: "danger" })}</div></div></div>`
+            section === "about" && sub === "reset"
+              ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-reset"><h3 id="dlg-reset">${U.resetTitle}</h3><p>${U.resetBody}</p><div class="dlg-actions">${C.btn(U.cancel)}${C.btn(U.reset, { kind: "danger" })}</div></div></div>`
               : section === "todos" && sub === "confirm"
                 ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-todos"><h3 id="dlg-todos">Reset the to-dos completely?</h3><p>On every character: your own to-dos (3) are removed, every hidden to-do comes back, and every count you typed and every amount typed in the Resources window is emptied. Values from the game stay.</p><p>The reset hour and the membership stay. This cannot be undone.</p><div class="dlg-actions">${C.btn("Cancel").replace('class="btn', 'class="btn is-focus')}${C.btn("Reset to-dos", { kind: "danger" })}</div></div></div>`
                 : "";
           // Scrolled to the Window group, the thumb shortened so it stays in the track.
-          const thumb = { "overlay:window": 110, "overlay:on": 110 }[state] || { overlay: 150, behaviour: 360, capture: 200, reminders: 272, about: 280 }[section] || 0;
-          const scroll = { "overlay:window": 1020, "overlay:on": 1020, "capture:rec": 300, "capture:replay": 470, "reminders:scrolled": 640 }[state] || 0;
-          return ctx.shell(ctx, section, content, {
+          const thumb = { "overlay:window": 110, "overlay:on": 110, "changelog:older": 330 }[state] || { overlay: 150, behaviour: 360, capture: 200, reminders: 272, about: 300 }[section] || 0;
+          const scroll = { "overlay:window": 1020, "overlay:on": 1020, "capture:rec": 300, "capture:replay": 470, "reminders:scrolled": 640, "changelog:older": 120 }[state] || 0;
+          // The changelog is a sub-page of About: the sidebar keeps About.
+          return ctx.shell(ctx, section === "changelog" ? "about" : section, content, {
             meter: { tone: "live", label: `${ctx.t.running} · 12:41` },
             overlayHtml: dialog,
             thumb,
@@ -641,7 +650,7 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
         App.mount({
           states: [
             { id: "overlay", title: "Overlay", sub: "look, rows, boss fights, window" },
-            { id: "overlay:window", title: "Overlay, Window", sub: "\"Open the meter at launch\" first, off by default; Lock overlay says the toolbar always takes clicks; \"Show or hide everything\" with its fixed keys" },
+            { id: "overlay:window", title: "Overlay, Window", sub: "\"Open the meter at launch\" first, off by default; \"Hide between fights\" after it, off by default; Lock overlay says the toolbar always takes clicks; \"Show or hide everything\" with its fixed keys" },
             { id: "overlay:on", title: "After Yes in the first-open prompt", sub: "the prompt's \"Yes, at launch\" turns the same switch on" },
             { id: "behaviour", title: "Meter behaviour", sub: "counting and between fights; tooltip on Count" },
             { id: "shortcuts", title: "Shortcuts", sub: "three global shortcuts" },
@@ -665,8 +674,21 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
             { id: "todos:confirm", title: "Reset to-dos completely", sub: "the confirm dialog, Cancel focused; the game's values stay" },
             { id: "todos:reset", title: "After the complete reset", sub: "your own to-dos gone, nothing hidden, every count you typed and every amount typed in the Resources window empty (the game's values stay); the badge fades after 4 s" },
             { id: "general:lang", title: "General", sub: "language menu open" },
-            { id: "about", title: "About", sub: "version, licence, credits, storage" },
-            { id: "about:clear", title: "About, clearing the cache", sub: "Kit Dialog" },
+            { id: "about", title: "About", sub: "the app's group (its name from -app-name, the running version), then Updates (up to date: the status, \"Download updates automatically\" on by default, the changelog), credits, storage" },
+            { id: "about:checking", title: "About, checking for updates", sub: "after Check now, or at the hourly check while About is open: the spinner badge, Check now disabled" },
+            { id: "about:justchecked", title: "About, just checked", sub: "Check now stays disabled for a minute" },
+            { id: "about:available", title: "About, update available (automatic download off)", sub: "the one primary button: Update to 1.6.0; Release notes opens GitHub's release page in the browser" },
+            { id: "about:downloading", title: "About, downloading", sub: "progress, capped at 1 MB/s; Cancel deletes the partial file" },
+            { id: "about:paused", title: "About, download paused during a fight", sub: "the range dims; resumes when the fight ends" },
+            { id: "about:verifying", title: "About, checking the download", sub: "its hash and ed25519 signature, about a second" },
+            { id: "about:ready", title: "About, update ready", sub: "the one primary button: Restart to update; installing waits for this click (or the toolbar's)" },
+            { id: "about:failed", title: "About, the download failed its check", sub: "deleted, nothing installed; the reason in bad under the row, Try again" },
+            { id: "about:offline", title: "About, GitHub unreachable", sub: "the reason in warn and the next try; Check now available" },
+            { id: "about:limited", title: "About, GitHub limiting checks", sub: "60 an hour per address, shared by every PC on the connection; Check now disabled until GitHub's reset time" },
+            { id: "about:reset", title: "About, resetting settings", sub: "Kit Dialog; the build's copy" },
+            { id: "changelog", title: "Changelog", sub: "About › Open changelog: the newest version open, the next four collapsed to version, summary and date; Show older" },
+            { id: "changelog:other", title: "Changelog, another version opened", sub: "a click on a collapsed row opens it and closes the open one; pointer on a row: a faint lift" },
+            { id: "changelog:older", title: "Changelog, after Show older", sub: "every version shown (9 here: 1.5.1 back to 1.0.0, the version reset), scrolled down: \"All 9 versions\"" },
           ],
           render,
         });

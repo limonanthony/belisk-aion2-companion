@@ -1,6 +1,6 @@
-# AION 2 DPS Meter design tokens
+# Belisk design tokens
 
-The approved visual language for the AION 2 DPS Meter's GPUI overlays and main
+The approved visual language for Belisk's GPUI overlays and main
 window. Sources of truth: [meter.html](meter.html) (round 1, D2 with bar end d
 and rank b; the round 2 combat-power fix; round 4, layout D with the Session
 and Target boards), [pvp.html](pvp.html),
@@ -11,10 +11,14 @@ and the Reminders section of settings.html (2026-10-05), and
 [todos.html](todos.html) and the To-dos section of settings.html
 (2026-10-06), and [report.html](report.html) with the summary card's
 report button in meter.html and the boss records in history.html
-(2026-10-07). The shared overlay classes live in [overlay.css](overlay.css),
-the fight report's in [report.css](report.css), the main-window components
-in [app.css](app.css). Later rounds extend this file only with values the
-user has approved.
+(2026-10-07), the hub pages (2026-10-08, see "Hub"), and the updates round
+(2026-10-09, see "Updates and the changelog"): the toolbar's update icon in
+[toolbar.html](toolbar.html), [whatsnew.html](whatsnew.html), and About ›
+Updates and About › Changelog in settings.html. The shared overlay classes
+live in [overlay.css](overlay.css), the fight report's in
+[report.css](report.css), the hub's in `hub.css`, the updates round's in
+`updates.css`, the main-window components in [app.css](app.css). Later
+rounds extend this file only with values the user has approved.
 
 Colours are sRGB. `a` is the user's background opacity (0–255 in Settings,
 default 150, so `a = 150/255 ≈ 0.59`).
@@ -209,11 +213,22 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
   login, or relog via character select" (the long form: start the meter
   before logging in, or relog via character select). It goes away once you
   are named.
-- **Product name**: "AION 2 DPS Meter" in the main window; "DPS Meter" where
-  an overlay has no target to name (waiting card, idle capsule). "Kisk"
-  where the hub names the app (the toolbar's quit tooltip, the first-open
-  prompt, the tray, the new Settings descriptions); the other names change
-  with the rename (TASK-23).
+- **Product name**: **Belisk**, after the Kibelisk players plant to respawn
+  (decided 2026-10-09; it was "AION 2 DPS Meter", and the "Kisk" idea was
+  dropped). Tagline: "Belisk — combat meter and companion for AION 2"
+  (French "Belisk — compteur de combat et compagnon pour AION 2"), the
+  description in About's first group. The name is the Fluent term
+  `-app-name`: the main window's title bar and the startup gate, About's
+  first group and version row, where the toolbar names the app (the quit
+  tooltip "Quit Belisk / Closes every tool.", the toolbar's accessible name,
+  "Log in while Belisk runs."), the first-open prompt, the tray, the source
+  lines of the Resources and to-do windows and the Settings descriptions.
+  Every approved page takes it from one constant, `app-name.js`, page notes
+  included (`<span data-app-name>`); a rename changes only that line.
+  Earlier rounds' pages keep the name they were drawn with. Where an overlay
+  has no target to name (the waiting card, the idle capsule), the meter's
+  title is "DPS meter" (French "Compteur DPS"): the toolbar's name for the
+  tool, not the product name.
 - **Sorting**: the active column is `text` with a down arrow; other sortable
   columns are underlined at 0.25.
 - **Delete confirmation**: the button turns into a `danger-fill` "Delete?"
@@ -249,6 +264,9 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
   meter's. Its dropdowns open and close at once. The first-open prompt's
   good note stays 4 s, then the card fades out over 150 ms, as the reminder
   card.
+- The toolbar's update icon lights on pointer enter and goes on leave; its
+  2 px progress line redraws only when the download's percentage changes;
+  nothing pulses or flashes (2026-10-09).
 - Frames are drawn only on a snapshot or while a tween runs.
 
 ## Reminder card
@@ -337,14 +355,14 @@ takes its row values from this table.
 
 Approved on 2026-10-08 (the to-do autofill round,
 [../todos-autofill/README.md](../todos-autofill/README.md)). When you log in
-while Kisk runs, the meter open or not, the game sends every ticket (the
+while Belisk runs, the meter open or not, the game sends every ticket (the
 regular pool it refills and an extra pool from items), then each change.
 Caps and refills come from the game's ticket table. The to-do window shows
 the weekly entries (Ascension Trial); every pool is the Resources window's.
 
 | Element | Value |
 |---|---|
-| Source line | Under the character selector (2 px into its 6 px gap), 4 px above the list: the meter's hint line, 20 px, 4 px inset, 6 px gap, Lucide `gamepad-2` 12 px `faint`, 11.5 px / 500 `muted`, times and names `text` / 600, "·" in `faint`, cut off with an ellipsis. "From the game, live · logged in at 19:02"; "From the game at login, Sun 22:40 · refills since estimated" (the to-do window, where nothing refills: "From the game at login, Sun 22:40"); "No game values yet. Log in with Sefa while Kisk runs."; the Resources window only: "Tavrin not seen at login yet · Account rows from Mirelle" |
+| Source line | Under the character selector (2 px into its 6 px gap), 4 px above the list: the meter's hint line, 20 px, 4 px inset, 6 px gap, Lucide `gamepad-2` 12 px `faint`, 11.5 px / 500 `muted`, times and names `text` / 600, "·" in `faint`, cut off with an ellipsis. "From the game, live · logged in at 19:02"; "From the game at login, Sun 22:40 · refills since estimated" (the to-do window, where nothing refills: "From the game at login, Sun 22:40"); "No game values yet. Log in with Sefa while { -app-name } runs."; the Resources window only: "Tavrin not seen at login yet · Account rows from Mirelle" |
 | Game figure | No arrows: a 14 px gap where the one-less arrow was, the 46 px figure ("7" 12.5 px / 600, "/21" 11 px `faint`), the extra pool in a 26 px slot after it, 1 px apart, so the block keeps the stepper's 88 px and nothing else in the row moves. Under the pointer it reads as a field (`track` fill, 1 px inset `rgba(255, 240, 225, 0.12)`); a click or Enter types over it |
 | Extra pool | "+3" 11.5 px / 600 `muted`, left-aligned in its 26 px slot ("+380" fits); never yellow, never part of the cap or of "Full in …" |
 | Weekly rows | Done of target: done = target − entries left ("2/3" for 1 left of 3); done (struck through) at 0 left; extra entries in the extra-pool slot ("+1") |
@@ -526,7 +544,7 @@ rows and its header; a list that does not scroll has neither.
 ## Hub
 
 Approved on 2026-10-08 ([../hub/README.md](../hub/README.md) is the record of
-how it was chosen). Kisk is a set of tools over the game: at launch only the
+how it was chosen). Belisk is a set of tools over the game: at launch only the
 toolbar opens, and every tool opens and closes from it. Pages:
 [toolbar.html](toolbar.html), [resources.html](resources.html),
 [prompt.html](prompt.html), [tray.html](tray.html), the meter's "…" menu and
@@ -538,7 +556,7 @@ toolbar opens, and every tool opens and closes from it. Pages:
 | Element | Value |
 |---|---|
 | Window | An overlay card of its own: `card` at the user's opacity, `card-border`, no shadow; 4 px padding, 12 px radius (the card's 14 px reads as a pill at this height); one row, 2 px gaps; the content scale. Horizontal only |
-| Order | Grip; DPS meter (Lucide `swords`), PvP meter (`crosshair`), To-dos (`list-checks`), Fight history (`crown`), Reminders (`bell`), Settings (`settings`); a rule; Odyle Energy (`zap`), Shugo keys (`key-round`), the warning; a rule; fold (`chevrons-left`), quit (`x`) |
+| Order | Grip; DPS meter (Lucide `swords`), PvP meter (`crosshair`), To-dos (`list-checks`), Fight history (`crown`), Reminders (`bell`), Settings (`settings`); a rule; Odyle Energy (`zap`), Shugo keys (`key-round`), the warning; a rule; the update icon while there is something to do or know (2026-10-09, see "Updates and the changelog"), fold (`chevrons-left`), quit (`x`) |
 | Grip | 14 × 26 px, Lucide `grip-vertical` 12 px in `faint`; the bar's empty space drags too |
 | Tool | 26 × 26 px, 7 px radius, icon 14 px in `muted`. Pointer over: `soft`, `text`. Lit (the tool is open): `hot`, `text`, the icon 3 px higher and a 4 × 4 px dot (`currentColor`, the pin dot's size) 2 px above the bottom edge. Reminders paused: Lucide `bell-off` in `faint` |
 | Fold and quit | 20 × 26 px, icon 12 px in `faint`; pointer over: `soft`, `text` |
@@ -546,18 +564,27 @@ toolbar opens, and every tool opens and closes from it. Pages:
 | Count | 26 px tall, 7 px radius, 7 px sides, 5 px gaps: icon 13 px `muted`; the regular pool 12.5 px / 600 `text`, "/840" 11 px / 500 `faint` 1 px after; the extra pool "+380" 11.5 px / 500 `muted` 3 px after. Icons only (no names). Pointer over: `soft`. Resources open: `hot`. Before any game value: "—" in `faint` / 500 |
 | Count, full | Regular pool at its cap and the refill it would lose near (1 h for Odyle, 3 h for Shugo keys): `full-fill`, the icon and figure `warn`, "/21" `warn` at 0.7, the extra pool `muted`; pointer over: `warn` at 0.20. Full but further away: drawn as a normal count |
 | Warning | Only while other resources are full and their refill is near (3 h for Invasion keys and Nightmare, 24 h for the Daily Dungeon): 26 px, 7 px radius, 7 px sides, 4 px gap, `full-fill`; Lucide `triangle-alert` 13 px and the number 12.5 px / 600 in `warn`; pointer over or open: `warn` at 0.20 |
-| Folded | Grip, unfold (`chevrons-right`, as fold) and, when anything is full near its refill (Odyle and Shugo keys included), the warning with that number; a click on it unfolds |
+| Folded | Grip, unfold (`chevrons-right`, as fold) and, when anything is full near its refill (Odyle and Shugo keys included), the warning with that number; a click on it unfolds. The update icon, when shown, after the warning |
 | Tooltip | `popover` colours, 4 × 8 px padding, 6 px radius, 11.5 px / 500 `text`, a second line in `muted`; 6 px under the control, its left edge on the tool's (its right edge on a count's, the warning's, fold's and quit's); after 500 ms |
 | Focus ring | `focus-ring`, 2 px, 1 px outside the button (accessibility tools; Left and Right move along the bar) |
 
 - **Tooltips**: "DPS meter / Fights are tracked while it is open." (open:
-  "Click to close. Fights stop being tracked."), "PvP meter", "To-dos",
+  "Click to close. Fights stop being tracked."; open and stepped aside with
+  Settings › Overlay › "Hide between fights", added 2026-10-09: "Hidden
+  between fights. Click to show it for 10 s."), "PvP meter", "To-dos",
   "Fight history", "Reminders" ("Reminders / Paused"), "Settings", "Fold the
-  toolbar", "Unfold the toolbar", "Quit Kisk / Closes every tool."; a count:
-  its name, then "245 of 840, +380 extra · full in 2 d 14 h. Click for all
-  resources." ("Full, spend by Tue 09:00", "Full, being wasted" near the
-  refill; "Full · refills Tue 09:00" further away); before any game value
-  "No value yet. Log in while Kisk runs."; the warning "2 more full".
+  toolbar", "Unfold the toolbar", "Quit { -app-name } / Closes every tool."
+  ("Quit Belisk"); a count: its name, then "245 of 840, +380
+  extra · full in 2 d 14 h. Click for all resources." ("Full, spend by Tue
+  09:00", "Full, being wasted" near the refill; "Full · refills Tue 09:00"
+  further away); before any game value "No value yet. Log in while
+  { -app-name } runs."; the warning "2 more full". The toolbar's accessible
+  name is `-app-name`.
+- **The meter stepping aside** (2026-10-09): with "Hide between fights" on
+  (off by default), an open meter steps aside while you are not fighting
+  and comes back at your first hit. It is still open: its tool stays lit
+  (`hot` and the dot) and fights are tracked; a click on it shows it for
+  10 s instead of closing it.
 - **Clicks**: a tool opens or closes its window; a count opens or closes
   the Resources window; the warning opens its dropdown; quit ends the
   process at once, no confirmation.
@@ -597,7 +624,7 @@ toolbar opens, and every tool opens and closes from it. Pages:
 | Place | Its own overlay window, placed as the reminder card: 6 px above the meter, left edges aligned (below it when there is no room); a reminder that comes meanwhile stacks 6 px above it |
 | Card | The meter's width (310 px; 220 px over the capsule); 8 px padding; `card`, `card-border`, 14 px radius |
 | Header | The reminder card's: 22 px, 4 px left inset, 6 px gap, Lucide `swords` 13 px `muted`, "Open the meter at launch?" 12.5 px / 600 (ellipsis) |
-| Body | 23 px in (under the title), 4 px right, 3 px under the header: "Kisk starts with the toolbar alone. Open the DPS meter each time Kisk starts?" 11.5 px / 500 `muted`, 15 px line |
+| Body | 23 px in (under the title), 4 px right, 3 px under the header: "{ -app-name } starts with the toolbar alone. Open the DPS meter each time { -app-name } starts?" ("Belisk starts …") 11.5 px / 500 `muted`, 15 px line |
 | Path | 6 px under the body, 23 px in, wrapping: Lucide `settings` 12 px `faint`, then "Settings › Overlay › Open the meter at launch" 11.5 px / 500 `text` (the last step 600), Lucide `chevron-right` 10 px `faint` between the steps, 4 px gaps |
 | Buttons | 9 px under the path, right-aligned, 6 px apart: "Not now" (quiet text button) and "Yes, at launch" (tonal, `soft`); pointer over either: `hot`, `text` |
 | After Yes | The good overlay note "The meter opens at launch from now on." (Lucide `check`) in the body's place, the path under it 6 px apart; 4 s, then the card fades out over 150 ms |
@@ -623,14 +650,12 @@ toolbar opens, and every tool opens and closes from it. Pages:
 
 | Element | Value |
 |---|---|
-| Icon | The app's icon (`crates/app/windows/icon.ico`); tooltip "Kisk" |
+| Icon | The app's icon (`crates/app/windows/icon.ico`); tooltip `-app-name` ("Belisk") |
 | Menu | Windows' own: "Show toolbar" (the default item, bold), a separator, "Quit" |
 | Clicks | A left click does what "Show toolbar" does: brings back the toolbar and every tool that was open, unfolds a folded toolbar and brings it in front. "Quit" ends the process, as closing the toolbar does. No Windows notification |
 
 ### Not decided by the mockups
 
-- The app's other names (title bars, About, the waiting card's "DPS Meter")
-  change with the rename (TASK-23).
 - French: the toolbar, its dropdowns and the prompt were drawn in French to
   check the room; the real text goes through i18n.
 - Icons to add from Lucide (ISC) when built: `crosshair`, `grip-vertical`,
@@ -638,6 +663,131 @@ toolbar opens, and every tool opens and closes from it. Pages:
   `package`, `settings`, `gamepad-2`, `pencil`; `swords`, `bell`, `crown`,
   `list-checks`, `triangle-alert`, `chevron-right` are in
   `crates/app/assets/icons/` already.
+
+## Updates and the changelog
+
+Approved on 2026-10-09 ("Approve all", [../updates/README.md](../updates/README.md)
+is the record of how it was chosen). Updates come from GitHub Releases; the
+app checks at launch, then once an hour, never more often (GitHub's
+unauthenticated limit, 60 requests an hour per address), and goes on
+checking while an update is available or ready, so a newer release replaces
+a staged one. There is no switch to turn the checks off and no beta channel.
+Nothing installs without a click on Restart. Pages:
+[toolbar.html](toolbar.html) (states "Update available" to "Try the
+update"), [whatsnew.html](whatsnew.html), About › Updates and About ›
+Changelog in [settings.html](settings.html). Styles: the update icon in
+`hub.css`, the rest in `updates.css`; drawing: the update icon in `hub.js`,
+the rest in `updates.js`. Values new in this round are marked (new).
+
+### Toolbar update icon
+
+| Element | Value |
+|---|---|
+| Place | First in the end group, after the rule and before fold: `… warning \| update « ×`; folded, after the warning. Shown only while there is something to do or know: available, downloading, paused, checking the download, ready, and after a failed download. Up to date, checking for updates, GitHub unreachable or limiting: no icon |
+| Button | A tool: 26 × 26 px, 7 px radius, icon 14 px; its tooltip's right edge on the button's, as fold's and quit's |
+| Available | Lucide `download` in `text` on `soft` (new: a tool at rest has no fill, so it reads as "something waits"); pointer over: `hot` |
+| Downloading | The same icon in `muted`, 2 px higher, no fill; a 2 px progress line, 1 px radius, 5 px inset on both sides, 4 px above the bottom edge: track `gauge-empty`, fill `muted` (new; the reminder card's time-left line, inset and rounded, not an edge stripe); pointer over: `soft`, `text` |
+| Paused | As downloading, the fill in `faint` (new) |
+| Checking the download | As downloading, the line full |
+| Ready | Lucide `rotate-cw` in `good` on `chip-good` (`good` at 0.13); pointer over: `good` at 0.20 (new) |
+| Failed | The available look again; only the tooltip says why. No colour, no pop-up |
+| Tooltips | "Update available: 1.6.0 / Click to download it. It installs only when you restart."; "Downloading 1.6.0 · 62% / Speed-capped, paused while you fight. Click for details."; "Download paused · 62% / Resumes when the fight ends. Click for details."; "Checking 1.6.0… / Making sure the download is complete and genuine."; "Restart to update to 1.6.0 / Closes and opens again in the new version. Nothing is lost." (during a fight: "You are fighting: restarting now splits this fight in History."); failed: "Update available: 1.6.0 / The last download failed its check and was deleted. Click to try again." French drafts on the page (« Mise à jour disponible : 1.6.0 », « Téléchargement de 1.6.0 · 62 % », « Redémarrer pour passer à 1.6.0 ») |
+| Clicks | Available or failed: the download starts at once, no confirmation. Downloading, paused or checking: opens Settings › About. Ready: restarts at once, no confirmation (as quit), also during a fight |
+| Accessibility | The button's name is the tooltip's first line; the line is a progressbar with its value; Left and Right reach it like the other tools; the toolbar's focus ring |
+
+- **After the restart**: the toolbar comes back where it was and the tools
+  that were open open again in their places (the meter too, so fights keep
+  being tracked); then What's new.
+
+### The download
+
+| Element | Value |
+|---|---|
+| Automatic | "Download updates automatically" (Settings › About › Updates), on by default: a new release downloads as soon as it is found; off, the player clicks Update |
+| Throttle | Always capped at 1 MB/s, and paused while a fight is active (the core's activity rule), in both modes |
+| Check | The archive's hash and its ed25519 signature (minisign-style; the public key is in the build). A mismatch deletes the file; nothing is installed. With the automatic download on, the next hourly check tries again, never in a loop |
+| Cancel | Cancel (About) or turning the switch off during a download deletes the partial file |
+| Install | Only on Restart (toolbar or About): the app closes and starts the new version, with its settings, to-dos and history |
+
+### What's new
+
+| Element | Value |
+|---|---|
+| Window | An overlay window of its own with History's frame: 370 px, the 28 px header, the close tool button, the 26 px footer; no-activate, scrolls with the wheel, stays until closed; not a toolbar tool |
+| Place | 6 px under the toolbar, left edges aligned; above it when the toolbar sits low, as the reminder card while the meter is closed |
+| Header | Lucide `scroll-text` 13 px in `muted` and "What's new" 13.5 px / 600; a `chip-good` "Updated to 1.6.0" with Lucide `check`; close flush right |
+| Since line | Only with more than one version: 18 px, 4 px inset, 11.5 px `faint`, the version `muted` / 600: "Since 1.4.0, the last version you ran" |
+| Version | Newest first, all open, 14 px apart, no rules: a 20 px line with the version 13.5 px / 600 and its date 11.5 px / 500 `faint` pushed right ("21 Oct 2026" / "21 oct. 2026"); the summary 12.5 px / 500 `text`, 16 px line, 1 px under it; the bullets 5 px under, 4 px apart, 12 px / 500 `muted`, 15.5 px line, 11 px in, after a 4 px `faint` dot 6 px from the top; bold 600 (`text` in bullets) |
+| List | Scrolls inside the window past 318 px, with the 3 px `scroll-thumb` in its gutter; the window hugs shorter content |
+| Footer | A quiet text button "Full changelog" with Lucide `settings` and `chevron-right`: opens Settings › About › Changelog and closes this window |
+| French | « Nouveautés », « Mis à jour en 1.6.0 », « Depuis la 1.4.0, la dernière version que vous avez lancée », « Journal complet » |
+
+- **When**: once, by itself, at the first start of a newer version, showing
+  the versions newer than the last one this player ran, up to the running
+  one (skipped versions included), in the player's language.
+- **When not**: never during a fight (it opens when the fight ends); a fresh
+  install opens nothing; a version entry without bullets does not open it.
+- **From before the reset**: a settings file without a last-seen version
+  counts as coming from before 1.0.0, so 1.0.0's notes show once.
+- **Seen**: once the window is closed (× or "Full changelog"); quitting with
+  it open shows it again at the next start.
+
+### Settings › About › Updates
+
+| Element | Value |
+|---|---|
+| Place | A group "Updates" right after the app's own group (About's first group, its title and version row named with `-app-name`, the running version in display type `faint` / 600, the version row's description the tagline "Belisk — combat meter and companion for AION 2", `settings-about-description`); then Credits and Storage, as the build draws them |
+| Group title | "Updates", then in `faint` / 400: "Asks GitHub for the latest release; nothing about you or your game is sent." |
+| Rows | The status row (label, one sentence, its action on the stable right edge); "Download updates automatically" (Switch, on: "New versions download in the background: speed-capped, and paused while you fight. Installing always waits for your Restart."); "Changelog" ("What changed in each version.") with the secondary "Open changelog" and a trailing `chevron-right` |
+| Up to date | "Up to date" / "1.5.1 is the latest version. Checked at 21:02; checked again at launch and every hour."; secondary "Check now" (Lucide `refresh-cw`), disabled for a minute after any check ("Checked just now; you can check again in a minute.") |
+| Checking | "Checking for updates…" / "Asking GitHub for the latest release."; the spinner badge "Checking" before the disabled Check now |
+| Available | Automatic download off only: "Version 1.6.0 is available" / "Released 21 Oct · 4.2 MB. Its notes are on GitHub until you update; then What's new shows them."; ghost "Release notes" (Lucide `external-link`, opens the GitHub release page in the browser) and the primary "Update to 1.6.0" (Lucide `download`) |
+| Progress | Under the description, 7 px above and 5 px below: 300 × 4 px, fully rounded, the Slider's track `rgba(255, 240, 225, 0.14)` and cream range (new); paused: the range at 0.45 (new) |
+| Downloading | "Downloading 1.6.0" / the progress, "2.6 of 4.2 MB · at most 1 MB/s, paused while you fight"; ghost Cancel. Paused: "Download paused" / "… · resumes when the fight ends" |
+| Checking the download | "Checking the download" / the progress full, "Making sure 1.6.0 is complete and genuine."; the spinner badge |
+| Ready | "1.6.0 is ready to install" / "Downloaded and checked. Restart to install it: the app closes and opens again in 1.6.0, with your settings, to-dos and history."; the primary "Restart to update" (Lucide `rotate-cw`) |
+| Failed | The available row, then the field message in `bad` (Lucide `triangle-alert`): "The last download did not pass its check (signature mismatch), so it was deleted. Nothing was installed."; the primary "Try again" |
+| Unreachable, limited | "Could not check for updates" / "Last successful check at 18:02.", then the field message in `warn` (new: field messages had only `bad`): Lucide `cloud-off` "GitHub could not be reached: no internet, or GitHub is down. Next try at 22:02." (Check now available), or Lucide `clock` "GitHub allows 60 update checks an hour per internet address, and your network has used them up (other PCs on the same connection count too). Next check at 22:14." (Check now disabled until then) |
+| One bright button | "Update to 1.6.0" or "Restart to update" or "Try again"; nothing else is primary |
+| French | « Mises à jour », « À jour », « Vérifier maintenant », « La version 1.6.0 est disponible », « Mettre à jour en 1.6.0 », « Redémarrer pour mettre à jour », « Télécharger les mises à jour automatiquement », « Journal des modifications »; sizes "4,2 Mo", percentages "62 %" |
+
+- Errors are never a pop-up. The rows above follow the build's About
+  (Fluent `settings-about-*`, English and French): "Source and notice",
+  the licence, the credits (Aether, NOIA2, Kuroukihime, References, Built
+  with, Npcap), "Stored on this PC" and "Reset settings…" with its dialog.
+
+### Settings › About › Changelog
+
+| Element | Value |
+|---|---|
+| Place | A sub-page of About (the sidebar keeps About): a small ghost "‹ About" (Lucide `chevron-left`), its text on the content's left edge, 10 px above the page title "Changelog"; then the lead "What changed in each version. You have 1.5.1." |
+| List | One group, 18 px under the lead. A row ≥ 46 px, 8 × 16 px padding, 12 px gaps, 1 px dividers: the version in display type 15 px / 600 in 52 px; the summary 12 px `muted` cut to one line; the date 12 px `faint`; Lucide `chevron-right` 14 px `faint` at the end (`chevron-down` when open). Pointer on a row: `rgba(255, 240, 225, 0.04)` on enter, gone on leave (new) |
+| Open row | One at a time, the newest open first: the whole summary 13 px `text` (≤ 64ch), the bullets 12.5 px `muted` 6 px under it, 4 px apart, after a 4 px `faint` dot; 80 px in, 46 px right, 14 px below |
+| More | A last row: the small secondary "Show older" (Lucide `chevron-down`) with "5 of 9 versions" 12 px `faint`; it adds five each time; once all are shown, "All 9 versions" |
+| Content | The build's own versions (the embedded files), from 1.0.0; a newer release's notes are on GitHub until the update. The list draws only what is on screen; the files are parsed when the page opens, not at startup |
+
+### The changelog files
+
+- `CHANGELOG.md` and `CHANGELOG.fr.md` (a future language:
+  `CHANGELOG.<code>.md`), embedded in the build, starting at 1.0.0: the
+  version resets to 1.0.0, and Aether's history moves out of `CHANGELOG.md`
+  into a file of its own, credited to Aether.
+- The subset: `## [1.6.0] - 2026-10-21` headings, one summary paragraph,
+  `- ` bullets (one level; a bullet may continue on lines indented by two
+  spaces), `**bold**` in the summary and bullets. No inline code, no links.
+  The app's parser fails on anything else; `cargo test` parses both files
+  and checks parity (same versions, same bullet counts).
+- Dates are ISO in the files.
+
+### Not decided by the mockups
+
+- Icons to add from Lucide (ISC) when built: `download`, `rotate-cw`,
+  `scroll-text`, `cloud-off`, `pause` (all in gpui-kit-assets 0.6.6);
+  `chevron-left`, `chevron-right`, `loader-circle`, `clock`,
+  `triangle-alert`, `settings`, `check` are in `crates/app/assets/icons/`
+  already.
+- The CI release workflow (TASK-30), the lean update archive, its hash and
+  signature are prerequisites, not drawn.
 
 ## Main window (GPUI Kit)
 
@@ -665,10 +815,10 @@ French strings run 20–30% longer; Home was checked in French at these sizes.
 | `win-surface` | `#1b1815` | Settings groups, cards, status tiles |
 | `win-raised` | `#241f1b` | Menus, tooltips, dialogs |
 | `win-line` | `rgba(255, 240, 225, 0.08)`; strong `0.14` | Group borders and row dividers; button and input borders |
-| `primary` | `#f3ebe1` bg, `#17120d` text | The one bright button per view (Start meter, Open the meter, Continue now) |
+| `primary` | `#f3ebe1` bg, `#17120d` text | The one bright button per view (Start meter, Open the meter, Continue now, Update to 1.6.0, Restart to update) |
 | `selected` | `rgba(255, 240, 225, 0.11)` | Sidebar item, segmented option |
 | `soft` | `rgba(255, 240, 225, 0.07)` | Secondary button fill, sidebar status line |
-| `danger` | `rgba(247, 168, 168, 0.15)` bg, `bad` text | Stop meter, Stop recording, Clear cache, reset confirmation |
+| `danger` | `rgba(247, 168, 168, 0.15)` bg, `bad` text | Stop meter, Stop recording, Reset settings, reset confirmation |
 | `blocking` | `rgba(247, 168, 168, 0.07)` bg, `rgba(247, 168, 168, 0.35)` border | Gate check that blocks start-up |
 | `scrim` | `rgba(8, 7, 6, 0.62)` | Behind a dialog |
 | `focus-ring` | `rgba(243, 235, 225, 0.90)` (`primary` at 0.90) | Keyboard focus around any control |
@@ -680,7 +830,7 @@ Text, `good`, `warn` and `bad` are the overlay values.
 | Component | Kit piece | Values |
 |---|---|---|
 | Window | borderless window | 960 × 620 (gate 600 × 470, not resizable), 9 px radius, 1 px `rgba(255, 236, 214, 0.12)` border |
-| Title bar | `TitleBar` | 36 px; 20 px cream logo square (6 px radius) + "AION 2 DPS Meter"; minimise, maximise, close 46 × 36 (gate: close only) |
+| Title bar | `TitleBar` | 36 px; 20 px cream logo square (6 px radius) + `-app-name` ("Belisk"); minimise, maximise, close 46 × 36 (gate: close only) |
 | Sidebar | `Sidebar` | 208 px; Meter, then a "Settings" label and nine sections (Reminders after Personal bests, To-dos after Reminders); items 32 px, 7 px radius; the meter's status line (dot + "Running · 12:41") at the bottom |
 | Settings group | styled div | title above; 10 px radius, `win-surface`, 1 px `win-line`; rows ≥ 54 px, 11 × 16 px padding, 1 px dividers |
 | Settings row | styled div | label and one-sentence description on the left (≤ 58ch), control on a stable right edge |
@@ -734,11 +884,13 @@ and Start over say what they do in the Resources window.
 
 ### Settings → Overlay, Window
 
-Changed on 2026-10-08 with the hub.
+Changed on 2026-10-08 with the hub; "Hide between fights" added on
+2026-10-09.
 
 | Row | Value |
 |---|---|
-| Open the meter at launch | First in the group; Switch, off: "When Kisk starts. Off: only the toolbar opens, and the meter opens from its icon." The first-open prompt's Yes turns it on |
+| Open the meter at launch | First in the group; Switch, off: "When { -app-name } starts. Off: only the toolbar opens, and the meter opens from its icon." The first-open prompt's Yes turns it on |
+| Hide between fights | Right after "Open the meter at launch"; Switch, off: "The meter steps aside when you are not fighting and comes back at your first hit. Its toolbar icon shows it for 10 s." While it steps aside the meter is still open (fights tracked); its toolbar tool stays lit, with the tooltip "DPS meter / Hidden between fights. Click to show it for 10 s.", and a click shows it for 10 s |
 | Lock overlay | Adds "The toolbar always takes clicks." |
 | Show or hide everything | Alt + Shift + CapsLock as read-only Kbd keys (4 px apart), the stacked row: "Hides the toolbar and every open tool, and brings them back. The tray icon's Show toolbar brings them back too." Each shortcut is described on the row it acts on (the build has no Shortcuts page) |
 
@@ -758,8 +910,6 @@ pinned version before planning.
 
 ### To confirm during implementation
 
-- Clear cache: what is reset and what is kept depends on the Rust storage;
-  the dialog copy follows that.
 - WinDivert is bundled but no licence text for it is in the repository; About
   names it without a licence until one is added.
 
@@ -801,3 +951,7 @@ pinned version before planning.
   The toolbar is never click-through and draws its tooltips and dropdowns
   inside its own window, which grows while a dropdown is open. The
   Resources window takes the keyboard only while a field is open.
+- What's new is an overlay window with the meter's styles (transparent,
+  no-activate, tool window), sized to its content up to the list's maximum
+  height; Windows scrolls inactive windows under the pointer by default. The
+  toolbar's progress line redraws only when the percentage changes.

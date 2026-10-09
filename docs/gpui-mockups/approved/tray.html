@@ -18,7 +18,7 @@
       </nav>
       <h1>Tray icon <small>approved 2026-10-08 (the hub)</small></h1>
       <ul class="rationale">
-        <li>Kisk keeps an icon in the Windows notification area (the app's icon, <code>crates/app/windows/icon.ico</code>), so the toolbar can come back after Alt+Shift+CapsLock hid it, and Kisk can be quit from there.</li>
+        <li><span data-app-name>Belisk</span> keeps an icon in the Windows notification area (the app's icon, <code>crates/app/windows/icon.ico</code>), so the toolbar can come back after Alt+Shift+CapsLock hid it, and <span data-app-name>Belisk</span> can be quit from there.</li>
         <li>Windows draws the tooltip and the menu itself, in its own light or dark theme; the taskbar corner here is only a stand-in, not product styling.</li>
       </ul>
     </header>
@@ -34,29 +34,31 @@
       <ul>
         <li><b>Menu</b>: "Show toolbar" and "Quit". "Show toolbar" is the default item (bold, as Windows draws defaults). Settings and the tools stay on the toolbar.</li>
         <li><b>Show toolbar</b> brings back the toolbar and every tool that was open, as Alt+Shift+CapsLock does. A left click on the icon does the same; it also unfolds a folded toolbar and brings it in front.</li>
-        <li><b>Quit</b>, like closing the toolbar, quits Kisk: every tool closes and the process ends (closing the main window must end the process).</li>
-        <li><b>Tooltip</b>: "Kisk". No Windows notification, ever (as the reminder card: the game keeps the screen).</li>
+        <li><b>Quit</b>, like closing the toolbar, quits <span data-app-name>Belisk</span>: every tool closes and the process ends (closing the main window must end the process).</li>
+        <li><b>Tooltip</b>: "<span data-app-name>Belisk</span>", the Fluent term <code>-app-name</code> (the build's <code>tray-tooltip</code>), drawn from <code>app-name.js</code>. No Windows notification, ever (as the reminder card: the game keeps the screen).</li>
       </ul>
     </section>
 
     <script src="kit.js"></script>
+    <script src="app-name.js"></script>
     <script>
       (function () {
         const icon = Kit.icon;
+        const APP = window.APP_NAME;
         const ICO = "../../../crates/app/windows/icon.ico";
 
         function corner(o) {
-          const tip = o.tip ? `<div class="tray-tip" role="tooltip">Kisk</div>` : "";
+          const tip = o.tip ? `<div class="tray-tip" role="tooltip">${APP}</div>` : "";
           const menu = o.menu
-            ? `<div class="tray-menu" role="menu" aria-label="Kisk"><div class="is-default${o.hot === "show" ? " is-hot" : ""}" role="menuitem">Show toolbar</div><hr><div class="${o.hot === "quit" ? "is-hot" : ""}" role="menuitem">Quit</div></div>`
+            ? `<div class="tray-menu" role="menu" aria-label="${APP}"><div class="is-default${o.hot === "show" ? " is-hot" : ""}" role="menuitem">Show toolbar</div><hr><div class="${o.hot === "quit" ? "is-hot" : ""}" role="menuitem">Quit</div></div>`
             : "";
-          return `<div class="tray-stage">${tip}${menu}<div class="tray-bar"><span class="tray-ic">${icon("chevronUp")}</span><span class="tray-ic${o.tip || o.menu ? " is-hover" : ""}" aria-label="Kisk"><img src="${ICO}" alt=""></span><span class="tray-clock">21:48<br>08/10/2026</span></div></div>`;
+          return `<div class="tray-stage">${tip}${menu}<div class="tray-bar"><span class="tray-ic">${icon("chevronUp")}</span><span class="tray-ic${o.tip || o.menu ? " is-hover" : ""}" aria-label="${APP}"><img src="${ICO}" alt=""></span><span class="tray-clock">21:48<br>08/10/2026</span></div></div>`;
         }
 
         const STATES = [
-          { title: "Pointer on the icon", sub: "Windows' tooltip says \"Kisk\"; a left click shows the toolbar", o: { tip: true } },
+          { title: "Pointer on the icon", sub: `Windows' tooltip says "${APP}"; a left click shows the toolbar`, o: { tip: true } },
           { title: "Right-click menu", sub: "Show toolbar (the default, bold), Quit", o: { menu: true } },
-          { title: "Pointer on Quit", sub: "quits Kisk: every tool closes, the process ends", o: { menu: true, hot: "quit" } },
+          { title: "Pointer on Quit", sub: `quits ${APP}: every tool closes, the process ends`, o: { menu: true, hot: "quit" } },
         ];
 
         document.getElementById("tiles").innerHTML = STATES.map(

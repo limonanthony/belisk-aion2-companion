@@ -1,13 +1,21 @@
 # Moving from Tauri to GPUI
 
-This repository is a fork of [Aether](https://github.com/Helveticxa/Aether-Aion2-DPS-meter-Global)
-(remote `upstream`), forked at `d9f1d98` (v2.4.0). Aether is itself a fork of
+This repository started from [Aether](https://github.com/Helveticxa/Aether-Aion2-DPS-meter-Global)
+(forked at `d9f1d98`, v2.4.0). Aether is itself a fork of
 [NOIA2](https://github.com/ZDYoung0519/NOIA2). Both are GPL-3.0-only, so this
-fork is too: any build shared with others ships with its source.
+project is too: any build shared with others ships with its source.
 
 > **Status (2026-10-04):** the Tauri app has been removed (tag `tauri-final`);
 > see [Cutover](#cutover). Text below about Tauri services and the old frontend
 > is the assessment that led here.
+
+> **Renamed to Belisk (2026-10-09):** the product, the Cargo package and the exe are
+> now `belisk` (zips `belisk-<version>-windows-x64.zip` and `-update.zip`). The
+> first launch moves `%APPDATA%/com.helveticxa.aether` to `%APPDATA%/Belisk` and the
+> logs to `%LOCALAPPDATA%/Belisk/logs/belisk.log` (`src/data_folder.rs`); new
+> recordings are `.belisk` and `.aetherpc` ones stay readable. The sections below
+> keep the names of their time (`aion-2-dps-meter`, `com.helveticxa.aether`,
+> `aether.log`, `.aetherpc`) where they describe what was done then.
 
 The goal of this fork is to replace the Tauri + WebView2 frontend with a native
 [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui) UI. This document records the assessment and the
@@ -92,7 +100,7 @@ and `target/release` are untouched), then checks the PE: no VC++ runtime or
 Universal CRT imports, GUI subsystem, `requireAdministrator` in `RT_MANIFEST`.
 It refuses a locked exe, a failed build, a WinDivert file that differs from the
 official 2.2.2 hash, and a dirty working tree unless `--allow-dirty`. The zip
-in `target/dist/` holds `aion-2-dps-meter/` with the exe, both WinDivert files,
+in `target/dist/` holds `belisk/` with the exe, both WinDivert files,
 `README.txt`, `LICENSE.txt`, `THIRD-PARTY-NOTICES.txt` (bundled components in
 full, plus every linked crate and its licence from `cargo metadata`, with
 non-GPL-3.0-compatible ones flagged) and `source/…-source.zip`, a `git archive`
@@ -113,6 +121,15 @@ absent. Before the first WinDivert call `meter-core` loads the DLL from the
 exe's folder and reports WinDivert unavailable when it cannot. Both files still
 ship in the zip. Settings → Capture says what to do when neither Npcap nor the
 files are there.
+
+**Updates (2026-10-09).** `cargo xtask dist` also writes the lean update archive
+(`belisk-<version>-windows-x64-update.zip`: the exe and the two WinDivert
+files, flat) and its `.sha256` beside the zip; `cargo xtask sign` writes the
+`.sig` with a private key made by `cargo xtask keygen` outside the repository.
+dist fails while `crates/app/update-key.pub` is the DEVELOPMENT placeholder
+(`--allow-development-key` is for local testing only, never CI). How the app
+checks, downloads, verifies and swaps, and its trust model, are in
+`docs/updates.md`.
 
 **Left for phase 6:** a release workflow (CI build and upload). Code signing is
 not planned, so SmartScreen warns; the player README says so. Running the zip
@@ -248,7 +265,7 @@ the local copy script and the installer's resource list drifted apart (see
 
 ## Translations
 
-- **Setup.** `crates/app/i18n/<lang>/aion_2_dps_meter.ftl` (English is the
+- **Setup.** `crates/app/i18n/<lang>/belisk.ftl` (English is the
   fallback and the reference) is embedded in the exe by `rust-embed`, so the zip
   stays one exe plus the WinDivert files. `fl!("key", arg = value)` checks the
   key and its arguments against the English file at compile time.
@@ -320,15 +337,9 @@ These still apply. See `AGENTS.md` and `FORK.md` for the details.
 - Never touch the game's process: no `OpenProcess` on it, no `sysinfo` refresh
   of all processes, no injection, input or hooks.
 - Packet capture needs Npcap and Administrator rights.
-- The startup gate is enforced in Rust (`preflight::passed()`), not in the UI.
-  Every path that shows the main window goes through it.
 - The app never changes other programs' windows. The one z-order change left
   is raising our own overlays above a borderless game, never the game's.
 - No window calls on the meter's threads. Post window work to the UI thread.
-
-Aether's `CLAUDE.md` asks for small diffs against upstream. That stays true for
-the core crate, so parser and protocol fixes from Aether and NOIA2 keep merging
-cleanly. UI fixes from upstream have to be redone by hand.
 
 ## Plan
 
@@ -372,10 +383,8 @@ each want to own the main-thread event loop.
 Agreed on 2026-10-03: the history stays, rather than a clean `main` with only
 the needed code copied in.
 
-- `main` keeps the shared history with `upstream`. Parser and protocol fixes
-  from Aether and NOIA2 keep arriving through `git merge upstream/main`. Git
-  follows renames, so this keeps mostly working after the backend moves into
-  its own crate.
+- `main` keeps the history of the projects this one started from; nothing is
+  merged from them.
 - Each phase is a short branch (`phase-1-core-crate`, ...), reviewed and merged
   into `main` after the user agrees.
 - The GPUI app is written as new crates. The Tauri app keeps working on `main`
@@ -411,8 +420,8 @@ meter design (2b) only has to draw.
   time (relative to the first, divided by the speed), so the meter sees a fight
   at the pace it happened. The existing unpaced replay and its Tauri command are
   unchanged. Out-of-order timestamps neither wait nor delay later packets.
-- `crates/app`, package `aion-2-dps-meter`:
-  `aion-2-dps-meter --replay <file.aetherpc> [--speed <f>] [--exit-after-replay]`.
+- `crates/app`, package `belisk`:
+  `belisk --replay <recording> [--speed <f>] [--exit-after-replay]`.
   `bridge.rs` is the `EventSink`: it only pushes into an unbounded channel, so the
   meter's threads never block and never touch a window. One foreground task
   sleeps on the channel, applies whatever has piled up as one batch to the
@@ -427,7 +436,7 @@ meter design (2b) only has to draw.
   beside the exe; `build.rs` still copies both files into `target/<profile>/`.
 - `--overlay-probe` and `--font-probe` run the checks below. They exist only in a
   build with the off-by-default Cargo feature `probes`
-  (`cargo run -p aion-2-dps-meter --features probes -- --overlay-probe`); the
+  (`cargo run -p belisk --features probes -- --overlay-probe`); the
   default binary contains none of that code. The probe sends no mouse input to
   anything.
 
@@ -466,7 +475,7 @@ Other things seen:
 
 ### Fonts (5g)
 
-`aion-2-dps-meter --font-probe` shapes the same string in each candidate and
+`belisk --font-probe` shapes the same string in each candidate and
 draws a specimen sheet (`specimen.png`). GPUI's `Font` is family, weight, style,
 features and fallbacks; there is no width. `gpui-pre-windows` passes
 `DWRITE_FONT_STRETCH_NORMAL` for every lookup and matches the name against
@@ -742,7 +751,7 @@ first, then a name from `mobs.json` for codes the bundle lacks.
 
 ### `mobs.json`
 
-In the app data folder (`%APPDATA%/com.helveticxa.aether/mobs.json`, shared with
+In the app data folder (`%APPDATA%/Belisk/mobs.json`, shared with
 the Tauri app, which reads corrections and names but never collects).
 
 ```json
@@ -901,7 +910,7 @@ The "Decision log" switch (Settings → Capture, stored; it was the `--debug-log
 flag) turns on the
 app's own decision log. It does not touch the core logger's debug level, which
 also writes a line per hit and buff on the packet thread and stays off. It
-writes, to `aether.log` (live) or
+writes, to `belisk.log` (live) or
 `%TEMP%/aether/gpui-app.log` (replay), lines starting `[meter]`, only when the
 decision changes: the board and why (automatic or pinned), boss focus engaged
 and released with the reason, whether and how your row is on the Target and
@@ -1319,7 +1328,7 @@ not measured.
 Branch `phase-4-settings`. The non-rendered half of Settings; the window is
 drawn from `docs/gpui-mockups/approved/settings.html` with our own components.
 
-- **Store.** `%APPDATA%/com.helveticxa.aether/settings.json`: versioned JSON,
+- **Store.** `%APPDATA%/Belisk/settings.json`: versioned JSON,
   missing fields take defaults, unknown fields are ignored, values are clamped
   on load. An unreadable file or one from a newer build is renamed
   `settings.json.bad-<seconds>` (as `mobs.json`) and the defaults are used.
@@ -1412,8 +1421,8 @@ Arena of Tactics queue and the reward-key refill can be switched on. A lead of
 under `settings.json` → `reminders`; events starting in the same minute share
 one reminder.
 
-- **Data source.** MetaBot's event tables (`metabot.gg/en/aion-2/events`, read
-  from game client build 0.0.4387.0), kept as data in `reminders/events.rs`.
+- **Data source.** MetaBot's event tables (`metabot.gg/en/aion-2/events`, as
+  published for game build 0.0.4387.0), kept as data in `reminders/events.rs`.
   Its times are server times; MetaBot assumes Europe = Berlin without
   confirming it.
 - **Clock rule.** The rules are read on the PC's local clock (Windows' time
@@ -1465,10 +1474,10 @@ the boss records of `history.html`, values in `tokens.md` "Fight report").
   `ReportRequest::OnMeter { target_id }` from the meter view; History's report
   button emits `ReportRequest::Saved(record)`. `secondary/` subscribes to both
   (`init` for the meter, `open_history` for History) and calls `open_report`:
-  a saved record becomes `FightReport::from_record` on the UI thread (pure, like
-  the detail window's history source); a live fight is `DpsMeter::fight_report`
-  run on GPUI's background executor, its result handed back to the UI thread,
-  so no window call ever comes from a meter thread. Without a meter (dev
+  a saved record becomes `FightReport::from_record` and a live fight
+  `DpsMeter::fight_report`, both run on GPUI's background executor
+  (`report::build_off_thread`, TASK-25.6), their result handed back to the UI
+  thread, so no window call ever comes from a meter thread. Without a meter (dev
   captures) the report is built from the snapshot the overlay shows, with
   nothing recorded. `show_report` opens `WindowKind::Report` or hands the report
   to the open window: the same fight leaves it as it is, another fight replaces
@@ -1563,6 +1572,119 @@ To-dos, History, PvP, Settings and Resources from its controls, shows the
 prompt on the first open and drops it when the meter closes unanswered, and
 puts the reminder card 6 px under the toolbar with the left edges aligned.
 
+## Between fights (TASK-25.2)
+
+Decided by the user on 2026-10-09. The core's half came from Aether (see
+FORK.md, "The meter between fights"); this is the window half.
+
+- **Settings › Overlay › Window › "Hide between fights"**, off by default
+  (`windows.hideMeterBetweenFights`; a file without the key reads as off, and
+  the core's own `hide_when_idle` default is off too). A change reaches the
+  running core at once (`settings/effects.rs`).
+- **One source of "idle"**: the core's `MeterEvent::DpsIdleHidden`, from the
+  activity rule (a hit you dealt, a hit you took, or a hit your party landed on
+  your current target). `bridge.rs` folds it into `MeterModel`, whose
+  `steps_aside()` is that word unless a fight summary (kill or wipe) is up.
+  The hub also keeps it up while the first-open prompt waits for an answer.
+  It observes the model and the open windows, and hides the meter's window
+  (`SW_HIDE`) or shows it without activating it; nothing takes the focus.
+- **Peeks** (10 s, `DpsMeter::peek_overlay`): opening the meter (from the
+  toolbar or at launch), and clicking the toolbar's meter icon while the meter
+  steps aside, which then shows it instead of closing it; the icon's tooltip
+  says so. No shortcut. The pointer, the "…" menu and an unlocked meter do not
+  keep it up.
+- **Open, not closed**: fights are still tracked and the lock shortcut still
+  acts on it. Alt+Shift+CapsLock no longer keeps the meter's handle among what
+  it hid: showing everything again shows the meter only when it is wanted.
+- **Reminder cards** sit under the toolbar while the meter steps aside, as
+  while it is closed; History, the report, Settings, detail, PvP, to-dos and
+  Resources are unaffected.
+
+### Checked
+
+`cargo test --workspace`: core 424 + 1 ignored (new: the running snapshot loop
+hides an idle meter until your first hit, a peek shows it for its seconds only,
+off never hides), app 569 (new: the event makes the model step aside and back,
+a kill or wipe summary keeps it up, the hub hides and shows the window and
+keeps tracking fights, opening peeks, the icon peeks instead of closing while
+the meter steps aside, Alt+Shift+CapsLock leaves it aside, the reminder card
+goes under the toolbar, the first-open prompt keeps the meter up until
+answered, the switch's default, file migration and reaching the
+running core, the Overlay page's Tab order). `--capture --fixtures` in English
+and French draws the new row (`settings-06b-overlay-window.png`). A replay
+cannot show it: replays never end a fight (`idle_reset_secs` 0) and have no
+way to turn the switch on, so hiding after a fight and coming back at the next
+hit is left to the in-game check.
+
+## UI thread (TASK-25.6)
+
+- **History** delete, delete all and reload are memory-only on the UI thread:
+  the core's history store writes the file on its own thread
+  (`background_save.rs`), so the UI never waits on the disk.
+- **PvP** reads the meter's watch list and kill stats on the background
+  executor and hands the result back, one read at a time (ticks are skipped
+  while one runs); an answer that predates a name change or a clear is dropped.
+- **Fight reports**, saved and live, are built on the background executor, as
+  the live one already was; the report window opens when the report is ready.
+
+## Changelog and version 1.0.0 (TASK-29, data side)
+
+- The version restarts at 1.0.0 (`meter-core` and the app; packet-explorer and
+  xtask stay 0.0.0). `cargo xtask dist` reads the app's version from
+  `cargo metadata`, so nothing else holds the number.
+- `CHANGELOG.md` and `CHANGELOG.fr.md` are this app's changelog, starting at
+  1.0.0; Aether's history is `docs/aether-changelog.md`. The app embeds both
+  and parses them with its own parser for a small Markdown subset
+  (`crates/app/src/changelog/`); `cargo test` fails on syntax outside it and
+  when the two languages differ in versions, dates or bullet counts.
+- `settings.json` gains `lastSeenVersion`. A first run is stamped with the
+  running version; an older file without it counts as older than 1.0.0, so
+  those players see 1.0.0's notes once.
+- What's new (`crates/app/src/whats_new/`, `WindowKind::WhatsNew`) opens once at
+  launch after a version jump, under the toolbar, never during a fight
+  (`DpsMeter::in_fight`, polled every 2 s while one is on), never on a fresh
+  install, a seen version or in replays and captures; × and "Full changelog"
+  mark the version seen. Settings › About has an Updates group with
+  "Open changelog"; About › Changelog (`settings/view/changelog_page.rs`) draws
+  the shown rows whole (heights differ, "Show older" bounds them) rather than
+  through GPUI's list. Captures: `changelog-0*.png`, `whatsnew-0*.png` in a
+  `--capture --fixtures` run, on the approved mockup's invented versions.
+
+## Update UI results (TASK-28, toolbar icon and About › Updates)
+
+- **Toolbar** (`crates/app/src/toolbar/update.rs`, `view.rs`): the update icon
+  shows for available (also after a failed download), downloading, paused,
+  checking the download and ready; never for up to date, checking, offline,
+  limited, failed check or off. It sits after the rule and before fold (after
+  the warning when folded). Click: download / Settings › About / restart at
+  once. Tooltips as approved, with the fight warning on Ready
+  (`Hub::in_fight`, the core's rule). It redraws once per percent.
+- **Settings › About › Updates** (`settings/view/updates_group.rs`): a pure
+  `Status::of(snapshot, restart_failure, now, running)` and its row; one primary
+  button at most (new `ButtonKind::Primary`); Check now stays disabled until
+  `check_again_at` (GitHub's reset when limited), with a timer that redraws it;
+  the automatic download switch; "Release notes" through
+  `files::open_web_page`, which hands Windows `https://` addresses only.
+  Errors are field messages: red for failed checks and restarts that could not
+  start, amber for GitHub unreachable or limiting. A build without
+  `UPDATE_REPO` shows one muted line instead of the status and the switch.
+- **Updater changes:** `ReleaseInfo.published` (GitHub's `published_at`, for
+  "Released 21 Oct"); the worker gets `Shutdown` at quit, which deletes a
+  partial download; the `dead_code` allowance in `update/mod.rs` is gone.
+- **Bold in the changelog:** GPUI blends a highlight's colour but keeps the
+  paragraph's alpha, so `text` over `muted` bullets came out `muted`. Bold
+  runs now use the text colour made opaque (`changelog::bold_in_text_colour`).
+- **Captures:** `target/captures/updates-{en,fr}/updates-00…15` (toolbar) and
+  `about-01…12` (About › Updates, plus the off line). The click on the icon
+  while downloading opens Settings on About.
+- **Differences from the mockups:** the offline, limited and failed-check rows
+  say "Last checked at" (the snapshot does not tell a successful check from
+  others). Failure kinds other than a mismatch have their own sentences.
+  "Update to" also shows with automatic download on, after a Cancel.
+- **Not built:** the tools that were open do not reopen after a restart. Only
+  the toolbar's place and "Open the meter at launch" are remembered (approved
+  item #8 needs a persistence decision).
+
 ## Effort
 
 Rough estimate, to be revised after phase 2:
@@ -1624,8 +1746,6 @@ at `90bac82` (phases 1 and 2), and that commit is tagged `tauri-final`.
 - **Not carried over:** `bossIcon.png`, `logo.png`, the background video and
   image, the Korean strings and the Tauri overlay locale files. They are in
   `tauri-final` if a later phase wants them; buff icons come from the skill set.
-- **Upstream merges:** changes to deleted paths are resolved by keeping them
-  deleted; core changes follow the phase 1 renames.
 - **Plan now:** phases 1 and 2 done, cutover done. Phases 3 (PvP, detail,
   history overlays), 4, 5, 6 and 7 remain. The Tauri-side text elsewhere in
   this document describes the old app and is kept as history.

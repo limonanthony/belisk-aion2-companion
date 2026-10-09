@@ -21,7 +21,7 @@
       </nav>
       <h1>First-open prompt <small>approved 2026-10-08 (the hub)</small></h1>
       <ul class="rationale">
-        <li>Kisk starts with the toolbar alone. The first time you open the meter from the toolbar, a small card asks whether the meter should open at every launch, and says where that setting lives: Settings › Overlay › "Open the meter at launch" (off by default). Two buttons; never asked again once answered.</li>
+        <li><span data-app-name>Belisk</span> starts with the toolbar alone. The first time you open the meter from the toolbar, a small card asks whether the meter should open at every launch, and says where that setting lives: Settings › Overlay › "Open the meter at launch" (off by default). Two buttons; never asked again once answered.</li>
         <li>The card is drawn like the <a href="reminders.html">reminder card</a>: its own small overlay window, 6 px above the meter, left edges aligned, the meter's width. Values are in <a href="tokens.md">tokens.md</a>, "Hub".</li>
       </ul>
     </header>
@@ -35,17 +35,18 @@
         <li><b>Yes, at launch</b> turns the setting on; the card shows a good note with the path for 4 s, then fades out (150 ms, as the reminder card). <b>Not now</b> closes it at once and leaves the setting off. Either answer is final: the card never comes back.</li>
         <li><b>No answer</b>: the card stays while the meter is open (no time-out); closing the meter without answering asks again the next time.</li>
         <li><b>Window</b>: no-activate like the reminder card (the game keeps the keyboard), clickable even while the meter is locked. Placement as the reminder card: above the meter, below it when there is no room; 220 px over the capsule. A reminder that comes while the card is up stacks 6 px above it.</li>
-        <li><b>Copy</b>: "Open the meter at launch?" · "Kisk starts with the toolbar alone. Open the DPS meter each time Kisk starts?" · Lucide settings, then "Settings › Overlay › Open the meter at launch" with Lucide chevron-right between the steps; buttons "Not now" (quiet) and "Yes, at launch" (tonal). "Kisk" is the app's name (TASK-23); elsewhere the app is renamed with that task. The French is drawn to check the room; the real text goes through i18n.</li>
+        <li><b>Copy</b>: "Open the meter at launch?" · "<span data-app-name>Belisk</span> starts with the toolbar alone. Open the DPS meter each time <span data-app-name>Belisk</span> starts?" · Lucide settings, then "Settings › Overlay › Open the meter at launch" with Lucide chevron-right between the steps; buttons "Not now" (quiet) and "Yes, at launch" (tonal). The name is the Fluent term <code>-app-name</code> (as the build's <code>prompt-body</code>), drawn from <code>app-name.js</code>. The French is drawn to check the room; the real text goes through i18n.</li>
       </ul>
     </section>
 
     <script src="kit.js"></script>
+    <script src="app-name.js"></script>
     <script src="hub.js"></script>
     <script>
       (function () {
         const { toolbar, meter, prompt } = Hub;
         const bar = (ctx, o = {}) => toolbar(ctx, { lit: { meter: true }, ...o });
-        const capsule = `<div class="ov d is-capsule is-idle"><span style="font-weight:600">DPS Meter</span><span class="d-label">Standing by</span></div>`;
+        const capsule = `<div class="ov d is-capsule is-idle"><span style="font-weight:600">DPS meter</span><span class="d-label">Standing by</span></div>`;
 
         function render(state, ctx) {
           switch (state) {

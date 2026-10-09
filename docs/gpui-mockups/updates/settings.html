@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Updates: Settings › About and the changelog (mockup)</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../approved/app.css" />
+    <link rel="stylesheet" href="updates.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Updates mockups">
+        <a href="index.html">Updates: all pages</a>
+        <a href="toolbar.html">Toolbar update icon</a>
+        <a href="settings.html" aria-current="page">Settings, About</a>
+        <a href="settings.html?states=changelog,changelog:other,changelog:older">Changelog</a>
+        <a href="whatsnew.html">What's new</a>
+        <a href="../approved/settings.html?states=about">Approved About</a>
+      </nav>
+      <h1>Settings › About: updates and the changelog <small>mockup round 2026-10-09, not approved</small></h1>
+      <ul class="rationale">
+        <li><span class="dec is-agreed">Agreed</span> "Settings -> about, i'm ok with that": About shows the update status, "Check now" (at most once a minute), the automatic download switch (on by default: "On by default but download is always throttled not only during fights") and the errors (download failed its check, GitHub unreachable or limiting). About › Changelog shows the full history: the newest version open, older ones collapsed to a header (version, date, summary), "Show older" past the most recent ones.</li>
+        <li><span class="dec is-proposed">Proposed</span> A group <b>Updates</b> right after the app's own group, so it shows without scrolling: one status row (label, one sentence, its action on the right edge), then "Download updates automatically", then "Changelog". The switch lives here, not in General: everything about updates in one place, which the user already accepted, and General holds only the language.</li>
+        <li><span class="dec is-proposed">Proposed</span> One bright button per view, as the main window's rule says: "Update to 1.6.0" when available (automatic download off), "Restart to update" when ready; otherwise secondary or ghost. The group title says what is contacted: "asks GitHub for the latest release; nothing about you or your game is sent".</li>
+        <li><span class="dec is-proposed">Proposed</span> The changelog is a sub-page of About with a back button ("‹ About"), as the fight report opens a player in place, not a separate window. Rows follow the approved expandable rows: the chevron at the row's end, one open at a time. Five versions first, then "Show older" adds five more each time.</li>
+        <li>About's other rows are the build's (Fluent strings, en and fr), the window is the approved shell (<code>../approved/app.js</code>), unchanged. Versions, sizes and times are invented: the build runs 1.5.1, GitHub's latest is 1.6.0. Switch the language at the top.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Status row</h2>
+      <ul>
+        <li><b>Up to date</b>: "1.5.1 is the latest version. Checked at 21:02; checked again at launch and every hour." and "Check now". After a check, Check now is disabled for a minute ("Checked just now; you can check again in a minute.").</li>
+        <li><b>Available</b> (automatic download off): "Release notes" (ghost, opens the GitHub release page in the browser) and the primary "Update to 1.6.0". With automatic download on, the download starts at once, so this state only shows while it cannot (a fight: then it reads "Download paused").</li>
+        <li><b>Downloading / paused</b>: the Slider's 4 px track as progress, "2.6 of 4.2 MB · at most 1 MB/s, paused while you fight"; Cancel deletes the partial file (turning the switch off does too). Paused: the range dims.</li>
+        <li><b>Checking the download</b>: the hash and signature; the build's spinner badge.</li>
+        <li><b>Ready</b>: the primary "Restart to update"; the toolbar shows the same.</li>
+        <li><b>Errors</b>, never a pop-up during play: a failed check is a field message in bad under the row ("…deleted. Nothing was installed.") with "Try again"; GitHub unreachable or limiting is a field message in warn with the next try's time; limited also disables Check now until then (never a retry loop).</li>
+      </ul>
+      <h2>Changelog</h2>
+      <ul>
+        <li>The build's own versions only (the embedded file); a newer release's notes are on GitHub until the update.</li>
+        <li>A row: the version (display type), the summary cut to one line in muted, the date in faint, the chevron at the end. Pointer on a row: a faint lift on enter, gone on leave. The open row shows the whole summary and its bullets.</li>
+        <li>"Show older" with "5 of 9 versions" beside it; once all are shown: "All 9 versions". The list draws only what is on screen (GPUI <code>uniform_list</code> / <code>list</code>), and the files are parsed only when the page opens, never at startup.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/app.js"></script>
+    <script src="updates.js"></script>
+    <script>
+      (function () {
+        function render(state, ctx) {
+          const [page, sub] = state.split(":");
+          let content;
+          let thumb = 300;
+          let scroll = 0;
+          if (page === "changelog") {
+            const o = { other: { open: "1.4.0", hover: "1.3.1" }, older: { count: 99 } }[sub] || {};
+            content = Up.changelog(ctx, o);
+            if (sub === "older") {
+              thumb = 330;
+              scroll = 120;
+            } else thumb = 0;
+          } else {
+            content = Up.about(ctx, sub || "uptodate");
+          }
+          return ctx.shell(ctx, "about", content, { meter: { tone: "live", label: `${ctx.t.running} · 12:41` }, thumb, scroll });
+        }
+
+        App.mount({
+          lang: true,
+          states: [
+            { id: "about:uptodate", title: "Up to date", sub: "the Updates group after the app's own: status, the automatic download switch (on by default), the changelog" },
+            { id: "about:checking", title: "Checking", sub: "after Check now, or at the hourly check while About is open: the spinner badge, Check now disabled" },
+            { id: "about:justchecked", title: "Just checked", sub: "Check now stays disabled for a minute" },
+            { id: "about:available", title: "Available, automatic download off", sub: "the one primary button: Update to 1.6.0; Release notes opens GitHub's release page" },
+            { id: "about:downloading", title: "Downloading", sub: "progress, capped speed; Cancel deletes the partial file" },
+            { id: "about:paused", title: "Paused during a fight", sub: "the range dims; resumes when the fight ends" },
+            { id: "about:verifying", title: "Checking the download", sub: "hash and signature, about a second" },
+            { id: "about:ready", title: "Ready", sub: "the one primary button: Restart to update; installing waits for this click (or the toolbar's)" },
+            { id: "about:failed", title: "The download failed its check", sub: "deleted, nothing installed; the reason in bad under the row, Try again" },
+            { id: "about:offline", title: "GitHub unreachable", sub: "the reason in warn and the next try; Check now available" },
+            { id: "about:limited", title: "GitHub limiting checks", sub: "60 an hour per address, shared by every PC on the connection; Check now disabled until GitHub's reset time" },
+            { id: "changelog", title: "Changelog", sub: "About › Open changelog: the newest version open, the next four collapsed to version, summary and date; Show older" },
+            { id: "changelog:other", title: "Another version opened", sub: "a click on a collapsed row opens it and closes the open one; pointer on a row: a faint lift" },
+            { id: "changelog:older", title: "After Show older", sub: "every version shown (9 here: 1.5.1 back to 1.0.0), scrolled down: \"All 9 versions\"" },
+          ],
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

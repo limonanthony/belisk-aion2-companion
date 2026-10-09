@@ -118,6 +118,7 @@
         <a href="settings.html">Settings</a>
         <a href="meter.html">Meter overlay</a>
         <a href="prompt.html">First-open prompt</a>
+        <a href="whatsnew.html">What's new</a>
         <a href="pvp.html">PvP overlay</a>
         <a href="detail.html">Player detail</a>
         <a href="history.html">Fight history</a>
@@ -129,8 +130,8 @@
       </nav>
       <h1>Approved screens <small>reference for the GPUI implementation</small></h1>
       <ul class="rationale">
-        <li>Only designs the user has validated live here, one current design per screen. Explorations stay in <a href="../meter/index.html">meter/</a> (round 1), <a href="../round2/index.html">round2/</a>, <a href="../round3/index.html">round3/</a>, <a href="../round4/index.html">round4/</a>, <a href="../fight-report/index.html">fight-report/</a>, <a href="../hub/index.html">hub/</a> and <a href="../todos-autofill/index.html">todos-autofill/</a>.</li>
-        <li>The product is called "AION 2 DPS Meter" (title bar, About); overlays say "DPS Meter" where space is tight. Since the hub (2026-10-08) the app is a multi-tool named "Kisk" where the hub names it (the toolbar's quit tooltip, the first-open prompt, the tray, the new Settings descriptions); the other names change with the rename (TASK-23). Aether and NOIA2 appear only as the projects it is forked from, in About.</li>
+        <li>Only designs the user has validated live here, one current design per screen. Explorations stay in <a href="../meter/index.html">meter/</a> (round 1), <a href="../round2/index.html">round2/</a>, <a href="../round3/index.html">round3/</a>, <a href="../round4/index.html">round4/</a>, <a href="../fight-report/index.html">fight-report/</a>, <a href="../hub/index.html">hub/</a>, <a href="../todos-autofill/index.html">todos-autofill/</a> and <a href="../updates/index.html">updates/</a>.</li>
+        <li>The product is <b>Belisk</b>, after the Kibelisk players plant to respawn (decided 2026-10-09; it was "AION 2 DPS Meter"; the "Kisk" idea was dropped). Its tagline: "Belisk — combat meter and companion for AION 2" (French "Belisk — compteur de combat et compagnon pour AION 2"), the description in Settings › About. The name is the Fluent term <code>-app-name</code>, and every approved page takes it from one constant, <code>app-name.js</code>: the main window's title bar and the startup gate, About, the toolbar ("Quit Belisk", its accessible name, "Log in while Belisk runs."), the first-open prompt, the tray, the source lines of the Resources and to-do windows, the Settings descriptions and the page notes. Where the meter has no target to name (waiting card, idle capsule) it says "DPS meter" (French "Compteur DPS"), the toolbar's name for the tool. Aether and NOIA2 appear only as the projects it is forked from, in About.</li>
         <li>Values are in <a href="tokens.md">tokens.md</a>; a screen and its tokens change together.</li>
       </ul>
     </header>
@@ -160,24 +161,29 @@
       <section class="screen is-wide">
         <div>
           <h2><a href="toolbar.html">Toolbar</a></h2>
-          <p>Validated 2026-10-08 (the hub). Kisk opens with this horizontal floating bar alone; every tool opens and closes from it: DPS meter (crossed swords), PvP meter (crosshair), To-dos, Fight history (crown), Reminders (bell, with a dropdown of the next reminders, Pause and Reminder settings), Settings. Odyle Energy and Shugo keys always shown ("245/840 +380"); a warning with a number and a dropdown while other resources are full and their refill is near (1 h for Odyle, 3 h for daily refills, 24 h for the Daily Dungeon's weekly one; further away a full count looks normal). Fold to a handle; × quits Kisk. Never takes the keyboard; Alt+Shift+CapsLock hides and shows everything. States: at launch, pointer on a tool, tools open, count tooltips, full near the refill and not near, the warning and its dropdown, Resources open, no value yet, the bell's dropdown, paused, a reminder under it, quit, folded, low on the screen, French, keyboard focus, try it.</p>
+          <p>Validated 2026-10-08 (the hub). The app opens with this horizontal floating bar alone; every tool opens and closes from it: DPS meter (crossed swords), PvP meter (crosshair), To-dos, Fight history (crown), Reminders (bell, with a dropdown of the next reminders, Pause and Reminder settings), Settings. Odyle Energy and Shugo keys always shown ("245/840 +380"); a warning with a number and a dropdown while other resources are full and their refill is near (1 h for Odyle, 3 h for daily refills, 24 h for the Daily Dungeon's weekly one; further away a full count looks normal). Fold to a handle; × quits the app (its tooltip names it with <code>-app-name</code>). Never takes the keyboard; Alt+Shift+CapsLock hides and shows everything. States: at launch, pointer on a tool, the meter stepped aside, tools open, count tooltips, full near the refill and not near, the warning and its dropdown, Resources open, no value yet, the bell's dropdown, paused, a reminder under it, quit, folded, low on the screen, French, keyboard focus, try it.</p>
+          <p>Added 2026-10-09: with Settings › Overlay › "Hide between fights" on, an open meter steps aside between fights; its tool stays lit and its tooltip says "Hidden between fights. Click to show it for 10 s." (state "Pointer on the meter, stepped aside"). The same day, the update icon (the updates round): first in the end group before fold, only while an update is available, downloading (a 2 px progress line; paused while you fight) or ready to install (Lucide rotate-cw in good); a click downloads, opens Settings › About, or restarts into the new version. States: available, downloading, paused, checking the download, ready, ready during a fight, failed its check, beside the warning, folded, keyboard focus, French, after the restart, try the update.</p>
         </div>
         <div class="frames is-gate">
           <iframe title="Toolbar, meter and to-dos open" src="toolbar.html?embed&amp;scenes=bright&amp;states=open" height="330"></iframe>
           <iframe title="Toolbar, the warning's dropdown" src="toolbar.html?embed&amp;scenes=dark&amp;states=warnOpen" height="330"></iframe>
+          <iframe title="Toolbar, update ready during a fight" src="toolbar.html?embed&amp;scenes=dark&amp;states=updateReadyFight" height="330"></iframe>
         </div>
       </section>
 
       <section class="screen is-wide">
         <div>
           <h2><a href="settings.html">Settings</a></h2>
-          <p>Validated in round 3. Overlay (with the live preview), Meter behaviour, Shortcuts (recorder, conflict), Capture (status, backend, recording, replay, log folder), Personal bests (reset confirm, empty), Reminders (added 2026-10-05: master switch, lead time, sound, test, one switch per event; rows dim when reminders are off), To-dos (added 2026-10-06: daily reset hour, membership, restore the default to-dos, reset them completely with a confirm dialog), General (language), About (licence, credits, storage, clear-cache dialog).</p>
+          <p>Validated in round 3. Overlay (with the live preview), Meter behaviour, Shortcuts (recorder, conflict), Capture (status, backend, recording, replay, log folder), Personal bests (reset confirm, empty), Reminders (added 2026-10-05: master switch, lead time, sound, test, one switch per event; rows dim when reminders are off), To-dos (added 2026-10-06: daily reset hour, membership, restore the default to-dos, reset them completely with a confirm dialog), General (language), About (licence, credits, storage, the reset-settings dialog).</p>
           <p>Changed 2026-10-08 with the hub: opened from the toolbar's gear; Overlay › Window starts with "Open the meter at launch" (off) and has "Show or hide everything" (Alt + Shift + CapsLock, read-only); To-dos says the window opens from the toolbar and fills from the game, Membership names Shugo keys and asks when the game shows more than the cap, Start over keeps the game's values.</p>
+          <p>Changed 2026-10-09: Overlay › Window gains "Hide between fights" after "Open the meter at launch" (off; the meter steps aside when you are not fighting and comes back at your first hit). About gains the <b>Updates</b> group after the app's own (status and its one action, "Check now" at most once a minute, "Download updates automatically" on by default, errors as field messages, "Asks GitHub for the latest release; nothing about you or your game is sent."), and <b>About › Changelog</b>, a sub-page with "‹ About": the newest version open, older ones collapsed to version, summary and date, "Show older". About's other rows follow the build. States: about in eleven update states, resetting settings, the changelog three ways; English and <a href="settings.html?lang=fr&amp;states=about,about:available,about:downloading,about:ready,about:failed,about:limited,changelog,changelog:older">French</a>.</p>
         </div>
         <div class="frames">
           <iframe title="Settings, overlay, window" src="settings.html?embed&amp;states=overlay:window" height="680"></iframe>
           <iframe title="Settings, reminders" src="settings.html?embed&amp;states=reminders" height="680"></iframe>
           <iframe title="Settings, to-dos" src="settings.html?embed&amp;states=todos" height="680"></iframe>
+          <iframe title="Settings, About, update ready" src="settings.html?embed&amp;states=about:ready" height="680"></iframe>
+          <iframe title="Settings, About, Changelog" src="settings.html?embed&amp;states=changelog" height="680"></iframe>
         </div>
       </section>
 
@@ -204,6 +210,16 @@
         </div>
         <div class="frames">
           <iframe title="First-open prompt, first open from the toolbar" src="prompt.html?embed&amp;scenes=dark&amp;states=first" height="420"></iframe>
+        </div>
+      </section>
+
+      <section class="screen">
+        <div>
+          <h2><a href="whatsnew.html">What's new</a></h2>
+          <p>Validated 2026-10-09 (the updates round). After an update, an overlay window with History's frame opens once by itself, 6 px under the toolbar (above it when the toolbar is low): the versions newer than the last one you ran, newest first, all open (version and date, a summary, bullets), from <code>CHANGELOG.md</code> / <code>CHANGELOG.fr.md</code>, which start at 1.0.0, the version reset. "Full changelog" opens Settings › About › Changelog. Never during a fight; nothing on a fresh install; a settings file from before the reset sees 1.0.0's notes once. States: one version, skipped versions, scrolled, pointer on close and Full changelog, toolbar low, meter open, during a fight, fresh install, from before the reset, French, the Markdown subset beside its source.</p>
+        </div>
+        <div class="frames">
+          <iframe title="What's new, after skipping versions" src="whatsnew.html?embed&amp;scenes=dark&amp;states=skipped" height="520"></iframe>
         </div>
       </section>
 
@@ -267,7 +283,7 @@
       <section class="screen">
         <div>
           <h2><a href="todos.html">To-do window</a></h2>
-          <p>Validated 2026-10-06 (direction E); values from the game and opening from the toolbar validated 2026-10-08. Its own 370 px overlay window, opened from the toolbar's checklist: one list per character, in folding sections Today and This week, each with its countdown. Changed 2026-10-08 ("I think we can remove the recharges from the todos now no ?"): no Recharges section; Odyle Energy, Shugo keys, Invasion keys, Nightmare and the Daily Dungeon are in the Resources window only (and the toolbar), and the title and the character list count to-dos only. When you log in while Kisk runs, the game fills the weekly entries (Ascension Trial, done of target, "+1" extra beside it); game values have no arrows, a click types over them, and a line under the character selector says where they come from. Duty Missions, Duty Commands and your own to-dos stay yours to count, with one-less and one-more arrows. Duty Missions, shared by your characters on a server, carry the Account icon alone, the word under the pointer.</p>
+          <p>Validated 2026-10-06 (direction E); values from the game and opening from the toolbar validated 2026-10-08. Its own 370 px overlay window, opened from the toolbar's checklist: one list per character, in folding sections Today and This week, each with its countdown. Changed 2026-10-08 ("I think we can remove the recharges from the todos now no ?"): no Recharges section; Odyle Energy, Shugo keys, Invasion keys, Nightmare and the Daily Dungeon are in the Resources window only (and the toolbar), and the title and the character list count to-dos only. When you log in while Belisk runs, the game fills the weekly entries (Ascension Trial, done of target, "+1" extra beside it); game values have no arrows, a click types over them, and a line under the character selector says where they come from. Duty Missions, Duty Commands and your own to-dos stay yours to count, with one-less and one-more arrows. Duty Missions, shared by your characters on a server, carry the Account icon alone, the word under the pointer.</p>
           <p>A done to-do is struck through and muted where it stands. A click anywhere on a tick row marks it done, with a check ("Mark done", "Undo") at its end under the pointer; counts are done at N. A × under the pointer hides a row, "N hidden · Show" brings rows back, "+ Add a to-do" ends the list. Settled 2026-10-08: This week keeps only Ascension Trial, Duty Commands (hidden at first) and your own to-dos; Transcendence, Conquest final boss kills, Cradle of Nihility, Dying Dramata's Nest, Ordeal, Subjugation, Sanctuary and Exploration are gone (no cap in game, or not in the game's menu), and with them the folding groups. States: filled from the game, pointer on the Account icon, pointer on a game value, this week done, a game value next to a manual one, pointer on a to-do and a done one, a count at its limit, pressing, from yesterday's login, typing over a game value, after it, just logged in, before the first login, hidden, after Show, adding, removing your own, everything done, fresh week, keyboard focus on a row and on a game figure, character selector, opening it, try it.</p>
         </div>
         <div class="frames">
@@ -289,7 +305,7 @@
       <section class="screen">
         <div>
           <h2><a href="tray.html">Tray icon</a></h2>
-          <p>Validated 2026-10-08 (the hub). The app's icon in the notification area: tooltip "Kisk"; a left click or "Show toolbar" (the default item) brings back the toolbar and every open tool; "Quit" ends the process. Windows draws the tooltip and the menu.</p>
+          <p>Validated 2026-10-08 (the hub). The app's icon in the notification area: tooltip <code>-app-name</code> ("Belisk"); a left click or "Show toolbar" (the default item) brings back the toolbar and every open tool; "Quit" ends the process. Windows draws the tooltip and the menu.</p>
         </div>
         <div class="frames">
           <iframe title="Tray icon, right-click menu" src="tray.html?embed" height="320"></iframe>
@@ -311,13 +327,13 @@
           <li>To-do window: the overlay card at 370 px; 26 px rows 2 px apart with a 12 px gutter so names line up under the section labels; done is a 1 px line through the name in <code>muted</code>; a 20 px check and × at the row's end under the pointer only; counts as a 46 px figure between two 20 px arrows. From the game: a 20 px source line under the selector, the figure without arrows in the stepper's 88 px with the extra entries in a 26 px slot, Lucide <code>pencil</code> in the gutter once typed over. The amount rows (a full one near its refill on <code>rgba(242, 198, 109, 0.12)</code>; further away, "Full · refills …" in <code>muted</code>, no fill) are drawn in the Resources window only.</li>
           <li>Fight report: the overlay card at 520 px (the detail window's); one player table with 54/46/52/50/40 px figure columns 6 px apart, the sorted one <code>text</code> 13.5 / 600, the others <code>muted</code> 12.5; 24 px death rows on <code>track</code>; figures left on plates and right in tables; "--" in <code>faint</code> for what was not recorded. On the summary card a 24 px full-width <code>soft</code> button; in History a 12 px Lucide <code>crown</code> in <code>hp</code> and a 20 px report button on boss records.</li>
           <li>Hub: the toolbar is an overlay card at the user's opacity, 4 px padding, 12 px radius; 26 × 26 px tools with 14 px icons, lit = <code>hot</code> and a 4 px dot; 1 px rules at 0.18 between groups; counts "245/840 +380" on 26 px buttons, full near the refill = <code>full-fill</code> and <code>warn</code>; dropdowns are the popover, 268 px. The Resources window is the to-do window's frame with the amount rows, no × slot. The first-open prompt is a 310 px card placed as the reminder card. The meter's "…" menu is the 240 px popover with three items.</li>
+          <li>Updates: the toolbar's update icon is a 26 px tool, <code>soft</code> and <code>text</code> when an update waits, <code>muted</code> with a 2 px inset progress line while downloading, <code>good</code> on <code>chip-good</code> when ready; no new hue. What's new is the overlay card at 370 px (History's frame), versions 13.5 / 600, summary 12.5 / 500, bullets 12 / 500 <code>muted</code>. In Settings › About the download's progress is the Slider's 4 px track, and GitHub errors are field messages in <code>warn</code>.</li>
         </ul>
       </section>
 
       <section class="confirm-list" aria-labelledby="confirm-title">
         <h2 id="confirm-title">To confirm during implementation</h2>
         <ul>
-          <li>Clear cache (Settings, About): what exactly is reset and what is kept depends on the Rust storage; the dialog's copy follows that.</li>
           <li>WinDivert is bundled but no licence text for it is in the repository; the About credits name it without a licence until one is added.</li>
           <li>Fight report: which effects count as heals (shields, life drain) and whether a death can be tied to the hit before it are checked on a recording with a healer before they are built.</li>
           <li>To-dos and resources, to confirm in game (built as drawn): how the game shows keys above 21 (a typed number is your total); the exact reset hour.</li>

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Updates: the toolbar's update icon (mockup)</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../approved/todos.css" />
+    <link rel="stylesheet" href="../approved/meter.css" />
+    <link rel="stylesheet" href="../approved/hub.css" />
+    <link rel="stylesheet" href="updates.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Updates mockups">
+        <a href="index.html">Updates: all pages</a>
+        <a href="toolbar.html" aria-current="page">Toolbar update icon</a>
+        <a href="settings.html">Settings, About</a>
+        <a href="settings.html?states=changelog,changelog:other,changelog:older">Changelog</a>
+        <a href="whatsnew.html">What's new</a>
+        <a href="../approved/toolbar.html">Approved toolbar</a>
+      </nav>
+      <h1>The toolbar's update icon <small>mockup round 2026-10-09, not approved</small></h1>
+      <ul class="rationale">
+        <li><span class="dec is-agreed">Agreed</span> "a small button in the tool bar with a hover tooltip could be good too no ? (to say an update it available or has been downloaded when auto-updates are on)". It appears <b>only</b> while there is something to do or know: an update to download (click downloads it), a download running (its progress), an update ready (click restarts into it). Tooltips after 500 ms, as every toolbar tool; it never takes the keyboard and nothing flashes.</li>
+        <li><span class="dec is-proposed">Proposed</span> Its place: first in the end group, before fold (<i>… warning | update « ×</i>): it is about the app, like fold and quit, and the tools and counts keep their places when it comes and goes. A 26 px tool, not a 20 px end button, because it carries an action. Folded, the handle keeps it after the warning.</li>
+        <li><span class="dec is-proposed">Proposed</span> Looks, with no new hue: <b>available</b> Lucide <code>download</code> on the soft fill in text (a tool at rest has no fill, so it reads as "something waits"); <b>downloading</b> the same icon in muted with a 2 px progress line inset at the bottom (the reminder card's time-left line); <b>paused</b> the line in faint; <b>checking</b> the line full; <b>ready</b> Lucide <code>rotate-cw</code> in good on chip-good. A failed download shows the available look again and says so in its tooltip; GitHub unreachable or limiting shows nothing here (Settings › About only).</li>
+        <li>Built on the approved toolbar, drawn by <code>../approved/hub.js</code> unchanged; this page only adds the slot. The app's name comes from one constant (<code>APP</code> in updates.js, the Fluent term <code>-app-name</code>, "AION 2 DPS Meter" for now), so the approved toolbar's "Quit Kisk" reads "Quit AION 2 DPS Meter" here. Versions, sizes and times are invented: the build runs 1.5.1, GitHub's latest is 1.6.0.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Checks</b> <span class="dec is-agreed">Agreed</span>: at launch, then once an hour while the app runs, never more often (GitHub's 60 requests an hour per address). Up to date, checking, offline or limited: no icon.</li>
+        <li><b>Clicks</b> <span class="dec is-proposed">Proposed</span>: available → the download starts at once (no confirmation); downloading, paused or checking → opens Settings › About, where Cancel and the details are; ready → restarts at once, no confirmation, as quit has none.</li>
+        <li><b>Download</b> <span class="dec is-agreed">Agreed</span>: always speed-capped, and paused while you fight ("On by default but download is always throttled not only during fights"). <span class="dec is-proposed">Proposed</span> the cap is 1 MB/s, and the same rules apply when you clicked Update yourself.</li>
+        <li><b>Restart</b> <span class="dec is-agreed">Agreed</span>: installing always waits for your click; the app closes and starts the new version. <span class="dec is-proposed">Proposed</span> during a fight the click still works and the tooltip warns that it splits the fight in History; the tools that were open open again in their places; then What's new opens once under the toolbar (<a href="whatsnew.html">whatsnew.html</a>).</li>
+        <li><b>Pointer</b>: the slot lights on pointer enter and goes on leave, never on moves inside; the progress line changes only when the download progresses (one frame per percent), never pulses.</li>
+        <li><b>Accessibility</b>: the button's name is the tooltip's first line ("Update available: 1.6.0", "Downloading 1.6.0 · 62%", "Restart to update to 1.6.0"); the line is a progressbar with its value; Left and Right reach it like the other tools.</li>
+        <li><b>French</b>: drafted to check the room; the real text goes through Fluent.</li>
+      </ul>
+      <h2>Icons</h2>
+      <ul>
+        <li>Lucide (ISC), to add when built: <code>download</code>, <code>rotate-cw</code> (both in gpui-kit-assets already).</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="../approved/app-name.js"></script>
+    <script src="../approved/hub.js"></script>
+    <script src="updates.js"></script>
+    <script>
+      (function () {
+        const { view } = Hub;
+        const { toolbar, whatsNew } = Up;
+
+        // ---- "Try it": a working update (nothing is downloaded) ---------------
+        const TRY = { state: "available", pct: 0, fight: false, restarted: false, about: false, ticks: 0 };
+        let lastCtx = null;
+        let timer = null;
+
+        function tryHtml(ctx) {
+          if (TRY.restarted) {
+            const note = `<div class="mk-sim" role="status"><b>Page only:</b><span>The app closed and opened again in 1.6.0: the toolbar is back where it was, without the update icon, and What's new opens once under it.</span><button type="button" data-try="again">Start again</button></div>`;
+            return `<div class="up-try hb-col">${toolbar(ctx, { v: view(), live: true })}${whatsNew(ctx, { last: "1.5.1" })}${note}</div>`;
+          }
+          const up = { state: TRY.state, pct: TRY.pct, fight: TRY.fight };
+          const fightBtn = `<button type="button" data-try="fight">${TRY.fight ? "End the fight" : "Start a fight"}</button>`;
+          const about = TRY.about ? `<span>A click here opens Settings › About, where the download shows with Cancel.</span>` : "";
+          const fail = TRY.state === "available" ? `<button type="button" data-try="fail">Make the next download fail its check</button>` : "";
+          const note = `<div class="mk-sim"><b>Page only: what the game does</b>${fightBtn}${fail}<button type="button" data-try="again">Start again</button>${about}</div>`;
+          return `<div class="up-try hb-col">${toolbar(ctx, { v: view(), up, live: true })}${note}</div>`;
+        }
+
+        function redraw() {
+          const box = document.querySelector(".up-try");
+          if (box && lastCtx) box.outerHTML = tryHtml(lastCtx);
+        }
+
+        // Progress changes only the line and the tooltip's first line, so the
+        // pointer and the 500 ms tooltip delay are not reset on every tick.
+        function patch() {
+          const btn = document.querySelector(".up-try .hb-up");
+          if (!btn) return;
+          const i = btn.querySelector(".hb-prog i");
+          if (i) i.style.width = TRY.pct + "%";
+          const tip = btn.querySelector(".hb-tip");
+          if (tip && tip.firstChild) tip.firstChild.nodeValue = `Downloading 1.6.0 · ${TRY.pct}%`;
+        }
+
+        let failNext = false;
+
+        function tick() {
+          if (TRY.state === "downloading") {
+            TRY.pct = Math.min(100, TRY.pct + 2);
+            if (TRY.pct >= 100) {
+              TRY.state = "verifying";
+              TRY.ticks = 0;
+              redraw();
+            } else patch();
+          } else if (TRY.state === "verifying") {
+            if (++TRY.ticks >= 8) {
+              TRY.state = failNext ? "failed" : "ready";
+              TRY.pct = 0;
+              failNext = false;
+              stop();
+              redraw();
+            }
+          }
+        }
+
+        const start = () => {
+          if (!timer) timer = setInterval(tick, 120);
+        };
+        const stop = () => {
+          clearInterval(timer);
+          timer = null;
+        };
+
+        document.addEventListener("click", (e) => {
+          const box = e.target.closest(".up-try");
+          if (!box) return;
+          const up = e.target.closest("[data-up]");
+          const tr = e.target.closest("[data-try]");
+          if (up) {
+            const s = up.dataset.up;
+            if (s === "available" || s === "failed") {
+              TRY.state = TRY.fight ? "paused" : "downloading";
+              TRY.pct = 0;
+              TRY.about = false;
+              if (!TRY.fight) start();
+            } else if (s === "ready") {
+              TRY.restarted = true;
+              stop();
+            } else {
+              TRY.about = true;
+            }
+          } else if (tr) {
+            const k = tr.dataset.try;
+            if (k === "fight") {
+              TRY.fight = !TRY.fight;
+              if (TRY.state === "downloading" && TRY.fight) {
+                TRY.state = "paused";
+                stop();
+              } else if (TRY.state === "paused" && !TRY.fight) {
+                TRY.state = "downloading";
+                start();
+              }
+            } else if (k === "fail") {
+              failNext = true;
+            } else if (k === "again") {
+              stop();
+              Object.assign(TRY, { state: "available", pct: 0, fight: false, restarted: false, about: false, ticks: 0 });
+              failNext = false;
+            }
+          } else return;
+          redraw();
+        });
+
+        function render(state, ctx) {
+          lastCtx = ctx;
+          const T = (o) => toolbar(ctx, { v: view(), ...o });
+          switch (state) {
+            case "none":
+              return T({});
+            case "available":
+              return T({ up: { state: "available" } });
+            case "availableTip":
+              return T({ up: { state: "available" }, upHover: true, upTip: true });
+            case "downloading":
+              return T({ up: { state: "downloading", pct: 62 }, upHover: true, upTip: true });
+            case "downloadingRest":
+              return T({ up: { state: "downloading", pct: 62 } });
+            case "paused":
+              return T({ up: { state: "paused", pct: 62 }, upHover: true, upTip: true });
+            case "verifying":
+              return T({ up: { state: "verifying" }, upHover: true, upTip: true });
+            case "ready":
+              return T({ up: { state: "ready" } });
+            case "readyTip":
+              return T({ up: { state: "ready" }, upHover: true, upTip: true });
+            case "readyFight":
+              return T({ up: { state: "ready", fight: true }, upHover: true, upTip: true });
+            case "failed":
+              return T({ up: { state: "failed" }, upHover: true, upTip: true });
+            case "withWarn":
+              return T({ v: view({ now: Hub.SOON, g: Hub.snapshot({ invasion: { n: 7 }, nightmare: { n: 14 } }) }), up: { state: "ready" }, lit: { meter: true } });
+            case "folded":
+              return T({ folded: true, up: { state: "ready" } });
+            case "foldedWarn":
+              return T({ folded: true, v: view({ now: Hub.SOON, g: Hub.snapshot({ shugo: { n: 21, x: 3 }, invasion: { n: 7 } }) }), up: { state: "downloading", pct: 35 } });
+            case "focus":
+              return T({ up: { state: "ready" }, upFocus: true });
+            case "frAvailable":
+              return T({ lang: "fr", up: { state: "available" }, upHover: true, upTip: true });
+            case "frDownloading":
+              return T({ lang: "fr", up: { state: "downloading", pct: 62 }, upHover: true, upTip: true });
+            case "frReady":
+              return T({ lang: "fr", up: { state: "ready", fight: true }, upHover: true, upTip: true });
+            case "restarted":
+              return `<div class="hb-col">${T({})}${whatsNew(ctx, { last: "1.5.1" })}</div>`;
+            case "try":
+              return tryHtml(ctx);
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "none", title: "Nothing to do", sub: "up to date, checking, offline or limited by GitHub: no icon; the approved toolbar as it is" },
+            { id: "available", title: "Update available (automatic download off)", sub: "soft fill and text: something waits; first in the end group, before fold" },
+            { id: "availableTip", title: "Pointer on it", sub: "hot fill on enter; after 500 ms the tooltip: the version, and that a click downloads it and nothing installs before the restart" },
+            { id: "downloadingRest", title: "Downloading", sub: "with automatic download on (the default) this is the first thing you see: muted icon, the 2 px progress line at 62%" },
+            { id: "downloading", title: "Downloading, pointer on it", sub: "the tooltip says it is speed-capped and paused while you fight; a click opens Settings › About" },
+            { id: "paused", title: "Paused during a fight", sub: "the line in faint; it resumes when the fight ends" },
+            { id: "verifying", title: "Checking the download", sub: "the line full while the hash and signature are checked, about a second" },
+            { id: "ready", title: "Ready", sub: "Lucide rotate-cw in good on chip-good: restart to update" },
+            { id: "readyTip", title: "Ready, pointer on it", sub: "a click closes the app and opens it again in 1.6.0; nothing is lost" },
+            { id: "readyFight", title: "Ready, during a fight", sub: "the click still works; the tooltip warns that restarting now splits the fight in History" },
+            { id: "failed", title: "The download failed its check", sub: "the file was deleted, nothing installed; the available look again, the tooltip says why and a click retries. No colour, no pop-up during play" },
+            { id: "withWarn", title: "Beside the warning, meter open", sub: "the busiest bar: tools, counts, warning and the ready slot" },
+            { id: "folded", title: "Folded, ready", sub: "the handle keeps the slot after the warning, so a ready update is not missed" },
+            { id: "foldedWarn", title: "Folded, downloading, resources full", sub: "the warning, then the slot" },
+            { id: "focus", title: "Keyboard focus (accessibility tools)", sub: "the toolbar's focus ring; its name is the tooltip's first line" },
+            { id: "frAvailable", title: "In French: available", sub: "drafted to check the room; through Fluent when built" },
+            { id: "frDownloading", title: "In French: downloading", sub: "« Téléchargement de 1.6.0 · 62 % »" },
+            { id: "frReady", title: "In French: ready, during a fight", sub: "the longest tooltip" },
+            { id: "restarted", title: "After the restart", sub: "the toolbar comes back where it was, without the slot; What's new opens once, 6 px under it (see whatsnew.html)" },
+            { id: "try", title: "Try it", sub: "a working update: click the icon to download (it runs in a few seconds here), start a fight to pause it, let it finish, then click to restart. Nothing is downloaded" },
+          ],
+          controls: ["alpha", "scale"],
+          tileMin: 560,
+          stageMin: 150,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

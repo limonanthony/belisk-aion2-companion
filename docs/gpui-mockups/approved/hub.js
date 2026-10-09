@@ -1,8 +1,12 @@
 // The hub, approved 2026-10-08: drawing for the toolbar, its dropdowns, the
 // Resources window, the first-open prompt and the reminder card under the
-// toolbar, shared by toolbar.html, resources.html, prompt.html and the
-// "Opening it" state of todos.html. Styles: hub.css; the Resources window's
-// rows use todos.css; the meter drawn under the toolbar uses meter.css.
+// toolbar, shared by toolbar.html, resources.html, prompt.html, whatsnew.html
+// and the "Opening it" state of todos.html. The toolbar's update slot was
+// approved on 2026-10-09 with the updates round (../updates/README.md).
+// Styles: hub.css; the Resources window's rows use todos.css; the meter drawn
+// under the toolbar uses meter.css. The app's name comes from app-name.js
+// (window.APP_NAME, the Fluent term -app-name), loaded before this file on
+// every page that uses it.
 //
 // Everything here is invented: values, times, characters. Caps and refills
 // are the game's ticket table. Nothing is saved or sent
@@ -11,7 +15,8 @@
 // Abandoned Balaur Fortress or Fafnium Laboratory: the Daily Dungeon menu
 // lists only the Unknown Fissure. Both settled in game, 2026-10-08.
 //
-// Icons: Lucide (https://lucide.dev), ISC License; see kit.js.
+// Icons: Lucide (https://lucide.dev), ISC License; see kit.js. `download` and
+// `rotate-cw` are copied from gpui-kit-assets 0.6.6.
 (function () {
   "use strict";
 
@@ -34,6 +39,9 @@
     // The DPS meter's icon (the PvP meter takes Lucide crosshair, Kit "pvp").
     swords:
       '<polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" x2="9" y1="14" y2="18"/><line x1="7" x2="4" y1="17" y2="20"/><line x1="3" x2="5" y1="19" y2="21"/>',
+    // The update slot (2026-10-09): available, downloading; ready.
+    download: '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
+    rotateCw: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
   };
 
   function icon(name, cls) {
@@ -154,10 +162,13 @@
   }
 
   // ---- Strings (English; French drawn to check the room, through i18n) -----
+  // `app` is the product name (window.APP_NAME, Fluent `-app-name`), as the
+  // build's `toolbar-quit = Quit { -app-name }`.
   const T = {
     en: {
       meter: ["DPS meter", "Fights are tracked while it is open."],
       meterOpen: ["DPS meter", "Click to close. Fights stop being tracked."],
+      meterAside: ["DPS meter", "Hidden between fights. Click to show it for 10 s."],
       pvp: "PvP meter",
       todos: "To-dos",
       history: "Fight history",
@@ -166,7 +177,7 @@
       settings: "Settings",
       fold: "Fold the toolbar",
       unfold: "Unfold the toolbar",
-      quit: ["Quit Kisk", "Closes every tool."],
+      quit: (app) => [`Quit ${app}`, "Closes every tool."],
       fullLabel: "Full, a refill is coming",
       refills: "refills",
       all: "All resources",
@@ -177,13 +188,22 @@
       fullWaste: "Full, being wasted",
       fullRefills: "Full · refills",
       noValues: "No value yet",
-      noValuesLine: "Log in while Kisk runs.",
+      noValuesLine: (app) => `Log in while ${app} runs.`,
       click: "Click for all resources.",
       moreFull: (n) => `${n} more full`,
+      // The update slot (2026-10-09): the first line is the button's name.
+      upAvailable: (v) => [`Update available: ${v}`, "Click to download it. It installs only when you restart."],
+      upFailed: (v) => [`Update available: ${v}`, "The last download failed its check and was deleted. Click to try again."],
+      upDownloading: (v, p) => [`Downloading ${v} · ${p}`, "Speed-capped, paused while you fight. Click for details."],
+      upPaused: (v, p) => [`Download paused · ${p}`, "Resumes when the fight ends. Click for details."],
+      upVerifying: (v) => [`Checking ${v}…`, "Making sure the download is complete and genuine."],
+      upReady: (v) => [`Restart to update to ${v}`, "Closes and opens again in the new version. Nothing is lost."],
+      upReadyFight: (v) => [`Restart to update to ${v}`, "You are fighting: restarting now splits this fight in History."],
     },
     fr: {
       meter: ["Compteur DPS", "Les combats sont suivis tant qu'il est ouvert."],
       meterOpen: ["Compteur DPS", "Cliquer pour le fermer. Les combats ne sont plus suivis."],
+      meterAside: ["Compteur DPS", "Masqué entre les combats. Cliquer pour l'afficher 10 s."],
       pvp: "Compteur JcJ",
       todos: "Tâches",
       history: "Historique des combats",
@@ -192,7 +212,7 @@
       settings: "Paramètres",
       fold: "Replier la barre",
       unfold: "Déplier la barre",
-      quit: ["Quitter Kisk", "Ferme tous les outils."],
+      quit: (app) => [`Quitter ${app}`, "Ferme tous les outils."],
       fullLabel: "Pleines, une recharge arrive",
       refills: "recharge",
       all: "Toutes les ressources",
@@ -203,16 +223,26 @@
       fullWaste: "Plein, gaspillé",
       fullRefills: "Plein · rech.",
       noValues: "Pas encore de valeur",
-      noValuesLine: "Connectez-vous pendant que Kisk tourne.",
+      noValuesLine: (app) => `Connectez-vous pendant que ${app} tourne.`,
       click: "Cliquer pour toutes les ressources.",
       moreFull: (n) => `${n} autres pleines`,
+      upAvailable: (v) => [`Mise à jour disponible : ${v}`, "Cliquer pour la télécharger. Elle s'installe seulement au redémarrage."],
+      upFailed: (v) => [`Mise à jour disponible : ${v}`, "Le dernier téléchargement n'a pas passé la vérification. Cliquer pour réessayer."],
+      upDownloading: (v, p) => [`Téléchargement de ${v} · ${p}`, "Débit limité, en pause pendant les combats. Cliquer pour les détails."],
+      upPaused: (v, p) => [`Téléchargement en pause · ${p}`, "Reprend à la fin du combat. Cliquer pour les détails."],
+      upVerifying: (v) => [`Vérification de ${v}…`, "On vérifie que le fichier est complet et authentique."],
+      upReady: (v) => [`Redémarrer pour passer à ${v}`, "Ferme et rouvre dans la nouvelle version. Rien n'est perdu."],
+      upReadyFight: (v) => [`Redémarrer pour passer à ${v}`, "Combat en cours : redémarrer maintenant le coupe en deux dans l'historique."],
     },
   };
 
   // ---- Toolbar ---------------------------------------------------------------
   // o: { lit: {meter, pvp, todos, history, reminders, settings, resources},
-  //      hover: key, tip: key, warnOpen, dropHot, bellOpen, bellOff, folded,
-  //      lang, v (resource view), focus: key, up (dropdown opens up), live }
+  //      aside (the open meter steps aside between fights), hover: key,
+  //      tip: key, warnOpen, dropHot, bellOpen, bellOff, folded, lang,
+  //      v (resource view), focus: key, up (dropdown opens up), live,
+  //      update: { state, version, pct, fight } (the update slot; none: no
+  //      slot) }
   function tipHtml(t, cls = "") {
     if (!t) return "";
     const [a, b] = Array.isArray(t) ? t : [t, ""];
@@ -237,7 +267,7 @@
     let tip;
     if (s.src === "empty") {
       fig = `<span class="hb-fig is-blank">&mdash;</span>`;
-      tip = [name, `${L.noValues}. ${L.noValuesLine}`];
+      tip = [name, `${L.noValues}. ${L.noValuesLine(window.APP_NAME)}`];
     } else {
       fig = `<span class="hb-fig">${s.n}<small>/${s.cap}</small></span>${s.x ? `<span class="hb-x">+${s.x}</span>` : ""}`;
       const lang = o.lang || "en";
@@ -278,16 +308,55 @@
     return `<div class="o-menu hb-drop is-left" role="menu" style="width:236px"><div class="hb-drop-label">${icon("bell")}Next reminders</div>${items}<div class="o-menu-sep"></div><div class="o-menu-item" role="menuitemcheckbox" aria-checked="false"><span class="lead"></span><span class="nm">Pause reminders</span></div><div class="o-menu-item" role="menuitem"><span class="lead">${icon("settings")}</span><span class="nm">Reminder settings</span>${icon("chevronRight")}</div></div>`;
   }
 
+  // ---- The update slot (approved 2026-10-09) -----------------------------------
+  // Drawn only while there is something to do or know: first in the end
+  // group, before fold (after the warning when folded). A 26 px tool:
+  // available (and after a failed download) Lucide download on soft in text;
+  // downloading, paused, checking the download: the icon in muted with a
+  // 2 px progress line; ready: Lucide rotate-cw in good on chip-good.
+  // o.update: { state: "available" | "failed" | "downloading" | "paused" |
+  //   "verifying" | "ready", version, pct, fight }; hover, tip, focus: "update".
+  function updateBtn(o) {
+    const u = o.update;
+    const L = T[o.lang || "en"];
+    const p = o.lang === "fr" ? `${u.pct || 0}\u202f%` : `${u.pct || 0}%`;
+    const busy = u.state === "downloading" || u.state === "paused" || u.state === "verifying";
+    const tip = {
+      available: () => L.upAvailable(u.version),
+      failed: () => L.upFailed(u.version),
+      downloading: () => L.upDownloading(u.version, p),
+      paused: () => L.upPaused(u.version, p),
+      verifying: () => L.upVerifying(u.version),
+      ready: () => (u.fight ? L.upReadyFight(u.version) : L.upReady(u.version)),
+    }[u.state]();
+    const c = [
+      "hb-btn",
+      "hb-up",
+      busy && "is-busy",
+      u.state === "paused" && "is-paused",
+      u.state === "ready" && "is-ready",
+      o.hover === "update" && "is-hover",
+      o.focus === "update" && "is-focus",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const fill = u.state === "verifying" ? 100 : u.pct || 0;
+    const prog = busy ? `<span class="hb-prog" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${fill}"><i style="width:${fill}%"></i></span>` : "";
+    return `<button type="button" class="${c}" data-hb="update" data-up="${u.state}" aria-label="${esc(tip[0])}">${icon(u.state === "ready" ? "rotateCw" : "download")}${prog}${tipHtml(tip, o.tip === "update" ? " is-on" : "")}</button>`;
+  }
+
   function toolbar(ctx, o = {}) {
     const L = T[o.lang || "en"];
+    const app = window.APP_NAME;
+    const slot = o.update ? updateBtn(o) : "";
     o = { v: view(), ...o };
     const grip = `<span class="hb-grip" title="Drag to move">${icon("grip")}</span>`;
     if (o.folded) {
       const n = fullAll(o.v).length;
       const warn = n ? `<button type="button" class="hb-warn" data-hb="unfold" aria-label="${n} resources full. Unfold the toolbar">${icon("alert")}${n}</button>` : "";
-      return `<div class="ov o hb is-folded${o.live ? " is-live" : ""}" role="toolbar" aria-label="Kisk">${grip}${toolBtn(o, "unfold", "chevronsRight", L.unfold, { cls: "is-end" })}${warn}</div>`;
+      return `<div class="ov o hb is-folded${o.live ? " is-live" : ""}" role="toolbar" aria-label="${esc(app)}">${grip}${toolBtn(o, "unfold", "chevronsRight", L.unfold, { cls: "is-end" })}${warn}${slot}</div>`;
     }
-    const meterTip = o.lit && o.lit.meter ? L.meterOpen : L.meter;
+    const meterTip = o.lit && o.lit.meter ? (o.aside ? L.meterAside : L.meterOpen) : L.meter;
     const bellIc = o.bellOff ? "bellOff" : "bell";
     const tools =
       toolBtn(o, "meter", "swords", meterTip) +
@@ -301,8 +370,8 @@
       ? `<span style="position:relative;display:inline-flex"><button type="button" class="hb-warn${o.warnOpen ? " is-open" : ""}${o.hover === "warn" ? " is-hover" : ""}" data-hb="warn" aria-haspopup="menu" aria-expanded="${!!o.warnOpen}" aria-label="${others} more resources full">${icon("alert")}${others}${o.tip === "warn" ? tipHtml(L.moreFull(others), " is-on") : ""}</button>${o.warnOpen ? warnDrop(o) : ""}</span>`
       : "";
     const counts = `<span class="hb-counts">${countBtn(o, find("odyle"))}${countBtn(o, find("shugo"))}${warn}</span>`;
-    const end = toolBtn(o, "fold", "chevronsLeft", L.fold, { cls: "is-end" }) + toolBtn(o, "quit", "close", L.quit, { cls: "is-end", tip: L.quit });
-    return `<div class="ov o hb${o.live ? " is-live" : ""}" role="toolbar" aria-label="Kisk">${grip}<span class="hb-tools">${tools}</span><span class="hb-vr" aria-hidden="true"></span>${counts}<span class="hb-vr" aria-hidden="true"></span>${end}</div>`;
+    const end = slot + toolBtn(o, "fold", "chevronsLeft", L.fold, { cls: "is-end" }) + toolBtn(o, "quit", "close", L.quit(app), { cls: "is-end" });
+    return `<div class="ov o hb${o.live ? " is-live" : ""}" role="toolbar" aria-label="${esc(app)}">${grip}<span class="hb-tools">${tools}</span><span class="hb-vr" aria-hidden="true"></span>${counts}<span class="hb-vr" aria-hidden="true"></span>${end}</div>`;
   }
 
   // ---- Resources window ------------------------------------------------------
@@ -374,7 +443,7 @@
     if (v.src === "live") text = `From the game, live ${dot} logged in at <b>${clock(v.seen == null ? LOGIN : v.seen)}</b>`;
     else if (v.src === "stale") text = `From the game at login, <b>Sun 22:40</b> ${dot} refills since estimated`;
     else if (v.src === "shared") text = `<b>${esc(v.who.name)}</b> not seen at login yet ${dot} Account rows from ${esc(v.from)}`;
-    else text = `No game values yet. Log in with <b>${esc(v.who.name)}</b> while Kisk runs.`;
+    else text = `No game values yet. Log in with <b>${esc(v.who.name)}</b> while ${window.APP_NAME} runs.`;
     return `<div class="g-src">${icon("gamepad")}<span>${text}</span></div>`;
   }
 
@@ -441,7 +510,7 @@
   function meter(ctx, o = {}) {
     let card;
     if (o.board === "waiting") {
-      const h = `<div class="d-head"><span class="d-tgt is-session">DPS Meter</span><span class="d-label">Standing by</span></div>`;
+      const h = `<div class="d-head"><span class="d-tgt is-session">DPS meter</span><span class="d-label">Standing by</span></div>`;
       card = `<div class="ov d">${h}<div class="d-idle"><strong>Waiting for the first hit</strong><span>Alt+E hides the meter · Alt+Q resets it</span></div><div class="d-foot is-sys"><span class="grow"></span><span class="d-sys is-good">${icon("signal")}${ctx.sys.pingMs} ms</span><span class="d-sys">CPU ${ctx.sys.cpu}%</span><span class="d-sys">${ctx.sys.memGb} GB</span></div></div>`;
     } else {
       const h = `<div class="d-head"><span class="d-tgt is-session">${nameOf(ctx, MOB)}</span><span class="d-time">${ctx.fmt.time(SESSION_SECS)}</span></div>`;
@@ -453,10 +522,12 @@
   }
 
   // ---- First-open prompt ------------------------------------------------------
+  // `body` takes the product name (window.APP_NAME), as the build's
+  // `prompt-body`.
   const PROMPT = {
     en: {
       title: "Open the meter at launch?",
-      body: "Kisk starts with the toolbar alone. Open the DPS meter each time Kisk starts?",
+      body: (app) => `${app} starts with the toolbar alone. Open the DPS meter each time ${app} starts?`,
       path: ["Settings", "Overlay", "Open the meter at launch"],
       yes: "Yes, at launch",
       no: "Not now",
@@ -464,7 +535,7 @@
     },
     fr: {
       title: "Ouvrir le compteur au lancement ?",
-      body: "Kisk démarre avec la barre d'outils seule. Ouvrir le compteur DPS à chaque lancement de Kisk ?",
+      body: (app) => `${app} démarre avec la barre d'outils seule. Ouvrir le compteur DPS à chaque lancement de ${app} ?`,
       path: ["Paramètres", "Overlay", "Ouvrir le compteur au lancement"],
       yes: "Oui, au lancement",
       no: "Pas maintenant",
@@ -479,7 +550,7 @@
     const path = `<div class="hp-path">${icon("settings")}${steps}</div>`;
     const body = o.done
       ? `<div class="o-note is-good" role="status">${icon("check")}<span>${P.done}</span></div>${path}`
-      : `<div class="hp-body">${P.body}</div>${path}<div class="hp-acts"><button type="button" class="o-tbtn is-quiet${o.hover === "no" ? " is-hover" : ""}">${P.no}</button><button type="button" class="o-tbtn${o.hover === "yes" ? " is-hover" : ""}">${P.yes}</button></div>`;
+      : `<div class="hp-body">${P.body(window.APP_NAME)}</div>${path}<div class="hp-acts"><button type="button" class="o-tbtn is-quiet${o.hover === "no" ? " is-hover" : ""}">${P.no}</button><button type="button" class="o-tbtn${o.hover === "yes" ? " is-hover" : ""}">${P.yes}</button></div>`;
     return `<div class="ov o hp${o.narrow ? " is-narrow" : ""}" role="dialog" aria-label="${esc(P.title)}"><div class="hp-head">${icon("swords")}<span class="hp-title">${P.title}</span></div>${body}</div>`;
   }
 

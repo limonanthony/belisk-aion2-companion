@@ -1,7 +1,8 @@
 /* The hub, approved 2026-10-08: the toolbar, its dropdowns and tooltips,
    the Resources window's few additions, the first-open prompt, the reminder
-   card's place under the toolbar and the tray stand-in. Values are in
-   tokens.md, "Hub"; a change here changes them too. Loaded after
+   card's place under the toolbar and the tray stand-in; the toolbar's update
+   slot, approved 2026-10-09. Values are in tokens.md, "Hub" and "Updates
+   and the changelog"; a change here changes them too. Loaded after
    overlay.css and todos.css (which brings the bundled Barlow Semi
    Condensed and the to-do window's rows); meter.css draws the meter. */
 
@@ -311,9 +312,84 @@
 }
 
 .hb-counts .hb-tip,
-.hb-btn.is-end .hb-tip {
+.hb-btn.is-end .hb-tip,
+.hb-btn.hb-up .hb-tip {
   right: 0;
   left: auto;
+}
+
+/* ---- Update slot (approved 2026-10-09, the updates round) ------------------
+   One 26 x 26 px tool (7 px radius, 14 px icon), drawn only while there is
+   something to do or know, first in the end group: | update « ×; folded,
+   after the warning. Its tooltip keeps its right edge on the button's, as
+   fold's and quit's. No new hue; nothing pulses. */
+
+/* Available (and after a failed download): the tool at rest takes the soft
+   fill and text colour, so it reads as "something waits"; pointer over:
+   hot. new */
+.hb-btn.hb-up {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.hb-btn.hb-up:hover,
+.hb-btn.hb-up.is-hover {
+  background: var(--o-hot);
+}
+
+/* Downloading, paused, checking the download: a plain tool in muted with a
+   2 px progress line, 5 px inset, 4 px above the bottom edge (inset and
+   rounded like the reminder card's time-left line: track gauge-empty, fill
+   muted; paused: fill faint; checking: full). The icon sits 2 px higher.
+   new */
+.hb-btn.hb-up.is-busy {
+  background: none;
+  color: var(--o-muted);
+}
+
+.hb-btn.hb-up.is-busy:hover,
+.hb-btn.hb-up.is-busy.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.hb-btn.hb-up.is-busy .i {
+  margin-top: -2px;
+}
+
+.hb-prog {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  left: 5px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: rgba(255, 240, 225, 0.12);
+}
+
+.hb-prog i {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--o-muted);
+}
+
+.hb-btn.hb-up.is-paused .hb-prog i {
+  background: var(--o-faint);
+}
+
+/* Ready: Lucide rotate-cw in good on chip-good (good at 0.13); pointer
+   over: good at 0.20. new */
+.hb-btn.hb-up.is-ready {
+  background: rgba(134, 227, 168, 0.13);
+  color: var(--o-good);
+}
+
+.hb-btn.hb-up.is-ready:hover,
+.hb-btn.hb-up.is-ready.is-hover {
+  background: rgba(134, 227, 168, 0.2);
+  color: var(--o-good);
 }
 
 /* ---- Dropdowns (the warning's, the bell's) ---------------------------------

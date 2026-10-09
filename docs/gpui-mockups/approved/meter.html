@@ -321,7 +321,7 @@
         }
 
         function waitingCard(ctx, ptr, s = {}) {
-          const h = head({ name: "DPS Meter", session: true, right: `<span class="d-label">Standing by</span>`, ptr, tools: { menu: s.menu } });
+          const h = head({ name: "DPS meter", session: true, right: `<span class="d-label">Standing by</span>`, ptr, tools: { menu: s.menu } });
           return card(
             ctx,
             `${h}<div class="d-idle"><strong>Waiting for the first hit</strong><span>Alt+E hides the meter · Alt+Q resets it</span></div>
@@ -354,7 +354,7 @@
         }
 
         const capsuleIdle = () =>
-          `<div class="ov d is-capsule is-idle"><span style="font-weight:600">DPS Meter</span><span class="d-label">Standing by</span></div>`;
+          `<div class="ov d is-capsule is-idle"><span style="font-weight:600">DPS meter</span><span class="d-label">Standing by</span></div>`;
 
         // ---- Fight summary ---------------------------------------------------------
 

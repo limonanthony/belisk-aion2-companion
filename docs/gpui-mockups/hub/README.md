@@ -114,7 +114,9 @@ Mirelle logged in at 19:02; membership on.
     window ends the process).
 12. **The name.** "Kisk" (TASK-23, not renamed yet) where this round shows
     the app's name: the prompt, the toolbar's quit tooltip, the tray
-    tooltip and the new Settings descriptions.
+    tooltip and the new Settings descriptions. (Since 2026-10-09 the
+    product is Belisk; "Kisk" was dropped. The approved pages take the
+    name from `../approved/app-name.js`.)
 
 ### Agreed (2026-10-08, "yup perfect": accepted as drawn)
 
@@ -302,7 +304,8 @@ drawings are not changed.
 ## Not decided by the mockup
 
 - The app's other names (title bars, About, the waiting card's "DPS Meter")
-  change with TASK-23.
+  change with TASK-23. (Settled 2026-10-09: Belisk everywhere the app is
+  named, from `../approved/app-name.js`; the waiting card says "DPS meter".)
 - Icons to add from Lucide (ISC) when built: `crosshair`, `grip-vertical`,
   `key-round`, `zap`, `bell-off`, `chevrons-left`, `chevrons-right`,
   `package`, `settings`; `swords`, `bell`, `crown`, `list-checks`,

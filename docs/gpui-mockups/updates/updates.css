@@ -1,0 +1,506 @@
+/* Updates and changelog round (2026-10-09): only what this round adds on
+   top of the approved design, which is loaded unchanged from ../approved/
+   (shared.css, overlay.css, todos.css for the bundled Barlow, hub.css,
+   app.css). Values reuse tokens.md; values new in this round are marked
+   "new". Nothing here is approved yet. */
+
+/* ---- Toolbar: the update slot ---------------------------------------------
+   One 26 x 26 px tool (7 px radius, 14 px icon), drawn only while there is
+   something to do or know, first in the end group: | update « ×. Its
+   tooltip keeps its right edge on the button's, as fold's and quit's. */
+.hb-btn.hb-up .hb-tip {
+  right: 0;
+  left: auto;
+}
+
+/* Available: the tool at rest takes the soft fill and text colour (an
+   action waits); under the pointer, hot. new */
+.hb-btn.hb-up {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.hb-btn.hb-up:hover,
+.hb-btn.hb-up.is-hover {
+  background: var(--o-hot);
+}
+
+/* Downloading, paused, checking: a plain tool in muted with a 2 px progress
+   line, 5 px inset, 4 px above the bottom edge (inset and rounded like the
+   reminder card's time-left line: track gauge-empty, fill muted; paused:
+   fill faint). The icon sits 2 px higher. new */
+.hb-btn.hb-up.is-busy {
+  background: none;
+  color: var(--o-muted);
+}
+
+.hb-btn.hb-up.is-busy:hover,
+.hb-btn.hb-up.is-busy.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.hb-btn.hb-up.is-busy .i {
+  margin-top: -2px;
+}
+
+.hb-prog {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  left: 5px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: rgba(255, 240, 225, 0.12);
+}
+
+.hb-prog i {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--o-muted);
+}
+
+.hb-btn.hb-up.is-paused .hb-prog i {
+  background: var(--o-faint);
+}
+
+/* Ready: Lucide rotate-cw in good on chip-good (good at 0.13); under the
+   pointer good at 0.20. new */
+.hb-btn.hb-up.is-ready {
+  background: rgba(134, 227, 168, 0.13);
+  color: var(--o-good);
+}
+
+.hb-btn.hb-up.is-ready:hover,
+.hb-btn.hb-up.is-ready.is-hover {
+  background: rgba(134, 227, 168, 0.2);
+  color: var(--o-good);
+}
+
+/* ---- What's new window ------------------------------------------------------
+   An overlay window with History's frame (370 px, 28 px header, close tool
+   button, 26 px footer), opened once after an update, 6 px under the
+   toolbar. Versions newest first; each: version 13.5 px / 600 and its date
+   in faint on the right; the summary 12.5 px / 500 text, 16 px line; the
+   bullets 12 px / 500 muted, 15.5 px line, a 4 px faint dot 11 px in. */
+.ov.o.wn {
+  width: 370px;
+}
+
+.wn .o-head .o-btn {
+  cursor: pointer;
+}
+
+/* The to-do window's button reset (todos.css), for this window's buttons. */
+:where(.wn) button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.wn-since {
+  height: 18px;
+  padding: 0 4px;
+  color: var(--o-faint);
+  font-size: 11.5px;
+  line-height: 18px;
+}
+
+.wn-since b {
+  color: var(--o-muted);
+  font-weight: 600;
+}
+
+.wn-body {
+  max-height: 318px;
+  margin-top: 4px;
+}
+
+/* Page-only: "scrolled to the end" drawn by aligning the list to the
+   bottom of the 318 px viewport. */
+.wn-body.is-end {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 318px;
+}
+
+.wn-body.is-end > .wn-inner {
+  flex-shrink: 0;
+}
+
+.wn-body > .wn-inner {
+  padding: 0 4px 2px;
+}
+
+.wn-ver + .wn-ver {
+  margin-top: 14px;
+}
+
+.wn-vh {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  height: 20px;
+}
+
+.wn-v {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.wn-d {
+  margin-left: auto;
+  color: var(--o-faint);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.wn-sum {
+  margin-top: 1px;
+  color: var(--o-text);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: normal;
+}
+
+.wn-list {
+  margin: 5px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wn-list li {
+  position: relative;
+  padding-left: 11px;
+  color: var(--o-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 15.5px;
+  white-space: normal;
+}
+
+.wn-list li + li {
+  margin-top: 4px;
+}
+
+.wn-list li::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--o-faint);
+}
+
+.wn b,
+.cl b {
+  color: inherit;
+  font-weight: 600;
+}
+
+.wn-list b {
+  color: var(--o-text);
+}
+
+.wn .o-foot .o-tbtn {
+  cursor: pointer;
+}
+
+.wn .o-tbtn.is-quiet.is-hover {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+/* ---- Settings › About › Updates (main window) ----------------------------- */
+
+/* The download's progress under the status line: the Slider's 4 px track
+   and cream range, 300 px; paused: the range at 0.45. new */
+.up-bar {
+  width: 300px;
+  height: 4px;
+  margin: 7px 0 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 240, 225, 0.14);
+}
+
+.up-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--a-cream);
+}
+
+.up-bar.is-paused i {
+  opacity: 0.45;
+}
+
+/* A warning under a row (GitHub unreachable or limiting): field-msg in
+   warn, as is-bad is in bad. new */
+.field-msg.is-warn {
+  color: var(--a-warn);
+}
+
+.row-desc .field-msg {
+  align-items: flex-start;
+  margin-top: 5px;
+}
+
+.row-desc .field-msg .i {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* The status row's label carries the running version in display type, as
+   the version row does. */
+.row-label .ver {
+  color: var(--a-faint);
+  font-family: var(--a-display);
+  font-weight: 600;
+}
+
+/* Copied from ../approved/settings.html, unchanged. */
+.credit-tag {
+  margin-left: 6px;
+}
+
+.row-ctl .badge {
+  margin-right: 2px;
+}
+
+/* ---- Settings › About › Changelog ----------------------------------------
+   A sub-page of About with a back button, as the fight report opens a
+   player in place. One group; each version a row: the version (display
+   15 px / 600), the date in faint, the summary in muted cut to one line,
+   the chevron at the row's end (tokens.md, Expandable rows: one open at a
+   time). The open row shows the whole summary in text and the bullets in
+   muted, 40 px in. */
+.cl-back {
+  margin: -6px 0 10px -10px;
+}
+
+.cl-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.cl-item + .cl-item {
+  border-top: 1px solid var(--a-line);
+}
+
+.cl-row.is-hover {
+  background: rgba(255, 240, 225, 0.04);
+}
+
+.cl-v {
+  width: 52px;
+  flex-shrink: 0;
+  font-family: var(--a-display);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.cl-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.cl-main small {
+  display: block;
+  overflow: hidden;
+  color: var(--a-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-d {
+  flex-shrink: 0;
+  color: var(--a-faint);
+  font-size: 12px;
+}
+
+.cl-row > .i {
+  width: 14px;
+  height: 14px;
+  color: var(--a-faint);
+}
+
+.cl-body {
+  padding: 0 46px 14px 80px;
+}
+
+.cl-sum {
+  max-width: 64ch;
+  color: var(--a-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.cl-list {
+  max-width: 66ch;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-list li {
+  position: relative;
+  padding-left: 13px;
+  color: var(--a-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.cl-list li + li {
+  margin-top: 4px;
+}
+
+.cl-list li::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--a-faint);
+}
+
+.cl-list b {
+  color: var(--a-text);
+}
+
+.cl-more {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--a-line);
+}
+
+/* ---- Page chrome (not product styling) ------------------------------------ */
+
+/* The Markdown source beside its rendering, for the subset decision. */
+.md-src {
+  position: relative;
+  z-index: 1;
+  width: 370px;
+  max-height: 420px;
+  margin: 0;
+  overflow: hidden;
+  padding: 10px 12px;
+  border: 1px solid var(--page-border);
+  border-radius: 8px;
+  background: rgba(8, 9, 12, 0.92);
+  color: var(--page-text);
+  font: 11.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.md-src .md-h {
+  color: #f2c66d;
+}
+
+.md-src .md-b {
+  color: #86e3a8;
+}
+
+.md-check {
+  position: relative;
+  z-index: 1;
+  margin-top: 8px;
+  color: var(--page-muted);
+  font: 12px/1.45 system-ui, sans-serif;
+}
+
+.md-check b {
+  color: #86e3a8;
+}
+
+/* Decision tags, copied from ../todos-autofill/autofill.css, unchanged. */
+.dec {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  vertical-align: 1px;
+}
+
+.dec.is-agreed {
+  background: rgba(134, 227, 168, 0.14);
+  color: #86e3a8;
+}
+
+.dec.is-proposed {
+  background: rgba(242, 198, 109, 0.14);
+  color: #f2c66d;
+}
+
+.dec.is-open {
+  background: rgba(143, 184, 255, 0.16);
+  color: #a9c7ff;
+}
+
+/* The round's index page, copied from ../hub/hub.css (.hb-index). */
+.up-index {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 4px 32px 24px;
+}
+
+.up-index h2 {
+  margin: 22px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.up-index h2 small {
+  margin-left: 8px;
+  color: var(--page-faint);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.up-index ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--page-muted);
+  font-size: 13px;
+}
+
+.up-index li + li {
+  margin-top: 3px;
+}
+
+.up-index li a {
+  font-weight: 600;
+}
+
+.up-index .states {
+  color: var(--page-faint);
+  font-size: 12.5px;
+}
+
+.up-index .states a {
+  font-weight: 400;
+}

@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="todos.css" />
     <link rel="stylesheet" href="meter.css" />
     <link rel="stylesheet" href="hub.css" />
+    <link rel="stylesheet" href="updates.css" />
   </head>
   <body>
     <header class="page-head">
@@ -21,12 +22,14 @@
         <a href="prompt.html">First-open prompt</a>
         <a href="settings.html?states=overlay,overlay:on">Settings, Overlay</a>
         <a href="tray.html">Tray icon</a>
+        <a href="whatsnew.html">What's new</a>
       </nav>
-      <h1>Toolbar <small>approved 2026-10-08 (the hub)</small></h1>
+      <h1>Toolbar <small>approved 2026-10-08 (the hub); the update icon 2026-10-09; the meter stepping aside between fights 2026-10-09</small></h1>
       <ul class="rationale">
-        <li>Kisk is a set of tools over the game, not only a DPS meter. The toolbar is its hub: a small horizontal bar floating over the game. At launch only the toolbar opens; every tool opens and closes from it. Like the reminder card it never takes the keyboard from the game (no-activate, tool window), and it is never click-through: Alt+CapsLock locks the meter only.</li>
+        <li><span data-app-name>Belisk</span> is a set of tools over the game, not only a DPS meter. The toolbar is its hub: a small horizontal bar floating over the game. At launch only the toolbar opens; every tool opens and closes from it. Like the reminder card it never takes the keyboard from the game (no-activate, tool window), and it is never click-through: Alt+CapsLock locks the meter only.</li>
         <li>Left to right: the grip; DPS meter (crossed swords), PvP meter (crosshair), To-dos (checklist), Fight history (crown: crown = history and boss records, skull = deaths), Reminders (bell), Settings (gear); Odyle Energy and Shugo keys; the warning while other resources are full; fold and quit. A lit tool (hot fill and a dot) is open; a click opens or closes it.</li>
         <li>Decided with the user in the hub round (<a href="../hub/README.md">hub/README.md</a>, the record of how it was chosen). Values are in <a href="tokens.md">tokens.md</a>, "Hub". Values and times are invented; the clock is Monday 21:48. Conquest dungeons, Deus Research Base, Shattered Arkanis, Abandoned Balaur Fortress and Fafnium Laboratory have no count and are never in the warning (settled in game, 2026-10-08: only Odyle Energy limits the first three on the Global servers; the Daily Dungeon menu lists only the Unknown Fissure).</li>
+        <li><b>Added 2026-10-09</b> (the updates round, <a href="../updates/README.md">updates/README.md</a>): the update icon, first in the end group before fold, shown only while there is something to do or know: an update to download, a download running, an update ready to install. Settings › About has the rest (<a href="settings.html?states=about,about:available,about:downloading,about:ready">About › Updates</a>), and <a href="whatsnew.html">What's new</a> opens once after the restart. States "Update available" to "Try the update".</li>
       </ul>
     </header>
 
@@ -38,31 +41,48 @@
         <li><b>Horizontal only</b>, because of the counts. <b>At launch only the toolbar opens</b>; the meter opens from its icon, or at launch with Settings › Overlay › "Open the meter at launch" (off by default). The first time the meter is opened from the toolbar, the <a href="prompt.html">first-open prompt</a> asks about that setting.</li>
         <li><b>Counts</b>: icons only. Odyle Energy and Shugo keys are always shown as the Resources window draws them: the regular pool against its cap ("245/840"), the extra pool beside it when not zero ("+380"); above the cap is normal. Amber only when the regular pool is full and the refill it would lose is near: within 1 h of Odyle's 3-hour refill, 3 h of a daily one (Shugo keys). Full but further away, the count looks normal and the tooltip says "Full · refills Tue 09:00". A click on either opens the <a href="resources.html">Resources window</a>; while it is open the counts read lit, and a click on a count closes it again. The tooltips name them as the Resources rows do, "Odyle Energy" and "Shugo keys" (2026-10-08: "yeah shugo keys is ok"). Since 2026-10-08 the to-do window has no resources ("I think we can remove the recharges from the todos now no ?"): the toolbar and the Resources window are where they show.</li>
         <li><b>The warning</b> (Lucide triangle-alert and the number) shows only while other resources are full and their refill is near (3 h for Invasion keys and Nightmare, 24 h for the Daily Dungeon's weekly one). A click opens its dropdown: "Full, a refill is coming", then each one with its figure and refill time right-aligned in columns ("Invasion keys 7/7 · refills 09:00"), a divider, "All resources". A click on a row or on "All resources" opens the Resources window. A resource hidden earlier in the to-do window counts too: nothing hides a resource any more.</li>
-        <li><b>Before any game value</b>: a faint dash in place of the figure; the tooltip says "No value yet. Log in while Kisk runs."</li>
+        <li><b>Before any game value</b>: a faint dash in place of the figure; the tooltip says "No value yet. Log in while <span data-app-name>Belisk</span> runs."</li>
         <li><b>Reminders</b>: the bell opens a small dropdown: the next three reminders switched on, "Pause reminders" (the Settings master switch; while paused the bell turns to Lucide bell-off in faint) and "Reminder settings" (Settings › Reminders).</li>
         <li><b>The PvP meter</b> takes Lucide crosshair; the crossed swords are the DPS meter's. The PvP window's header changes to match (<a href="pvp.html">pvp.html</a>).</li>
         <li><b>Focus</b>: the toolbar, its tooltips and dropdowns never take the keyboard. Its dropdowns are drawn inside its window, which grows downward while one is open (upward when the toolbar sits low on the screen), as the meter's "…" menu does. A dropdown closes on a click elsewhere in the toolbar, a second click on its button, or the pointer leaving the toolbar and the dropdown.</li>
-        <li><b>Pointer</b>: tools and counts light on pointer enter and go on leave, never on moves inside; tooltips after 500 ms, as the meter's. The meter's tooltip says what closing it means: "Fights are tracked while it is open." (open: "Click to close. Fights stop being tracked.").</li>
+        <li><b>Pointer</b>: tools and counts light on pointer enter and go on leave, never on moves inside; tooltips after 500 ms, as the meter's. The meter's tooltip says what closing it means: "Fights are tracked while it is open." (open: "Click to close. Fights stop being tracked."). With Settings › Overlay › "Hide between fights" on (added 2026-10-09, off by default), an open meter steps aside while you are not fighting and comes back at your first hit; it is still open (lit, fights tracked), its tooltip says "Hidden between fights. Click to show it for 10 s.", and a click shows it for 10 s instead of closing it.</li>
         <li><b>What is tracked when</b>: capture always runs. Fights (damage, heals, damage taken, deaths, fight history) are tracked only while the meter is open; resources always stay up to date when the game sends them. The to-dos work without the meter.</li>
         <li><b>Place</b>: the toolbar opens where you left it (top centre the first time), dragged by the grip or any empty part of the bar. Tools keep their own places.</li>
         <li><b>Fold</b> (« at the end) leaves a small handle: the grip, unfold (») and, when anything is full near its refill (Odyle and Shugo keys included), the warning with that number.</li>
-        <li><b>Quit</b>: × after fold quits Kisk at once, with the tooltip "Quit Kisk / Closes every tool"; no confirmation. Closing the toolbar ends the process.</li>
+        <li><b>Quit</b>: × after fold quits the app at once, with the tooltip "Quit <span data-app-name>Belisk</span> / Closes every tool"; no confirmation. Closing the toolbar ends the process.</li>
         <li><b>Hide everything</b>: Alt+Shift+CapsLock hides the toolbar and every open tool, and shows them again; the <a href="tray.html">tray icon</a>'s "Show toolbar" too. Alt+CapsLock keeps locking the meter.</li>
         <li><b>The reminder card</b> sits above the meter while the meter is open; while it is closed, 6 px under the toolbar, left edges aligned (above it when the toolbar is low on the screen).</li>
-        <li><b>Name</b>: "Kisk" where the toolbar names the app (the quit tooltip). The app's other names (title bars, About, the waiting card's "DPS Meter") change with the rename (TASK-23).</li>
+        <li><b>Name</b>: the toolbar names the app (the quit tooltip, its accessible name, "Log in while … runs.") with the Fluent term <code>-app-name</code>, as the build's <code>toolbar-quit = Quit { -app-name }</code>; here it comes from one constant, <code>app-name.js</code>, so a rename changes one place.</li>
         <li><b>French</b>: drawn to check the room; the real text goes through i18n.</li>
+      </ul>
+      <h2>The update icon (approved 2026-10-09)</h2>
+      <ul>
+        <li><b>When it shows</b>: available, downloading, paused, checking the download, ready, and after a failed download. Up to date, checking for updates, GitHub unreachable or limiting: no icon (Settings › About only). Checks at launch, then once an hour while the app runs, never more often (GitHub's 60 requests an hour per address); there is no switch to turn them off. The hourly check goes on while an update is available or ready, so a newer release replaces a staged one.</li>
+        <li><b>Place</b>: first in the end group, before fold (<i>… warning | update « ×</i>): it is about the app, like fold and quit, and the tools and counts keep their places when it comes and goes. A 26 px tool, not a 20 px end button, because it carries an action. Folded, the handle keeps it after the warning.</li>
+        <li><b>Looks</b>, no new hue: available, Lucide <code>download</code> in text on the soft fill (a tool at rest has no fill, so it reads as "something waits"); downloading, the same icon in muted with a 2 px progress line inset at the bottom (the reminder card's time-left line); paused, the line in faint; checking the download, the line full; ready, Lucide <code>rotate-cw</code> in good on chip-good. A failed download (its hash or ed25519 signature did not match: deleted, nothing installed) shows the available look again and says so in its tooltip; no colour, no pop-up during play.</li>
+        <li><b>Clicks</b>: available, the download starts at once (no confirmation); downloading, paused or checking, opens Settings › About, where Cancel and the details are; ready, restarts at once, no confirmation, as quit has none. During a fight Restart still works, and the tooltip warns that it splits the fight in History.</li>
+        <li><b>Download</b>: "Download updates automatically" (Settings › About) is on by default; the download is always capped at 1 MB/s and paused while you fight, also when you clicked Update yourself. With it on, a failed download is tried again at the next hourly check, never in a loop. Installing always waits for a click on Restart.</li>
+        <li><b>After the restart</b>: the toolbar comes back where it was, and the tools that were open open again in their places (the meter too, so fights keep being tracked); then <a href="whatsnew.html">What's new</a> opens once under it.</li>
+        <li><b>Pointer</b>: lights on enter and goes on leave, never on moves inside; the tooltip after 500 ms; the progress line changes only when the download progresses (one frame per percent); nothing pulses.</li>
+        <li><b>Accessibility</b>: the button's name is the tooltip's first line ("Update available: 1.6.0", "Downloading 1.6.0 · 62%", "Restart to update to 1.6.0"); the line is a progressbar with its value; Left and Right reach it like the other tools.</li>
+        <li>Versions and times are invented: the build runs 1.5.1, GitHub's latest is 1.6.0 (the version resets to 1.0.0 first).</li>
       </ul>
       <h2>Icons</h2>
       <ul>
-        <li>Lucide (ISC). Added when built: <code>crosshair</code>, <code>grip-vertical</code>, <code>key-round</code>, <code>zap</code>, <code>bell-off</code>, <code>chevrons-left</code>, <code>chevrons-right</code>, <code>package</code>, <code>settings</code>. Already in <code>crates/app/assets/icons/</code>: <code>swords</code>, <code>bell</code>, <code>crown</code>, <code>list-checks</code>, <code>triangle-alert</code>, <code>chevron-right</code>.</li>
+        <li>Lucide (ISC). Added when built: <code>crosshair</code>, <code>grip-vertical</code>, <code>key-round</code>, <code>zap</code>, <code>bell-off</code>, <code>chevrons-left</code>, <code>chevrons-right</code>, <code>package</code>, <code>settings</code>; for the update icon <code>download</code> and <code>rotate-cw</code> (both in gpui-kit-assets 0.6.6). Already in <code>crates/app/assets/icons/</code>: <code>swords</code>, <code>bell</code>, <code>crown</code>, <code>list-checks</code>, <code>triangle-alert</code>, <code>chevron-right</code>.</li>
       </ul>
     </section>
 
     <script src="kit.js"></script>
+    <script src="app-name.js"></script>
     <script src="hub.js"></script>
+    <script src="updates.js"></script>
     <script>
       (function () {
         const { toolbar, resources, meter, prompt, reminder, view, snapshot, SOON } = Hub;
+        const { whatsNew, NEXT } = Up;
+        // The update slot's state, with the version GitHub offers.
+        const upd = (state, more = {}) => ({ state, version: NEXT, ...more });
 
         // Tuesday 08:12: the daily refill is 48 min away, so full Invasion
         // keys and Nightmare warn.
@@ -77,7 +97,7 @@
           const bar = toolbar(ctx, { v, lit: TRY.lit, warnOpen: TRY.warnOpen, folded: TRY.folded, live: true });
           const left = TRY.lit.meter ? `<div class="hb-col">${TRY.prompt ? prompt(ctx) : ""}${meter(ctx, { board: "waiting" })}</div>` : "";
           const right = TRY.lit.resources ? resources(ctx, { now: v.now, g: v.g }) : "";
-          const note = TRY.quit ? `<div class="mk-sim" role="status"><b>Page only:</b> Kisk would quit here: every tool closes and the process ends. <button type="button" data-try="undo-quit">Start again</button></div>` : "";
+          const note = TRY.quit ? `<div class="mk-sim" role="status"><b>Page only:</b> The app would quit here: every tool closes and the process ends. <button type="button" data-try="undo-quit">Start again</button></div>` : "";
           const below = left || right ? `<div class="hb-row">${left}${right}</div>` : "";
           return `<div class="hb-try hb-col is-wide">${TRY.quit ? "" : bar}${TRY.quit ? "" : below}${note}</div>`;
         }
@@ -120,6 +140,102 @@
           box.outerHTML = tryHtml(lastCtx);
         });
 
+        // ---- "Try the update": a working update (nothing is downloaded) -------
+        const UP = { state: "available", pct: 0, fight: false, restarted: false, about: false, ticks: 0, failNext: false };
+        let timer = null;
+
+        function upTryHtml(ctx) {
+          if (UP.restarted) {
+            const note = `<div class="mk-sim" role="status"><b>Page only:</b><span>The app closed and opened again in ${NEXT}: the toolbar is back where it was, without the update icon, and What's new opens once under it.</span><button type="button" data-up-try="again">Start again</button></div>`;
+            return `<div class="up-try hb-col">${toolbar(ctx, { v: view(), live: true })}${whatsNew(ctx, { last: "1.5.1" })}${note}</div>`;
+          }
+          const fightBtn = `<button type="button" data-up-try="fight">${UP.fight ? "End the fight" : "Start a fight"}</button>`;
+          const about = UP.about ? `<span>A click here opens Settings › About, where the download shows with Cancel.</span>` : "";
+          const fail = UP.state === "available" ? `<button type="button" data-up-try="fail">Make the next download fail its check</button>` : "";
+          const note = `<div class="mk-sim"><b>Page only: what the game does</b>${fightBtn}${fail}<button type="button" data-up-try="again">Start again</button>${about}</div>`;
+          return `<div class="up-try hb-col">${toolbar(ctx, { v: view(), update: upd(UP.state, { pct: UP.pct, fight: UP.fight }), live: true })}${note}</div>`;
+        }
+
+        function upRedraw() {
+          const box = document.querySelector(".up-try");
+          if (box && lastCtx) box.outerHTML = upTryHtml(lastCtx);
+        }
+
+        // Progress changes only the line and the tooltip's first line, so the
+        // pointer and the 500 ms tooltip delay are not reset on every tick.
+        function upPatch() {
+          const btn = document.querySelector(".up-try .hb-up");
+          if (!btn) return;
+          const i = btn.querySelector(".hb-prog i");
+          if (i) i.style.width = UP.pct + "%";
+          const tip = btn.querySelector(".hb-tip");
+          if (tip && tip.firstChild) tip.firstChild.nodeValue = `Downloading ${NEXT} · ${UP.pct}%`;
+        }
+
+        const upStop = () => {
+          clearInterval(timer);
+          timer = null;
+        };
+
+        function upTick() {
+          if (UP.state === "downloading") {
+            UP.pct = Math.min(100, UP.pct + 2);
+            if (UP.pct >= 100) {
+              UP.state = "verifying";
+              UP.ticks = 0;
+              upRedraw();
+            } else upPatch();
+          } else if (UP.state === "verifying" && ++UP.ticks >= 8) {
+            UP.state = UP.failNext ? "failed" : "ready";
+            UP.pct = 0;
+            UP.failNext = false;
+            upStop();
+            upRedraw();
+          }
+        }
+
+        const upStart = () => {
+          if (!timer) timer = setInterval(upTick, 120);
+        };
+
+        document.addEventListener("click", (e) => {
+          if (!e.target.closest(".up-try")) return;
+          const slot = e.target.closest("[data-up]");
+          const tr = e.target.closest("[data-up-try]");
+          if (slot) {
+            const s = slot.dataset.up;
+            if (s === "available" || s === "failed") {
+              UP.state = UP.fight ? "paused" : "downloading";
+              UP.pct = 0;
+              UP.about = false;
+              if (!UP.fight) upStart();
+            } else if (s === "ready") {
+              UP.restarted = true;
+              upStop();
+            } else {
+              UP.about = true;
+            }
+          } else if (tr) {
+            const k = tr.dataset.upTry;
+            if (k === "fight") {
+              UP.fight = !UP.fight;
+              if (UP.state === "downloading" && UP.fight) {
+                UP.state = "paused";
+                upStop();
+              } else if (UP.state === "paused" && !UP.fight) {
+                UP.state = "downloading";
+                upStart();
+              }
+            } else if (k === "fail") {
+              UP.failNext = true;
+            } else if (k === "again") {
+              upStop();
+              Object.assign(UP, { state: "available", pct: 0, fight: false, restarted: false, about: false, ticks: 0, failNext: false });
+            }
+          } else return;
+          upRedraw();
+        });
+
         function render(state, ctx) {
           lastCtx = ctx;
           const T = (o) => toolbar(ctx, o);
@@ -128,6 +244,8 @@
               return T({ v: view() });
             case "hover":
               return T({ v: view(), hover: "meter", tip: "meter" });
+            case "aside":
+              return T({ v: view(), lit: { meter: true }, aside: true, hover: "meter", tip: "meter" });
             case "open":
               return `<div class="hb-col">${T({ v: view(), lit: { meter: true, todos: true } })}${meter(ctx, { board: "session" })}</div>`;
             case "countTip":
@@ -166,6 +284,44 @@
               return T({ v: view(), lang: "fr", hover: "meter", lit: { meter: true }, tip: "meter" });
             case "focus":
               return T({ v: view(), focus: "todos" });
+            case "update":
+              return T({ v: view(), update: upd("available") });
+            case "updateTip":
+              return T({ v: view(), update: upd("available"), hover: "update", tip: "update" });
+            case "updateDownloading":
+              return T({ v: view(), update: upd("downloading", { pct: 62 }) });
+            case "updateDownloadingTip":
+              return T({ v: view(), update: upd("downloading", { pct: 62 }), hover: "update", tip: "update" });
+            case "updatePaused":
+              return T({ v: view(), update: upd("paused", { pct: 62 }), hover: "update", tip: "update" });
+            case "updateVerifying":
+              return T({ v: view(), update: upd("verifying"), hover: "update", tip: "update" });
+            case "updateReady":
+              return T({ v: view(), update: upd("ready") });
+            case "updateReadyTip":
+              return T({ v: view(), update: upd("ready"), hover: "update", tip: "update" });
+            case "updateReadyFight":
+              return T({ v: view(), update: upd("ready", { fight: true }), hover: "update", tip: "update" });
+            case "updateFailed":
+              return T({ v: view(), update: upd("failed"), hover: "update", tip: "update" });
+            case "updateWarn":
+              return T({ v: warnV(), update: upd("ready"), lit: { meter: true } });
+            case "updateFolded":
+              return T({ v: view(), folded: true, update: upd("ready") });
+            case "updateFoldedWarn":
+              return T({ v: view({ now: SOON, g: snapshot({ shugo: { n: 21, x: 3 }, invasion: { n: 7 } }) }), folded: true, update: upd("downloading", { pct: 35 }) });
+            case "updateFocus":
+              return T({ v: view(), update: upd("ready"), focus: "update" });
+            case "updateFr":
+              return T({ v: view(), lang: "fr", update: upd("available"), hover: "update", tip: "update" });
+            case "updateFrDownloading":
+              return T({ v: view(), lang: "fr", update: upd("downloading", { pct: 62 }), hover: "update", tip: "update" });
+            case "updateFrReady":
+              return T({ v: view(), lang: "fr", update: upd("ready", { fight: true }), hover: "update", tip: "update" });
+            case "updateRestarted":
+              return `<div class="hb-col">${T({ v: view() })}${whatsNew(ctx, { last: "1.5.1" })}</div>`;
+            case "tryUpdate":
+              return upTryHtml(ctx);
             case "try":
               return tryHtml(ctx);
           }
@@ -176,6 +332,7 @@
           states: [
             { id: "launch", title: "At launch", sub: "only the toolbar opens; Odyle Energy and Shugo keys always shown: regular pool / cap, the extra pool \"+380\" / \"+3\" beside it" },
             { id: "hover", title: "Pointer on a tool", sub: "soft fill on enter, gone on leave; the tooltip after 500 ms says what closing the meter means" },
+            { id: "aside", title: "Pointer on the meter, stepped aside", sub: "with \"Hide between fights\" on, the open meter steps aside between fights: still lit, and the tooltip says a click shows it for 10 s" },
             { id: "open", title: "Meter and To-dos open", sub: "a lit icon (hot fill and a 4 px dot) means that tool is open; a click closes it. The meter is placed where you left it" },
             { id: "countTip", title: "Pointer on Odyle Energy", sub: "the tooltip names it and says when it is full; a click opens the Resources window" },
             { id: "shugoFull", title: "Shugo keys full, the refill near", sub: "Tuesday 08:12, the daily refill in 48 min (within 3 h): amber at 21/21, the tooltip says \"Full, spend by Tue 09:00\"; the extra +3 never counts" },
@@ -187,7 +344,7 @@
             { id: "bell", title: "Reminders: the bell's dropdown", sub: "the next reminders switched on, \"Pause reminders\" and \"Reminder settings\" (Settings, Reminders)" },
             { id: "paused", title: "Reminders paused", sub: "the bell turns to Lucide bell-off in faint while reminders are paused (the Settings master switch)" },
             { id: "reminder", title: "A reminder while the meter is closed", sub: "the reminder card, 6 px under the toolbar, left edges aligned; above the meter while the meter is open" },
-            { id: "quit", title: "Pointer on quit", sub: "closing the toolbar quits Kisk: × after fold, no confirmation; the tooltip says it closes every tool" },
+            { id: "quit", title: "Pointer on quit", sub: "closing the toolbar quits the app: × after fold, no confirmation; the tooltip names the app (-app-name) and says it closes every tool" },
             { id: "folded", title: "Folded", sub: "a small handle: grip and unfold" },
             { id: "foldedWarn", title: "Folded, something full", sub: "the warning counts everything full near its refill (here Shugo keys and Invasion keys), so nothing is missed while folded" },
             { id: "low", title: "Toolbar low on the screen", sub: "the dropdown opens upward" },
@@ -195,6 +352,25 @@
             { id: "frTip", title: "In French, meter open", sub: "the tooltip of an open meter: a click closes it and fights stop being tracked" },
             { id: "focus", title: "Keyboard focus (accessibility tools)", sub: "the focus ring, 2 px, 1 px outside the button; Left and Right move along the bar" },
             { id: "try", title: "Try it", sub: "a working toolbar: open and close tools (the meter opens with the first-open prompt once), click a count or the warning, fold, quit. Nothing is saved" },
+            { id: "update", title: "Update available (automatic download off)", sub: "added 2026-10-09: soft fill and text, something waits; first in the end group, before fold" },
+            { id: "updateTip", title: "Pointer on the update icon", sub: "hot fill on enter; after 500 ms the tooltip: the version, and that a click downloads it and nothing installs before the restart" },
+            { id: "updateDownloading", title: "Downloading", sub: "with automatic download on (the default) this is the first thing you see: muted icon, the 2 px progress line at 62%" },
+            { id: "updateDownloadingTip", title: "Downloading, pointer on it", sub: "the tooltip says it is speed-capped and paused while you fight; a click opens Settings › About" },
+            { id: "updatePaused", title: "Download paused during a fight", sub: "the line in faint; it resumes when the fight ends" },
+            { id: "updateVerifying", title: "Checking the download", sub: "the line full while the hash and the ed25519 signature are checked, about a second" },
+            { id: "updateReady", title: "Update ready", sub: "Lucide rotate-cw in good on chip-good: restart to update" },
+            { id: "updateReadyTip", title: "Update ready, pointer on it", sub: "a click closes the app and opens it again in 1.6.0; nothing is lost" },
+            { id: "updateReadyFight", title: "Update ready, during a fight", sub: "the click still works; the tooltip warns that restarting now splits the fight in History" },
+            { id: "updateFailed", title: "The download failed its check", sub: "the file was deleted, nothing installed; the available look again, the tooltip says why and a click retries. No colour, no pop-up during play" },
+            { id: "updateWarn", title: "Update ready beside the warning, meter open", sub: "the busiest bar: tools, counts, warning and the ready icon" },
+            { id: "updateFolded", title: "Folded, update ready", sub: "the handle keeps the update icon after the warning, so a ready update is not missed" },
+            { id: "updateFoldedWarn", title: "Folded, downloading, resources full", sub: "the warning, then the update icon" },
+            { id: "updateFocus", title: "Keyboard focus on the update icon", sub: "the toolbar's focus ring; its name is the tooltip's first line" },
+            { id: "updateFr", title: "In French: update available", sub: "drawn to check the room; through Fluent when built" },
+            { id: "updateFrDownloading", title: "In French: downloading", sub: "« Téléchargement de 1.6.0 · 62 % »" },
+            { id: "updateFrReady", title: "In French: ready, during a fight", sub: "the longest tooltip" },
+            { id: "updateRestarted", title: "After the restart", sub: "the toolbar comes back where it was, without the update icon; What's new opens once, 6 px under it (whatsnew.html)" },
+            { id: "tryUpdate", title: "Try the update", sub: "a working update: click the icon to download (it runs in a few seconds here), start a fight to pause it, let it finish, then click to restart. Nothing is downloaded" },
           ],
           controls: ["alpha", "scale", "mask"],
           tileMin: 600,

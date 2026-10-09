@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Approved: What's new</title>
+    <link rel="stylesheet" href="shared.css" />
+    <link rel="stylesheet" href="overlay.css" />
+    <link rel="stylesheet" href="todos.css" />
+    <link rel="stylesheet" href="meter.css" />
+    <link rel="stylesheet" href="hub.css" />
+    <link rel="stylesheet" href="updates.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Approved screens">
+        <a href="index.html">Approved screens</a>
+        <a href="toolbar.html?states=available,downloadingRest,ready,readyFight">Toolbar update icon</a>
+        <a href="settings.html?states=about,about:available,about:downloading,about:ready">Settings, About › Updates</a>
+        <a href="settings.html?states=changelog,changelog:other,changelog:older">Settings, About › Changelog</a>
+        <a href="whatsnew.html" aria-current="page">What's new</a>
+      </nav>
+      <h1>What's new <small>approved 2026-10-09 (updates and the changelog)</small></h1>
+      <ul class="rationale">
+        <li>After an update, What's new shows only the versions newer than the last one this player ran, up to the running one (skipped versions included), from <code>CHANGELOG.md</code> / <code>CHANGELOG.fr.md</code>, drawn natively in the app's look, in the player's language. The whole history is in Settings › About › <a href="settings.html?states=changelog">Changelog</a>.</li>
+        <li><b>Where</b>: an overlay window of its own with History's frame (370 px, header, close, footer), opened <b>once, by itself</b>, on the first start of a newer version, 6 px under the toolbar with left edges aligned (above it when the toolbar sits low), like the reminder card while the meter is closed. It never takes the keyboard (no-activate, as every overlay tool), scrolls with the wheel and stays until you close it. It is not a toolbar tool: no icon, nothing to keep open.</li>
+        <li><b>When not</b>: never during a fight (it waits for the fight to end, then opens). A fresh install shows nothing. A version whose entry has no bullets does not open it. The versions count as seen once the window is closed (× or "Full changelog"); quitting with it open shows it again at the next start.</li>
+        <li><b>From an older build</b>: a settings file from before the 1.0.0 reset has no last-seen version; it counts as coming from before 1.0.0, so 1.0.0's notes show once.</li>
+        <li>Decided with the user in the updates round (<a href="../updates/README.md">updates/README.md</a>, the record of how it was chosen). Values are in <a href="tokens.md">tokens.md</a>, "Updates and the changelog". The version resets to 1.0.0; the later versions and the changelog's text are invented. The build runs 1.6.0 after the update; "since 1.4.0" shows what a player who skipped two versions sees.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Layout</h2>
+      <ul>
+        <li>Header: Lucide <code>scroll-text</code> and "What's new", a chip-good "Updated to 1.6.0" (Lucide check), close. With more than one version, a faint line under it: "Since 1.4.0, the last version you ran".</li>
+        <li>Each version, newest first and all open: the version 13.5 px / 600 and its date in faint on the right; the summary paragraph 12.5 px / 500 in text; the bullets 12 px / 500 in muted with a 4 px faint dot; 14 px between versions, no rules. Bold is 600 in text.</li>
+        <li>The list scrolls inside the window past 318 px (the 3 px thumb in its gutter); the window hugs shorter content.</li>
+        <li>Footer: a quiet text button "Full changelog" (Lucide settings and chevron-right) that opens Settings › About › Changelog and closes this window.</li>
+      </ul>
+      <h2>The changelog files</h2>
+      <ul>
+        <li><code>CHANGELOG.md</code> and <code>CHANGELOG.fr.md</code> (a future language: <code>CHANGELOG.&lt;code&gt;.md</code>), embedded in the build. They start at 1.0.0, the version reset; Aether's history moves out of <code>CHANGELOG.md</code> into a file of its own, credited to Aether, and is not shown in the app.</li>
+        <li>The subset: <code>## [1.6.0] - 2026-10-21</code> headings, one summary paragraph, <code>- </code> bullets (one level; a bullet may wrap onto lines indented by two spaces), and <b><code>**bold**</code></b> inside the summary and bullets. Nothing else: no inline code (players never need it), no links (a click in a no-activate overlay would open a browser over the game; the full notes are on GitHub).</li>
+        <li>The app's parser fails on anything else, and <code>cargo test</code> parses both files with it and checks parity (same versions, same bullet counts), as the state "The Markdown subset" shows with this page's own parser.</li>
+        <li>Dates are written ISO in the files and shown "21 Oct 2026" / "21 oct. 2026".</li>
+      </ul>
+      <h2>Icons</h2>
+      <ul>
+        <li>Lucide (ISC), to add when built: <code>scroll-text</code> (in gpui-kit-assets 0.6.6).</li>
+      </ul>
+    </section>
+
+    <script src="kit.js"></script>
+    <script src="app-name.js"></script>
+    <script src="hub.js"></script>
+    <script src="updates.js"></script>
+    <script>
+      (function () {
+        const { toolbar, view } = Hub;
+        const { whatsNew, source, checks, RESET } = Up;
+
+        function render(state, ctx) {
+          const bar = (o = {}) => toolbar(ctx, { v: view(), ...o });
+          const W = (o) => whatsNew(ctx, o);
+          switch (state) {
+            case "one":
+              return `<div class="hb-col">${bar()}${W({ last: "1.5.1" })}</div>`;
+            case "skipped":
+              return `<div class="hb-col">${bar()}${W({ last: "1.4.0" })}</div>`;
+            case "scrolled":
+              return `<div class="hb-col">${bar()}${W({ last: "1.4.0", scroll: 300 })}</div>`;
+            case "hoverClose":
+              return `<div class="hb-col">${bar()}${W({ last: "1.5.1", hover: "close" })}</div>`;
+            case "hoverFull":
+              return `<div class="hb-col">${bar()}${W({ last: "1.5.1", hover: "full" })}</div>`;
+            case "low":
+              return `<div class="hb-col" style="padding-top:40px">${W({ last: "1.5.1" })}${bar()}</div>`;
+            case "meterOpen":
+              return `<div class="hb-col">${bar({ lit: { meter: true } })}${W({ last: "1.5.1" })}</div>`;
+            case "fight":
+              return `<div class="hb-col">${bar({ lit: { meter: true } })}<div class="mk-sim" role="status"><b>Page only: a fight is on</b><span>The app has just restarted into 1.6.0, but you are fighting: What's new waits, and opens under the toolbar when the fight ends.</span></div></div>`;
+            case "fresh":
+              return `<div class="hb-col">${bar()}<div class="mk-sim" role="status"><b>Page only: a fresh install</b><span>The first start of a new install remembers 1.6.0 as seen and opens nothing.</span></div></div>`;
+            case "preReset":
+              return `<div class="hb-col">${bar()}${W({ last: null, running: RESET })}</div>`;
+            case "frOne":
+              return `<div class="hb-col">${bar({ lang: "fr" })}${W({ last: "1.5.1", lang: "fr" })}</div>`;
+            case "frSkipped":
+              return `<div class="hb-col">${bar({ lang: "fr" })}${W({ last: "1.4.0", lang: "fr" })}</div>`;
+            case "subset":
+              return `<div class="hb-col is-wide"><div><pre class="md-src" aria-label="CHANGELOG.md, the top">${source("en", 2)}</pre><div class="md-check">${checks()}</div></div>${W({ last: "1.4.0" })}</div>`;
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "one", title: "After an update from 1.5.1", sub: "opened once by itself, 6 px under the toolbar, left edges aligned; one version: no \"since\" line; the window hugs its content" },
+            { id: "skipped", title: "After skipping versions", sub: "last ran 1.4.0: 1.6.0, 1.5.1 and 1.5.0, newest first, all open; the list scrolls past 318 px" },
+            { id: "scrolled", title: "Skipped versions, scrolled", sub: "wheel scrolling without taking focus; the thumb in its gutter" },
+            { id: "hoverClose", title: "Pointer on close", sub: "the close tool button lights as History's" },
+            { id: "hoverFull", title: "Pointer on Full changelog", sub: "opens Settings › About › Changelog and closes this window" },
+            { id: "low", title: "Toolbar low on the screen", sub: "the window opens 6 px above the toolbar, as the dropdowns and the reminder card do" },
+            { id: "meterOpen", title: "With the meter open", sub: "it still opens under the toolbar; the meter keeps its own place" },
+            { id: "fight", title: "Started during a fight", sub: "nothing opens until the fight ends: never a window or focus during a fight" },
+            { id: "fresh", title: "Fresh install", sub: "nothing opens; the changelog is in Settings › About" },
+            { id: "preReset", title: "From a build before the reset", sub: "the settings file has no last-seen version: it counts as coming from before 1.0.0, so 1.0.0's notes show once" },
+            { id: "frOne", title: "In French", sub: "CHANGELOG.fr.md; « Nouveautés », « Mis à jour en 1.6.0 »" },
+            { id: "frSkipped", title: "In French, skipped versions", sub: "French runs longer: the bullets wrap, the window keeps its 370 px" },
+            { id: "subset", title: "The Markdown subset: source and rendering", sub: "the top of CHANGELOG.md as written, beside the window drawn from it by this page's parser for the subset (headings, summary, bullets, **bold**)" },
+          ],
+          controls: ["alpha", "scale"],
+          tileMin: 560,
+          stageMin: 200,
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>

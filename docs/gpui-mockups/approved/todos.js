@@ -381,7 +381,7 @@
     let text;
     if (s.kind === "live") text = `From the game, live ${dot} logged in at <b>${clock(v.seen)}</b>`;
     else if (s.kind === "stale") text = `From the game at login, <b>${stamp(v.seen)}</b>`;
-    else text = `No game values yet. Log in with <b>${esc(v.who.name)}</b> while Kisk runs.`;
+    else text = `No game values yet. Log in with <b>${esc(v.who.name)}</b> while ${window.APP_NAME} runs.`;
     return `<div class="g-src">${icon("gamepad")}<span>${text}</span></div>`;
   }
 

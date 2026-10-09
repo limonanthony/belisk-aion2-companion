@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Updates and changelog (mockups)</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="updates.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Updates mockups">
+        <a href="index.html" aria-current="page">Updates: all pages</a>
+        <a href="toolbar.html">Toolbar update icon</a>
+        <a href="settings.html">Settings, About</a>
+        <a href="settings.html?states=changelog,changelog:other,changelog:older">Changelog</a>
+        <a href="whatsnew.html">What's new</a>
+        <a href="README.md">README</a>
+      </nav>
+      <h1>Updates from GitHub Releases, and the changelog <small>one mockup round, 2026-10-09, not approved yet (TASK-28, 28.1, 28.2, 29)</small></h1>
+      <ul class="rationale">
+        <li>The app finds new releases on GitHub, downloads and checks them (by itself by default, speed-capped and paused while you fight), and installs only when you click Restart. After the update, What's new lists what changed since the version you last ran; Settings › About keeps the whole changelog.</li>
+        <li>Each item is tagged <span class="dec is-agreed">Agreed</span> (your decision, quoted in <a href="README.md">README.md</a>), <span class="dec is-proposed">Proposed</span> (for you to accept or change) or <span class="dec is-open">Open</span> (for you to decide). Nothing is built before you approve it.</li>
+        <li>Open the pages in a browser, no server needed. Overlay pages have the real opacity and scale settings and the three game scenes; Settings has English and French. A state link opens that state alone.</li>
+      </ul>
+    </header>
+
+    <main class="up-index">
+      <h2>Pages <small>and their states</small></h2>
+      <ul>
+        <li>
+          <a href="toolbar.html">1. The toolbar's update icon</a>, shown only while there is something to do or know.
+          <div class="states">
+            <a href="toolbar.html?states=none">nothing to do</a> · <a href="toolbar.html?states=available,availableTip">available</a> · <a href="toolbar.html?states=downloadingRest,downloading">downloading</a> · <a href="toolbar.html?states=paused">paused in a fight</a> · <a href="toolbar.html?states=verifying">checking the download</a> · <a href="toolbar.html?states=ready,readyTip">ready</a> · <a href="toolbar.html?states=readyFight">ready during a fight</a> · <a href="toolbar.html?states=failed">failed its check</a> · <a href="toolbar.html?states=withWarn">beside the warning</a> · <a href="toolbar.html?states=folded,foldedWarn">folded</a> · <a href="toolbar.html?states=focus">keyboard focus</a> · <a href="toolbar.html?states=frAvailable,frDownloading,frReady">in French</a> · <a href="toolbar.html?states=restarted">after the restart</a> · <a href="toolbar.html?states=try">try it</a>
+          </div>
+        </li>
+        <li>
+          <a href="settings.html">2. Settings › About › Updates</a>, every update state (English and French: the selector at the top, or <code>&amp;lang=fr</code>).
+          <div class="states">
+            <a href="settings.html?states=about:uptodate">up to date</a> · <a href="settings.html?states=about:checking">checking</a> · <a href="settings.html?states=about:justchecked">just checked</a> · <a href="settings.html?states=about:available">available (automatic off)</a> · <a href="settings.html?states=about:downloading">downloading</a> · <a href="settings.html?states=about:paused">paused</a> · <a href="settings.html?states=about:verifying">checking the download</a> · <a href="settings.html?states=about:ready">ready</a> · <a href="settings.html?states=about:failed">failed its check</a> · <a href="settings.html?states=about:offline">GitHub unreachable</a> · <a href="settings.html?states=about:limited">GitHub limiting</a> · <a href="settings.html?lang=fr&amp;states=about:uptodate,about:ready,about:failed,about:limited">in French</a>
+          </div>
+        </li>
+        <li>
+          <a href="settings.html?states=changelog,changelog:other,changelog:older">3. Settings › About › Changelog</a>, the full history.
+          <div class="states">
+            <a href="settings.html?states=changelog">newest open, Show older</a> · <a href="settings.html?states=changelog:other">another version opened</a> · <a href="settings.html?states=changelog:older">after Show older</a> · <a href="settings.html?lang=fr&amp;states=changelog,changelog:older">in French</a>
+          </div>
+        </li>
+        <li>
+          <a href="whatsnew.html">4. What's new</a>, once after an update.
+          <div class="states">
+            <a href="whatsnew.html?states=one">one version</a> · <a href="whatsnew.html?states=skipped,scrolled">skipped versions</a> · <a href="whatsnew.html?states=hoverClose,hoverFull">pointer on close / Full changelog</a> · <a href="whatsnew.html?states=low">toolbar low</a> · <a href="whatsnew.html?states=meterOpen">meter open</a> · <a href="whatsnew.html?states=fight">during a fight</a> · <a href="whatsnew.html?states=fresh">fresh install</a> · <a href="whatsnew.html?states=frOne,frSkipped">in French</a> · <a href="whatsnew.html?states=subset">the Markdown subset</a>
+          </div>
+        </li>
+      </ul>
+
+      <h2>Behaviour <small>annotated, not drawn</small></h2>
+      <ul>
+        <li><span class="dec is-agreed">Agreed</span> Releases come from GitHub. An update is found → Update; the click downloads, verifies and stages it → Restart; the click closes the app and starts the new version. Nothing installs silently.</li>
+        <li><span class="dec is-agreed">Agreed</span> Checks at launch, then once an hour, never more often.</li>
+        <li><span class="dec is-agreed">Agreed</span> "Download updates automatically" is on by default, and the download is always speed-capped, not only paused during fights.</li>
+        <li><span class="dec is-agreed">Agreed</span> CHANGELOG.md and CHANGELOG.fr.md, rendered in the app's look; What's new shows only what is newer than the last version you ran; About shows everything, newest open, Show older.</li>
+        <li><span class="dec is-proposed">Proposed</span> 21 choices, numbered in <a href="README.md">README.md</a>: the icon's place and looks, clicks, the cap, restarting during a fight, the About layout, the changelog sub-page, What's new as a window opened once, the Markdown subset, and more.</li>
+      </ul>
+
+      <h2>For you to answer <small>the full list is in <a href="README.md">README.md</a></small></h2>
+      <ul>
+        <li>Accept or change the <span class="dec is-proposed">Proposed</span> items.</li>
+        <li><span class="dec is-open">Open</span> A switch to turn update checks off; a beta channel; a pre-reset settings file seeing the first notes; Aether's history in the changelog; the signing scheme; a newer release while one is staged; the reset version number.</li>
+      </ul>
+    </main>
+  </body>
+</html>
