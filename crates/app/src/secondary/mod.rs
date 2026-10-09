@@ -1,6 +1,6 @@
 //! The windows besides the meter and the toolbar: fight history, player
 //! detail, the fight report, PvP, the to-dos, the resources, Settings, the
-//! first-open prompt and the event reminder.
+//! first-open prompt, the event reminder and What's new.
 //!
 //! Each kind has at most one window. Opening one that is already open brings
 //! it forward, and the player detail window is pointed at the new player
@@ -8,12 +8,13 @@
 //! the place of the one up. A window closes with its own ×, from the toolbar,
 //! or when the app quits.
 //! Like the meter's, the history, detail, report, PvP, to-do, resources,
-//! prompt and reminder windows are frameless, topmost, out of the taskbar and
-//! non-activating, and are exactly as large as their card. A tool opens
-//! beside the meter while the meter is open, else under the toolbar. The
-//! prompt keeps to the meter, and the reminder card keeps above the meter (or
-//! the prompt on it) while the meter is open, and under the toolbar while it
-//! is closed.
+//! prompt, reminder and What's new windows are frameless, topmost, out of the
+//! taskbar and non-activating, and are exactly as large as their card. A tool
+//! opens beside the meter while the meter is open, else under the toolbar.
+//! The prompt keeps to the meter, and the reminder card keeps above the meter
+//! (or the prompt on it) while the meter is open, and under the toolbar while
+//! it is closed or steps aside between fights. What's new keeps under the
+//! toolbar.
 //! Settings is a normal window instead: it takes the keyboard focus, has a
 //! taskbar button and opens in the middle of the screen. While it is the
 //! active window it is topmost like the overlays, in front of the game; once
@@ -40,21 +41,23 @@ use meter_core::report::fight_report::FightReport;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
+use crate::changelog::WhatsNew;
 use crate::detail::{DetailModel, DetailSource, DetailView};
 use crate::history::{HistoryModel, HistoryView};
 use crate::meter::{self, MeterModel, MeterView};
 use crate::overlay::{self, Placement};
 use crate::pvp::{PvpModel, PvpView};
 use crate::reminders::{self, MeterLink, ReminderView, ShowReminder};
-use crate::report::{ReportModel, ReportRequest, ReportView};
-use crate::settings::{self, DetailPlacement, RuntimeModel, Section, SettingsView};
+use crate::report::{build_off_thread, ReportModel, ReportRequest, ReportView};
+use crate::settings::{self, DetailPlacement, Page, RuntimeModel, Section, SettingsView};
 use crate::todos::{Contents, TodoView};
 use crate::toolbar::{self, PromptView};
+use crate::whats_new::{self, OpenChangelog, WhatsNewView};
 pub(crate) use monitor::window_and_work_area;
 use placement::{Anchor, Side, Stack};
 pub use placement::Rect;
 pub use registry::WindowKind;
-use registry::{Opened, Registry};
+use registry::{open_once, Opened, Registry};
 
 const HISTORY_SIZE: (f32, f32) = (370.0, 420.0);
 const DETAIL_SIZE: (f32, f32) = (520.0, 420.0);
@@ -135,15 +138,15 @@ pub fn close(kind: WindowKind, cx: &mut App) {
         return;
     };
     if let Err(error) = open.window.update(cx, |_, window, _| window.remove_window()) {
-        eprintln!("cannot close the {kind:?} window: {error:#}");
+        crate::app_log::warn(format!("cannot close the {kind:?} window: {error:#}"));
     }
 }
 
 /// The native handle of the open window of `kind`. None while a window is
-/// being opened: its first frame is drawn inside the registry's change, and
+/// being opened: its first frame is drawn before the registry keeps it, and
 /// a card placing itself then tries again at its next tick.
 pub fn hwnd_of(kind: WindowKind, cx: &App) -> Option<HWND> {
-    cx.try_global::<Secondary>()?.registry.try_borrow().ok()?.get(kind)?.hwnd
+    cx.try_global::<Secondary>()?.registry.borrow().get(kind)?.hwnd
 }
 
 /// The native handles of every open window of this layer.
@@ -179,18 +182,20 @@ pub enum Card {
     /// The first-open prompt, on the meter.
     Prompt,
     /// The reminder card: on the meter (or the prompt on it) while the meter
-    /// is open, else under the toolbar.
+    /// is open and not stepped aside between fights, else under the toolbar.
     Reminder,
+    /// What's new: under the toolbar, wherever the meter is.
+    WhatsNew,
 }
 
 fn card_anchor(card: Card, cx: &App) -> Option<(HWND, Stack)> {
     let meter_hwnd = cx.try_global::<Secondary>()?.meter_hwnd;
     match card {
         Card::Prompt => Some((meter_hwnd, Stack::Above)),
-        Card::Reminder if toolbar::meter_is_open(cx) => {
+        Card::Reminder if toolbar::meter_is_open(cx) && !toolbar::meter_is_aside(cx) => {
             Some((hwnd_of(WindowKind::Prompt, cx).unwrap_or(meter_hwnd), Stack::Above))
         }
-        Card::Reminder => Some((toolbar::toolbar_hwnd(cx).unwrap_or(meter_hwnd), Stack::Below)),
+        Card::Reminder | Card::WhatsNew => Some((toolbar::toolbar_hwnd(cx).unwrap_or(meter_hwnd), Stack::Below)),
     }
 }
 
@@ -198,7 +203,7 @@ pub fn open_history(meter_model: &Entity<MeterModel>, cx: &mut App) {
     let registry = registry(cx);
     let meter = meter_model.read(cx).meter().cloned();
     let place = tool_anchor(Anchor::Beside(Side::Below), cx);
-    let opened = registry.borrow_mut().open(WindowKind::History, || {
+    let opened = open_once(&registry, WindowKind::History, || {
         let model = cx.new(|cx| HistoryModel::new(meter, meter_model, cx));
         let meter_model = meter_model.clone();
         let view_model = model.clone();
@@ -220,13 +225,23 @@ pub fn open_history(meter_model: &Entity<MeterModel>, cx: &mut App) {
 }
 
 /// Opens the fight report `request` asks for, or puts it in the open report
-/// window. The meter works it out off the UI thread.
+/// window. A saved record's report and the meter's are built off the UI
+/// thread; the window opens when the report is ready.
 pub fn open_report(meter_model: &Entity<MeterModel>, request: &ReportRequest, cx: &mut App) {
     match request {
-        ReportRequest::Saved(record) => match FightReport::from_record(record) {
-            Some(report) => show_report(meter_model, Arc::new(report), cx),
-            None => eprintln!("record {} is not a boss fight's, so it has no fight report", record.id),
-        },
+        ReportRequest::Saved(record) => {
+            let record = record.clone();
+            let meter_model = meter_model.clone();
+            let record_id = record.id.clone();
+            build_off_thread(
+                move || FightReport::from_record(&record),
+                move |report, cx| match report {
+                    Some(report) => show_report(&meter_model, Arc::new(report), cx),
+                    None => crate::app_log::warn(format!("record {record_id} is not a boss fight's, so it has no fight report")),
+                },
+                cx,
+            );
+        }
         ReportRequest::Held(report) => show_report(meter_model, report.clone(), cx),
         ReportRequest::OnMeter { target_id } => {
             let target_id = *target_id;
@@ -239,19 +254,19 @@ pub fn open_report(meter_model: &Entity<MeterModel>, request: &ReportRequest, cx
                     .and_then(|snapshot| FightReport::from_snapshot(snapshot, target_id, None));
                 match report {
                     Some(report) => show_report(meter_model, Arc::new(report), cx),
-                    None => eprintln!("no fight report for target {target_id}: the overlay has no boss fight on it"),
+                    None => crate::app_log::warn(format!("no fight report for target {target_id}: the overlay has no boss fight on it")),
                 }
                 return;
             };
             let meter_model = meter_model.clone();
-            cx.spawn(async move |cx| {
-                let report = cx.background_executor().spawn(async move { meter.fight_report(target_id) }).await;
-                cx.update(|cx| match report {
+            build_off_thread(
+                move || meter.fight_report(target_id),
+                move |report, cx| match report {
                     Some(report) => show_report(&meter_model, Arc::new(report), cx),
-                    None => eprintln!("no fight report for target {target_id}: the meter has no boss fight on it"),
-                })
-            })
-            .detach();
+                    None => crate::app_log::warn(format!("no fight report for target {target_id}: the meter has no boss fight on it")),
+                },
+                cx,
+            );
         }
     }
 }
@@ -260,7 +275,7 @@ pub fn open_report(meter_model: &Entity<MeterModel>, request: &ReportRequest, cx
 pub fn show_report(meter_model: &Entity<MeterModel>, report: Arc<FightReport>, cx: &mut App) {
     let registry = registry(cx);
     let place = tool_anchor(Anchor::Beside(Side::Right), cx);
-    let opened = registry.borrow_mut().open(WindowKind::Report, || {
+    let opened = open_once(&registry, WindowKind::Report, || {
         let model = cx.new(|cx| ReportModel::new(meter_model.clone(), report.clone(), cx));
         let view_model = model.clone();
         let (window, hwnd) = create_window(
@@ -285,7 +300,7 @@ pub fn show_report(meter_model: &Entity<MeterModel>, report: Arc<FightReport>, c
 pub fn open_pvp(meter_model: &Entity<MeterModel>, cx: &mut App) {
     let registry = registry(cx);
     let place = tool_anchor(Anchor::Beside(Side::Left), cx);
-    let opened = registry.borrow_mut().open(WindowKind::Pvp, || {
+    let opened = open_once(&registry, WindowKind::Pvp, || {
         let meter = meter_model.read(cx).meter().cloned();
         let model = cx.new(|cx| PvpModel::new(meter_model.clone(), cx));
         let view_model = model.clone();
@@ -323,7 +338,7 @@ pub fn open_resources(meter_model: &Entity<MeterModel>, cx: &mut App) {
 fn open_todo_view(kind: WindowKind, contents: Contents, side: Side, meter_model: &Entity<MeterModel>, cx: &mut App) {
     let registry = registry(cx);
     let place = tool_anchor(Anchor::Beside(side), cx);
-    let opened = registry.borrow_mut().open(kind, || {
+    let opened = open_once(&registry, kind, || {
         let meter_model = meter_model.clone();
         let (window, hwnd) = create_window(
             kind,
@@ -346,7 +361,7 @@ pub fn open_detail(meter_model: &Entity<MeterModel>, source: DetailSource, cx: &
         DetailPlacement::Centred => Anchor::Centre,
     };
     let place = tool_anchor(anchor, cx);
-    let opened = registry.borrow_mut().open(WindowKind::Detail, || {
+    let opened = open_once(&registry, WindowKind::Detail, || {
         let model = cx.new(|cx| DetailModel::new(meter_model.clone(), source.clone(), cx));
         let view_model = model.clone();
         let (window, hwnd) = create_window(
@@ -379,13 +394,20 @@ pub fn open_settings(meter_model: &Entity<MeterModel>, cx: &mut App) {
 /// [`open_settings`] on `section`, also when the window was already open.
 pub fn open_settings_at(meter_model: &Entity<MeterModel>, section: Section, cx: &mut App) {
     let meter_model = meter_model.clone();
-    cx.defer(move |cx| open_settings_now(&meter_model, Some(section), cx));
+    cx.defer(move |cx| open_settings_now(&meter_model, Some(Page::Section(section)), cx));
 }
 
-fn open_settings_now(meter_model: &Entity<MeterModel>, section: Option<Section>, cx: &mut App) {
+/// [`open_settings`] on About › Changelog, also when the window was already
+/// open.
+pub fn open_changelog(meter_model: &Entity<MeterModel>, cx: &mut App) {
+    let meter_model = meter_model.clone();
+    cx.defer(move |cx| open_settings_now(&meter_model, Some(Page::Changelog), cx));
+}
+
+fn open_settings_now(meter_model: &Entity<MeterModel>, page: Option<Page>, cx: &mut App) {
     let registry = registry(cx);
     let placement = cx.global::<Secondary>().placement;
-    let opened = registry.borrow_mut().open(WindowKind::Settings, || {
+    let opened = open_once(&registry, WindowKind::Settings, || {
         let runtime = cx.new(|cx| RuntimeModel::new(meter_model.clone(), cx));
         let meter_window = meter::window(cx);
         let view_runtime = runtime.clone();
@@ -409,10 +431,10 @@ fn open_settings_now(meter_model: &Entity<MeterModel>, section: Option<Section>,
         let hwnd = handle.update(cx, |_, window, _| overlay::hwnd(window).ok()).ok().flatten();
         Ok(Open { window: handle.into(), hwnd, model: Some(runtime.into()) })
     });
-    if let (Some(section), Ok(_)) = (section, &opened) {
+    if let (Some(page), Ok(_)) = (page, &opened) {
         let window = registry.borrow().get(WindowKind::Settings).and_then(|open| open.window.downcast::<SettingsView>());
         if let Some(window) = window {
-            let _ = window.update(cx, |view, _, cx| view.show_section(section, cx));
+            let _ = window.update(cx, |view, window, cx| view.show(page, window, cx));
         }
     }
     finish(WindowKind::Settings, opened, cx);
@@ -492,7 +514,7 @@ pub fn show_reminder(request: &ShowReminder, cx: &mut App) {
     let place = card_place(Card::Reminder, gap, cx);
     let meter_window = meter::window(cx);
     let for_window = request.clone();
-    let opened: Result<Opened, String> = registry.borrow_mut().open(WindowKind::Reminder, || {
+    let opened: Result<Opened, String> = open_once(&registry, WindowKind::Reminder, || {
         let stacking = Rc::new(Stacking { card: Card::Reminder, placement, placed: Cell::new(None) });
         let (window, hwnd) = create_window(
             WindowKind::Reminder,
@@ -511,7 +533,7 @@ pub fn show_reminder(request: &ShowReminder, cx: &mut App) {
         Ok(Opened::Created) => log_card(request, "opened a card window", cx),
         Ok(Opened::Existing) => log_card(request, "a card window was already registered, nothing opened", cx),
         Err(error) => {
-            eprintln!("cannot open the Reminder window: {error}");
+            crate::app_log::error(format!("cannot open the Reminder window: {error}"));
             log_card(request, &format!("cannot open the card window: {error}"), cx);
         }
     }
@@ -530,7 +552,7 @@ pub fn open_prompt(cx: &mut App) {
     let overlay = settings::global(cx).read(cx).get().overlay.clone();
     let expected = toolbar::prompt_size(&overlay);
     let place = card_place(Card::Prompt, reminders::GAP * overlay.scale(), cx);
-    let opened = registry.borrow_mut().open(WindowKind::Prompt, || {
+    let opened = open_once(&registry, WindowKind::Prompt, || {
         let stacking = Rc::new(Stacking { card: Card::Prompt, placement, placed: Cell::new(None) });
         let (window, hwnd) = create_window(
             WindowKind::Prompt,
@@ -543,6 +565,36 @@ pub fn open_prompt(cx: &mut App) {
         Ok(Open { window, hwnd: Some(hwnd), model: None })
     });
     finish(WindowKind::Prompt, opened, cx);
+}
+
+/// Opens What's new under the toolbar; nothing when it is up already. Its
+/// "Full changelog" opens Settings › About › Changelog.
+pub fn open_whats_new(meter_model: &Entity<MeterModel>, whats_new: WhatsNew, cx: &mut App) {
+    let Some(secondary) = cx.try_global::<Secondary>() else {
+        return;
+    };
+    let (registry, placement) = (secondary.registry.clone(), secondary.placement);
+    let scale = settings::global(cx).read(cx).get().overlay.scale();
+    let place = card_place(Card::WhatsNew, reminders::GAP * scale, cx);
+    let (width, height) = whats_new::EXPECTED_SIZE;
+    let opened = open_once(&registry, WindowKind::WhatsNew, || {
+        let stacking = Rc::new(Stacking { card: Card::WhatsNew, placement, placed: Cell::new(None) });
+        let meter_model = meter_model.clone();
+        let (window, hwnd) = create_window(
+            WindowKind::WhatsNew,
+            (width * scale, height * scale),
+            place,
+            move |window, cx| {
+                let view = cx.new(|cx| WhatsNewView::new(whats_new, stacking, window, cx));
+                cx.subscribe(&view, move |_, _: &OpenChangelog, cx| open_changelog(&meter_model, cx)).detach();
+                view
+            },
+            |_| {},
+            cx,
+        )?;
+        Ok(Open { window, hwnd: Some(hwnd), model: None })
+    });
+    finish(WindowKind::WhatsNew, opened, cx);
 }
 
 /// Where a card's window first goes: as [`Stacking`] keeps it.
@@ -583,7 +635,7 @@ impl Stacking {
         let hwnd = match overlay::hwnd(window) {
             Ok(hwnd) => hwnd,
             Err(error) => {
-                eprintln!("cannot place the {:?} card: {error}", self.card);
+                crate::app_log::warn(format!("cannot place the {:?} card: {error}", self.card));
                 return;
             }
         };
@@ -593,14 +645,14 @@ impl Stacking {
         // After the current frame: SetWindowPos sends WM_SIZE back into GPUI.
         cx.spawn(async move |_| {
             if let Err(error) = overlay::place(hwnd, x, y, size.0 as f32, size.1 as f32) {
-                eprintln!("{error}");
+                crate::app_log::warn(error.to_string());
             }
             match placement {
                 Placement::Screen => {}
                 #[cfg(feature = "probes")]
                 Placement::OffScreen => {
                     if let Err(error) = overlay::off_screen::ensure_off_screen(hwnd) {
-                        eprintln!("the {card_kind:?} card: {error}");
+                        crate::app_log::warn(format!("the {card_kind:?} card: {error}"));
                     }
                 }
             }
@@ -650,7 +702,7 @@ fn finish(kind: WindowKind, opened: Result<Opened, String>, cx: &mut App) {
     let opened = match opened {
         Ok(opened) => opened,
         Err(error) => {
-            eprintln!("cannot open the {kind:?} window: {error}");
+            crate::app_log::error(format!("cannot open the {kind:?} window: {error}"));
             return;
         }
     };
@@ -766,7 +818,16 @@ mod tests {
 
     #[test]
     fn an_overlay_opened_again_is_raised_without_focus() {
-        for kind in [WindowKind::History, WindowKind::Detail, WindowKind::Report, WindowKind::Pvp, WindowKind::Todos, WindowKind::Resources] {
+        let overlays = [
+            WindowKind::History,
+            WindowKind::Detail,
+            WindowKind::Report,
+            WindowKind::Pvp,
+            WindowKind::Todos,
+            WindowKind::Resources,
+            WindowKind::WhatsNew,
+        ];
+        for kind in overlays {
             assert_eq!(forward(kind, Opened::Created, Placement::Screen), Forward::Nothing, "{kind:?}");
             assert_eq!(forward(kind, Opened::Existing, Placement::Screen), Forward::Raise, "{kind:?}");
         }
@@ -792,5 +853,135 @@ mod tests {
 
     fn game() -> HWND {
         HWND(0x1234 as *mut _)
+    }
+
+    const METER: HWND = HWND(0x5678 as *mut _);
+
+    /// The meter's model and the hub, and this layer with a made-up handle
+    /// for the meter, since the test platform's windows have none.
+    fn meter_scene(cx: &mut gpui::TestAppContext) -> (Entity<MeterModel>, Rc<RefCell<Registry<Open>>>) {
+        use gpui::AppContext as _;
+
+        let registry: Rc<RefCell<Registry<Open>>> = Rc::default();
+        let model = cx.update(|cx| {
+            let store = cx.new(|_| settings::Settings::in_memory(settings::AppSettings::default()));
+            settings::install(&store, cx);
+            let model = cx.new(|_| MeterModel::new(crate::meter::OverlaySettings::default(), None));
+            let changes = cx.new(|_| OpenWindows);
+            cx.set_global(Secondary { registry: registry.clone(), meter_hwnd: METER, placement: Placement::Screen, changes });
+            let meter_window = cx
+                .open_window(Default::default(), |_, cx| cx.new(|cx| MeterView::new(model.clone(), cx)))
+                .expect("the meter's window");
+            crate::meter::install_window(meter_window, cx);
+            toolbar::install_for_test(meter_window, model.clone(), cx);
+            toolbar::open_meter(cx);
+            model
+        });
+        (model, registry)
+    }
+
+    /// The core's word, folded in as the bridge does.
+    fn core_says_idle(model: &Entity<MeterModel>, idle: bool, cx: &mut gpui::TestAppContext) {
+        model.update(cx, |model, cx| {
+            if model.apply(meter_core::events::MeterEvent::DpsIdleHidden(idle), std::time::Instant::now()) {
+                cx.notify();
+            }
+        });
+        cx.run_until_parked();
+    }
+
+    fn meter_shown(cx: &mut gpui::TestAppContext) -> bool {
+        cx.update(|cx| toolbar::hub(cx).expect("the hub").read(cx).meter_is_shown())
+    }
+
+    #[gpui::test]
+    fn the_reminder_card_sits_under_the_toolbar_while_the_meter_steps_aside(cx: &mut gpui::TestAppContext) {
+        let (model, _registry) = meter_scene(cx);
+        let reminder = |cx: &mut gpui::TestAppContext| cx.update(|cx| card_anchor(Card::Reminder, cx));
+        assert_eq!(reminder(cx), Some((METER, Stack::Above)), "on the meter");
+
+        core_says_idle(&model, true, cx);
+        let (_, side) = reminder(cx).expect("a place for the card");
+        assert_eq!(side, Stack::Below, "under the toolbar, as while the meter is closed");
+
+        core_says_idle(&model, false, cx);
+        assert_eq!(reminder(cx), Some((METER, Stack::Above)), "back on the meter at your first hit");
+    }
+
+    #[gpui::test]
+    fn whats_new_sits_under_the_toolbar_even_with_the_meter_open(cx: &mut gpui::TestAppContext) {
+        let _ = meter_scene(cx);
+        let (anchor, under_toolbar) =
+            cx.update(|cx| (card_anchor(Card::WhatsNew, cx), toolbar::toolbar_hwnd(cx).unwrap_or(METER)));
+        assert_eq!(anchor, Some((under_toolbar, Stack::Below)), "with the meter open, still under the toolbar");
+    }
+
+    #[gpui::test]
+    fn a_reminder_card_opens_while_the_meter_steps_aside_between_fights(cx: &mut gpui::TestAppContext) {
+        let (model, registry) = meter_scene(cx);
+        core_says_idle(&model, true, cx);
+        assert!(cx.update(|cx| toolbar::meter_is_aside(cx)), "the meter is open and stepped aside");
+
+        // What `show_reminder` does, on a test window: the real one needs a
+        // native handle. The card's first frame places it, which reads
+        // whether the meter is aside, which asks the registry.
+        let opened: Result<Opened, String> = cx.update(|cx| {
+            let meter_window = meter::window(cx);
+            let stacking = Rc::new(Stacking { card: Card::Reminder, placement: Placement::Screen, placed: Cell::new(None) });
+            let request = ShowReminder {
+                events: vec![reminders::EventId::ShugoFestival],
+                start_ms: crate::clock::now_ms() + 60_000,
+                starts_at: crate::clock::ClockTime { hour: 22, minute: 30 },
+                is_test: false,
+            };
+            open_once(&registry, WindowKind::Reminder, || {
+                let window = cx
+                    .open_window(Default::default(), |window, cx| {
+                        let link = MeterLink { window: meter_window, placement: stacking };
+                        cx.new(|cx| ReminderView::new(&request, Some(link), window, cx))
+                    })
+                    .map_err(|error| format!("{error:#}"))?;
+                Ok(Open { window: window.into(), hwnd: None, model: None })
+            })
+        });
+        cx.run_until_parked();
+
+        assert_eq!(opened, Ok(Opened::Created));
+        assert!(cx.update(|cx| is_open(WindowKind::Reminder, cx)));
+    }
+
+    #[gpui::test]
+    fn the_first_open_prompt_keeps_the_meter_on_screen_until_it_is_answered(cx: &mut gpui::TestAppContext) {
+        use gpui::Modifiers;
+
+        let (model, registry) = meter_scene(cx);
+        // What `open_prompt` does, but on a test window: the real one needs a
+        // native handle.
+        let (prompt, vcx) = cx.add_window_view(|_, cx| PromptView::unplaced(cx));
+        vcx.update(|window, cx| {
+            let window = window.window_handle();
+            let opened = open_once(&registry, WindowKind::Prompt, || Ok::<_, String>(Open { window, hwnd: None, model: None }));
+            assert_eq!(opened, Ok(Opened::Created));
+            let registry = registry.clone();
+            cx.observe_release(&prompt, move |_, cx| {
+                registry.borrow_mut().remove(WindowKind::Prompt);
+                changed(cx);
+            })
+            .detach();
+            changed(cx);
+        });
+        drop(prompt);
+        let cx = &mut **vcx;
+
+        core_says_idle(&model, true, cx);
+        assert!(meter_shown(cx), "the opening peek is over, but the prompt waits on the meter for an answer");
+        assert!(cx.update(|cx| is_open(WindowKind::Prompt, cx) && !toolbar::meter_is_aside(cx)));
+
+        let not_now = vcx.debug_bounds("prompt-no").expect("the Not now button").center();
+        vcx.simulate_click(not_now, Modifiers::none());
+        vcx.run_until_parked();
+        let cx = &mut **vcx;
+        assert!(!cx.update(|cx| is_open(WindowKind::Prompt, cx)), "Not now closes the prompt");
+        assert!(!meter_shown(cx), "answered, the meter steps aside between fights again");
     }
 }

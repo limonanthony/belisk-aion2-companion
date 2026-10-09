@@ -11,11 +11,12 @@ use std::sync::Arc;
 
 use gpui::{
     canvas, div, fill, img, point, prelude::*, relative, rgb, rgba, size, svg, AnyElement, AnyView, App, Bounds,
-    Context, Div, ElementId, FontFeatures, FontWeight, Hsla, IntoElement, Pixels, Render, ScrollHandle,
+    Context, Div, ElementId, FontFeatures, FontWeight, Hsla, IntoElement, Pixels, Render, Role, ScrollHandle,
     SharedString, Stateful, Svg, Window,
 };
 
 use crate::assets::Icon;
+use crate::i18n::fl;
 use crate::fonts::OVERLAY_FAMILY;
 use crate::game_data::PlayerClass;
 use crate::meter::OverlaySettings;
@@ -109,6 +110,17 @@ pub fn frame(look: Look, radius: f32) -> Div {
 /// The header row: `title` drags the window; `tools` and the close button sit
 /// at the top right.
 pub fn header(title: impl IntoElement, tools: Vec<AnyElement>, drag: &overlay::WindowDrag, s: Scale) -> Div {
+    header_closed_by(title, tools, close_button(s), drag, s)
+}
+
+/// [`header`] with a close button of the window's own.
+pub fn header_closed_by(
+    title: impl IntoElement,
+    tools: Vec<AnyElement>,
+    close: impl IntoElement,
+    drag: &overlay::WindowDrag,
+    s: Scale,
+) -> Div {
     let handle = div().flex_1().min_w_0().h_full().flex().items_center().gap(s.px(8.));
     div()
         .flex_none()
@@ -119,7 +131,7 @@ pub fn header(title: impl IntoElement, tools: Vec<AnyElement>, drag: &overlay::W
         .gap(s.px(8.))
         .child(drag.handle(handle).child(title))
         .children(tools)
-        .child(close_button(s))
+        .child(close)
         .child(drag.listener())
 }
 
@@ -154,7 +166,7 @@ pub fn count(text: impl Into<SharedString>, s: Scale) -> Div {
 }
 
 pub fn close_button(s: Scale) -> Stateful<Div> {
-    tool_button("close", Icon::Close, false, s).on_click(|_, window, _| window.remove_window())
+    tool_button("close", Icon::Close, fl!("common-close"), false, s).on_click(|_, window, _| window.remove_window())
 }
 
 pub fn icon(glyph: Icon, size: f32, colour: impl Into<Hsla>, s: Scale) -> Svg {
@@ -162,20 +174,22 @@ pub fn icon(glyph: Icon, size: f32, colour: impl Into<Hsla>, s: Scale) -> Svg {
 }
 
 /// 22 px square button with a 13 px icon; `hot` while what it opens is shown.
-pub fn tool_button(id: impl Into<ElementId>, glyph: Icon, hot: bool, s: Scale) -> Stateful<Div> {
-    square_button(id, glyph, hot, 22., 13., s)
+pub fn tool_button(id: impl Into<ElementId>, glyph: Icon, label: impl Into<SharedString>, hot: bool, s: Scale) -> Stateful<Div> {
+    square_button(id, glyph, label.into(), hot, 22., 13., s)
 }
 
 /// The 20 px variant inside rows, with a 12 px icon.
-pub fn row_button(id: impl Into<ElementId>, glyph: Icon, s: Scale) -> Stateful<Div> {
-    square_button(id, glyph, false, 20., 12., s)
+pub fn row_button(id: impl Into<ElementId>, glyph: Icon, label: impl Into<SharedString>, s: Scale) -> Stateful<Div> {
+    square_button(id, glyph, label.into(), false, 20., 12., s)
 }
 
-fn square_button(id: impl Into<ElementId>, glyph: Icon, hot: bool, side: f32, glyph_size: f32, s: Scale) -> Stateful<Div> {
+fn square_button(id: impl Into<ElementId>, glyph: Icon, label: SharedString, hot: bool, side: f32, glyph_size: f32, s: Scale) -> Stateful<Div> {
     let id = id.into();
     let group = SharedString::from(format!("button-{id}"));
     div()
         .id(id)
+        .role(Role::Button)
+        .aria_label(label)
         .group(group.clone())
         .flex_none()
         .size(s.px(side))

@@ -6,7 +6,7 @@ use fluent_syntax::parser;
 use super::loader::Translations;
 use super::{apply, fl, language, locale, Language, LanguageChoice};
 
-const FILE: &str = "aion_2_dps_meter.ftl";
+const FILE: &str = "belisk.ftl";
 
 /// For every message (and attribute) the arguments its text reads.
 type Signatures = BTreeMap<String, Vec<String>>;

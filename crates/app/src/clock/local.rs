@@ -21,7 +21,7 @@ impl Zone for LocalZone {
             .and_then(|zone| offset_minutes(&zone, unix_ms))
             .unwrap_or_else(|error| {
                 static REPORTED: Once = Once::new();
-                REPORTED.call_once(|| eprintln!("cannot read the PC's time zone, reminders assume UTC: {error}"));
+                REPORTED.call_once(|| crate::app_log::warn(format!("cannot read the PC's time zone, reminders assume UTC: {error}")));
                 0
             })
     }

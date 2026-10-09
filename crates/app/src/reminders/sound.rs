@@ -44,7 +44,7 @@ pub fn play_notification(cx: &App) {
                 None => unsafe { PlaySoundW(w!("SystemNotification"), None, SND_ALIAS | SND_ASYNC | SND_NODEFAULT) },
             };
             if !played.as_bool() {
-                eprintln!("the reminder sound could not be played (no chimes.wav in the Windows folder and no \"SystemNotification\" sound set in Windows)");
+                crate::app_log::warn("the reminder sound could not be played (no chimes.wav in the Windows folder and no \"SystemNotification\" sound set in Windows)");
             }
         })
         .detach();

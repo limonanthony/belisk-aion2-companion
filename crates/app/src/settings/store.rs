@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use meter_core::mobs::store::write_atomic;
 
 use super::model::AppSettings;
+use crate::stored_file::{LoadNotice, Problem, SaveError};
 
 pub const FILE_NAME: &str = "settings.json";
 pub const SCHEMA_VERSION: u32 = 2;
@@ -16,7 +17,9 @@ pub const SCHEMA_VERSION: u32 = 2;
 pub struct Loaded {
     pub settings: AppSettings,
     /// Why the stored file was not used, for the settings page to show.
-    pub notice: Option<String>,
+    pub notice: Option<LoadNotice>,
+    /// There was no file at all: the app has never run here.
+    pub fresh_install: bool,
 }
 
 pub fn path_in(data_dir: &Path) -> PathBuf {
@@ -26,45 +29,36 @@ pub fn path_in(data_dir: &Path) -> PathBuf {
 pub fn load(path: &Path, now_secs: u64) -> Loaded {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return fresh(None),
-        Err(error) => {
-            return fresh(Some(format!("cannot read {}: {error}; using the default settings", path.display())))
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return fresh(None, true),
+        Err(error) => return fresh(Some(LoadNotice::Unreadable { path: path.to_path_buf(), error: error.to_string() }), false),
     };
 
     let problem = match parse(&bytes) {
-        Ok(settings) => return Loaded { settings: settings.clamped(), notice: None },
+        Ok(settings) => return Loaded { settings: settings.clamped(), notice: None, fresh_install: false },
         Err(problem) => problem,
     };
 
     let aside = set_aside_path(path, now_secs);
     let notice = match fs::rename(path, &aside) {
-        Ok(()) => format!(
-            "{} {problem}; moved to {} and using the default settings",
-            path.display(),
-            aside.display()
-        ),
-        Err(error) => format!(
-            "{} {problem}, and it could not be moved aside ({error}); using the default settings",
-            path.display()
-        ),
+        Ok(()) => LoadNotice::SetAside { path: path.to_path_buf(), problem, aside },
+        Err(error) => LoadNotice::NotMoved { path: path.to_path_buf(), problem, error: error.to_string() },
     };
-    fresh(Some(notice))
+    fresh(Some(notice), false)
 }
 
-fn fresh(notice: Option<String>) -> Loaded {
-    Loaded { settings: AppSettings::default(), notice }
+fn fresh(notice: Option<LoadNotice>, fresh_install: bool) -> Loaded {
+    Loaded { settings: AppSettings::default(), notice, fresh_install }
 }
 
-fn parse(bytes: &[u8]) -> Result<AppSettings, String> {
+fn parse(bytes: &[u8]) -> Result<AppSettings, Problem> {
     let stored: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|error| format!("is not valid JSON: {error}"))?;
+        serde_json::from_slice(bytes).map_err(|error| Problem::NotJson(error.to_string()))?;
     let Some(fields) = stored.as_object() else {
-        return Err("is not a JSON object".to_string());
+        return Err(Problem::NotObject);
     };
     let version = fields.get("version").and_then(serde_json::Value::as_u64).unwrap_or(0);
     if version > u64::from(SCHEMA_VERSION) {
-        return Err(format!("is schema version {version}, newer than {SCHEMA_VERSION}"));
+        return Err(Problem::Newer { version, supported: SCHEMA_VERSION });
     }
     let mut stored = stored;
     if version < 2 {
@@ -152,9 +146,9 @@ pub fn encode(settings: &AppSettings) -> serde_json::Result<Vec<u8>> {
     serde_json::to_vec_pretty(&value)
 }
 
-pub fn save(path: &Path, settings: &AppSettings) -> Result<(), String> {
-    let bytes = encode(settings).map_err(|error| format!("cannot encode the settings: {error}"))?;
-    write_atomic(path, &bytes).map_err(|error| format!("cannot write {}: {error}", path.display()))
+pub fn save(path: &Path, settings: &AppSettings) -> Result<(), SaveError> {
+    let bytes = encode(settings).map_err(|error| SaveError::Encode(error.to_string()))?;
+    write_atomic(path, &bytes).map_err(|error| SaveError::Write { path: path.to_path_buf(), error: error.to_string() })
 }
 
 #[cfg(test)]
@@ -194,6 +188,17 @@ mod tests {
         let loaded = load(&dir.file(), 7);
         assert_eq!(loaded.settings, AppSettings::default());
         assert!(loaded.notice.is_none());
+        assert!(loaded.fresh_install);
+    }
+
+    #[test]
+    fn an_existing_or_set_aside_file_is_not_a_fresh_install() {
+        let dir = TestDir::new("not-fresh");
+        fs::write(dir.file(), r#"{ "version": 2 }"#).unwrap();
+        assert!(!load(&dir.file(), 7).fresh_install);
+        fs::write(dir.file(), "not json").unwrap();
+        let loaded = load(&dir.file(), 7);
+        assert!(loaded.notice.is_some() && !loaded.fresh_install);
     }
 
     #[test]
@@ -278,6 +283,16 @@ mod tests {
     }
 
     #[test]
+    fn automatic_download_is_on_without_the_key_and_a_stored_off_is_kept() {
+        let dir = TestDir::new("updates-key");
+        fs::write(dir.file(), r#"{"version":2,"overlay":{"showDps":false}}"#).unwrap();
+        assert!(load(&dir.file(), 7).settings.updates.download_automatically);
+
+        fs::write(dir.file(), r#"{"version":2,"updates":{"downloadAutomatically":false}}"#).unwrap();
+        assert!(!load(&dir.file(), 7).settings.updates.download_automatically);
+    }
+
+    #[test]
     fn stored_values_outside_their_range_are_pulled_in() {
         let dir = TestDir::new("clamp");
         fs::write(
@@ -301,7 +316,7 @@ mod tests {
         let loaded = load(&dir.file(), 42);
 
         assert_eq!(loaded.settings, AppSettings::default());
-        assert!(loaded.notice.unwrap().contains("settings.json.bad-42"));
+        assert!(matches!(&loaded.notice, Some(LoadNotice::SetAside { problem: Problem::NotJson(_), aside, .. }) if aside.ends_with("settings.json.bad-42")));
         assert!(!dir.file().exists());
         assert_eq!(fs::read_to_string(dir.0.join("settings.json.bad-42")).unwrap(), "not json {");
     }
@@ -314,7 +329,7 @@ mod tests {
         let loaded = load(&dir.file(), 5);
 
         assert_eq!(loaded.settings, AppSettings::default());
-        assert!(loaded.notice.unwrap().contains("newer"));
+        assert!(matches!(loaded.notice, Some(LoadNotice::SetAside { problem: Problem::Newer { version: 99, supported: SCHEMA_VERSION }, .. })));
         assert!(dir.0.join("settings.json.bad-5").exists());
     }
 
@@ -384,6 +399,20 @@ mod tests {
         assert_eq!(reminders, crate::reminders::ReminderSettings::default());
         assert!(reminders.enabled && reminders.sound && reminders.events.rift_portals);
         assert!(!reminders.events.watcher_kaira);
+    }
+
+    #[test]
+    fn a_file_from_before_the_between_fights_switch_keeps_the_meter_on_screen_and_the_switch_comes_back() {
+        let dir = TestDir::new("no-hide-between-fights");
+        fs::write(dir.file(), r#"{"version":2,"windows":{"openMeterAtLaunch":true}}"#).unwrap();
+
+        let mut settings = load(&dir.file(), 7).settings;
+        assert!(settings.windows.open_meter_at_launch);
+        assert!(!settings.windows.hide_meter_between_fights);
+
+        settings.windows.hide_meter_between_fights = true;
+        save(&dir.file(), &settings).unwrap();
+        assert!(load(&dir.file(), 7).settings.windows.hide_meter_between_fights);
     }
 
     #[test]

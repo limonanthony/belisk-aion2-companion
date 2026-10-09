@@ -15,7 +15,9 @@ pub use board::Board;
 #[cfg(feature = "probes")]
 pub use model::BossChoice;
 pub use live::target_name;
-pub use model::{MeterModel, ReplayState};
+pub use model::{capture_failure_text, MeterModel, ReplayState};
+#[cfg(test)]
+pub(crate) use model::tests::a_kill;
 pub use settings::{Layout, OverlaySettings, PctMode, PLAYERS_SHOWN_RANGE};
 pub use shades::ShadeBook;
 pub use view::{board_width, install_window, window, LockChanged, MeterView};

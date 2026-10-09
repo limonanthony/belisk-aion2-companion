@@ -82,10 +82,10 @@ impl SettingsView {
             let todos = todos::global(cx).read(cx);
             let mut notices = Vec::new();
             if let Some(notice) = todos.load_notice() {
-                notices.push(alert(fl!("settings-todos-set-aside"), notice.to_string(), Tone::Warn));
+                notices.push(alert(fl!("settings-todos-set-aside"), notice.text(&fl!("settings-todos-starting-empty")), Tone::Warn));
             }
             if let Some(error) = todos.save_error() {
-                notices.push(alert(fl!("settings-todos-not-saved"), error.to_string(), Tone::Bad));
+                notices.push(alert(fl!("settings-todos-not-saved"), error.text(), Tone::Bad));
             }
             notices
         };

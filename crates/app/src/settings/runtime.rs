@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
 use meter_core::capture::rolling_recorder::ROLLING_FILE_PREFIX;
-use meter_core::engine::meter::{CaptureBackend, DpsMeter};
+use meter_core::engine::meter::{CaptureBackend, CaptureStartError, DpsMeter};
 use meter_core::preflight;
 use meter_core::region;
 use gpui::{Context, Entity, Subscription, Task};
@@ -53,8 +53,7 @@ pub enum MeterTile {
     /// Running; `via` names the capture backend, absent while a recording is
     /// being replayed.
     Running { via: Option<&'static str> },
-    /// Capture could not start; the text says why.
-    Unavailable(String),
+    Unavailable(CaptureStartError),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -328,7 +327,7 @@ impl RuntimeModel {
     fn read_capture_status(&self, cx: &Context<Self>) -> CaptureStatus {
         let Some(meter) = &self.meter else {
             return CaptureStatus {
-                meter: self.meter_model.read(cx).unavailable().map_or(MeterTile::Stopped, |why| MeterTile::Unavailable(why.to_string())),
+                meter: self.meter_model.read(cx).unavailable().map_or(MeterTile::Stopped, |why| MeterTile::Unavailable(why.clone())),
                 ..CaptureStatus::default()
             };
         };
@@ -425,7 +424,7 @@ fn read_recordings(meter: &DpsMeter) -> Vec<RecordingItem> {
             let modified_ms = modified_ms(Path::new(&file.path));
             RecordingItem {
                 origin: RecordingOrigin::of_file(&file.name),
-                when: modified_ms.map_or_else(|| "--".to_string(), record_time),
+                when: modified_ms.map_or_else(|| fl!("common-unknown-time"), record_time),
                 path: PathBuf::from(file.path),
                 name: file.name,
                 bytes: file.bytes,

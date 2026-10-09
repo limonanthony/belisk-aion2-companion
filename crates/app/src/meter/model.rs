@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use meter_core::engine::meter::DpsMeter;
+use meter_core::engine::meter::{CaptureBackend, CaptureStartError, DpsMeter};
 use meter_core::events::{MeterEvent, WipedAttempt};
 use meter_core::identity::IdentityDecision;
 use meter_core::mobs::catalog::MobCatalog;
@@ -17,6 +17,7 @@ use crate::decision_log::DecisionLog;
 use super::fight::{FightTracker, SummaryKind, TargetFacts};
 use super::focus::{BossFocus, Change, Involvement, Release, Released, SWITCH_AFTER};
 use crate::format;
+use crate::i18n::fl;
 use crate::game_data::PlayerClass;
 use super::live::{self, LiveBoard, PaceLine};
 use super::session_board::SessionBoard;
@@ -68,6 +69,22 @@ impl SystemLine {
             ping,
             cpu: Some(format!("CPU {:.0}%", memory.system_cpu_percent).into()),
             memory: format::memory(memory.system_memory_used_mb).map(SharedString::from),
+        }
+    }
+}
+
+/// The waiting card's and Settings' words for why capture could not start;
+/// the drivers' own errors stay as they reported them.
+pub fn capture_failure_text(error: &CaptureStartError) -> String {
+    match error {
+        CaptureStartError::NoBackend { tried_first, npcap, windivert } => {
+            let npcap = fl!("meter-capture-driver-error", driver = "Npcap", error = npcap.as_str());
+            let windivert = fl!("meter-capture-driver-error", driver = "WinDivert", error = windivert.as_str());
+            let (first, fallback) = match tried_first {
+                CaptureBackend::Npcap => (npcap, windivert),
+                CaptureBackend::WinDivert => (windivert, npcap),
+            };
+            fl!("meter-capture-no-backend", first = first, fallback = fallback)
         }
     }
 }
@@ -154,9 +171,12 @@ pub struct MeterModel {
     system: SystemLine,
     best: Option<BestEntry>,
     pub replay: ReplayState,
-    unavailable: Option<String>,
+    unavailable: Option<CaptureStartError>,
     main_actor: Option<MainActorDetectedPayload>,
     deadline: Option<(Instant, Task<()>)>,
+    /// The core's `DpsIdleHidden`: hiding between fights is on, nothing of
+    /// yours has happened since the last reset and no peek is running.
+    idle_hidden: bool,
 }
 
 impl MeterModel {
@@ -186,19 +206,20 @@ impl MeterModel {
             unavailable: None,
             main_actor: None,
             deadline: None,
+            idle_hidden: false,
         }
     }
 
     /// The meter could not start, so nothing will ever arrive. The overlay
     /// says why instead of waiting for a hit.
-    pub fn set_unavailable(&mut self, reason: String) {
+    pub fn set_unavailable(&mut self, reason: CaptureStartError) {
         self.meter = None;
         self.mobs = None;
         self.unavailable = Some(reason);
     }
 
-    pub fn unavailable(&self) -> Option<&str> {
-        self.unavailable.as_deref()
+    pub fn unavailable(&self) -> Option<&CaptureStartError> {
+        self.unavailable.as_ref()
     }
 
     /// Switches the `[meter]` decision lines in the log on or off.
@@ -319,6 +340,12 @@ impl MeterModel {
         self.wiped_report.clone()
     }
 
+    /// Whether the meter's window steps aside: the core says you are between
+    /// fights, and no fight summary is up to be read.
+    pub fn steps_aside(&self) -> bool {
+        self.idle_hidden && self.summary.is_none()
+    }
+
     pub fn system(&self) -> &SystemLine {
         &self.system
     }
@@ -368,7 +395,8 @@ impl MeterModel {
         Some(self.player_colour(PlayerClass::parse(class)?, actor_id, name))
     }
 
-    /// Folds an event in and reports whether something a view draws changed.
+    /// Folds an event in and reports whether something its observers show
+    /// changed: what a view draws, or whether the meter steps aside.
     pub fn apply(&mut self, event: MeterEvent, now: Instant) -> bool {
         match event {
             MeterEvent::DpsSnapshot(snapshot) => self.accept_snapshot(snapshot, now),
@@ -401,10 +429,14 @@ impl MeterModel {
                 self.decisions.event("identity", || describe_identity(&decision));
                 false
             }
+            MeterEvent::DpsIdleHidden(hidden) => {
+                let changed = self.idle_hidden != hidden;
+                self.idle_hidden = hidden;
+                changed
+            }
             MeterEvent::CharacterSeen(_)
             | MeterEvent::Tickets(_)
             | MeterEvent::DpsMeterStatus(_)
-            | MeterEvent::DpsIdleHidden(_)
             | MeterEvent::HistoryUpdated => false,
         }
     }
@@ -612,8 +644,8 @@ impl MeterModel {
         }
         let emptied = snapshot.total_damage == 0 && snapshot.session.players.is_empty();
         let target = live::target_of(&snapshot);
-        // A target the game has not described yet: the Tauri overlay skips
-        // these too, so a half-known fight never replaces a known one.
+        // A target the game has not described yet never replaces a known
+        // one, so a half-known fight cannot take over the card.
         if target.is_some_and(|target| target.target_mob_code.is_none()) {
             return false;
         }
@@ -976,7 +1008,7 @@ fn personal_best(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::HashMap;
 
     use meter_core::models::combat::{CombatInfos, PlayerOverviewStat, TargetInfo};
@@ -1058,6 +1090,14 @@ mod tests {
             main_actor_dealt_player_overview_stats: Vec::new(),
             session: SessionSummary::default(),
         })
+    }
+
+    /// A boss at half health, then dead: the final summary goes up.
+    pub(crate) fn a_kill() -> [MeterEvent; 2] {
+        [
+            MeterEvent::DpsSnapshot(snapshot(500, Some(9), 30.0)),
+            MeterEvent::DpsSnapshot(snapshot(0, Some(9), 31.0)),
+        ]
     }
 
     #[test]
@@ -1190,6 +1230,35 @@ mod tests {
         assert_eq!(summary.kind, SummaryKind::Final);
         assert_eq!(summary.rank.as_deref(), Some("2/2"));
         assert!(model.report().unwrap().starts_with("Boss · defeated in 0:31"));
+    }
+
+    #[test]
+    fn copied_reports_end_with_the_product_name_in_the_language_in_force() {
+        use crate::i18n::{set_language, Language};
+        let now = Instant::now();
+        let mut live = MeterModel::new(OverlaySettings::default(), None);
+        live.apply(MeterEvent::DpsSnapshot(snapshot(500, Some(9), 30.0)), now);
+        let mut killed = MeterModel::new(OverlaySettings::default(), None);
+        for event in a_kill() {
+            killed.apply(event, now);
+        }
+
+        let report = live.report().unwrap();
+        assert!(report.starts_with("Boss · Duration "), "{report}");
+        assert!(report.ends_with("Other · 2000 · 100/s\nYou · 1000 · 50/s\n\n— Belisk"), "{report}");
+        let report = killed.report().unwrap();
+        assert!(report.contains("\nYou 50/s · #2 of 2"), "{report}");
+        assert!(report.ends_with("\n— Belisk"), "{report}");
+
+        set_language(Language::French);
+        killed.refresh_words();
+        let report = live.report().unwrap();
+        assert!(report.starts_with("Boss · Durée "), "{report}");
+        assert!(report.ends_with("Other · 2000 · 100/s\nYou · 1000 · 50/s\n\n— Belisk"), "{report}");
+        let report = killed.report().unwrap();
+        assert!(report.starts_with("Boss · vaincu en 0:31"), "{report}");
+        assert!(report.contains("\nYou 50/s · #2 sur 2"), "{report}");
+        assert!(report.ends_with("\n— Belisk"), "{report}");
     }
 
     fn wipe_of(snapshot: CombatSnapshot) -> MeterEvent {
@@ -1338,7 +1407,49 @@ mod tests {
         assert!(!model.apply(MeterEvent::HistoryUpdated, now));
         assert!(!model.apply(MeterEvent::PersonalBestsUpdated, now));
         assert!(!model.apply(MeterEvent::DpsMeterStatus(true), now));
-        assert!(!model.apply(MeterEvent::DpsIdleHidden(true), now));
+    }
+
+    #[test]
+    fn the_core_saying_idle_makes_the_meter_step_aside_and_saying_otherwise_brings_it_back() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let now = Instant::now();
+        assert!(!model.steps_aside());
+
+        assert!(model.apply(MeterEvent::DpsIdleHidden(true), now), "the hub hears of it");
+        assert!(model.steps_aside());
+        assert!(!model.apply(MeterEvent::DpsIdleHidden(true), now), "said again, nothing changed");
+
+        assert!(model.apply(MeterEvent::DpsIdleHidden(false), now));
+        assert!(!model.steps_aside());
+    }
+
+    #[test]
+    fn a_kill_summary_keeps_the_meter_on_screen_until_it_comes_down() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let now = Instant::now();
+        for event in a_kill() {
+            model.apply(event, now);
+        }
+        model.apply(MeterEvent::DpsIdleHidden(true), now);
+        assert!(model.summary().is_some());
+        assert!(!model.steps_aside(), "the summary is up to be read");
+
+        assert!(model.advance(at(now, 61)));
+        assert!(model.summary().is_none());
+        assert!(model.steps_aside());
+    }
+
+    #[test]
+    fn a_wipe_summary_keeps_the_meter_on_screen_too() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let now = Instant::now();
+        model.apply(MeterEvent::DpsSnapshot(snapshot(300, Some(9), 90.0)), now);
+        model.apply(wipe_of(snapshot(300, Some(9), 90.0)), now);
+        model.apply(MeterEvent::DpsSnapshot(emptied()), now);
+        model.apply(MeterEvent::DpsIdleHidden(true), now);
+
+        assert_eq!(model.summary().map(|summary| summary.kind), Some(SummaryKind::Wiped));
+        assert!(!model.steps_aside());
     }
 
     #[test]
@@ -1376,9 +1487,40 @@ mod tests {
     fn an_unavailable_meter_keeps_its_reason_and_cannot_reset() {
         let mut model = MeterModel::new(OverlaySettings::default(), None);
         assert_eq!(model.unavailable(), None);
-        model.set_unavailable("no capture backend".to_string());
-        assert_eq!(model.unavailable(), Some("no capture backend"));
+        let reason = CaptureStartError::NoBackend {
+            tried_first: CaptureBackend::Npcap,
+            npcap: "Npcap is not installed".to_string(),
+            windivert: "Access is denied (os error 5)".to_string(),
+        };
+        model.set_unavailable(reason.clone());
+        assert_eq!(model.unavailable(), Some(&reason));
         assert!(!model.can_reset());
+    }
+
+    #[test]
+    fn a_capture_failure_reads_in_the_language_in_force_with_the_drivers_errors_in_the_order_tried() {
+        use crate::i18n::{set_language, Language};
+        let failure = |tried_first| CaptureStartError::NoBackend {
+            tried_first,
+            npcap: "Npcap is not installed".to_string(),
+            windivert: "Access is denied (os error 5)".to_string(),
+        };
+        let npcap_first = failure(CaptureBackend::Npcap);
+        assert_eq!(
+            capture_failure_text(&npcap_first),
+            "No capture backend available; Npcap: Npcap is not installed; WinDivert: Access is denied (os error 5)"
+        );
+        assert_eq!(capture_failure_text(&npcap_first), npcap_first.to_string(), "the log line says the same");
+        assert_eq!(
+            capture_failure_text(&failure(CaptureBackend::WinDivert)),
+            "No capture backend available; WinDivert: Access is denied (os error 5); Npcap: Npcap is not installed"
+        );
+
+        set_language(Language::French);
+        assert_eq!(
+            capture_failure_text(&npcap_first),
+            "Aucun pilote de capture disponible ; Npcap : Npcap is not installed ; WinDivert : Access is denied (os error 5)"
+        );
     }
 
     fn open_world(target_id: u32, is_boss: bool) -> CombatSnapshot {

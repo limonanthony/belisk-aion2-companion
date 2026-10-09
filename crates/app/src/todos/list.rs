@@ -307,8 +307,12 @@ fn left_text(left: usize) -> String {
     }
 }
 
-/// "GLADIATOR" as "Gladiator".
+/// The class in the language in force; a class the app does not know is the
+/// game's code title-cased ("BARD" as "Bard").
 fn class_name(code: &str) -> String {
+    if let Some(class) = PlayerClass::parse(code) {
+        return class.name();
+    }
     let mut letters = code.trim().chars();
     letters.next().map(|first| first.to_uppercase().chain(letters.flat_map(char::to_lowercase)).collect()).unwrap_or_default()
 }
@@ -922,6 +926,11 @@ mod tests {
         assert_eq!(summary.class(), Some(PlayerClass::Gladiator));
         assert_eq!(summary.name, "Alder");
         assert!(summary.class_and_server().starts_with("Gladiator \u{b7} "));
+
+        crate::i18n::set_language(crate::i18n::Language::French);
+        let summary = list_of(&data, id, &monday_noon(&zone)).character;
+        assert_eq!(summary.class_name, "Gladiateur");
+        assert!(summary.class_and_server().starts_with("Gladiateur \u{b7} "));
     }
 
     fn record(id: u32, count: u32, charge: u32) -> TicketRecord {

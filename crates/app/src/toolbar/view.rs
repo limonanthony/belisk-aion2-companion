@@ -1,25 +1,28 @@
 //! The toolbar (docs/gpui-mockups/approved/toolbar.html, values in tokens.md,
-//! "Hub"): grip; DPS meter, PvP meter, To-dos, Fight history, Reminders,
-//! Settings; Odyle Energy, Shugo keys and the warning while other
-//! resources are full; fold and quit. A lit tool is open. Controls light on
-//! the pointer's enter and go on its leave, never on moves inside; tooltips
-//! follow after 500 ms. The warning's and the bell's dropdowns and every
-//! tooltip are drawn in the toolbar's own window, which grows for them,
-//! upward when the toolbar sits low on its screen. A press never takes the
-//! keyboard; with the keyboard given to the toolbar (accessibility tools),
-//! Left and Right move along it and Enter or Space press.
+//! "Hub" and "Toolbar update icon"): grip; DPS meter, PvP meter, To-dos, Fight
+//! history, Reminders, Settings; Odyle Energy, Shugo keys and the warning
+//! while other resources are full; the update icon while an update is
+//! available, downloading or ready; fold and quit. A lit tool is open.
+//! Controls light on the pointer's enter and go on its leave, never on moves
+//! inside; tooltips follow after 500 ms. The warning's and the bell's
+//! dropdowns and every tooltip are drawn in the toolbar's own window, which
+//! grows for them, upward when the toolbar sits low on its screen. A press
+//! never takes the keyboard; with the keyboard given to the toolbar
+//! (accessibility tools), Left and Right move along it and Enter or Space
+//! press.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    div, prelude::*, px, rgb, rgba, size, AnyElement, App, Bounds, Context, CursorStyle, Div, Entity, EventEmitter,
-    FocusHandle, FontWeight, KeyDownEvent, MouseButton, Pixels, Render, Role, SharedString, Stateful, Subscription,
-    Task, Toggled, Window,
+    div, prelude::*, px, relative, rgb, rgba, size, AnyElement, App, Bounds, Context, CursorStyle, Div, Entity,
+    EventEmitter, FocusHandle, FontWeight, Hsla, KeyDownEvent, MouseButton, Pixels, Render, Role, SharedString, Stateful,
+    Subscription, Task, Toggled, Window,
 };
 
 use super::counts::{Counts, Pinned};
+use super::update::{UpdateClick, UpdateIcon};
 use super::window;
 use super::Hub;
 use crate::assets::Icon;
@@ -27,10 +30,11 @@ use crate::clock::{clock_time, now_ms, LocalZone};
 use crate::i18n::{self, fl};
 use crate::overlay::WindowDrag;
 use crate::reminders::{self, ReminderSettings};
-use crate::secondary::chrome::{self, Look, Scale, FAINT, HOT, MUTED, SOFT, TEXT, WARN};
+use crate::secondary::chrome::{self, Look, Scale, FAINT, GAUGE_EMPTY, GOOD, HOT, MUTED, SOFT, TEXT, WARN};
 use crate::secondary::{self, WindowKind};
 use crate::settings::{self, ScreenPoint};
 use crate::todos;
+use crate::update;
 
 const TIP_DELAY: Duration = Duration::from_millis(500);
 /// A dropdown closes this long after the pointer left the toolbar.
@@ -57,6 +61,9 @@ const WARN_FAINT: u32 = 0xf2c66db3;
 const POPOVER: u32 = 0x1e1a16fa;
 const POPOVER_BORDER: u32 = 0xffecd624;
 const FOCUS_RING: u32 = 0xf3ebe1e6;
+/// `chip-good`: good at 0.13; under the pointer at 0.20.
+const READY_FILL: u32 = (GOOD << 8) | 0x21;
+const READY_HOVER: u32 = (GOOD << 8) | 0x33;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tool {
@@ -113,6 +120,7 @@ pub enum Slot {
     Odyle,
     Shugo,
     Warn,
+    Update,
     Fold,
     Unfold,
     Quit,
@@ -125,6 +133,7 @@ impl Slot {
             Slot::Odyle => "count-odyle",
             Slot::Shugo => "count-shugo",
             Slot::Warn => "warn",
+            Slot::Update => "update",
             Slot::Fold => "fold",
             Slot::Unfold => "unfold",
             Slot::Quit => "quit",
@@ -150,6 +159,7 @@ pub enum ToolbarRequest {
     ReminderSettings,
     /// The toolbar was dragged here: its top-left corner, device pixels.
     Moved(ScreenPoint),
+    Update(UpdateClick),
     Quit,
 }
 
@@ -203,6 +213,8 @@ pub struct ToolbarView {
     /// The open dropdown, and whether it opens upward.
     dropdown: Option<(Dropdown, bool)>,
     next_reminders: Vec<NextReminder>,
+    /// The update icon; none while there is nothing to do or know.
+    update: Option<UpdateIcon>,
     dropdown_close: Option<Task<()>>,
     focus: FocusHandle,
     /// The control the keyboard is on.
@@ -221,6 +233,9 @@ pub struct ToolbarView {
     /// where dropdowns and tooltips open.
     #[cfg(any(test, feature = "probes"))]
     forced_up: Option<bool>,
+    /// Tests and dev captures say whether you are fighting.
+    #[cfg(any(test, feature = "probes"))]
+    forced_fight: Option<bool>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -229,6 +244,7 @@ impl ToolbarView {
         let todos = todos::global(cx);
         let store = settings::global(cx);
         let locale = i18n::locale(cx);
+        let updates = update::global(cx);
         let mut subscriptions = vec![
             cx.observe(&hub, |_, _, cx| cx.notify()),
             cx.observe(&todos, |this: &mut Self, todos, cx| this.recount(&todos, cx)),
@@ -243,6 +259,10 @@ impl ToolbarView {
                     this.shown = shown;
                     cx.notify();
                 }
+            }),
+            cx.observe(&updates, |this: &mut Self, updates, cx| {
+                let icon = UpdateIcon::of(updates.read(cx).state());
+                this.follow_updates(icon, cx);
             }),
         ];
         if let Some(open_windows) = secondary::open_windows(cx) {
@@ -259,6 +279,7 @@ impl ToolbarView {
             tip_timer: None,
             dropdown: None,
             next_reminders: Vec::new(),
+            update: UpdateIcon::of(updates.read(cx).state()),
             dropdown_close: None,
             focus: cx.focus_handle(),
             focused: None,
@@ -269,6 +290,8 @@ impl ToolbarView {
             dragging: false,
             #[cfg(any(test, feature = "probes"))]
             forced_up: None,
+            #[cfg(any(test, feature = "probes"))]
+            forced_fight: None,
             _subscriptions: subscriptions,
         }
     }
@@ -279,6 +302,32 @@ impl ToolbarView {
             self.counts = counts;
             cx.notify();
         }
+    }
+
+    /// The icon changes only when what it shows does: a download redraws it
+    /// once per percent. When it goes, the pointer and the keyboard leave it.
+    fn follow_updates(&mut self, icon: Option<UpdateIcon>, cx: &mut Context<Self>) {
+        if icon == self.update {
+            return;
+        }
+        self.update = icon;
+        if self.update.is_none() {
+            if self.hover == Some(Slot::Update) {
+                self.clear_pointer_state();
+            }
+            if self.focused == Some(Slot::Update) {
+                self.focused = Some(if self.folded { Slot::Unfold } else { Slot::Fold });
+            }
+        }
+        cx.notify();
+    }
+
+    fn in_fight(&self, cx: &App) -> bool {
+        #[cfg(any(test, feature = "probes"))]
+        if let Some(fighting) = self.forced_fight {
+            return fighting;
+        }
+        self.hub.read(cx).in_fight(cx)
     }
 
     #[cfg(test)]
@@ -298,6 +347,12 @@ impl ToolbarView {
     #[cfg(test)]
     pub fn tip(&self) -> Option<Slot> {
         self.tip
+    }
+
+    /// The tooltip's lines as drawn now.
+    #[cfg(test)]
+    pub fn tip_lines(&self, cx: &App) -> Option<(SharedString, Option<SharedString>)> {
+        self.tip.map(|slot| self.tip_text(slot, cx))
     }
 
     pub fn unfold(&mut self, cx: &mut Context<Self>) {
@@ -331,12 +386,18 @@ impl ToolbarView {
             if self.counts.full_total > 0 {
                 slots.push(Slot::Warn);
             }
+            if self.update.is_some() {
+                slots.push(Slot::Update);
+            }
             return slots;
         }
         let mut slots: Vec<Slot> = Tool::ALL.iter().map(|&tool| Slot::Tool(tool)).collect();
         slots.extend([Slot::Odyle, Slot::Shugo]);
         if !self.counts.others.is_empty() {
             slots.push(Slot::Warn);
+        }
+        if self.update.is_some() {
+            slots.push(Slot::Update);
         }
         slots.extend([Slot::Fold, Slot::Quit]);
         slots
@@ -348,7 +409,7 @@ impl ToolbarView {
             Slot::Tool(tool) => self.hub.read(cx).is_lit(tool, cx),
             Slot::Odyle | Slot::Shugo => secondary::is_open(WindowKind::Resources, cx),
             Slot::Warn => self.dropdown() == Some(Dropdown::Full),
-            Slot::Fold | Slot::Unfold | Slot::Quit => false,
+            Slot::Update | Slot::Fold | Slot::Unfold | Slot::Quit => false,
         }
     }
 
@@ -421,6 +482,12 @@ impl ToolbarView {
             }
             Slot::Warn if self.folded => self.unfold(cx),
             Slot::Warn => self.toggle_dropdown(Dropdown::Full, window, cx),
+            Slot::Update => {
+                if let Some(icon) = &self.update {
+                    self.dropdown = None;
+                    cx.emit(ToolbarRequest::Update(icon.click()));
+                }
+            }
             Slot::Fold => self.fold(cx),
             Slot::Unfold => self.unfold(cx),
             Slot::Quit => cx.emit(ToolbarRequest::Quit),
@@ -508,7 +575,10 @@ impl ToolbarView {
         let paused = self.shown.paused;
         match slot {
             Slot::Tool(Tool::Meter) => {
-                let line = if self.hub.read(cx).meter_is_open() {
+                let hub = self.hub.read(cx);
+                let line = if hub.meter_is_aside(cx) {
+                    fl!("toolbar-meter-aside-line", seconds = super::PEEK_SECS)
+                } else if hub.meter_is_open() {
                     fl!("toolbar-meter-open-line")
                 } else {
                     fl!("toolbar-meter-closed-line")
@@ -522,6 +592,13 @@ impl ToolbarView {
             Slot::Odyle => (self.counts.odyle.name.clone().into(), Some(self.counts.odyle.tip.clone().into())),
             Slot::Shugo => (self.counts.shugo.name.clone().into(), Some(self.counts.shugo.tip.clone().into())),
             Slot::Warn => (fl!("toolbar-more-full", count = self.counts.others.len()).into(), None),
+            Slot::Update => match &self.update {
+                Some(icon) => {
+                    let (name, line) = icon.tip(self.in_fight(cx));
+                    (name.into(), Some(line.into()))
+                }
+                None => (SharedString::default(), None),
+            },
             Slot::Fold => (fl!("toolbar-fold").into(), None),
             Slot::Unfold => (fl!("toolbar-unfold").into(), None),
             Slot::Quit => (fl!("toolbar-quit").into(), Some(fl!("toolbar-quit-line").into())),
@@ -697,6 +774,50 @@ impl ToolbarView {
             .into_any_element()
     }
 
+    /// Available: the download icon in text on the soft fill. Downloading,
+    /// paused or checking: the icon in muted, 2 px higher, over a 2 px
+    /// progress line. Ready: rotate-cw in good on chip-good. Nothing pulses.
+    fn update_button(&self, icon: &UpdateIcon, window: &Window, s: Scale, cx: &Context<Self>) -> AnyElement {
+        let hovered = self.hover == Some(Slot::Update);
+        let (name, line) = self.tip_text(Slot::Update, cx);
+        let progress = icon.progress();
+        let (fill, colour, glyph): (Option<Hsla>, Hsla, Icon) = match icon {
+            UpdateIcon::Available { .. } => (Some(rgba(if hovered { HOT } else { SOFT }).into()), rgba(TEXT).into(), Icon::Download),
+            UpdateIcon::Downloading { .. } | UpdateIcon::Verifying { .. } => {
+                (hovered.then(|| rgba(SOFT).into()), rgba(if hovered { TEXT } else { MUTED }).into(), Icon::Download)
+            }
+            UpdateIcon::Ready { .. } => (Some(rgba(if hovered { READY_HOVER } else { READY_FILL }).into()), rgb(GOOD).into(), Icon::RotateCw),
+        };
+        self.control(Slot::Update, window, s, cx)
+            .w(s.px(26.))
+            .justify_center()
+            .role(Role::Button)
+            .aria_label(name)
+            .when_some(line, |button, line| button.aria_description(line))
+            .when_some(fill, |button, fill| button.bg(fill))
+            .child(chrome::icon(glyph, 14., colour, s).when(progress.is_some(), |icon| icon.mt(s.px(-2.))))
+            .when_some(progress, |button, (fraction, paused)| {
+                button.child(
+                    div()
+                        .id("update-progress")
+                        .absolute()
+                        .left(s.px(5.))
+                        .right(s.px(5.))
+                        .bottom(s.px(4.))
+                        .h(s.px(2.))
+                        .rounded(s.px(1.))
+                        .overflow_hidden()
+                        .bg(rgba(GAUGE_EMPTY))
+                        .role(Role::ProgressIndicator)
+                        .aria_min_numeric_value(0.)
+                        .aria_max_numeric_value(100.)
+                        .aria_numeric_value(f64::from(fraction) * 100.)
+                        .child(div().h_full().w(relative(fraction)).rounded(s.px(1.)).bg(rgba(if paused { FAINT } else { MUTED }))),
+                )
+            })
+            .into_any_element()
+    }
+
     fn rule(s: Scale) -> AnyElement {
         div().flex_none().w(s.px(1.)).h(s.px(16.)).mx(s.px(5.)).bg(rgba(RULE)).into_any_element()
     }
@@ -721,6 +842,9 @@ impl ToolbarView {
             if self.counts.full_total > 0 {
                 children.push((Some(Slot::Warn), self.warn_button(window, s, cx)));
             }
+            if let Some(icon) = &self.update {
+                children.push((Some(Slot::Update), self.update_button(icon, window, s, cx)));
+            }
         } else {
             for tool in Tool::ALL {
                 children.push((Some(Slot::Tool(tool)), self.tool_button(tool, window, s, cx)));
@@ -732,6 +856,9 @@ impl ToolbarView {
                 children.push((Some(Slot::Warn), self.warn_button(window, s, cx)));
             }
             children.push((None, Self::rule(s)));
+            if let Some(icon) = &self.update {
+                children.push((Some(Slot::Update), self.update_button(icon, window, s, cx)));
+            }
             children.push((Some(Slot::Fold), self.end_button(Slot::Fold, Icon::ChevronsLeft, window, s, cx)));
             children.push((Some(Slot::Quit), self.end_button(Slot::Quit, Icon::Close, window, s, cx)));
         }
@@ -989,6 +1116,21 @@ impl ToolbarView {
     #[cfg(feature = "probes")]
     pub fn force_up(&mut self, up: Option<bool>) {
         self.forced_up = up;
+    }
+
+    #[cfg(any(test, feature = "probes"))]
+    pub fn force_fight(&mut self, fighting: Option<bool>, cx: &mut Context<Self>) {
+        self.forced_fight = fighting;
+        cx.notify();
+    }
+
+    /// For dev captures: the keyboard given to the toolbar, on `slot`, as an
+    /// accessibility tool would give it.
+    #[cfg(feature = "probes")]
+    pub fn take_keyboard(&mut self, slot: Slot, window: &mut Window, cx: &mut Context<Self>) {
+        self.focused = Some(slot);
+        window.focus(&self.focus, cx);
+        cx.notify();
     }
 
     #[cfg(feature = "probes")]

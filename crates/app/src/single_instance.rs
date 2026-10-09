@@ -18,7 +18,7 @@ use windows::core::{Owned, HSTRING};
 use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, HANDLE, WAIT_OBJECT_0};
 use windows::Win32::System::Threading::{CreateEventW, CreateMutexW, SetEvent, WaitForSingleObject, INFINITE};
 
-const INSTANCE_NAME: &str = "Local\\AION2DpsMeter.SingleInstance";
+const INSTANCE_NAME: &str = "Local\\Belisk.SingleInstance";
 
 pub enum Claim {
     First(Running),
@@ -55,9 +55,9 @@ fn claim_named(name: &str) -> Result<Claim, String> {
 
     let (requests, raise_requests) = unbounded();
     // A handle cannot cross threads; the listener owns the event until the
-    // process ends, so it must not be closed here.
+    // process ends, so it is forgotten only once the listener runs. When the
+    // thread cannot start, `raise` and `lock` close on the way out.
     let listened = raise.0 as usize;
-    std::mem::forget(raise);
     thread::Builder::new()
         .name("single-instance".to_owned())
         .spawn(move || {
@@ -67,9 +67,10 @@ fn claim_named(name: &str) -> Result<Claim, String> {
                     return;
                 }
             }
-            eprintln!("the single-instance listener stopped: waiting for the event failed");
+            crate::app_log::error("the single-instance listener stopped: waiting for the event failed");
         })
         .map_err(|error| format!("cannot start the single-instance listener: {error}"))?;
+    std::mem::forget(raise);
     Ok(Claim::First(Running { _lock: lock, raise_requests }))
 }
 
@@ -105,7 +106,7 @@ mod tests {
     fn unique_name() -> String {
         static NEXT: AtomicU32 = AtomicU32::new(0);
         format!(
-            "Local\\AION2DpsMeter.Test.{}.{}",
+            "Local\\Belisk.Test.{}.{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::SeqCst)
         )

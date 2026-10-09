@@ -399,7 +399,7 @@ mod tests {
         let reminders = cx.update(|cx| cx.new(|cx| Reminders::new(&settings, true, |_| {}, fake_now, cx)));
         let lines: Lines = Lines::default();
         let sink = lines.clone();
-        let path = std::env::temp_dir().join(format!("aether-reminders-{}-{name}.log", std::process::id()));
+        let path = std::env::temp_dir().join(format!("belisk-reminders-{}-{name}.log", std::process::id()));
         let logger = Arc::new(AppLogger::new(path, Box::new(move |event| sink.lock().unwrap().push(event.message))));
         cx.update(|cx| reminders.update(cx, |reminders, _| reminders.log_to(logger)));
         cx.run_until_parked();

@@ -106,7 +106,7 @@ pub fn refit(window: &Window, wanted: Size<Pixels>, bar_shift: Pixels, cx: &mut 
     let hwnd = match overlay::hwnd(window) {
         Ok(hwnd) => hwnd,
         Err(error) => {
-            eprintln!("cannot fit the toolbar: {error}");
+            crate::app_log::warn(format!("cannot fit the toolbar: {error}"));
             return;
         }
     };
@@ -119,7 +119,7 @@ pub fn refit(window: &Window, wanted: Size<Pixels>, bar_shift: Pixels, cx: &mut 
             SetWindowPos(hwnd, None, rect.left, rect.top - shift, device.width, device.height, SWP_NOZORDER | SWP_NOACTIVATE)
         });
         if let Err(error) = moved {
-            eprintln!("cannot fit the toolbar: {error}");
+            crate::app_log::warn(format!("cannot fit the toolbar: {error}"));
         }
     })
     .detach();

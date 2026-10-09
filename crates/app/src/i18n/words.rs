@@ -58,6 +58,16 @@ pub fn day_stamp(zone: &dyn Zone, unix_ms: i64) -> String {
     fl!("day-stamp", weekday = weekday_short(days_from_monday), time = clock_time(zone, unix_ms).to_string())
 }
 
+/// "21 Oct 2026" (French: "21 oct. 2026").
+pub fn day_month_year(day: u8, month: u8, year: u16) -> String {
+    fl!("date-day-month-year", day = day.to_string(), month = month_short(month), year = year.to_string())
+}
+
+/// "21 Oct" (French: "21 oct.").
+pub fn day_month(day: u8, month: u8) -> String {
+    fl!("date-day-month", day = day.to_string(), month = month_short(month))
+}
+
 /// "A", "A and B", "A, B and C".
 pub fn join_and(items: &[String]) -> String {
     match items {
@@ -122,6 +132,14 @@ mod tests {
                 assert_eq!(distinct.len(), names.len(), "{language:?}: {names:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_date_is_written_with_the_languages_short_month() {
+        set_language(Language::English);
+        assert_eq!(day_month_year(21, 10, 2026), "21 Oct 2026");
+        set_language(Language::French);
+        assert_eq!(day_month_year(21, 10, 2026), "21 oct. 2026");
     }
 
     #[test]

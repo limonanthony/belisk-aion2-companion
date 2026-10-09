@@ -8,10 +8,13 @@ use gpui::{App, Context, Entity, Global, Task};
 use serde::{Deserialize, Serialize};
 
 use super::{characters, store};
+use crate::changelog::Version;
 use crate::i18n::{fl, LanguageChoice};
 use crate::meter::OverlaySettings;
 use crate::reminders::ReminderSettings;
+use crate::stored_file::{LoadNotice, SaveError};
 use crate::todos::TodoSettings;
+use crate::update::UpdateSettings;
 
 /// A change is written to disk once nothing has changed for this long, so a
 /// slider drag causes one write.
@@ -32,10 +35,15 @@ pub struct AppSettings {
     pub windows: WindowSettings,
     pub reminders: ReminderSettings,
     pub todos: TodoSettings,
+    pub updates: UpdateSettings,
     /// Characters the game named as the player, most recent first; not a
     /// setting the page shows, and kept when the settings are reset.
     #[serde(deserialize_with = "characters::deserialize_lenient")]
     pub known_characters: Vec<KnownCharacter>,
+    /// The newest version this player has run and been told about; none in a
+    /// file written before it was remembered. Kept when the settings are reset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_seen_version: Option<Version>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,6 +124,8 @@ pub struct WindowSettings {
     pub detail_opens: DetailPlacement,
     /// Off: only the toolbar opens at launch.
     pub open_meter_at_launch: bool,
+    /// The meter steps aside between fights and comes back at your first hit.
+    pub hide_meter_between_fights: bool,
     /// The first-open prompt was answered, either way; it is never asked again.
     pub launch_prompt_answered: bool,
     /// The toolbar's top-left corner in device pixels, where it was left; none
@@ -159,6 +169,7 @@ impl AppSettings {
         base.hide_unknown_players = self.behaviour.hide_unknown_players;
         base.max_player_count = self.overlay.players_shown;
         base.idle_reset_secs = self.behaviour.end_fight_after_secs;
+        base.hide_when_idle = self.windows.hide_meter_between_fights;
         base.capture_backend_priority = self.capture.backend_priority.clone();
         base.auto_record_unknown_server = self.capture.record_unfamiliar_servers;
         base.record_every_session = self.capture.record_every_session;
@@ -188,8 +199,8 @@ pub struct Settings {
     file: Option<PathBuf>,
     save: Option<Task<()>>,
     saved: bool,
-    save_error: Option<String>,
-    load_notice: Option<String>,
+    save_error: Option<SaveError>,
+    load_notice: Option<LoadNotice>,
     /// Counts changes; a write carries the number of the value it holds.
     revision: u64,
     /// The revision last written. Writers take the lock, so an older value,
@@ -203,7 +214,9 @@ impl Global for SettingsHandle {}
 
 impl Settings {
     /// Reads `settings.json` from `data_dir`; without a folder the settings
-    /// live in memory only.
+    /// live in memory only. A first run, with no file yet, is stamped with this
+    /// build's version and saved at once, so What's new never greets a new
+    /// player with notes about versions they never ran.
     pub fn load(data_dir: Option<&Path>) -> Self {
         let Some(dir) = data_dir else {
             return Self::in_memory(AppSettings::default());
@@ -212,9 +225,9 @@ impl Settings {
         let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs());
         let loaded = store::load(&file, now_secs);
         if let Some(notice) = &loaded.notice {
-            eprintln!("{notice}");
+            crate::app_log::error(notice.to_string());
         }
-        Self {
+        let mut settings = Self {
             value: loaded.settings,
             file: Some(file),
             save: None,
@@ -223,7 +236,13 @@ impl Settings {
             load_notice: loaded.notice,
             revision: 0,
             written: Arc::default(),
+        };
+        if loaded.fresh_install {
+            settings.value.last_seen_version = Some(Version::current());
+            settings.saved = false;
+            settings.flush();
         }
+        settings
     }
 
     /// Settings that are never read from or written to disk: the replay and
@@ -247,8 +266,8 @@ impl Settings {
     }
 
     /// Why the stored file was not used at start (it was set aside), if so.
-    pub fn load_notice(&self) -> Option<&str> {
-        self.load_notice.as_deref()
+    pub fn load_notice(&self) -> Option<&LoadNotice> {
+        self.load_notice.as_ref()
     }
 
     /// The folder `settings.json` lives in; none for in-memory settings.
@@ -257,8 +276,8 @@ impl Settings {
     }
 
     /// Why the last write failed; cleared by the next one that succeeds.
-    pub fn save_error(&self) -> Option<&str> {
-        self.save_error.as_deref()
+    pub fn save_error(&self) -> Option<&SaveError> {
+        self.save_error.as_ref()
     }
 
     /// Applies `change` to a copy, clamps it, and keeps it if it differs.
@@ -278,8 +297,9 @@ impl Settings {
     /// Everything back to its default (Settings → About → Reset settings).
     pub fn reset(&mut self, cx: &mut Context<Self>) {
         let known_characters = self.value.known_characters.clone();
+        let last_seen_version = self.value.last_seen_version;
         self.update(cx, |settings| {
-            *settings = AppSettings { known_characters, ..AppSettings::default() };
+            *settings = AppSettings { known_characters, last_seen_version, ..AppSettings::default() };
         });
     }
 
@@ -296,7 +316,7 @@ impl Settings {
                 self.save_error = None;
             }
             Err(error) => {
-                eprintln!("{error}");
+                crate::app_log::error(error.to_string());
                 self.save_error = Some(error);
             }
         }
@@ -325,7 +345,7 @@ impl Settings {
                         settings.save_error = None;
                     }
                     Err(error) => {
-                        eprintln!("{error}");
+                        crate::app_log::error(error.to_string());
                         settings.save_error = Some(error);
                     }
                 }
@@ -335,7 +355,7 @@ impl Settings {
     }
 }
 
-fn write_in_order(written: &Mutex<u64>, revision: u64, file: &Path, value: &AppSettings) -> Result<(), String> {
+fn write_in_order(written: &Mutex<u64>, revision: u64, file: &Path, value: &AppSettings) -> Result<(), SaveError> {
     let mut last = written.lock().unwrap_or_else(PoisonError::into_inner);
     if revision < *last {
         return Ok(());
@@ -361,6 +381,21 @@ pub fn remember_characters(cx: &mut App, seen: Vec<KnownCharacter>) {
         settings.update(cx, |settings| {
             for character in seen {
                 characters::remember(&mut settings.known_characters, character);
+            }
+        });
+    });
+}
+
+/// The player has run this build and been told what it brings (What's new was
+/// closed, or there was nothing to show): later notes start after it. An older
+/// remembered version is replaced; a newer one, from a build the player went
+/// back from, is kept.
+pub fn mark_version_seen(cx: &mut App) {
+    let current = Version::current();
+    global(cx).update(cx, |settings, cx| {
+        settings.update(cx, |settings| {
+            if settings.last_seen_version.is_none_or(|seen| seen < current) {
+                settings.last_seen_version = Some(current);
             }
         });
     });
@@ -405,6 +440,18 @@ mod tests {
     }
 
     #[test]
+    fn the_meter_stays_on_screen_between_fights_unless_asked_and_the_core_is_told() {
+        assert!(!AppSettings::default().windows.hide_meter_between_fights);
+        let running = DpsMeterConfig { hide_when_idle: true, ..DpsMeterConfig::default() };
+        assert!(!AppSettings::default().backend_config(running).hide_when_idle);
+
+        let mut settings = AppSettings::default();
+        settings.windows.hide_meter_between_fights = true;
+
+        assert!(settings.backend_config(DpsMeterConfig::default()).hide_when_idle);
+    }
+
+    #[test]
     fn recording_every_session_is_off_by_default_and_the_core_is_told_when_it_is_on() {
         assert!(!AppSettings::default().capture.record_every_session);
         assert!(!AppSettings::default().backend_config(DpsMeterConfig::default()).record_every_session);
@@ -413,5 +460,80 @@ mod tests {
         settings.capture.record_every_session = true;
 
         assert!(settings.backend_config(DpsMeterConfig::default()).record_every_session);
+    }
+
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new(name: &str) -> Self {
+            let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+            let dir = std::env::temp_dir().join(format!("aion-last-seen-{name}-{}-{nanos}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_first_run_is_stamped_with_this_version_and_saved_at_once() {
+        let dir = TestDir::new("fresh");
+        let settings = Settings::load(Some(&dir.0));
+        assert_eq!(settings.get().last_seen_version, Some(Version::current()));
+
+        let stored = std::fs::read_to_string(store::path_in(&dir.0)).unwrap();
+        assert!(stored.contains(&format!("\"lastSeenVersion\": \"{}\"", Version::current())), "{stored}");
+        assert_eq!(Settings::load(Some(&dir.0)).get().last_seen_version, Some(Version::current()));
+    }
+
+    #[test]
+    fn a_file_from_before_the_key_has_no_last_seen_version_and_stays_that_way() {
+        let dir = TestDir::new("old");
+        std::fs::write(store::path_in(&dir.0), r#"{ "version": 2, "general": { "language": "french" } }"#).unwrap();
+
+        let settings = Settings::load(Some(&dir.0));
+
+        assert_eq!(settings.get().last_seen_version, None);
+        assert_eq!(settings.get().general.language, LanguageChoice::French);
+        let stored = std::fs::read_to_string(store::path_in(&dir.0)).unwrap();
+        assert!(!stored.contains("lastSeenVersion"), "an unchanged old file is not rewritten");
+    }
+
+    #[test]
+    fn the_last_seen_version_survives_a_round_trip_and_an_unreadable_value_is_dropped() {
+        let mut settings = AppSettings::default();
+        assert!(!String::from_utf8(store::encode(&settings).unwrap()).unwrap().contains("lastSeenVersion"));
+        settings.last_seen_version = Some(Version::new(1, 2, 3));
+        let dir = TestDir::new("round-trip");
+        store::save(&store::path_in(&dir.0), &settings).unwrap();
+        assert_eq!(Settings::load(Some(&dir.0)).get().last_seen_version, Some(Version::new(1, 2, 3)));
+
+        std::fs::write(store::path_in(&dir.0), r#"{ "version": 2, "lastSeenVersion": "one" }"#).unwrap();
+        assert_eq!(Settings::load(Some(&dir.0)).get().last_seen_version, None);
+    }
+
+    #[gpui::test]
+    fn marking_a_version_seen_moves_it_forward_only_and_a_reset_keeps_it(cx: &mut gpui::TestAppContext) {
+        use gpui::AppContext as _;
+
+        let settings = cx.new(|_| Settings::in_memory(AppSettings::default()));
+        cx.update(|cx| install(&settings, cx));
+        let seen = |cx: &mut gpui::TestAppContext| settings.read_with(cx, |settings, _| settings.get().last_seen_version);
+        assert_eq!(seen(cx), None);
+
+        cx.update(mark_version_seen);
+        assert_eq!(seen(cx), Some(Version::current()));
+
+        let newer = Version::new(99, 0, 0);
+        cx.update(|cx| settings.update(cx, |settings, cx| settings.update(cx, |all| all.last_seen_version = Some(newer))));
+        cx.update(mark_version_seen);
+        assert_eq!(seen(cx), Some(newer), "going back to an older build does not rewind it");
+
+        cx.update(|cx| settings.update(cx, |settings, cx| settings.reset(cx)));
+        assert_eq!(seen(cx), Some(newer), "Reset settings does not bring What's new back");
     }
 }

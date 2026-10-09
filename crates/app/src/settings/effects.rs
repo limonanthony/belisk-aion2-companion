@@ -89,7 +89,8 @@ fn core_update(before: &AppSettings, after: &AppSettings, running: DpsMeterConfi
         || before.overlay.players_shown != after.overlay.players_shown
         || before.capture.record_unfamiliar_servers != after.capture.record_unfamiliar_servers
         || before.capture.record_every_session != after.capture.record_every_session
-        || before.capture.collect_mob_data != after.capture.collect_mob_data;
+        || before.capture.collect_mob_data != after.capture.collect_mob_data
+        || before.windows.hide_meter_between_fights != after.windows.hide_meter_between_fights;
     changed.then(|| after.backend_config(running))
 }
 
@@ -128,6 +129,16 @@ mod tests {
 
         assert!(config.record_every_session);
         assert!(core_update(&after, &before, running()).is_some_and(|config| !config.record_every_session));
+    }
+
+    #[test]
+    fn the_between_fights_switch_reaches_the_running_core_both_ways() {
+        let before = AppSettings::default();
+        let mut after = before.clone();
+        after.windows.hide_meter_between_fights = true;
+
+        assert!(core_update(&before, &after, running()).is_some_and(|config| config.hide_when_idle));
+        assert!(core_update(&after, &before, running()).is_some_and(|config| !config.hide_when_idle));
     }
 
     #[test]
@@ -185,5 +196,31 @@ mod tests {
         assert!(!hidden(cx));
         choose(cx, true);
         assert!(hidden(cx));
+    }
+
+    #[gpui::test]
+    fn the_between_fights_switch_reaches_the_running_core_after_it_settles(cx: &mut gpui::TestAppContext) {
+        use gpui::AppContext as _;
+        use meter_core::logger::AppLogger;
+
+        use crate::meter::OverlaySettings;
+
+        let log = std::env::temp_dir().join(format!("effects-tests-{}.log", std::process::id()));
+        let (sink, _events) = crate::bridge::channel();
+        let meter = Arc::new(DpsMeter::new(Arc::new(sink), Arc::new(AppLogger::new(log, Box::new(|_| {}))), None));
+        let settings = cx.new(|_| Settings::in_memory(AppSettings::default()));
+        let model = cx.new(|_| MeterModel::new(OverlaySettings::default(), Some(meter.clone())));
+        cx.update(|cx| connect(&settings, &model, Some(meter.clone()), cx));
+        assert!(!meter.current_config().hide_when_idle, "off by default");
+
+        let choose = |cx: &mut gpui::TestAppContext, hide| {
+            cx.update(|cx| settings.update(cx, |settings, cx| settings.update(cx, |all| all.windows.hide_meter_between_fights = hide)));
+            cx.executor().advance_clock(CORE_APPLY_AFTER);
+            cx.run_until_parked();
+        };
+        choose(cx, true);
+        assert!(meter.current_config().hide_when_idle);
+        choose(cx, false);
+        assert!(!meter.current_config().hide_when_idle, "off again: the core never hides the meter");
     }
 }

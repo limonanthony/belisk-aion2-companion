@@ -10,11 +10,10 @@ use std::sync::LazyLock;
 
 use serde::Deserialize;
 
-use crate::i18n::{self, Language};
+use crate::i18n::{self, fl, Language};
 
 const SERVERS_JSON: &str = include_str!("../assets/game/data/servers.json");
 const DUNGEONS_JSON: &str = include_str!("../assets/game/data/dungeons.json");
-const SKILLS_JSON: &str = include_str!("../assets/game/data/skill_names_en.json");
 const SKILLS_FR_JSON: &str = include_str!("../assets/game/data/skill_names_fr.json");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,6 +74,21 @@ impl PlayerClass {
             Self::Ranger => "class/ranger.png",
             Self::Sorcerer => "class/sorcerer.png",
             Self::Templar => "class/templar.png",
+        }
+    }
+
+    /// The class as the game names it, in the language in force.
+    pub fn name(self) -> String {
+        match self {
+            Self::Assassin => fl!("class-assassin"),
+            Self::Chanter => fl!("class-chanter"),
+            Self::Cleric => fl!("class-cleric"),
+            Self::Elementalist => fl!("class-elementalist"),
+            Self::Fighter => fl!("class-fighter"),
+            Self::Gladiator => fl!("class-gladiator"),
+            Self::Ranger => fl!("class-ranger"),
+            Self::Sorcerer => fl!("class-sorcerer"),
+            Self::Templar => fl!("class-templar"),
         }
     }
 }
@@ -147,9 +161,6 @@ fn join_label(name: String, difficulty: Option<String>) -> String {
     }
 }
 
-static SKILLS: LazyLock<HashMap<String, String>> =
-    LazyLock::new(|| serde_json::from_str(SKILLS_JSON).expect("bundled en.json is valid"));
-
 static SKILLS_FR: LazyLock<HashMap<String, String>> =
     LazyLock::new(|| serde_json::from_str(SKILLS_FR_JSON).expect("bundled skill_names_fr.json is valid"));
 
@@ -175,16 +186,16 @@ pub fn dungeon_of(mob_code: u32) -> Option<String> {
 }
 
 fn resolve_skill_id(code: u32) -> String {
-    meter_core::skill_names::resolve_skill_key(code, |key| SKILLS.contains_key(key))
+    meter_core::skill_names::resolve_skill_key(code, |key| meter_core::skill_names::english_names().contains_key(key))
 }
 
 pub fn skill_name(code: u32) -> String {
     let key = resolve_skill_id(code);
     let french = (i18n::language() == Language::French).then(|| SKILLS_FR.get(&key)).flatten();
     french
-        .or_else(|| SKILLS.get(&key))
+        .or_else(|| meter_core::skill_names::english_names().get(&key))
         .cloned()
-        .unwrap_or_else(|| format!("Skill {code}"))
+        .unwrap_or_else(|| fl!("common-skill-numbered", code = code))
 }
 
 /// The name to show for a mob: its French one when French is in force and the
@@ -227,6 +238,20 @@ mod tests {
     }
 
     #[test]
+    fn class_names_follow_the_language() {
+        i18n::set_language(Language::English);
+        assert_eq!(PlayerClass::Elementalist.name(), "Spiritmaster");
+        assert_eq!(PlayerClass::Chanter.name(), "Chanter");
+        assert_eq!(PlayerClass::Fighter.name(), "Brawler");
+
+        i18n::set_language(Language::French);
+        assert_eq!(PlayerClass::Elementalist.name(), "Spiritualiste");
+        assert_eq!(PlayerClass::Chanter.name(), "Aède");
+        assert_eq!(PlayerClass::Ranger.name(), "Rôdeur");
+        assert_eq!(PlayerClass::Fighter.name(), "Bagarreur");
+    }
+
+    #[test]
     fn bundled_data_resolves_names() {
         assert_eq!(server_name("1001"), "SIE");
         assert_eq!(server_name("99999"), "99999");
@@ -254,7 +279,7 @@ mod tests {
         assert_eq!(dungeon_of(2_301_721).as_deref(), Some("Citadelle du Daeva déchu · Difficile"));
         assert_eq!(dungeon_of(2_300_555).as_deref(), Some("Devourer's Research Base · Difficile"));
         assert_eq!(skill_name(UNTRANSLATED_SKILL), "Earth Chain [Frugal]");
-        assert_eq!(skill_name(4_000_000), "Skill 4000000");
+        assert_eq!(skill_name(4_000_000), "Compétence 4000000");
         assert_eq!(mob_name(Some(TRANSLATED_MOB), Some("Punching Bag")).as_deref(), Some("Mannequin"));
         assert_eq!(
             mob_name(Some(UNTRANSLATED_MOB), Some("Contaminated Shulak Laborer")).as_deref(),

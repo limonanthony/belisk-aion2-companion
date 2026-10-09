@@ -1,5 +1,4 @@
-//! How the meter writes its figures. Ported from the Tauri overlay
-//! (`overlay/meter/main.js`) and the approved mockup's formatting.
+//! How the meter writes its figures, as the approved mockup formats them.
 
 use crate::i18n::fl;
 
@@ -35,7 +34,7 @@ pub fn damage(value: u64) -> String {
         1..=9_999 => value.to_string(),
         10_000..=999_999 => format!("{:.1}K", n / 1e3),
         1_000_000..=999_999_999 => format!("{:.2}M", n / 1e6),
-        _ => format!("{:.2}B", n / 1e9),
+        _ => fl!("unit-damage-billions", value = format!("{:.2}", n / 1e9)),
     }
 }
 
@@ -213,6 +212,7 @@ mod tests {
         assert_eq!(file_size(2_200_000), "2.1 Mo");
         assert_eq!(memory(11_468.8).as_deref(), Some("11.2 Go"));
         assert_eq!(compact(48_100_000.0), "48.10M");
+        assert_eq!(damage(2_500_000_000), "2.50Md");
         assert_eq!(grouped(9_840.0), "9,840");
     }
 }

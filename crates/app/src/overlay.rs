@@ -320,7 +320,7 @@ pub fn fit_client_size(window: &Window, content: Size<Pixels>, cx: &mut App) {
     let hwnd = match hwnd(window) {
         Ok(hwnd) => hwnd,
         Err(error) => {
-            eprintln!("cannot fit the overlay to its card: {error}");
+            crate::app_log::warn(format!("cannot fit the overlay to its card: {error}"));
             return;
         }
     };
@@ -329,7 +329,7 @@ pub fn fit_client_size(window: &Window, content: Size<Pixels>, cx: &mut App) {
     let height = (content.height.as_f32() * scale).ceil() as i32;
     cx.spawn(async move |_| {
         if let Err(error) = set_client_size(hwnd, width, height) {
-            eprintln!("cannot fit the overlay to its card: {error}");
+            crate::app_log::warn(format!("cannot fit the overlay to its card: {error}"));
         }
     })
     .detach();
@@ -407,13 +407,13 @@ fn drag_to(window: &Window, grab: Grab, position: Point<Pixels>, cx: &mut App) {
     let (hwnd, x, y) = match target {
         Ok(target) => target,
         Err(error) => {
-            eprintln!("cannot move the overlay: {error}");
+            crate::app_log::warn(format!("cannot move the overlay: {error}"));
             return;
         }
     };
     cx.spawn(async move |_| {
         if let Err(error) = unsafe { SetWindowPos(hwnd, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) } {
-            eprintln!("cannot move the overlay: {error}");
+            crate::app_log::warn(format!("cannot move the overlay: {error}"));
         }
     })
     .detach();

@@ -245,7 +245,7 @@ impl TodoView {
                 }
             }),
         ];
-        let hwnd = overlay::hwnd(window).map_err(|error| eprintln!("the to-do window cannot take the keyboard: {error}")).ok();
+        let hwnd = overlay::hwnd(window).map_err(|error| crate::app_log::warn(format!("the to-do window cannot take the keyboard: {error}"))).ok();
         // Closing the window or quitting mid-edit keeps the amount typed and
         // gives the keyboard back.
         cx.on_release(|this, cx| this.finish_typing(cx)).detach();
@@ -417,7 +417,7 @@ impl TodoView {
             }
             let taken = typing::begin(hwnd);
             if let Err(error) = &taken {
-                eprintln!("{error}");
+                crate::app_log::warn(error.to_string());
             }
             let going_on = this
                 .update_in(cx, |this, window, cx| {
@@ -633,7 +633,7 @@ impl TodoView {
                 let shown: String = name.chars().take(super::MAX_OWN_NAME_CHARS).collect();
                 self.show_note(Note::Added { name: shown, section }, cx);
             }
-            Err(error) => eprintln!("the to-do \"{name}\" was not added: {error:?}"),
+            Err(error) => crate::app_log::warn(format!("the to-do \"{name}\" was not added: {error:?}")),
         }
         self.close_form(true, window, cx);
     }
@@ -850,9 +850,7 @@ impl TodoView {
         };
         let close_focus = self.focus_of("close", false, window, cx);
         let close = focusable(
-            chrome::tool_button("close", Icon::Close, false, s)
-                .role(Role::Button)
-                .aria_label(fl!("common-close"))
+            chrome::tool_button("close", Icon::Close, fl!("common-close"), false, s)
                 .on_click(|_, window, _| window.remove_window()),
             &close_focus,
             7.,
@@ -1213,7 +1211,7 @@ fn commit_amount(todos: &Entity<Todos>, edit: &AmountEdit, typed: &str, cx: &mut
         match typed.parse::<u32>() {
             Ok(value) => Some(value),
             Err(error) => {
-                eprintln!("the amount \"{typed}\" for {} was not kept: {error}", edit.row);
+                crate::app_log::warn(format!("the amount \"{typed}\" for {} was not kept: {error}", edit.row));
                 return;
             }
         }

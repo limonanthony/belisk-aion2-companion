@@ -1,5 +1,5 @@
 //! What the live meter shows, worked out once per snapshot so drawing only
-//! reads prepared strings. Rules ported from `overlay/meter/main.js`.
+//! reads prepared strings.
 
 use meter_core::models::combat::{CombatSnapshot, PlayerOverviewStat, TargetInfo};
 use gpui::SharedString;
@@ -421,13 +421,16 @@ pub fn battle_report(snapshot: &CombatSnapshot, target_id: u32, hide_unknown_pla
         } else {
             player.actor_name.clone()
         };
-        report.push_str(&format!(
-            "{who} · {} · {}/s\n",
-            format::damage(player.total_damage),
-            format::grouped(player.dps)
+        report.push_str(&fl!(
+            "meter-copy-player",
+            name = who,
+            damage = format::damage(player.total_damage),
+            dps = format::grouped(player.dps)
         ));
+        report.push('\n');
     }
-    report.push_str("\n— AION 2 DPS Meter");
+    report.push('\n');
+    report.push_str(&fl!("meter-copy-sign-off"));
     Some(report)
 }
 

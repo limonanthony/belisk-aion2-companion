@@ -17,7 +17,7 @@ use super::fight::SummaryKind;
 use crate::game_data::PlayerClass;
 use super::live::{Gauge, Lead, LiveBoard, PaceLine, PlayerRow};
 use super::session_board::SessionBoard;
-use super::model::{BossChoice, Footer, MeterModel, PingQuality};
+use super::model::{capture_failure_text, BossChoice, Footer, MeterModel, PingQuality};
 use super::motion::Tween;
 use super::settings::{Layout, OverlaySettings};
 use super::shades;
@@ -268,7 +268,7 @@ impl MeterView {
 
     pub fn set_locked(&mut self, locked: bool, window: &mut Window, cx: &mut Context<Self>) {
         if let Err(error) = overlay::set_click_through(window, locked) {
-            eprintln!("{} failed: {error}", if locked { "lock" } else { "unlock" });
+            crate::app_log::warn(format!("{} failed: {error}", if locked { "lock" } else { "unlock" }));
             return;
         }
         self.locked = locked;
@@ -465,7 +465,7 @@ impl MeterView {
             .gap(s.px(2.))
             .mr(s.px(-2.))
             .when(has_figures && model.can_reset(), |row| {
-                row.child(tool_button("reset", Icon::Reset, false, s).on_click(cx.listener(
+                row.child(tool_button("reset", Icon::Reset, fl!("meter-reset"), false, s).on_click(cx.listener(
                     |this, _, _, cx| this.model.update(cx, |model, cx| {
                         model.reset();
                         cx.notify();
@@ -473,26 +473,24 @@ impl MeterView {
                 )))
             })
             .child(
-                tool_button("capsule", Icon::Capsule, capsule_on, s).on_click(cx.listener(
+                tool_button("capsule", Icon::Capsule, fl!("meter-capsule"), capsule_on, s).on_click(cx.listener(
                     |_, _, _, cx| crate::settings::toggle_layout(cx),
                 )),
             )
             .when(self.lock_shortcut, |row| {
                 row.child(
-                    tool_button("lock", Icon::LockOpen, false, s)
+                    tool_button("lock", Icon::LockOpen, fl!("meter-lock"), false, s)
                         .on_click(cx.listener(|this, _, window, cx| this.set_locked(true, window, cx))),
                 )
             })
             .when(has_figures, |row| {
                 row.child(
-                    tool_button("copy", if copied { Icon::Check } else { Icon::Copy }, copied, s)
+                    tool_button("copy", if copied { Icon::Check } else { Icon::Copy }, if copied { fl!("meter-copied") } else { fl!("meter-copy") }, copied, s)
                         .on_click(cx.listener(|this, _, _, cx| this.copy_report(cx))),
                 )
             })
             .child(
-                tool_button("more", Icon::More, self.menu_open, s)
-                    .role(Role::Button)
-                    .aria_label(fl!("meter-boss-setting"))
+                tool_button("more", Icon::More, fl!("meter-boss-setting"), self.menu_open, s)
                     .aria_expanded(self.menu_open)
                     .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.hover_tool(MeterTool::More, *hovered, cx)))
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -505,9 +503,7 @@ impl MeterView {
                     })),
             )
             .child(
-                tool_button("close", Icon::Close, false, s)
-                    .role(Role::Button)
-                    .aria_label(fl!("meter-close"))
+                tool_button("close", Icon::Close, fl!("meter-close"), false, s)
                     .aria_description(fl!("meter-close-line"))
                     .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.hover_tool(MeterTool::Close, *hovered, cx)))
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -650,7 +646,7 @@ impl MeterView {
             self.boss_hp = None;
         }
         let width = board_width(&model.settings);
-        let name = model.header_name().cloned().unwrap_or_else(|| SharedString::new_static("DPS Meter"));
+        let name = model.header_name().cloned().unwrap_or_else(|| fl!("toolbar-meter").into());
         let time = div()
             .flex_none()
             .text_size(s.px(14.))
@@ -840,6 +836,7 @@ impl MeterView {
             .w_full()
             .h(s.px(count * ROW_HEIGHT + (count - 1.0).max(0.0) * ROW_GAP));
         let mut moving = false;
+        let per_second: SharedString = fl!("unit-per-second").into();
         for (slot, row) in rows.iter().enumerate() {
             let slot = slot as f32;
             let motion = self.motion.entry(row.actor_id).or_insert_with(|| RowMotion {
@@ -851,7 +848,7 @@ impl MeterView {
             moving |= motion.slot.is_running(now) || motion.bar.is_running(now);
             let actor_id = row.actor_id;
             list = list.child(
-                player_row(row, board, motion.bar.value(now), settings, s)
+                player_row(row, board, motion.bar.value(now), settings, &per_second, s)
                     .id(ElementId::NamedInteger("row".into(), u64::from(actor_id)))
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _, _, cx| this.open_detail(actor_id, board, cx)))
@@ -880,10 +877,10 @@ impl MeterView {
 
     fn waiting_card(&self, model: &MeterModel, s: Scale, cx: &Context<Self>) -> Div {
         let (title, hint, status) = match model.unavailable() {
-            Some(reason) => (fl!("meter-stopped-title"), reason.to_string(), fl!("meter-status-stopped")),
+            Some(reason) => (fl!("meter-stopped-title"), capture_failure_text(reason), fl!("meter-status-stopped")),
             None => (fl!("meter-waiting-title"), fl!("meter-lock-hint"), fl!("meter-status-standing-by")),
         };
-        let head = self.head(model, SharedString::new_static("DPS Meter"), false, label(status, s), false, s, cx);
+        let head = self.head(model, fl!("toolbar-meter").into(), false, label(status, s), false, s, cx);
         card(model.settings.background_alpha, CARD_WIDTH, s)
             .child(head)
             .child(
@@ -1051,7 +1048,7 @@ impl MeterView {
             )
             .when(!self.locked, |head| {
                 head.child(
-                    tool_button("dismiss", Icon::Close, false, s)
+                    tool_button("dismiss", Icon::Close, fl!("common-dismiss"), false, s)
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.model.update(cx, |model, cx| model.dismiss_summary(cx))
                         })),
@@ -1225,7 +1222,7 @@ impl MeterView {
         let Some(live) = model.live() else {
             return pill
                 .pl(s.px(12.))
-                .child(div().font_weight(FontWeight::SEMIBOLD).child("DPS Meter"))
+                .child(div().font_weight(FontWeight::SEMIBOLD).child(fl!("toolbar-meter")))
                 .child(label(fl!("meter-status-standing-by"), s));
         };
         let lead = match &live.lead {
@@ -1533,10 +1530,12 @@ fn icon(icon: Icon, size: f32, color: impl Into<Hsla>, s: Scale) -> gpui::Svg {
         .text_color(color.into())
 }
 
-fn tool_button(id: &'static str, glyph: Icon, active: bool, s: Scale) -> Stateful<Div> {
+fn tool_button(id: &'static str, glyph: Icon, label: String, active: bool, s: Scale) -> Stateful<Div> {
     let group: SharedString = SharedString::new_static(id);
     div()
         .id(id)
+        .role(Role::Button)
+        .aria_label(label)
         .group(group.clone())
         .flex_none()
         .size(s.px(22.))
@@ -1588,8 +1587,8 @@ fn gauge_bar(gauge: Option<&Gauge>, fraction: f32, s: Scale) -> Div {
 }
 
 /// Target board: optional damage, then DPS in bold. Session board: DPS quiet
-/// with "/s", then damage in bold.
-fn player_row(row: &PlayerRow, board: Board, bar: f32, settings: &OverlaySettings, s: Scale) -> Div {
+/// with the per-second unit, then damage in bold.
+fn player_row(row: &PlayerRow, board: Board, bar: f32, settings: &OverlaySettings, per_second: &SharedString, s: Scale) -> Div {
     let name = div()
         .flex_1()
         .min_w_0()
@@ -1641,7 +1640,7 @@ fn player_row(row: &PlayerRow, board: Board, bar: f32, settings: &OverlaySetting
                 content.child(
                     quiet(row.dps.clone())
                         .flex()
-                        .child(div().text_color(rgba(FAINT)).child("/s")),
+                        .child(div().text_color(rgba(FAINT)).child(per_second.clone())),
                 )
             })
             .child(bold(row.damage.clone())),

@@ -1,6 +1,7 @@
 //! The toolbar, the app's hub (docs/gpui-mockups/approved/toolbar.html,
 //! values in tokens.md, "Hub"): a small horizontal overlay that opens and
-//! closes every tool, with the Odyle Energy and Shugo keys counts.
+//! closes every tool, with the Odyle Energy and Shugo keys counts and, while
+//! an update is available, downloading or ready, the update icon (`update.rs`).
 //! At launch only the toolbar opens, and the meter with it when Settings ›
 //! Overlay › "Open the meter at launch" is on. Fights are tracked only while
 //! the meter is open; closing the toolbar quits the app.
@@ -8,11 +9,19 @@
 //! The meter keeps its window while closed, hidden, so it opens again where
 //! it was left. [`Hub`] holds what is open; the toolbar's view asks it for
 //! every action through [`ToolbarRequest`].
+//!
+//! With Settings › Overlay › "Hide between fights" on, an open meter's window
+//! also steps aside while the core says you are between fights
+//! (`MeterEvent::DpsIdleHidden`), unless a fight summary is up or the
+//! first-open prompt waits on it. It is open all the same: fights are
+//! tracked. Opening it, or clicking its icon while it steps aside, shows it
+//! for [`PEEK_SECS`] through `DpsMeter::peek_overlay`.
 
 mod counts;
 mod prompt;
 #[cfg(test)]
 mod tests;
+mod update;
 mod view;
 mod window;
 
@@ -23,11 +32,17 @@ use crate::meter::{MeterModel, MeterView};
 use crate::overlay::{self, Placement};
 use crate::secondary::{self, WindowKind};
 use crate::settings::{self, AppSettings, Section};
+use crate::update as updates;
+use update::UpdateClick;
 
 pub use prompt::{prompt_size, PromptView};
 pub use view::{Tool, ToolbarRequest, ToolbarView};
 #[cfg(feature = "probes")]
 pub use view::{Dropdown, Slot};
+
+/// How long the meter stays up with no fight after it opens, or after its
+/// icon is clicked while it steps aside.
+pub const PEEK_SECS: u64 = 10;
 
 /// What is open: the meter, the toolbar's window, and what Alt+Shift+CapsLock
 /// hid.
@@ -38,15 +53,33 @@ pub struct Hub {
     meter_model: Entity<MeterModel>,
     placement: Placement,
     meter_open: bool,
+    /// Whether the meter's window is on screen, as last shown or hidden.
+    meter_shown: bool,
     toolbar: Option<(WindowHandle<ToolbarView>, HWND)>,
     /// The windows Alt+Shift+CapsLock hid, shown again by its next press or
-    /// by the tray's Show toolbar.
+    /// by the tray's Show toolbar. The meter's window is not among them: it
+    /// comes back only if it is still wanted then.
     hidden: Option<Vec<HWND>>,
 }
 
 impl Hub {
     pub fn meter_is_open(&self) -> bool {
         self.meter_open
+    }
+
+    /// Open, but stepped aside between fights. Never while the first-open
+    /// prompt, which sits on the meter, waits for an answer.
+    pub fn meter_is_aside(&self, cx: &App) -> bool {
+        self.meter_open && self.meter_model.read(cx).steps_aside() && !secondary::is_open(WindowKind::Prompt, cx)
+    }
+
+    fn meter_wanted(&self, cx: &App) -> bool {
+        self.meter_open && self.hidden.is_none() && !self.meter_is_aside(cx)
+    }
+
+    #[cfg(test)]
+    pub fn meter_is_shown(&self) -> bool {
+        self.meter_shown
     }
 
     #[cfg(test)]
@@ -59,6 +92,12 @@ impl Hub {
             Some(kind) => secondary::is_open(kind, cx),
             None => tool == Tool::Meter && self.meter_open,
         }
+    }
+
+    /// The core's fight rule, for the update icon's warning that a restart
+    /// splits the fight.
+    pub fn in_fight(&self, cx: &App) -> bool {
+        self.meter_model.read(cx).meter().is_some_and(|meter| meter.in_fight())
     }
 }
 
@@ -81,13 +120,18 @@ pub fn install(
     let hub = cx.new(|_| Hub {
         meter_window,
         meter_hwnd: Some(meter_hwnd),
-        meter_model,
+        meter_model: meter_model.clone(),
         placement,
         meter_open,
+        meter_shown: meter_open,
         toolbar: None,
         hidden: None,
     });
     cx.set_global(HubHandle(hub.clone()));
+    follow_meter_state(&hub, &meter_model, cx);
+    if meter_open {
+        peek_meter(cx);
+    }
     let saved = settings::global(cx).read(cx).get().windows.toolbar_at;
     let (toolbar, hwnd) = window::open(&hub, placement, saved, cx)?;
     let view = toolbar.entity(cx).map_err(|error| format!("cannot reach the toolbar's view: {error:#}"))?;
@@ -103,14 +147,28 @@ pub fn install_for_test(meter_window: WindowHandle<MeterView>, meter_model: Enti
     let hub = cx.new(|_| Hub {
         meter_window,
         meter_hwnd: None,
-        meter_model,
+        meter_model: meter_model.clone(),
         placement: Placement::Screen,
         meter_open: false,
+        meter_shown: false,
         toolbar: None,
         hidden: None,
     });
     cx.set_global(HubHandle(hub.clone()));
+    follow_meter_state(&hub, &meter_model, cx);
     hub
+}
+
+/// The meter's window follows the model (the core saying you are idle or
+/// not, a fight summary going up or coming down) and the first-open prompt
+/// opening or closing.
+fn follow_meter_state(hub: &Entity<Hub>, meter_model: &Entity<MeterModel>, cx: &mut App) {
+    let followed = hub.clone();
+    cx.observe(meter_model, move |_, cx| sync_meter_window(&followed, cx)).detach();
+    if let Some(open_windows) = secondary::open_windows(cx) {
+        let followed = hub.clone();
+        cx.observe(&open_windows, move |_, cx| sync_meter_window(&followed, cx)).detach();
+    }
 }
 
 pub fn hub(cx: &App) -> Option<Entity<Hub>> {
@@ -121,6 +179,12 @@ pub fn hub(cx: &App) -> Option<Entity<Hub>> {
 /// open.
 pub fn meter_is_open(cx: &App) -> bool {
     hub(cx).is_none_or(|hub| hub.read(cx).meter_open)
+}
+
+/// Whether the open meter steps aside between fights; a reminder card then
+/// sits under the toolbar, as while the meter is closed.
+pub fn meter_is_aside(cx: &App) -> bool {
+    hub(cx).is_some_and(|hub| hub.read(cx).meter_is_aside(cx))
 }
 
 pub fn toolbar_hwnd(cx: &App) -> Option<HWND> {
@@ -176,13 +240,21 @@ pub fn handle(request: ToolbarRequest, cx: &mut App) {
         ToolbarRequest::Moved(at) => {
             settings::global(cx).update(cx, |settings, cx| settings.update(cx, |all| all.windows.toolbar_at = Some(at)));
         }
+        ToolbarRequest::Update(UpdateClick::StartDownload) => updates::global(cx).read(cx).start_download(),
+        ToolbarRequest::Update(UpdateClick::ShowDetails) => secondary::open_settings_at(&model, Section::About, cx),
+        ToolbarRequest::Update(UpdateClick::Restart) => updates::global(cx).update(cx, |updates, cx| updates.restart(cx)),
         ToolbarRequest::Quit => cx.quit(),
     }
 }
 
-/// The meter's icon: closes an open meter, or opens it and, the first time,
-/// asks whether it should open at launch.
+/// The meter's icon: shows a meter that steps aside between fights for a
+/// moment, closes an open meter, or opens it and, the first time, asks
+/// whether it should open at launch.
 fn toggle_meter_from_toolbar(cx: &mut App) {
+    if meter_is_aside(cx) {
+        peek_meter(cx);
+        return;
+    }
     if meter_is_open(cx) {
         close_meter(cx);
         return;
@@ -190,6 +262,17 @@ fn toggle_meter_from_toolbar(cx: &mut App) {
     open_meter(cx);
     if launch_prompt_due(settings::global(cx).read(cx).get()) {
         secondary::open_prompt(cx);
+    }
+}
+
+/// Keeps the meter up for [`PEEK_SECS`] even with no fight. The core answers
+/// with `DpsIdleHidden(false)`, which brings the window back.
+fn peek_meter(cx: &App) {
+    let Some(hub) = hub(cx) else {
+        return;
+    };
+    if let Some(meter) = hub.read(cx).meter_model.read(cx).meter() {
+        meter.peek_overlay(PEEK_SECS);
     }
 }
 
@@ -213,26 +296,47 @@ fn set_meter_open(open: bool, cx: &mut App) {
         }
         hub.meter_open = open;
         cx.notify();
-        Some((hub.meter_hwnd, hub.placement, hub.meter_model.clone()))
+        Some(hub.meter_model.clone())
     });
-    let Some((hwnd, placement, model)) = changed else {
+    let Some(model) = changed else {
         return;
     };
+    // The peek comes first, so the snapshot loop's first tick with fights
+    // tracked already sees it.
+    if open {
+        peek_meter(cx);
+    }
     if let Some(meter) = model.read(cx).meter() {
         meter.set_fight_tracking(open);
     }
-    if let Some(hwnd) = hwnd {
-        if open {
-            match overlay::reveal(hwnd, placement) {
-                Ok(()) => overlay::raise_without_activating(hwnd),
-                Err(error) => eprintln!("cannot show the meter: {error}"),
-            }
-        } else {
-            overlay::hide(hwnd);
-        }
-    }
+    sync_meter_window(&hub, cx);
     if !open {
         secondary::close(WindowKind::Prompt, cx);
+    }
+}
+
+/// Shows or hides the meter's window as the hub and the model now want it,
+/// without taking the focus; nothing when it already is.
+fn sync_meter_window(hub: &Entity<Hub>, cx: &mut App) {
+    let change = hub.update(cx, |hub, cx| {
+        let wanted = hub.meter_wanted(cx);
+        if hub.meter_shown == wanted {
+            return None;
+        }
+        hub.meter_shown = wanted;
+        cx.notify();
+        Some((wanted, hub.meter_hwnd, hub.placement))
+    });
+    let Some((shown, Some(hwnd), placement)) = change else {
+        return;
+    };
+    if shown {
+        match overlay::reveal(hwnd, placement) {
+            Ok(()) => overlay::raise_without_activating(hwnd),
+            Err(error) => crate::app_log::warn(format!("cannot show the meter: {error}")),
+        }
+    } else {
+        overlay::hide(hwnd);
     }
 }
 
@@ -245,29 +349,29 @@ pub fn toggle_everything(cx: &mut App) {
     let (hidden, placement) = hub.update(cx, |hub, _| (hub.hidden.take(), hub.placement));
     if let Some(hidden) = hidden {
         show_hidden(&hidden, placement);
+        sync_meter_window(&hub, cx);
         return;
     }
-    let mut shown: Vec<HWND> = {
-        let hub = hub.read(cx);
-        hub.toolbar.map(|(_, hwnd)| hwnd).into_iter().chain(hub.meter_hwnd.filter(|_| hub.meter_open)).collect()
-    };
-    shown.extend(secondary::open_hwnds(cx));
-    for &hwnd in &shown {
+    let mut put_away: Vec<HWND> = hub.read(cx).toolbar.map(|(_, hwnd)| hwnd).into_iter().collect();
+    put_away.extend(secondary::open_hwnds(cx));
+    for &hwnd in &put_away {
         overlay::hide(hwnd);
     }
-    hub.update(cx, |hub, _| hub.hidden = Some(shown));
+    hub.update(cx, |hub, _| hub.hidden = Some(put_away));
+    sync_meter_window(&hub, cx);
 }
 
 fn show_hidden(hidden: &[HWND], placement: Placement) {
     for &hwnd in hidden {
         if let Err(error) = overlay::reveal(hwnd, placement) {
-            eprintln!("cannot show a window again: {error}");
+            crate::app_log::warn(format!("cannot show a window again: {error}"));
         }
     }
 }
 
 /// The tray's Show toolbar, and a second launch: brings back what
-/// Alt+Shift+CapsLock hid, unfolds the toolbar and brings it in front.
+/// Alt+Shift+CapsLock hid, unfolds the toolbar and brings it, and the meter
+/// when it is on screen, in front. Neither takes the focus.
 pub fn show_toolbar(cx: &mut App) {
     let Some(hub) = hub(cx) else {
         return;
@@ -276,12 +380,19 @@ pub fn show_toolbar(cx: &mut App) {
     if let Some(hidden) = hidden {
         show_hidden(&hidden, placement);
     }
-    let Some((window, hwnd)) = toolbar else {
-        return;
+    sync_meter_window(&hub, cx);
+    let shown_meter = {
+        let hub = hub.read(cx);
+        hub.meter_hwnd.filter(|_| hub.meter_shown)
     };
-    let _ = window.update(cx, |view, _, cx| view.unfold(cx));
+    let mut forward = Vec::new();
+    if let Some((window, hwnd)) = toolbar {
+        let _ = window.update(cx, |view, _, cx| view.unfold(cx));
+        forward.push(hwnd);
+    }
+    forward.extend(shown_meter);
     match placement {
-        Placement::Screen => overlay::bring_forward(hwnd),
+        Placement::Screen => forward.into_iter().for_each(overlay::bring_forward),
         #[cfg(feature = "probes")]
         Placement::OffScreen => {}
     }

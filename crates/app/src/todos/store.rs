@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use meter_core::mobs::store::write_atomic;
 
 use super::data::TodoData;
+use crate::stored_file::{LoadNotice, Problem, SaveError};
 
 pub const FILE_NAME: &str = "todos.json";
 pub const SCHEMA_VERSION: u32 = 1;
@@ -20,7 +21,7 @@ pub const SCHEMA_VERSION: u32 = 1;
 pub struct Loaded {
     pub data: TodoData,
     /// Why the stored file was not used.
-    pub notice: Option<String>,
+    pub notice: Option<LoadNotice>,
 }
 
 pub fn path_in(data_dir: &Path) -> PathBuf {
@@ -31,7 +32,7 @@ pub fn load(path: &Path, now_secs: u64) -> Loaded {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return fresh(None),
-        Err(error) => return fresh(Some(format!("cannot read {}: {error}; starting with empty to-dos", path.display()))),
+        Err(error) => return fresh(Some(LoadNotice::Unreadable { path: path.to_path_buf(), error: error.to_string() })),
     };
     let problem = match parse(&bytes) {
         Ok(data) => return Loaded { data, notice: None },
@@ -39,36 +40,29 @@ pub fn load(path: &Path, now_secs: u64) -> Loaded {
     };
     let aside = set_aside_path(path, now_secs);
     let notice = match fs::rename(path, &aside) {
-        Ok(()) => format!(
-            "{} {problem}; moved to {} and starting with empty to-dos",
-            path.display(),
-            aside.display()
-        ),
-        Err(error) => format!(
-            "{} {problem}, and it could not be moved aside ({error}); starting with empty to-dos",
-            path.display()
-        ),
+        Ok(()) => LoadNotice::SetAside { path: path.to_path_buf(), problem, aside },
+        Err(error) => LoadNotice::NotMoved { path: path.to_path_buf(), problem, error: error.to_string() },
     };
     fresh(Some(notice))
 }
 
-fn fresh(notice: Option<String>) -> Loaded {
+fn fresh(notice: Option<LoadNotice>) -> Loaded {
     Loaded { data: TodoData::default(), notice }
 }
 
-fn parse(bytes: &[u8]) -> Result<TodoData, String> {
+fn parse(bytes: &[u8]) -> Result<TodoData, Problem> {
     let stored: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|error| format!("is not valid JSON: {error}"))?;
+        serde_json::from_slice(bytes).map_err(|error| Problem::NotJson(error.to_string()))?;
     let Some(fields) = stored.as_object() else {
-        return Err("is not a JSON object".to_string());
+        return Err(Problem::NotObject);
     };
     let version = fields.get("version").and_then(serde_json::Value::as_u64).unwrap_or(0);
     if version > u64::from(SCHEMA_VERSION) {
-        return Err(format!("is schema version {version}, newer than {SCHEMA_VERSION}"));
+        return Err(Problem::Newer { version, supported: SCHEMA_VERSION });
     }
     serde_json::from_value::<TodoData>(stored)
         .map(TodoData::sanitised)
-        .map_err(|error| format!("cannot be read as to-dos: {error}"))
+        .map_err(|error| Problem::WrongShape(error.to_string()))
 }
 
 fn set_aside_path(path: &Path, now_secs: u64) -> PathBuf {
@@ -85,9 +79,9 @@ pub fn encode(data: &TodoData) -> serde_json::Result<Vec<u8>> {
     serde_json::to_vec_pretty(&value)
 }
 
-pub fn save(path: &Path, data: &TodoData) -> Result<(), String> {
-    let bytes = encode(data).map_err(|error| format!("cannot encode the to-dos: {error}"))?;
-    write_atomic(path, &bytes).map_err(|error| format!("cannot write {}: {error}", path.display()))
+pub fn save(path: &Path, data: &TodoData) -> Result<(), SaveError> {
+    let bytes = encode(data).map_err(|error| SaveError::Encode(error.to_string()))?;
+    write_atomic(path, &bytes).map_err(|error| SaveError::Write { path: path.to_path_buf(), error: error.to_string() })
 }
 
 #[cfg(test)]
@@ -160,7 +154,7 @@ mod tests {
         fs::write(dir.file(), b"{ not json").unwrap();
         let loaded = load(&dir.file(), 77);
         assert_eq!(loaded.data, TodoData::default());
-        assert!(loaded.notice.as_deref().is_some_and(|notice| notice.contains("todos.json.bad-77")), "{:?}", loaded.notice);
+        assert!(matches!(&loaded.notice, Some(LoadNotice::SetAside { aside, .. }) if aside.ends_with("todos.json.bad-77")), "{:?}", loaded.notice);
         assert!(dir.0.join("todos.json.bad-77").exists());
         assert!(!dir.file().exists());
     }
@@ -170,7 +164,7 @@ mod tests {
         let dir = TempDir::new("newer");
         fs::write(dir.file(), br#"{"version": 99, "characters": []}"#).unwrap();
         let loaded = load(&dir.file(), 5);
-        assert!(loaded.notice.is_some_and(|notice| notice.contains("newer than 1")));
+        assert!(matches!(loaded.notice, Some(LoadNotice::SetAside { problem: Problem::Newer { version: 99, supported: 1 }, .. })));
         assert_eq!(fs::read(dir.0.join("todos.json.bad-5")).unwrap(), br#"{"version": 99, "characters": []}"#);
     }
 

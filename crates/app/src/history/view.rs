@@ -410,7 +410,7 @@ impl HistoryView {
                 .into_any_element()
         } else {
             let asked = row.id.clone();
-            chrome::row_button(SharedString::from(format!("delete-{}", row.id)), Icon::Trash, s)
+            chrome::row_button(SharedString::from(format!("delete-{}", row.id)), Icon::Trash, fl!("history-delete-record"), s)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     cx.stop_propagation();
                     this.ask(Confirm::One(asked.clone()), cx);

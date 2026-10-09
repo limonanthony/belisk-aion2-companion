@@ -12,13 +12,13 @@ use crate::i18n::{fl, month_short, weekday_short};
 /// Milliseconds from 1601-01-01 (the FILETIME epoch) to 1970-01-01.
 const EPOCH_GAP_MS: u64 = 11_644_473_600_000;
 
-/// A record's time against the current day, or "--" when Windows cannot
-/// convert it.
+/// A record's time against the current day, or the unknown-time mark when
+/// Windows cannot convert it.
 pub fn record_time(unix_ms: u64) -> String {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_millis() as u64);
     match (local_time(unix_ms), local_time(now)) {
         (Some(saved), Some(today)) => label(saved, today.date()),
-        _ => "--".to_string(),
+        _ => fl!("common-unknown-time"),
     }
 }
 

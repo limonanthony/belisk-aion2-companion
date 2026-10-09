@@ -40,7 +40,7 @@ fn arm_deadline() {
         terminate(0)
     });
     if let Err(error) = spawned {
-        eprintln!("cannot arm the quit deadline ({error}); a hung quit hook would keep the meter running");
+        crate::app_log::warn(format!("cannot arm the quit deadline ({error}); a hung quit hook would keep the meter running"));
     }
 }
 

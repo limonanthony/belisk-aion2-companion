@@ -7,6 +7,7 @@ use gpui::{
     px, AppContext as _, Entity, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, TestAppContext, VisualTestContext,
 };
 use meter_core::engine::meter::DpsMeter;
+use meter_core::events::{EventSink, MeterEvent};
 use meter_core::logger::AppLogger;
 
 use super::view::{Dropdown, Slot};
@@ -15,33 +16,47 @@ use crate::bridge;
 use crate::meter::OverlaySettings;
 use crate::settings::{AppSettings, Settings};
 use crate::todos;
+use crate::update::{Failure, ReleaseInfo, Snapshot, UpdateState};
 
 struct Bar<'a> {
     view: Entity<ToolbarView>,
     hub: Entity<Hub>,
     requests: Rc<RefCell<Vec<ToolbarRequest>>>,
+    /// What the core's own threads emit through: events reach the model
+    /// through the bridge, as in the app.
+    core_events: Arc<bridge::ChannelSink>,
+    store: Entity<Settings>,
+    /// What the update icon's clicks asked the updates for.
+    update_commands: std::sync::mpsc::Receiver<crate::update::Command>,
     cx: &'a mut VisualTestContext,
 }
 
-fn meter_core() -> Arc<DpsMeter> {
-    let log = std::env::temp_dir().join(format!("toolbar-tests-{}.log", std::process::id()));
-    let (sink, _events) = bridge::channel();
-    Arc::new(DpsMeter::new(Arc::new(sink), Arc::new(AppLogger::new(log, Box::new(|_| {}))), None))
+/// The real toolbar in GPUI's test platform, on in-memory settings, with a
+/// hub whose meter has a real core, not started, its events pumped into the
+/// meter's model.
+fn open(cx: &mut TestAppContext, settings: AppSettings) -> Bar<'_> {
+    let checked = std::time::SystemTime::now();
+    let up_to_date = Snapshot { state: UpdateState::UpToDate { checked_at: checked }, last_checked: Some(checked), check_again_at: checked };
+    open_with_updates(cx, settings, up_to_date)
 }
 
-/// The real toolbar in GPUI's test platform, on in-memory settings, with a
-/// hub whose meter has a real core.
-fn open(cx: &mut TestAppContext, settings: AppSettings) -> Bar<'_> {
-    let hub = cx.update(|cx| {
+fn open_with_updates(cx: &mut TestAppContext, settings: AppSettings, updates: Snapshot) -> Bar<'_> {
+    let (sink, events) = bridge::channel();
+    let core_events = Arc::new(sink);
+    let log = std::env::temp_dir().join(format!("toolbar-tests-{}.log", std::process::id()));
+    let core = Arc::new(DpsMeter::new(core_events.clone(), Arc::new(AppLogger::new(log, Box::new(|_| {}))), None));
+    let (hub, store, update_commands) = cx.update(|cx| {
         let store = cx.new(|_| Settings::in_memory(settings));
         crate::settings::install(&store, cx);
         crate::reminders::install(&store, false, cx);
         todos::install(&store, false, cx);
-        let model = cx.new(|_| MeterModel::new(OverlaySettings::default(), Some(meter_core())));
+        let update_commands = crate::update::install_recording_fixture(&store, updates, cx);
+        let model = cx.new(|_| MeterModel::new(OverlaySettings::default(), Some(core)));
+        bridge::spawn_pump(model.clone(), events, false, cx).detach();
         let meter_window = cx
             .open_window(Default::default(), |_, cx| cx.new(|cx| MeterView::new(model.clone(), cx)))
             .expect("the meter's window");
-        install_for_test(meter_window, model, cx)
+        (install_for_test(meter_window, model, cx), store, update_commands)
     });
     let view_hub = hub.clone();
     let (view, cx) = cx.add_window_view(|window, cx| ToolbarView::new(view_hub, window, cx));
@@ -51,7 +66,7 @@ fn open(cx: &mut TestAppContext, settings: AppSettings) -> Bar<'_> {
         cx.subscribe(&view, move |_, request: &ToolbarRequest, _| heard.borrow_mut().push(*request)).detach();
     });
     cx.run_until_parked();
-    Bar { view, hub, requests, cx }
+    Bar { view, hub, requests, core_events, store, update_commands, cx }
 }
 
 impl Bar<'_> {
@@ -88,6 +103,27 @@ impl Bar<'_> {
     fn fight_tracking(&mut self) -> bool {
         let hub = self.hub.clone();
         self.cx.update(|_, cx| hub.read(cx).meter_model().read(cx).meter().expect("a core").fight_tracking())
+    }
+
+    /// The core's snapshot loop saying whether you are between fights.
+    fn core_says_idle(&mut self, idle: bool) {
+        self.core_events.emit(MeterEvent::DpsIdleHidden(idle));
+        self.cx.run_until_parked();
+    }
+
+    fn meter_shown(&mut self) -> bool {
+        let hub = self.hub.clone();
+        self.cx.update(|_, cx| hub.read(cx).meter_is_shown())
+    }
+
+    fn open_meter(&mut self) {
+        self.cx.update(|_, cx| open_meter(cx));
+        self.cx.run_until_parked();
+    }
+
+    fn click_meter_icon(&mut self) {
+        self.cx.update(|_, cx| handle(ToolbarRequest::Toggle(Tool::Meter), cx));
+        self.cx.run_until_parked();
     }
 }
 
@@ -214,6 +250,85 @@ fn the_meter_icon_lights_while_the_meter_is_open_and_fights_are_tracked_only_the
     assert!(!bar.fight_tracking(), "closing the meter left fights tracked");
 }
 
+#[gpui::test]
+fn an_open_meter_steps_aside_while_the_core_says_idle_and_keeps_tracking_fights(cx: &mut TestAppContext) {
+    let mut bar = open(cx, AppSettings::default());
+    bar.open_meter();
+    assert!(bar.meter_shown());
+
+    bar.core_says_idle(true);
+    assert!(!bar.meter_shown(), "between fights the window steps aside");
+    assert!(bar.cx.update(|_, cx| meter_is_open(cx) && meter_is_aside(cx)));
+    assert!(bar.fight_tracking(), "hidden is not closed: fights are still tracked");
+
+    bar.core_says_idle(false);
+    assert!(bar.meter_shown(), "your first hit brings it back");
+}
+
+#[gpui::test]
+fn a_fight_summary_keeps_the_meter_on_screen_until_it_comes_down(cx: &mut TestAppContext) {
+    let mut bar = open(cx, AppSettings::default());
+    bar.open_meter();
+    for event in crate::meter::a_kill() {
+        bar.core_events.emit(event);
+    }
+    bar.core_says_idle(true);
+    assert!(bar.meter_shown(), "the kill's summary is up to be read");
+
+    let hub = bar.hub.clone();
+    bar.cx.update(|_, cx| {
+        let model = hub.read(cx).meter_model().clone();
+        model.update(cx, |model, cx| model.dismiss_summary(cx));
+    });
+    bar.cx.run_until_parked();
+    assert!(!bar.meter_shown(), "with the summary gone it steps aside");
+}
+
+#[gpui::test]
+fn opening_the_meter_shows_it_for_a_moment_even_between_fights(cx: &mut TestAppContext) {
+    let mut bar = open(cx, AppSettings::default());
+    bar.core_says_idle(true);
+    assert!(!bar.meter_shown());
+
+    bar.open_meter();
+
+    assert!(bar.meter_shown(), "the core's peek brought it up");
+    assert!(!bar.cx.update(|_, cx| meter_is_aside(cx)));
+}
+
+#[gpui::test]
+fn the_meter_icon_shows_a_meter_that_steps_aside_and_closes_one_on_screen(cx: &mut TestAppContext) {
+    let mut bar = open(cx, AppSettings::default());
+    bar.open_meter();
+    bar.core_says_idle(true);
+
+    bar.click_meter_icon();
+    assert!(bar.cx.update(|_, cx| meter_is_open(cx)), "the click peeked instead of closing");
+    assert!(bar.meter_shown());
+    assert!(bar.fight_tracking());
+
+    bar.click_meter_icon();
+    assert!(!bar.cx.update(|_, cx| meter_is_open(cx)), "on screen, the icon closes it as before");
+    assert!(!bar.meter_shown());
+}
+
+#[gpui::test]
+fn showing_everything_again_leaves_a_meter_that_steps_aside_hidden(cx: &mut TestAppContext) {
+    let mut bar = open(cx, AppSettings::default());
+    bar.open_meter();
+    bar.cx.update(|_, cx| toggle_everything(cx));
+    assert!(!bar.meter_shown(), "Alt+Shift+CapsLock hides the meter with the rest");
+
+    bar.core_says_idle(false);
+    assert!(!bar.meter_shown(), "a hit while everything is hidden shows nothing");
+    bar.core_says_idle(true);
+    bar.cx.update(|_, cx| toggle_everything(cx));
+    assert!(!bar.meter_shown(), "between fights it stays aside");
+
+    bar.core_says_idle(false);
+    assert!(bar.meter_shown());
+}
+
 #[test]
 fn the_launch_prompt_is_due_until_answered_and_never_when_the_meter_opens_at_launch() {
     let mut settings = AppSettings::default();
@@ -262,4 +377,137 @@ fn not_now_answers_without_turning_the_setting_on(cx: &mut TestAppContext) {
     cx.simulate_click(no, Modifiers::none());
     assert_eq!(answered(&store, cx), (true, false));
     assert!(!store.read_with(cx, |settings, _| launch_prompt_due(settings.get())));
+}
+
+const NEXT: crate::changelog::Version = crate::changelog::Version::new(9, 0, 0);
+
+fn updates_at(state: UpdateState) -> Snapshot {
+    let now = std::time::SystemTime::now();
+    Snapshot { state, last_checked: Some(now), check_again_at: now }
+}
+
+fn available(last_failure: Option<Failure>) -> UpdateState {
+    let release = ReleaseInfo { version: NEXT, size: 4_200_000, notes_url: "https://github.com/o/r".into(), published: None };
+    UpdateState::Available { release, last_failure }
+}
+
+impl Bar<'_> {
+    fn show_updates(&mut self, state: UpdateState) {
+        let store = self.store.clone();
+        self.cx.update(|_, cx| crate::update::install_fixture(&store, updates_at(state), cx));
+        self.cx.run_until_parked();
+    }
+
+    fn commands(&self) -> Vec<String> {
+        self.update_commands.try_iter().map(|command| format!("{command:?}")).collect()
+    }
+
+    fn rest_on(&mut self, selector: &'static str) -> Option<(gpui::SharedString, Option<gpui::SharedString>)> {
+        let centre = self.centre(selector);
+        self.cx.simulate_mouse_move(centre, None, Modifiers::none());
+        self.cx.executor().advance_clock(Duration::from_millis(500));
+        self.cx.run_until_parked();
+        let view = self.view.clone();
+        self.cx.update(|_, cx| view.read(cx).tip_lines(cx))
+    }
+}
+
+#[gpui::test]
+fn the_update_icon_shows_only_while_there_is_something_to_do_or_know(cx: &mut TestAppContext) {
+    let mut bar = open(cx, AppSettings::default());
+    let now = std::time::SystemTime::now();
+    for (state, shown) in [
+        (UpdateState::UpToDate { checked_at: now }, false),
+        (UpdateState::Checking, false),
+        (UpdateState::Unreachable { next_try: now }, false),
+        (UpdateState::RateLimited { until: now }, false),
+        (UpdateState::Failed { failure: Failure::Check("odd".into()) }, false),
+        (UpdateState::Disabled, false),
+        (available(None), true),
+        (available(Some(Failure::SignatureMismatch)), true),
+        (UpdateState::Downloading { version: NEXT, downloaded: 1, total: 2, paused_for_fight: false }, true),
+        (UpdateState::Downloading { version: NEXT, downloaded: 1, total: 2, paused_for_fight: true }, true),
+        (UpdateState::Verifying { version: NEXT }, true),
+        (UpdateState::Ready { version: NEXT }, true),
+    ] {
+        let label = format!("{state:?}");
+        bar.show_updates(state);
+        assert_eq!(bar.is_drawn("update"), shown, "{label}");
+    }
+
+    let (shugo, update, fold) = (bar.centre("count-shugo"), bar.centre("update"), bar.centre("fold"));
+    assert!(shugo.x < update.x && update.x < fold.x, "first in the end group, before fold");
+    bar.click("fold");
+    assert!(bar.is_drawn("update"), "the folded handle keeps it");
+    assert!(bar.centre("unfold").x < bar.centre("update").x);
+}
+
+#[gpui::test]
+fn a_click_on_the_update_icon_downloads_opens_the_details_or_restarts_and_never_takes_the_keyboard(cx: &mut TestAppContext) {
+    let mut bar = open_with_updates(cx, AppSettings::default(), updates_at(available(None)));
+    bar.click("update");
+    assert_eq!(bar.requests(), vec![ToolbarRequest::Update(UpdateClick::StartDownload)]);
+    let focused = bar.cx.update(|window, cx| window.focused(cx));
+    assert!(focused.is_none(), "the press gave the keyboard to the toolbar");
+    bar.cx.update(|_, cx| handle(ToolbarRequest::Update(UpdateClick::StartDownload), cx));
+    assert_eq!(bar.commands(), vec!["StartDownload"], "the download starts at once, no confirmation");
+
+    bar.requests.borrow_mut().clear();
+    for state in [
+        UpdateState::Downloading { version: NEXT, downloaded: 1, total: 2, paused_for_fight: false },
+        UpdateState::Downloading { version: NEXT, downloaded: 1, total: 2, paused_for_fight: true },
+        UpdateState::Verifying { version: NEXT },
+    ] {
+        bar.show_updates(state);
+        bar.click("update");
+    }
+    assert_eq!(bar.requests(), vec![ToolbarRequest::Update(UpdateClick::ShowDetails); 3], "Settings › About has the details");
+
+    bar.requests.borrow_mut().clear();
+    bar.show_updates(UpdateState::Ready { version: NEXT });
+    bar.click("update");
+    assert_eq!(bar.requests(), vec![ToolbarRequest::Update(UpdateClick::Restart)]);
+    bar.cx.update(|_, cx| handle(ToolbarRequest::Update(UpdateClick::Restart), cx));
+    let restart_tried = bar.cx.update(|_, cx| crate::update::global(cx).read(cx).restart_failure().is_some());
+    assert!(restart_tried, "the restart was asked for at once (it cannot start a staged exe in a test)");
+}
+
+#[gpui::test]
+fn the_update_tooltip_comes_after_500_ms_and_warns_that_restarting_splits_a_fight(cx: &mut TestAppContext) {
+    let mut bar = open_with_updates(cx, AppSettings::default(), updates_at(available(None)));
+    let (name, line) = bar.rest_on("update").expect("the tooltip is up");
+    assert_eq!(name.as_ref(), "Update available: 9.0.0");
+    assert_eq!(line.as_deref(), Some("Click to download it. It installs only when you restart."));
+
+    bar.show_updates(UpdateState::Downloading { version: NEXT, downloaded: 62, total: 100, paused_for_fight: false });
+    let (name, _) = bar.rest_on("update").expect("the tooltip is up");
+    assert_eq!(name.as_ref(), "Downloading 9.0.0 · 62%");
+
+    bar.show_updates(UpdateState::Ready { version: NEXT });
+    let view = bar.view.clone();
+    bar.cx.update(|_, cx| view.update(cx, |view, cx| view.force_fight(Some(false), cx)));
+    let (_, line) = bar.rest_on("update").expect("the tooltip is up");
+    assert_eq!(line.as_deref(), Some("Closes and opens again in the new version. Nothing is lost."));
+    bar.cx.update(|_, cx| view.update(cx, |view, cx| view.force_fight(Some(true), cx)));
+    let (name, line) = bar.rest_on("update").expect("the tooltip is up");
+    assert_eq!(name.as_ref(), "Restart to update to 9.0.0");
+    assert_eq!(line.as_deref(), Some("You are fighting: restarting now splits this fight in History."));
+}
+
+#[gpui::test]
+fn when_the_update_icon_goes_the_keyboard_moves_to_fold(cx: &mut TestAppContext) {
+    let mut bar = open_with_updates(cx, AppSettings::default(), updates_at(UpdateState::Ready { version: NEXT }));
+    let view = bar.view.clone();
+    bar.cx.update(|window, cx| window.focus(&view.read(cx).focus_handle(), cx));
+    bar.press("end");
+    bar.press("left");
+    bar.press("left");
+    bar.press("enter");
+    assert_eq!(bar.requests(), vec![ToolbarRequest::Update(UpdateClick::Restart)], "Left reaches it like the other tools");
+
+    bar.press("left");
+    bar.press("right");
+    bar.show_updates(UpdateState::UpToDate { checked_at: std::time::SystemTime::now() });
+    bar.press("enter");
+    assert!(bar.view(|view| view.is_folded()), "the keyboard went to fold, the next control");
 }

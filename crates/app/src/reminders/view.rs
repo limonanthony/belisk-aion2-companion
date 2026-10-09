@@ -1,9 +1,9 @@
 //! The reminder card (docs/gpui-mockups/approved/reminders.html, values in
 //! tokens.md, "Reminder card"): its own overlay window on the meter's left
-//! edge, or under the toolbar while the meter is closed (toolbar.html), up
-//! for 30 s with a thin line draining the time left. The pointer over the
-//! card pauses it; a click dismisses it. While the meter is locked the card
-//! is click-through and shows no ×.
+//! edge, or under the toolbar while the meter is closed (toolbar.html) or
+//! steps aside between fights, up for 30 s with a thin line draining the
+//! time left. The pointer over the card pauses it; a click dismisses it.
+//! While the meter is locked the card is click-through and shows no ×.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -310,7 +310,7 @@ impl ReminderView {
     fn set_locked(&mut self, locked: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.meter.is_some() {
             if let Err(error) = overlay::set_click_through(window, locked) {
-                eprintln!("cannot {} the reminder: {error}", if locked { "lock" } else { "unlock" });
+                crate::app_log::warn(format!("cannot {} the reminder: {error}", if locked { "lock" } else { "unlock" }));
                 return;
             }
         }
@@ -399,9 +399,7 @@ impl ReminderView {
 
     fn head(&self, s: Scale, cx: &mut Context<Self>) -> impl IntoElement {
         let dismiss = (!self.locked).then(|| {
-            chrome::tool_button("dismiss", Icon::Close, self.pointer_over, s)
-                .role(Role::Button)
-                .aria_label(fl!("common-dismiss"))
+            chrome::tool_button("dismiss", Icon::Close, fl!("common-dismiss"), self.pointer_over, s)
                 .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx)))
         });
         div()

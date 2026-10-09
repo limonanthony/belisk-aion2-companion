@@ -17,6 +17,7 @@ use super::settings::TodoSettings;
 use super::store;
 use crate::clock::{now_ms, ClockTime, LocalZone};
 use crate::settings::Settings;
+use crate::stored_file::{LoadNotice, SaveError};
 
 /// A change is written to disk once nothing has changed for this long, so a
 /// run of taps on an arrow causes one write.
@@ -78,8 +79,8 @@ pub struct Todos {
     file: Option<PathBuf>,
     save: Option<Task<()>>,
     saved: bool,
-    save_error: Option<String>,
-    load_notice: Option<String>,
+    save_error: Option<SaveError>,
+    load_notice: Option<LoadNotice>,
     /// Counts changes; a write carries the number of the value it holds.
     revision: u64,
     /// The revision last written. Writers take the lock, so an older value,
@@ -107,7 +108,7 @@ impl Todos {
                 let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs());
                 let loaded = store::load(&file, now_secs);
                 if let Some(notice) = &loaded.notice {
-                    eprintln!("{notice}");
+                    crate::app_log::error(notice.to_string());
                 }
                 (Some(file), loaded)
             }
@@ -120,7 +121,7 @@ impl Todos {
         settings: &Entity<Settings>,
         data: TodoData,
         file: Option<PathBuf>,
-        load_notice: Option<String>,
+        load_notice: Option<LoadNotice>,
         follows_clock: bool,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -361,12 +362,12 @@ impl Todos {
         self.data.own_total()
     }
 
-    pub fn load_notice(&self) -> Option<&str> {
-        self.load_notice.as_deref()
+    pub fn load_notice(&self) -> Option<&LoadNotice> {
+        self.load_notice.as_ref()
     }
 
-    pub fn save_error(&self) -> Option<&str> {
-        self.save_error.as_deref()
+    pub fn save_error(&self) -> Option<&SaveError> {
+        self.save_error.as_ref()
     }
 
     // --- Changing a character's list ---
@@ -519,7 +520,7 @@ impl Todos {
                 self.save_error = None;
             }
             Err(error) => {
-                eprintln!("{error}");
+                crate::app_log::error(error.to_string());
                 self.save_error = Some(error);
             }
         }
@@ -548,7 +549,7 @@ impl Todos {
                         todos.save_error = None;
                     }
                     Err(error) => {
-                        eprintln!("{error}");
+                        crate::app_log::error(error.to_string());
                         todos.save_error = Some(error);
                     }
                 }
@@ -568,7 +569,7 @@ fn until_next_minute() -> Duration {
     Duration::from_millis(60_000 - into_minute) + TICK_SLACK
 }
 
-fn write_in_order(written: &Mutex<u64>, revision: u64, file: &Path, value: &TodoData) -> Result<(), String> {
+fn write_in_order(written: &Mutex<u64>, revision: u64, file: &Path, value: &TodoData) -> Result<(), SaveError> {
     let mut last = written.lock().unwrap_or_else(PoisonError::into_inner);
     if revision < *last {
         return Ok(());

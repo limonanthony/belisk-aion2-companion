@@ -17,13 +17,13 @@ mod words;
 use gpui::{App, AppContext as _, Entity, Global};
 
 pub use language::{Language, LanguageChoice};
-pub use words::{day_stamp, duration_words, join_and, month_short, weekday_short};
+pub use words::{day_month, day_month_year, day_stamp, duration_words, join_and, month_short, weekday_short};
 
 #[cfg(test)]
 pub use loader::set_language;
 
 /// A translated message: `fl!("message-id")` or `fl!("message-id", name = value)`.
-/// The id and the argument names are checked against `en/aion_2_dps_meter.ftl`
+/// The id and the argument names are checked against `en/belisk.ftl`
 /// at compile time. Needs no import beyond `use crate::i18n::fl;`.
 macro_rules! fl {
     ($message_id:literal $(, $($arguments:tt)*)?) => {

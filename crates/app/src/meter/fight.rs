@@ -1,5 +1,4 @@
-//! When the fight summary goes up and comes down. Ported from `trackFight`
-//! and `maybeShowSummary` in the Tauri overlay (`overlay/meter/main.js`).
+//! When the fight summary goes up and comes down.
 //!
 //! A kill is final. A boss fight that has gone quiet is provisional, because
 //! the boss may only be between phases: if the fight resumes the summary comes

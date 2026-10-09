@@ -1,6 +1,5 @@
 //! The fight history as the window lists it: records newest first, filtered by
-//! target and by main player. Rules ported from `overlay/history/main.js` of
-//! the Tauri app.
+//! target and by main player.
 
 use std::borrow::Cow;
 use std::collections::HashMap;

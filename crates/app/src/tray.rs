@@ -37,7 +37,7 @@ pub enum TrayAction {
     Quit,
 }
 
-const CLASS_NAME: PCWSTR = w!("AION2DpsMeterTray");
+const CLASS_NAME: PCWSTR = w!("BeliskTray");
 const NOTIFICATION: u32 = WM_APP + 1;
 const ICON_ID: u32 = 1;
 /// `NIN_SELECT` with the key flag: Enter or Space on the focused icon.
@@ -202,7 +202,7 @@ unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
         }
         message if message == state.taskbar_created => {
             if let Err(error) = add_icon(hwnd, state) {
-                eprintln!("cannot bring the tray icon back after Explorer restarted: {error}");
+                crate::app_log::warn(format!("cannot bring the tray icon back after Explorer restarted: {error}"));
             }
             LRESULT(0)
         }
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn the_tooltip_is_the_product_name() {
-        assert_eq!(fl!("tray-tooltip"), "AION 2 DPS Meter");
+        assert_eq!(fl!("tray-tooltip"), "Belisk");
     }
 
     #[test]

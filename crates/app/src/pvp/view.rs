@@ -91,7 +91,7 @@ impl PvpView {
                 }
             }),
         ];
-        let hwnd = overlay::hwnd(window).map_err(|error| eprintln!("cannot edit the watch list: {error}")).ok();
+        let hwnd = overlay::hwnd(window).map_err(|error| crate::app_log::warn(format!("cannot edit the watch list: {error}"))).ok();
         // Closing the window or quitting mid-edit still gives focus back.
         cx.on_release(|this, _| this.release_focus()).detach();
         cx.on_app_quit(|this, _| {
@@ -147,7 +147,7 @@ impl PvpView {
             }
             let taken = typing::begin(hwnd);
             if let Err(error) = &taken {
-                eprintln!("{error}");
+                crate::app_log::warn(error.to_string());
             }
             let going_on = this
                 .update_in(cx, |this, window, cx| {
@@ -234,7 +234,7 @@ impl Render for PvpView {
             model.watch().is_empty() && model.stats().is_empty() && model.dealt().is_empty() && model.received().is_empty();
         let note_shown = nothing_yet || self.show_info;
 
-        let info = chrome::tool_button("info", Icon::Info, self.show_info, s)
+        let info = chrome::tool_button("info", Icon::Info, fl!("pvp-about-capture"), self.show_info, s)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.show_info = !this.show_info;
                 cx.notify();
@@ -251,7 +251,7 @@ impl Render for PvpView {
             .child(div().flex_1())
             .when(!self.edit.is_editing(), |head| {
                 head.child(
-                    chrome::tool_button("add", Icon::Plus, false, s)
+                    chrome::tool_button("add", Icon::Plus, fl!("pvp-add-placeholder"), false, s)
                         .on_click(cx.listener(|this, _, window, cx| this.start_editing(window, cx))),
                 )
             });
@@ -313,7 +313,7 @@ impl PvpView {
     }
 
     fn add_field(&self, s: Scale, cx: &Context<Self>) -> impl IntoElement {
-        let add = chrome::tool_button("add-field", Icon::Plus, self.edit.is_editing(), s);
+        let add = chrome::tool_button("add-field", Icon::Plus, fl!("pvp-add-placeholder"), self.edit.is_editing(), s);
         let field = chrome::input_box(self.edit.is_editing(), s).relative().child(self.field.marker());
         let field: AnyElement = if self.edit.is_editing() {
             field
@@ -372,7 +372,7 @@ impl PvpView {
         let server = (settings.show_server && !row.server.is_empty()).then(|| SharedString::from(row.server.clone()));
         let action: AnyElement = if row.removable() {
             let query = row.query_name.clone();
-            chrome::row_button(SharedString::from(format!("remove-{}", row.query_name)), Icon::Close, s)
+            chrome::row_button(SharedString::from(format!("remove-{}", row.query_name)), Icon::Close, fl!("pvp-stop-watching", name = name.as_str()), s)
                 .on_click(cx.listener(move |this, _, _, cx| this.model.update(cx, |model, cx| model.remove_name(&query, cx))))
                 .into_any_element()
         } else {
@@ -563,15 +563,9 @@ impl PvpView {
             let colour = row.class.map(|class| meter.player_colour(class, row.actor_id, &row.name));
             let server = (settings.show_server && !row.server.is_empty()).then(|| SharedString::from(row.server.clone()));
             let name = if row.named { settings.display_name(&row.name) } else { row.name.clone() };
-            let content = chrome::bar_content(row.class.is_none(), s)
-                .when_some(row.class, |content, class| content.child(chrome::class_icon(class, 16., s)))
-                .child(chrome::name(name, server, FontWeight::MEDIUM, s))
-                .child(chrome::strong(format::compact(row.damage as f64), s));
-            let player = row.clone();
-            let meter_model = meter_model.clone();
             let watch: AnyElement = if row.named {
                 let watched = row.name.clone();
-                chrome::row_button(SharedString::from(format!("watch-{prefix}-{}", row.actor_id)), Icon::Eye, s)
+                chrome::row_button(SharedString::from(format!("watch-{prefix}-{}", row.actor_id)), Icon::Eye, fl!("pvp-watch-player", name = name.as_str()), s)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.model.update(cx, |model, cx| model.add_name(&watched, cx));
@@ -580,6 +574,12 @@ impl PvpView {
             } else {
                 div().flex_none().w(s.px(20.)).into_any_element()
             };
+            let content = chrome::bar_content(row.class.is_none(), s)
+                .when_some(row.class, |content, class| content.child(chrome::class_icon(class, 16., s)))
+                .child(chrome::name(name, server, FontWeight::MEDIUM, s))
+                .child(chrome::strong(format::compact(row.damage as f64), s));
+            let player = row.clone();
+            let meter_model = meter_model.clone();
             chrome::row(s)
                 .id(SharedString::from(format!("{prefix}-{}", row.actor_id)))
                 .cursor_pointer()

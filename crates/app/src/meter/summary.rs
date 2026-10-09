@@ -1,6 +1,5 @@
 //! The fight summary card: how the fight went, where you placed, what did the
-//! damage, and how it stands against your best. Ported from `showSummary` in
-//! `overlay/meter/main.js`.
+//! damage, and how it stands against your best.
 
 use meter_core::models::combat::{CombatSnapshot, PlayerOverviewStat, TargetInfo};
 use gpui::SharedString;
@@ -276,7 +275,7 @@ fn copy_text(facts: &CopyFacts) -> String {
         Some(you) => {
             let name = if you.player.actor_name.is_empty() { fl!("common-you") } else { you.player.actor_name.clone() };
             let mut line = vec![
-                format!("{name} {}/s", format::grouped(you.player.dps)),
+                fl!("meter-copy-you-dps", name = name, dps = format::grouped(you.player.dps)),
                 fl!("meter-copy-rank", rank = you.rank, total = facts.ranked.len()),
                 you.share.to_string(),
             ];
@@ -324,7 +323,7 @@ fn copy_text(facts: &CopyFacts) -> String {
             .collect();
         lines.push(fl!("meter-copy-party-list", players = party.join(" · ")));
     }
-    lines.push("— AION 2 DPS Meter".to_string());
+    lines.push(fl!("meter-copy-sign-off"));
     lines.join("\n")
 }
 

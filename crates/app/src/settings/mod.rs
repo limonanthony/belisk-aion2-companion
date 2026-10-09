@@ -15,9 +15,11 @@ mod view;
 mod widgets;
 
 pub use effects::connect;
-pub use model::{global, install, remember_characters, toggle_layout, AppSettings, DetailPlacement, ScreenPoint, Settings};
+pub use model::{
+    global, install, mark_version_seen, remember_characters, toggle_layout, AppSettings, DetailPlacement, ScreenPoint, Settings,
+};
 pub use runtime::RuntimeModel;
-pub use view::{bring_forward, open_window, Section, SettingsView};
+pub use view::{bring_forward, open_window, Page, Section, SettingsView};
 pub use widgets::{reveal_marker, Reveal};
 #[cfg(feature = "probes")]
 pub use files::StorageSummary;

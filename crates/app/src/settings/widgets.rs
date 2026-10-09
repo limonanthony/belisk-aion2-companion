@@ -40,16 +40,23 @@ const HOVER: u32 = 0xfff0e11c;
 const PRESSED: u32 = 0xfff0e12b;
 const DANGER_FILL: u32 = 0xf7a8a826;
 const DANGER_HOVER: u32 = 0xf7a8a838;
+/// The one bright button of a view: cream, a shade quieter under the pointer
+/// and pressed.
+const PRIMARY_HOVER: u32 = 0xf3ebe1e6;
+const PRIMARY_PRESSED: u32 = 0xf3ebe1c2;
 const SWITCH_OFF: u32 = 0xfff0e129;
 const SWITCH_OFF_HOVER: u32 = 0xfff0e138;
 const SLIDER_TRACK: u32 = 0xfff0e124;
 const SLIDER_RANGE: u32 = 0xf3ebe1d9;
+const PROGRESS_WIDTH: f32 = 300.;
 const SEGMENT_TRACK: u32 = 0x00000052;
 const SELECT_FILL: u32 = 0x0000004d;
 const OPEN_BORDER: u32 = 0xfff6ec8c;
 const SCROLL_THUMB: u32 = 0xfff0e138;
 const KBD_FILL: u32 = 0xfff0e10f;
 const KBD_BORDER: u32 = 0xfff0e129;
+/// A list row under the pointer (tokens.md, "Settings › About › Changelog").
+const ROW_HOVER: u32 = 0xfff0e10a;
 /// Not in tokens.md: the mockups show no keyboard focus. Cream, as the open
 /// select's border, but solid enough to stand out on every surface.
 const FOCUS_RING: u32 = 0xf3ebe1e6;
@@ -331,6 +338,36 @@ pub fn list_row(glyph: Option<Icon>, title: impl Into<SharedString>, line: impl 
         )
 }
 
+/// A row that opens what it holds under it (tokens.md, expandable rows): a
+/// button holding `content`, its chevron at the row's end, lit under the
+/// pointer. The caller keeps one row open at a time.
+pub fn expandable_row(
+    id: impl Into<SharedString>,
+    label: impl Into<SharedString>,
+    open: bool,
+    focus: &Focus,
+    content: Vec<AnyElement>,
+) -> Stateful<Div> {
+    let id: SharedString = id.into();
+    let element = div()
+        .id(ElementId::Name(id.clone()))
+        .debug_selector(|| id.to_string())
+        .role(Role::Button)
+        .aria_label(label.into())
+        .aria_expanded(open)
+        .flex()
+        .items_center()
+        .gap(px(12.))
+        .min_h(px(46.))
+        .py(px(8.))
+        .px(px(16.))
+        .cursor_pointer()
+        .hover(|style| style.bg(rgba(ROW_HOVER)))
+        .children(content)
+        .child(icon(if open { Icon::ChevronDown } else { Icon::ChevronRight }, 14., rgba(FAINT)));
+    focusable(element, focus, 0.)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tone {
     Neutral,
@@ -499,6 +536,7 @@ pub fn dialog_shadow() -> Vec<BoxShadow> {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ButtonKind {
+    Primary,
     Secondary,
     Ghost,
     Danger,
@@ -515,12 +553,39 @@ pub fn button(
     focus: &Focus,
     on_press: Option<Handler<()>>,
 ) -> AnyElement {
-    let id: SharedString = id.into();
-    let label: SharedString = label.into();
-    let (fill, hover, border, colour): (Hsla, Hsla, Hsla, Hsla) = match kind {
-        ButtonKind::Secondary => (rgba(SOFT).into(), rgba(HOVER).into(), rgba(LINE_STRONG).into(), rgba(TEXT).into()),
-        ButtonKind::Ghost => (gpui::transparent_black(), rgba(SOFT).into(), gpui::transparent_black(), rgba(MUTED).into()),
-        ButtonKind::Danger => (rgba(DANGER_FILL).into(), rgba(DANGER_HOVER).into(), gpui::transparent_black(), rgb(BAD).into()),
+    button_of(id.into(), label.into(), glyph, None, kind, small, focus, on_press)
+}
+
+/// The secondary button that opens a page of its own, a chevron after its
+/// label.
+pub fn page_button(id: impl Into<SharedString>, label: impl Into<SharedString>, focus: &Focus, on_press: Handler<()>) -> AnyElement {
+    button_of(id.into(), label.into(), None, Some(Icon::ChevronRight), ButtonKind::Secondary, false, focus, Some(on_press))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn button_of(
+    id: SharedString,
+    label: SharedString,
+    glyph: Option<Icon>,
+    trailing: Option<Icon>,
+    kind: ButtonKind,
+    small: bool,
+    focus: &Focus,
+    on_press: Option<Handler<()>>,
+) -> AnyElement {
+    let (fill, hover, pressed, border, colour): (Hsla, Hsla, Hsla, Hsla, Hsla) = match kind {
+        ButtonKind::Primary => {
+            (rgb(CREAM).into(), rgba(PRIMARY_HOVER).into(), rgba(PRIMARY_PRESSED).into(), gpui::transparent_black(), rgb(INK).into())
+        }
+        ButtonKind::Secondary => {
+            (rgba(SOFT).into(), rgba(HOVER).into(), rgba(PRESSED).into(), rgba(LINE_STRONG).into(), rgba(TEXT).into())
+        }
+        ButtonKind::Ghost => {
+            (gpui::transparent_black(), rgba(SOFT).into(), rgba(PRESSED).into(), gpui::transparent_black(), rgba(MUTED).into())
+        }
+        ButtonKind::Danger => {
+            (rgba(DANGER_FILL).into(), rgba(DANGER_HOVER).into(), rgba(PRESSED).into(), gpui::transparent_black(), rgb(BAD).into())
+        }
     };
     let element = div()
         .id(ElementId::Name(id.clone()))
@@ -543,12 +608,13 @@ pub fn button(
         .font_weight(FontWeight::SEMIBOLD)
         .whitespace_nowrap()
         .children(glyph.map(|glyph| icon(glyph, 14., colour)))
-        .when(!label.is_empty(), |button| button.child(label));
+        .when(!label.is_empty(), |button| button.child(label))
+        .children(trailing.map(|glyph| icon(glyph, 14., colour)));
     match on_press {
         Some(on_press) => focusable(element, focus, 7.)
             .cursor_pointer()
             .hover(move |style| style.bg(hover))
-            .active(|style| style.bg(rgba(PRESSED)))
+            .active(move |style| style.bg(pressed))
             .on_click(move |_, window, cx| on_press((), window, cx))
             .into_any_element(),
         None => Disabled(element.opacity(0.45)).into_any_element(),
@@ -592,6 +658,29 @@ pub fn switch(
             .into_any_element(),
         None => Disabled(element.opacity(0.45)).into_any_element(),
     }
+}
+
+/// A download's progress under a row's sentence: the slider's 4 px track and
+/// cream range, 300 px; paused, the range dims.
+pub fn progress_bar(id: &'static str, label: impl Into<SharedString>, fraction: f32, paused: bool) -> AnyElement {
+    let fraction = fraction.clamp(0., 1.);
+    div()
+        .id(id)
+        .debug_selector(|| id.to_string())
+        .role(Role::ProgressIndicator)
+        .aria_label(label.into())
+        .aria_min_numeric_value(0.)
+        .aria_max_numeric_value(100.)
+        .aria_numeric_value(f64::from(fraction) * 100.)
+        .mt(px(7.))
+        .mb(px(5.))
+        .w(px(PROGRESS_WIDTH))
+        .h(px(4.))
+        .rounded_full()
+        .overflow_hidden()
+        .bg(rgba(SLIDER_TRACK))
+        .child(div().h_full().w(relative(fraction)).rounded_full().bg(rgba(SLIDER_RANGE)).when(paused, |range| range.opacity(0.45)))
+        .into_any_element()
 }
 
 /// A control that cannot be used now, announced as unavailable: GPUI's
