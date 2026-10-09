@@ -1,7 +1,8 @@
 //! What the player detail window shows, worked out from a live snapshot or a
-//! history record. Rules ported from `overlay/detail/main.js` of the Tauri app.
+//! history record.
 
 use std::borrow::Cow;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -18,7 +19,7 @@ use crate::meter::OverlaySettings;
 #[derive(Clone, Debug)]
 pub enum DetailSource {
     /// A player's skills on one target. `target_id: None` follows the target
-    /// you hit last, as Aether did.
+    /// you hit last.
     Target { actor_id: u32, target_id: Option<u32> },
     /// A player's skills across every mob since the last reset, the Session
     /// board's view of them.
@@ -413,32 +414,49 @@ fn skill_row(code: u32, stats: &SkillStats, actor: Option<&ActorInfo>) -> SkillR
     }
 }
 
-/// Active buffs first, then the ones that were up the longest.
+/// One row per buff name and caster, active buffs first, then the ones that
+/// were up the longest. Two skill ids that show the same name and icon are
+/// one buff to the player. The core already joins them in live snapshots and
+/// fights recorded since; a record saved before keeps one coverage per skill
+/// id and no intervals, so a merged row takes the longest coverage: the true
+/// union lies between that and the sum.
 fn buff_rows(
     buffs: Option<&Vec<BuffSummary>>,
     actor_infos: &HashMap<u32, ActorInfo>,
     settings: &OverlaySettings,
 ) -> Vec<BuffRow> {
-    let mut rows: Vec<BuffRow> = buffs
-        .into_iter()
-        .flatten()
-        .map(|buff| {
-            let caster = actor_infos.get(&buff.actor_id);
-            BuffRow {
-                code: buff.skill_code,
-                name: game_data::skill_name(buff.skill_code),
-                icon: game_data::skill_icon(buff.skill_code),
-                caster: caster
-                    .and_then(|caster| caster.actor_name.as_deref())
-                    .filter(|name| !name.is_empty())
-                    .map_or_else(|| format!("#{}", buff.actor_id), |name| settings.display_name(name)),
-                caster_id: buff.actor_id,
-                caster_class: caster.and_then(|caster| caster.actor_class.as_deref()).and_then(PlayerClass::parse),
-                coverage: buff.coverage.clamp(0.0, 1.0),
-                active: buff.active,
+    let mut rows: Vec<BuffRow> = Vec::new();
+    let mut row_of_buff: HashMap<(String, Option<String>, u32), usize> = HashMap::new();
+    for buff in buffs.into_iter().flatten() {
+        let caster = actor_infos.get(&buff.actor_id);
+        let row = BuffRow {
+            code: buff.skill_code,
+            name: game_data::skill_name(buff.skill_code),
+            icon: game_data::skill_icon(buff.skill_code),
+            caster: caster
+                .and_then(|caster| caster.actor_name.as_deref())
+                .filter(|name| !name.is_empty())
+                .map_or_else(|| format!("#{}", buff.actor_id), |name| settings.display_name(name)),
+            caster_id: buff.actor_id,
+            caster_class: caster.and_then(|caster| caster.actor_class.as_deref()).and_then(PlayerClass::parse),
+            coverage: buff.coverage.clamp(0.0, 1.0),
+            active: buff.active,
+        };
+        match row_of_buff.entry((row.name.clone(), row.icon.clone(), row.caster_id)) {
+            Entry::Occupied(seen) => {
+                let merged = &mut rows[*seen.get()];
+                merged.active |= row.active;
+                if row.coverage > merged.coverage {
+                    merged.code = row.code;
+                    merged.coverage = row.coverage;
+                }
             }
-        })
-        .collect();
+            Entry::Vacant(slot) => {
+                slot.insert(rows.len());
+                rows.push(row);
+            }
+        }
+    }
     rows.sort_by(|a, b| b.active.cmp(&a.active).then(b.coverage.total_cmp(&a.coverage)));
     rows
 }
@@ -511,7 +529,7 @@ mod tests {
                 (
                     ME,
                     vec![
-                        BuffSummary { target_id: ME, actor_id: 8, skill_code: 100_002, coverage: 0.4, active: false, last_start_ms: 0, last_end_ms: 0 },
+                        BuffSummary { target_id: ME, actor_id: 8, skill_code: 167_800_011, coverage: 0.4, active: false, last_start_ms: 0, last_end_ms: 0 },
                         BuffSummary { target_id: ME, actor_id: 8, skill_code: 100_001, coverage: 0.2, active: true, last_start_ms: 0, last_end_ms: 0 },
                     ],
                 ),
@@ -656,10 +674,39 @@ mod tests {
     fn buffs_list_the_active_first_then_the_longest_up_with_coverage_capped() {
         let detail = build(DetailSource::Target { actor_id: ME, target_id: Some(BOSS) }, &snapshot());
 
-        assert_eq!(detail.player_buffs.iter().map(|buff| buff.code).collect::<Vec<_>>(), vec![100_001, 100_002]);
+        assert_eq!(detail.player_buffs.iter().map(|buff| buff.code).collect::<Vec<_>>(), vec![100_001, 167_800_011]);
         assert_eq!(detail.player_buffs[0].caster, "Ilyrae");
         assert_eq!(detail.player_buffs[0].caster_class, Some(PlayerClass::Chanter));
         assert_eq!(detail.target_buffs[0].coverage, 1.0);
+    }
+
+    #[test]
+    fn two_skill_ids_with_one_name_from_one_caster_are_one_buff_row() {
+        let summary = |actor_id: u32, skill_code: u32, coverage: f64, active: bool| BuffSummary {
+            target_id: ME,
+            actor_id,
+            skill_code,
+            coverage,
+            active,
+            last_start_ms: 0,
+            last_end_ms: 0,
+        };
+        let mut snapshot = snapshot();
+        snapshot.use_buffs_by_target.insert(
+            ME,
+            vec![
+                summary(8, 167_300_011, 0.3, false),
+                summary(8, 167_300_012, 0.5, true),
+                summary(9, 167_300_011, 0.2, false),
+            ],
+        );
+
+        let detail = build(DetailSource::Target { actor_id: ME, target_id: Some(BOSS) }, &snapshot);
+
+        let rows: Vec<(u32, u32, f64, bool)> =
+            detail.player_buffs.iter().map(|buff| (buff.caster_id, buff.code, buff.coverage, buff.active)).collect();
+        assert_eq!(rows, [(8, 167_300_012, 0.5, true), (9, 167_300_011, 0.2, false)]);
+        assert_eq!(detail.player_buffs[0].name, game_data::skill_name(167_300_011));
     }
 
     #[test]

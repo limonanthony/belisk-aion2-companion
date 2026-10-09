@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::calculator::covered_duration_ms;
+use crate::engine::buff_groups::group_by_name;
 use crate::models::combat::{BuffInterval, TargetInfo};
 use crate::report::events::{CombatEvents, Heal, HealKind, Killer};
 
@@ -291,13 +291,13 @@ pub(crate) fn build_ledger(sources: &LedgerSources) -> FightLedger {
             continue;
         }
         for (&caster_id, skills) in casters {
-            for (&skill_code, intervals) in skills {
-                let uptime_ms = covered_duration_ms(intervals, from_ms, to_ms);
+            for group in group_by_name(skills, from_ms, to_ms) {
+                let uptime_ms = group.covered_ms(from_ms, to_ms);
                 if uptime_ms > 0 {
                     buffs.push(BuffUptime {
                         target_id: buffed,
                         caster_id,
-                        skill_code,
+                        skill_code: group.skill_code,
                         uptime_ms,
                     });
                 }
@@ -670,6 +670,41 @@ mod tests {
                 skill_code: 18_000_000,
                 uptime_ms: 30_000
             }]
+        );
+    }
+
+    #[test]
+    fn skill_ids_with_one_name_are_one_buff_whose_uptime_is_the_union_per_caster() {
+        let interval = |from_secs: u64, to_secs: u64| BuffInterval {
+            start_ms: from_secs * 1000,
+            end_ms: to_secs * 1000,
+        };
+        let spirits_descent_short = 167_300_011;
+        let spirits_descent_long = 167_300_012;
+        let mut fixture = Fixture::new();
+        fixture.buffs.insert(
+            TANK,
+            HashMap::from([
+                (
+                    CLERIC,
+                    HashMap::from([
+                        (spirits_descent_short, VecDeque::from([interval(100, 110), interval(130, 140)])),
+                        (spirits_descent_long, VecDeque::from([interval(105, 135)])),
+                    ]),
+                ),
+                (TANK, HashMap::from([(spirits_descent_short, VecDeque::from([interval(100, 110)]))])),
+            ]),
+        );
+
+        let ledger = fixture.ledger(&[TANK], &CombatEvents::default());
+
+        assert_eq!(
+            ledger.buffs,
+            [
+                BuffUptime { target_id: TANK, caster_id: CLERIC, skill_code: spirits_descent_long, uptime_ms: 40_000 },
+                BuffUptime { target_id: TANK, caster_id: TANK, skill_code: spirits_descent_short, uptime_ms: 10_000 },
+            ],
+            "0-40 s once (not the 30 s longest, not the 50 s sum); the other caster stays apart"
         );
     }
 

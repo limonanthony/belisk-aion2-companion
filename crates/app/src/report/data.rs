@@ -3,6 +3,7 @@
 //! game never named left out when Settings hides them (as History does), and
 //! one player's details.
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use meter_core::report::fight_report::{
@@ -195,8 +196,8 @@ impl ReportData {
             combat_power: player.combat_power.filter(|power| *power > 0),
             hit_types: player.hit_types,
             skills: skill_lines(player),
-            buffs_on_player: by_uptime(player.buffs.iter().map(caster).collect()),
-            buffs_on_boss: by_uptime(report.boss_buffs.iter().map(caster).collect()),
+            buffs_on_player: by_uptime(merged_buff_lines(&player.buffs, caster)),
+            buffs_on_boss: by_uptime(merged_buff_lines(&report.boss_buffs, caster)),
             heals: player.heals.as_ref().map(|heals| {
                 let total: u64 = heals.iter().map(|heal| heal.amount).sum();
                 heals
@@ -432,6 +433,36 @@ fn skill_line(skill: &SkillReport, total: u64) -> SkillLine {
         average: skill.average_damage(),
         multi_damage: skill.multi_hit_damage,
     }
+}
+
+/// One line per buff name and caster: two skill ids that show the same name
+/// and icon are one buff to the player. The core already joins them in fights
+/// recorded since; a fight saved before keeps one uptime per skill id and no
+/// intervals, so a merged line takes the longest of them: the true union lies
+/// between that and the sum.
+fn merged_buff_lines(buffs: &[BuffReport], line_of: impl Fn(&BuffReport) -> BuffLine) -> Vec<BuffLine> {
+    let mut lines: Vec<BuffLine> = Vec::with_capacity(buffs.len());
+    let mut line_of_buff: HashMap<(String, Option<String>, u32), usize> = HashMap::new();
+    for buff in buffs {
+        let line = line_of(buff);
+        match line_of_buff.entry((line.name.clone(), line.icon.clone(), buff.caster_id)) {
+            Entry::Occupied(seen) => {
+                let merged = &mut lines[*seen.get()];
+                if line.uptime_secs > merged.uptime_secs {
+                    merged.code = line.code;
+                    merged.uptime_secs = line.uptime_secs;
+                }
+                if line.share > merged.share {
+                    merged.share = line.share;
+                }
+            }
+            Entry::Vacant(slot) => {
+                slot.insert(lines.len());
+                lines.push(line);
+            }
+        }
+    }
+    lines
 }
 
 fn by_uptime(mut buffs: Vec<BuffLine>) -> Vec<BuffLine> {

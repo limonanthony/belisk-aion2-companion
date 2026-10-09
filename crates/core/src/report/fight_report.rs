@@ -282,16 +282,6 @@ impl FightReport {
             .find(|player| player.actor_id == actor_id)
     }
 
-    /// The deaths of one player; `None` when deaths were not recorded.
-    pub fn deaths_of(&self, actor_id: u32) -> Option<Vec<&DeathReport>> {
-        self.deaths.as_ref().map(|deaths| {
-            deaths
-                .iter()
-                .filter(|death| death.actor_id == actor_id)
-                .collect()
-        })
-    }
-
     fn build(parts: &Parts) -> Self {
         let Parts {
             target,
@@ -828,8 +818,6 @@ mod tests {
             ("Saebrin", 42.5)
         );
         assert_eq!(deaths[0].last_hit.as_ref().unwrap().amount, 1_130);
-        assert_eq!(report.deaths_of(SAEBRIN).unwrap().len(), 1);
-        assert_eq!(report.deaths_of(YSMERA).unwrap().len(), 0);
     }
 
     #[test]

@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
 /// The key a skill-name table knows a skill under: the exact id first, then the
 /// forms the backend normalises skill ids to. A damage-over-time id is its skill
 /// id followed by two digits, so it is last tried with them cut off: that is how
@@ -29,6 +32,25 @@ pub fn resolve_skill_key(code: u32, is_named: impl Fn(&str) -> bool) -> String {
         .into_iter()
         .find(|candidate| is_named(candidate))
         .unwrap_or_else(|| head(8).to_string())
+}
+
+/// The bundled English skill names by key, the table `resolve_skill_key` reads.
+pub fn english_names() -> &'static HashMap<String, String> {
+    static NAMES: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+        serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../app/assets/game/data/skill_names_en.json"
+        )))
+        .expect("bundled skill_names_en.json is valid")
+    });
+    &NAMES
+}
+
+/// The English name of a skill id, `None` when the table has no key for it.
+pub fn english_name(code: u32) -> Option<&'static str> {
+    let names = english_names();
+    let key = resolve_skill_key(code, |key| names.contains_key(key));
+    names.get(&key).map(String::as_str)
 }
 
 #[cfg(test)]
@@ -70,5 +92,18 @@ mod tests {
     #[test]
     fn an_id_no_form_names_falls_back_to_its_first_eight_digits() {
         assert_eq!(key(160_467_011, &[]), "16046701");
+    }
+
+    #[test]
+    fn ids_of_one_skill_reach_one_english_name_through_their_different_keys() {
+        assert_eq!(english_name(167_800_011), Some("Element Unification"));
+        assert_eq!(english_name(167_800_021), Some("Element Unification"));
+        assert_eq!(english_name(167_300_012), Some("Spirit's Descent"));
+        assert_eq!(english_name(22_101_051), Some("Courage Scroll"));
+    }
+
+    #[test]
+    fn an_id_the_table_does_not_name_has_no_english_name() {
+        assert_eq!(english_name(999_999_001), None);
     }
 }

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use serde::Serialize;
@@ -9,6 +9,7 @@ use std::sync::Arc;
 use crate::config::{SharedDpsMeterConfig, TRAINING_DUMMY_MOB_CODE};
 use crate::events::{EventSink, MeterEvent};
 use crate::identity::{character_of_class, IdentityDecision, KnownCharacter};
+use crate::capture::parser::damage::displayed_skill_code;
 use crate::capture::parser::ticket_record::{TicketReason, TicketRecord};
 use crate::models::combat::{
     BuffInterval, BuffSummary, PlayerHpInfo, PvpCombatStats, PvpCombatStatsRow, PvpKnownPlayer,
@@ -196,14 +197,13 @@ struct DataStorageInner {
     /// target's damage totals are forgotten.
     entities_hit_by_players: HashSet<u32>,
     start_time: Option<f64>,
-    /// Last time the player running Aether was in the fight: hit something,
+    /// Last time the player running Belisk was in the fight: hit something,
     /// was hit, or their target took damage from the party. `None` until the
     /// first such hit after a reset. Drives the overlay's auto-hide and the
     /// idle reset, so fights nearby that you are not part of move neither.
     activity_at: Option<f64>,
     start_time_by_target: HashMap<u32, HashMap<u32, f64>>,
     last_time_by_target: HashMap<u32, HashMap<u32, f64>>,
-    dot_skill_list: Vec<u32>,
     main_actor_id: Option<u32>,
     /// Every actor id established as the local player's since the character
     /// was identified, oldest first: the game gives the character a new id in
@@ -260,7 +260,6 @@ impl Default for DataStorageInner {
             activity_at: None,
             start_time_by_target: HashMap::new(),
             last_time_by_target: HashMap::new(),
-            dot_skill_list: Vec::new(),
             main_actor_id: None,
             own_actor_ids: Vec::new(),
             main_actor_name: None,
@@ -295,8 +294,6 @@ pub struct DataStorage {
     /// Ties the game's ticket messages to the character named as the player.
     /// Kept apart from `inner`: a reset must not forget who the player is.
     tickets: Mutex<TicketBinder>,
-    /// Counts what the Boss only filter threw away, so the UI can say so.
-    boss_only_filtered: AtomicU64,
     /// Whether fights are being counted: damage, heals, damage taken, deaths
     /// and buff uptime. Off until the host turns it on, so a meter that starts
     /// with its window closed never counts a fight. Kept apart from `inner`:
@@ -345,6 +342,77 @@ fn owned_by_mob_code(inner: &DataStorageInner, source_id: u32) -> Option<u32> {
     inner.mob_id_code_map.get(&top_owner).copied()
 }
 
+/// The key a damage record's skill row is kept under. An 8-digit skill is a
+/// regular skill, so its normalised code is used. A damage-over-time tick
+/// carries a 10-digit effect id (the skill's code followed by two digits) and
+/// folds into the row of the skill that applied it. Any other longer id keeps
+/// its own row.
+fn skill_stats_code(packet: &ParsedDamagePacket) -> u32 {
+    let mut code = if packet.is_dot && packet.ori_skill_code >= 1_000_000_000 {
+        displayed_skill_code(packet.ori_skill_code / 100)
+    } else if (10_000_000..=99_999_999).contains(&packet.ori_skill_code) {
+        packet.skill_code
+    } else {
+        packet.ori_skill_code
+    };
+    // Fighter's rage variants are folded back onto the base skill.
+    if let Some((_, mapped_skill_code)) = FIGHTER_SKILLID_MAP
+        .iter()
+        .find(|(from_skill_code, _)| *from_skill_code == code)
+    {
+        code = *mapped_skill_code;
+    }
+    // Elementalist summon basic attacks collapse onto one code.
+    if (100_010..=100_059).contains(&code) && (10001..=10005).contains(&(code / 10)) {
+        code = (code / 10) * 10;
+    }
+    code
+}
+
+fn hit_special_counts(packet: &ParsedDamagePacket) -> HashMap<String, u32> {
+    let mut special_counts = HashMap::new();
+    for special in &packet.specials {
+        *special_counts.entry(special.clone()).or_insert(0) += 1;
+    }
+    if packet.multi_hit_count > 0 {
+        special_counts.insert("MULTIHIT".to_string(), 1);
+        special_counts.insert(format!("MULTIHIT{}", packet.multi_hit_count), 1);
+    } else {
+        special_counts.insert("MULTIHIT".to_string(), 0);
+    }
+    special_counts.insert("MULTIHITDMG".to_string(), packet.multi_hit_damage as u32);
+    special_counts
+}
+
+fn record_drain_and_regeneration(
+    inner: &mut DataStorageInner,
+    packet: &ParsedDamagePacket,
+    actor_id: u32,
+    skill_code: u32,
+    at: f64,
+) {
+    if inner.mob_id_code_map.contains_key(&packet.actor_id) {
+        return;
+    }
+    for (kind, amount) in [
+        (HealKind::Drain, packet.drain_amount),
+        (HealKind::Regeneration, packet.regeneration_amount),
+    ] {
+        record_heal(
+            inner,
+            Heal {
+                at,
+                healer_id: actor_id,
+                target_id: actor_id,
+                skill_code,
+                kind,
+                amount,
+                critical: false,
+            },
+        );
+    }
+}
+
 impl DataStorage {
     pub fn new(
         events: Arc<dyn EventSink>,
@@ -360,13 +428,11 @@ impl DataStorage {
             main_actor_callback: Mutex::new(None),
             known_characters: RwLock::new(Vec::new()),
             tickets: Mutex::new(TicketBinder::default()),
-            boss_only_filtered: AtomicU64::new(0),
             fight_tracking: AtomicBool::new(false),
         }
     }
 
     pub fn clear(&self) {
-        self.boss_only_filtered.store(0, Ordering::Relaxed);
         let mut inner = self.inner.write().unwrap();
         let main_actor_id = inner.main_actor_id;
         let own_actor_ids = std::mem::take(&mut inner.own_actor_ids);
@@ -387,8 +453,6 @@ impl DataStorage {
         let pvp_last_attacker_by_target = inner.pvp_last_attacker_by_target.clone();
         let pvp_combat_stats = inner.pvp_combat_stats.clone();
         let pvp_dead_players = inner.pvp_dead_players.clone();
-        // let summon_owner_map = inner.summon_owner_map.clone();
-        let dot_skill_list = inner.dot_skill_list.clone();
 
         *inner = DataStorageInner::default();
         inner.main_actor_id = main_actor_id;
@@ -410,13 +474,6 @@ impl DataStorage {
         inner.pvp_last_attacker_by_target = pvp_last_attacker_by_target;
         inner.pvp_combat_stats = pvp_combat_stats;
         inner.pvp_dead_players = pvp_dead_players;
-        // inner.summon_owner_map = summon_owner_map;
-        inner.dot_skill_list = dot_skill_list;
-    }
-
-    /// Hits thrown away by the Boss only filter since the last reset.
-    pub fn boss_only_filtered(&self) -> u64 {
-        self.boss_only_filtered.load(Ordering::Relaxed)
     }
 
     pub fn fight_tracking(&self) -> bool {
@@ -588,7 +645,6 @@ impl DataStorage {
             return;
         }
 
-        // let actor_id = packet.actor_id;
         // A summon's damage is attributed to whoever summoned it.
         let mut actor_id = packet.actor_id;
         if let Some(owner_id) = inner.summon_owner_map.get(&actor_id) {
@@ -598,7 +654,9 @@ impl DataStorage {
             return;
         }
 
-        if packet.target_id != actor_id && inner.mob_id_code_map.contains_key(&packet.target_id) && !inner.mob_id_code_map.contains_key(&actor_id) {
+        let targets_own_side = owner_chain_end(&inner, packet.target_id) == owner_chain_end(&inner, packet.actor_id);
+
+        if !targets_own_side && inner.mob_id_code_map.contains_key(&packet.target_id) && !inner.mob_id_code_map.contains_key(&actor_id) {
             if inner.entities_hit_by_players.len() >= MOB_METADATA_CAPACITY {
                 inner.entities_hit_by_players.clear();
             }
@@ -611,7 +669,6 @@ impl DataStorage {
             && !inner.mob_id_code_map.contains_key(&packet.target_id);
 
         if config.boss_only && !is_target_boss && !(config.pvp_mode_on && is_target_player) {
-            self.boss_only_filtered.fetch_add(1, Ordering::Relaxed);
             return;
         }
 
@@ -619,6 +676,11 @@ impl DataStorage {
             && target_mob_code.is_some_and(|mob_code| TRAINING_DUMMY_MOB_CODE.contains(&mob_code))
             && inner.main_actor_id != Some(actor_id)
         {
+            return;
+        }
+
+        if targets_own_side {
+            record_drain_and_regeneration(&mut inner, &packet, actor_id, skill_stats_code(&packet), timestamp);
             return;
         }
 
@@ -638,10 +700,6 @@ impl DataStorage {
                         .insert(packet.target_id, actor);
                 }
             }
-        }
-
-        if packet.is_dot && !inner.dot_skill_list.contains(&packet.skill_code) {
-            inner.dot_skill_list.push(packet.skill_code);
         }
 
         let mut own_class_learned = false;
@@ -674,41 +732,8 @@ impl DataStorage {
             .or_default()
             .insert(actor_id, timestamp);
 
-        let mut special_counts = HashMap::new();
-        for special in &packet.specials {
-            *special_counts.entry(special.clone()).or_insert(0) += 1;
-        }
-        if packet.multi_hit_count > 0 {
-            special_counts.insert("MULTIHIT".to_string(), 1);
-            special_counts.insert(format!("MULTIHIT{}", packet.multi_hit_count), 1);
-        } else {
-            special_counts.insert("MULTIHIT".to_string(), 0);
-        }
-        special_counts.insert("MULTIHITDMG".to_string(), packet.multi_hit_damage as u32);
-
         let total_damage = packet.damage;
-
-        // An 8-digit skill id is a regular skill, so use the normalised code.
-        // Longer ids -- usually 10 digits -- are DoT skills, and keep their
-        // original code so the two stay distinguishable.
-        let mut stats_skill_code = if (10_000_000..=99_999_999).contains(&packet.ori_skill_code) {
-            packet.skill_code
-        } else {
-            packet.ori_skill_code
-        };
-        // Fighter's rage variants are folded back onto the base skill.
-        if let Some((_, mapped_skill_code)) = FIGHTER_SKILLID_MAP
-            .iter()
-            .find(|(from_skill_code, _)| *from_skill_code == stats_skill_code)
-        {
-            stats_skill_code = *mapped_skill_code;
-        }
-        // Elementalist summon basic attacks collapse onto one code.
-        if (100_010..=100_059).contains(&stats_skill_code)
-            && (10001..=10005).contains(&(stats_skill_code / 10))
-        {
-            stats_skill_code = (stats_skill_code / 10) * 10;
-        }
+        let stats_skill_code = skill_stats_code(&packet);
 
         let skill_stats = inner
             .dps_stats
@@ -718,45 +743,23 @@ impl DataStorage {
             .entry(stats_skill_code)
             .or_insert_with(SkillStats::new);
 
-        skill_stats.counts += 1;
         skill_stats.total_damage += total_damage;
-        skill_stats.max_damage = skill_stats.max_damage.max(total_damage);
-        skill_stats.min_damage = skill_stats.min_damage.min(total_damage);
-        for (special_name, count) in &special_counts {
-            *skill_stats
-                .special_counts
-                .entry(special_name.clone())
-                .or_insert(0) += count;
-        }
-
-        if !inner.mob_id_code_map.contains_key(&packet.actor_id) {
-            for (kind, amount) in [
-                (HealKind::Drain, packet.drain_amount),
-                (HealKind::Regeneration, packet.regeneration_amount),
-            ] {
-                record_heal(
-                    &mut inner,
-                    Heal {
-                        at: timestamp,
-                        healer_id: actor_id,
-                        target_id: actor_id,
-                        skill_code: stats_skill_code,
-                        kind,
-                        amount,
-                        critical: false,
-                    },
-                );
+        if !packet.is_dot {
+            skill_stats.counts += 1;
+            skill_stats.max_damage = skill_stats.max_damage.max(total_damage);
+            skill_stats.min_damage = skill_stats.min_damage.min(total_damage);
+            for (special_name, count) in hit_special_counts(&packet) {
+                *skill_stats.special_counts.entry(special_name).or_insert(0) += count;
             }
         }
 
-        let hit_on_own_summon = inner.summon_owner_map.get(&packet.target_id) == Some(&actor_id);
-        if actor_id != packet.target_id && !hit_on_own_summon {
-            inner.last_target = Some(packet.target_id);
-            if inner.main_actor_id == Some(actor_id) {
-                inner.last_target_by_main_actor = Some(packet.target_id);
-                if is_target_player {
-                    inner.last_player_target_by_main_actor = Some(packet.target_id);
-                }
+        record_drain_and_regeneration(&mut inner, &packet, actor_id, stats_skill_code, timestamp);
+
+        inner.last_target = Some(packet.target_id);
+        if inner.main_actor_id == Some(actor_id) {
+            inner.last_target_by_main_actor = Some(packet.target_id);
+            if is_target_player {
+                inner.last_player_target_by_main_actor = Some(packet.target_id);
             }
         }
 
@@ -927,11 +930,6 @@ impl DataStorage {
     }
 
     pub fn append_mob(&self, target_id: u32, mob_code: u32) {
-        // let config = self.config.read().unwrap().clone();
-        // let is_target_boss = self.boss_code_list.contains(&mob_code);
-        // if config.boss_only && !is_target_boss {
-        //     return;
-        // }
         let mut inner = self.inner.write().unwrap();
         if inner.mob_id_code_map.insert(target_id, mob_code) != Some(mob_code) {
             inner.entities_hit_by_players.remove(&target_id);
@@ -2237,6 +2235,90 @@ mod combat_event_tests {
         assert_eq!((heals[1].kind, heals[1].amount), (HealKind::Regeneration, 677));
         assert_eq!((heals[1].healer_id, heals[1].target_id, heals[1].skill_code), (PLAYER, PLAYER, 12_060_000));
         assert_eq!(storage.last_target(), Some(BOSS));
+    }
+
+    fn tick(actor_id: u32, target_id: u32, effect_id: u32, damage: u64) -> ParsedDamagePacket {
+        ParsedDamagePacket {
+            skill_code: effect_id - effect_id % 10_000,
+            ori_skill_code: effect_id,
+            is_dot: true,
+            ..hit(actor_id, target_id, 0, damage)
+        }
+    }
+
+    #[test]
+    fn a_damage_tick_adds_its_damage_to_the_base_skill_row_but_no_hit() {
+        let storage = storage();
+        let mut critical_hit = hit(PLAYER, BOSS, 16_140_000, 100);
+        critical_hit.specials = vec!["CRITICAL".to_string(), "FRONT".to_string()];
+
+        storage.append_damage_at(critical_hit, 10.0);
+        storage.append_damage_at(tick(PLAYER, BOSS, 1_614_000_011, 40), 11.0);
+        storage.append_damage_at(tick(PLAYER, BOSS, 1_614_000_011, 40), 12.0);
+
+        let stats = storage.get_dps_stats_snapshot();
+        let skills = &stats[&BOSS][&PLAYER];
+        assert_eq!(skills.keys().copied().collect::<Vec<_>>(), vec![16_140_000]);
+        let row = &skills[&16_140_000];
+        assert_eq!((row.counts, row.total_damage, row.min_damage, row.max_damage), (1, 180, 100, 100));
+        assert_eq!(row.special_counts["CRITICAL"], 1);
+        assert_eq!(row.special_counts["FRONT"], 1);
+        assert_eq!(row.special_counts["MULTIHIT"], 0);
+    }
+
+    #[test]
+    fn a_skill_with_ticks_only_has_a_row_with_damage_and_no_hits() {
+        let storage = storage();
+
+        storage.append_damage_at(tick(PLAYER, BOSS, 1_615_000_021, 220), 10.0);
+
+        let stats = storage.get_dps_stats_snapshot();
+        let row = &stats[&BOSS][&PLAYER][&16_150_000];
+        assert_eq!((row.counts, row.total_damage), (0, 220));
+        assert!(row.special_counts.is_empty());
+    }
+
+    #[test]
+    fn a_record_aimed_at_the_attackers_own_side_is_not_damage() {
+        let storage = storage();
+        storage.append_summon(PLAYER, SPIRIT);
+        storage.append_summon(PLAYER, SPIRIT_OF_SPIRIT);
+
+        storage.append_damage_at(hit(SPIRIT, SPIRIT, 16_990_000, 115_570), 10.0);
+        storage.append_damage_at(hit(SPIRIT, PLAYER, 16_990_000, 100), 10.0);
+        storage.append_damage_at(hit(PLAYER, SPIRIT, 16_990_000, 100), 10.0);
+        storage.append_damage_at(hit(SPIRIT, SPIRIT_OF_SPIRIT, 16_990_000, 100), 10.0);
+
+        assert!(storage.get_dps_stats_snapshot().is_empty());
+        assert_eq!(storage.last_target(), None);
+    }
+
+    #[test]
+    fn a_record_on_someone_elses_summon_is_still_damage() {
+        let storage = storage();
+        storage.append_summon(HEALER, SPIRIT);
+
+        storage.append_damage_at(hit(PLAYER, SPIRIT, 11_000_000, 100), 10.0);
+
+        assert_eq!(storage.get_dps_stats_snapshot()[&SPIRIT][&PLAYER][&11_000_000].total_damage, 100);
+    }
+
+    #[test]
+    fn a_self_target_record_carrying_a_heal_still_reaches_healing() {
+        let storage = storage();
+        storage.append_summon(PLAYER, SPIRIT);
+        let mut self_hit = hit(SPIRIT, SPIRIT, 16_990_000, 115_570);
+        self_hit.regeneration_amount = 677;
+
+        storage.append_damage_at(self_hit, 10.0);
+
+        let heals = storage.combat_events(0.0, 20.0).heals;
+        assert_eq!(heals.len(), 1);
+        assert_eq!(
+            (heals[0].kind, heals[0].amount, heals[0].healer_id, heals[0].target_id, heals[0].skill_code),
+            (HealKind::Regeneration, 677, PLAYER, PLAYER, 16_990_000)
+        );
+        assert!(storage.get_dps_stats_snapshot().is_empty());
     }
 
     #[test]
