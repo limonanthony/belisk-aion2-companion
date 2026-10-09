@@ -19,7 +19,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::capture::{self, MK_LBUTTON, SETTLE};
 use crate::capture_reminders::{self, shoot_together};
 use crate::capture_secondary::{close, pack, pause, post, window_hwnd};
-use crate::capture_todos::{identify, known, set_membership};
+use crate::capture_todos::{identify, known, set_membership, set_reset_ahead};
 use crate::clock::now_ms;
 use crate::fixtures;
 use crate::overlay::{self, off_screen};
@@ -84,13 +84,6 @@ fn tickets(changes: &[(u32, u32, u32)]) -> Vec<(u32, u32, u32)> {
         .collect()
 }
 
-/// Nothing full but Odyle Energy and Shugo keys' own state.
-fn calm(extra: &[(u32, u32, u32)]) -> Vec<(u32, u32, u32)> {
-    let mut changes = vec![(60_005_301, 2, 0), (60_006_301, 3, 0)];
-    changes.extend_from_slice(extra);
-    tickets(&changes)
-}
-
 fn window_rect(hwnd: HWND) -> Result<RECT> {
     let mut rect = RECT::default();
     unsafe { GetWindowRect(hwnd, &mut rect) }.map_err(|error| format!("GetWindowRect failed: {error}"))?;
@@ -121,7 +114,7 @@ pub async fn from_fixtures(dir: &Path, cx: &mut AsyncApp) -> Result<()> {
     let foreground_before = capture_reminders::foreground();
     identify("Mirelle", cx);
     set_membership(true, cx);
-    login(&calm(&[]), cx);
+    login(&tickets(&[]), cx);
     cx.update(toolbar::close_meter);
     view(cx, |view, cx| view.force_tip(None, cx))?;
     shot(dir, "toolbar-01-launch", cx).await?;
@@ -179,11 +172,15 @@ pub async fn from_fixtures(dir: &Path, cx: &mut AsyncApp) -> Result<()> {
     view(cx, |view, cx| view.force_tip(Some(Slot::Odyle), cx))?;
     shot(dir, "toolbar-05-odyle-tip", cx).await?;
 
-    login(&calm(&[(1, 21, 3)]), cx);
+    set_reset_ahead(5, cx);
+    login(&tickets(&[(1, 21, 3)]), cx);
     view(cx, |view, cx| view.force_tip(Some(Slot::Shugo), cx))?;
+    shot(dir, "toolbar-06a-shugo-full-calm", cx).await?;
+    set_reset_ahead(1, cx);
+    pause(cx, TICK).await;
     shot(dir, "toolbar-06-shugo-full", cx).await?;
 
-    login(&calm(&[(8, 7, 0), (4, 14, 0)]), cx);
+    login(&tickets(&[(8, 7, 0), (4, 14, 0)]), cx);
     view(cx, |view, cx| view.force_tip(Some(Slot::Warn), cx))?;
     shot(dir, "toolbar-07-warning", cx).await?;
     view(cx, |view, cx| view.force_dropdown(Some(Dropdown::Full), cx))?;
@@ -201,7 +198,7 @@ pub async fn from_fixtures(dir: &Path, cx: &mut AsyncApp) -> Result<()> {
     view(cx, |view, cx| view.force_tip(Some(Slot::Quit), cx))?;
     shot(dir, "toolbar-11-quit-tip", cx).await?;
 
-    login(&calm(&[(1, 21, 3), (8, 7, 0)]), cx);
+    login(&tickets(&[(1, 21, 3), (8, 7, 0)]), cx);
     view(cx, |view, cx| {
         view.force_tip(None, cx);
         view.set_folded(true, cx);

@@ -1,17 +1,17 @@
-//! What the toolbar shows of the resources: Odyle Energy and Shugo Festival
-//! keys always, and the others that are full with a refill coming, from the
-//! to-do data of the character the to-dos follow.
+//! What the toolbar shows of the resources: Odyle Energy and Shugo keys
+//! always, and the others that are full with a refill coming, from the to-do
+//! data of the character the to-dos follow.
 
 use crate::clock::{clock_time, LocalZone};
 use crate::i18n::{duration_words, fl};
-use crate::todos::{self, AmountView, RowId, RowKind, RowView, Section, TodoList, Todos, ODYLE, SHUGO_KEYS};
+use crate::todos::{self, AmountView, RowId, RowKind, RowView, TodoList, Todos, ODYLE, SHUGO_KEYS};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Counts {
     pub odyle: Pinned,
     pub shugo: Pinned,
-    /// Full with a refill coming, Odyle Energy and Shugo Festival keys left
-    /// out: the warning's dropdown.
+    /// Full with a refill coming, Odyle Energy and Shugo keys left out: the
+    /// warning's dropdown.
     pub others: Vec<FullLine>,
     /// Every resource full with a refill coming: the folded toolbar's warning.
     pub full_total: usize,
@@ -33,7 +33,7 @@ pub struct Figure {
     pub value: u32,
     pub cap: u32,
     pub extra: u32,
-    /// The regular pool is at its cap and a refill is coming.
+    /// The regular pool is at its cap and the refill that would be lost is close.
     pub full: bool,
 }
 
@@ -70,7 +70,7 @@ impl Counts {
 }
 
 fn pinned(list: Option<&TodoList>, id: &'static str, now_ms: i64) -> Pinned {
-    let row = list.and_then(|list| recharge_row(list, id));
+    let row = list.and_then(|list| list.resources.rows.iter().find(|row| row.id == RowId::Builtin(id)));
     let name = row.map_or_else(|| todos::row_label(id).unwrap_or(id).to_string(), |row| row.label.clone());
     match row.and_then(|row| tracked_amount(row).map(|amount| (row, amount))) {
         Some((row, amount)) => {
@@ -78,7 +78,7 @@ fn pinned(list: Option<&TodoList>, id: &'static str, now_ms: i64) -> Pinned {
                 value: amount.value,
                 cap: amount.cap,
                 extra: row.extra,
-                full: amount.full && amount.refill_at_ms.is_some(),
+                full: amount.warned,
             };
             Pinned { tip: tip_line(&figure, amount, now_ms), label: label(&name, &figure), name, figure: Some(figure) }
         }
@@ -89,14 +89,6 @@ fn pinned(list: Option<&TodoList>, id: &'static str, now_ms: i64) -> Pinned {
             figure: None,
         },
     }
-}
-
-fn recharge_row<'a>(list: &'a TodoList, id: &'static str) -> Option<&'a RowView> {
-    list.sections
-        .iter()
-        .filter(|section| section.section == Section::Recharges)
-        .flat_map(|section| section.rows.iter())
-        .find(|row| row.id == RowId::Builtin(id))
 }
 
 fn tracked_amount(row: &RowView) -> Option<&AmountView> {

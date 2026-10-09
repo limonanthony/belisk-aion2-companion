@@ -1,9 +1,9 @@
 //! The list: section labels, the four kinds of row, the hidden rows listed by
 //! Show and the line that lists them. The Resources window draws the
-//! Recharges rows alone, without × or Show.
+//! resources alone, without × or Show.
 
 use super::*;
-use crate::todos::{AmountView, FigureTip, GroupView, RowView, SectionView};
+use crate::todos::{AmountView, FigureTip, RowView, SectionView};
 
 impl TodoView {
     pub(super) fn list_body(&mut self, list: &TodoList, s: Scale, window: &Window, cx: &mut Context<Self>) -> Div {
@@ -17,10 +17,9 @@ impl TodoView {
                 content = content.child(self.add_area(s, window, cx));
             }
             Contents::Resources => {
-                let place = HiddenIn::Section(Section::Recharges);
                 let mut rows = Vec::new();
-                for row in list.sections.iter().filter(|section| section.section == Section::Recharges).flat_map(|section| &section.rows) {
-                    self.push_row(&mut rows, character, row, place, None, s, window, cx);
+                for row in &list.resources.rows {
+                    self.push_row(&mut rows, character, row, s, window, cx);
                 }
                 content = content.child(div().flex().flex_col().gap(s.px(2.)).children(rows));
             }
@@ -35,18 +34,22 @@ impl TodoView {
     }
 
     fn section(&mut self, character: CharacterId, section: &SectionView, first: bool, s: Scale, window: &Window, cx: &mut Context<Self>) -> Div {
-        let place = HiddenIn::Section(section.section);
+        let place = section.section;
         let mut block = div().flex().flex_col().gap(s.px(2.)).child(self.section_label(section, first, s, window, cx));
         if section.folded {
             return block;
         }
         let mut rows = Vec::new();
         for row in &section.rows {
-            self.push_row(&mut rows, character, row, place, None, s, window, cx);
+            if !row.hidden {
+                self.push_row(&mut rows, character, row, s, window, cx);
+            } else if self.listing_hidden.contains(&place) {
+                rows.extend(self.listed_row(character, row, s, window, cx));
+            }
         }
         block = block.children(rows);
         if section.hidden_rows > 0 {
-            block = block.child(self.hidden_line(place, section.hidden_rows, false, s, window, cx));
+            block = block.child(self.hidden_line(place, section.hidden_rows, s, window, cx));
         }
         block
     }
@@ -88,18 +91,15 @@ impl TodoView {
                     .group_hover(group, |title| title.text_color(rgba(TEXT)))
                     .child(section.title.clone()),
             )
-            .when(!section.count_text.is_empty(), |label| {
-                label.child(
-                    div()
-                        .flex_none()
-                        .text_size(s.px(11.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .when(section.count_is_done, |count| count.text_color(rgb(GOOD)))
-                        .when(!section.count_is_done, |count| count.text_color(rgba(FAINT)))
-                        .child(section.count_text.clone()),
-                )
-            })
-            .children(section.full_text.clone().map(|text| warn_chip(text, s)))
+            .child(
+                div()
+                    .flex_none()
+                    .text_size(s.px(11.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .when(section.count_is_done, |count| count.text_color(rgb(GOOD)))
+                    .when(!section.count_is_done, |count| count.text_color(rgba(FAINT)))
+                    .child(section.count_text.clone()),
+            )
             .child(div().flex_1())
             .child(div().flex_none().text_size(s.px(11.)).font_weight(FontWeight::MEDIUM).text_color(rgba(FAINT)).child(when))
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -108,46 +108,21 @@ impl TodoView {
         focusable(label, &focus, 6., s)
     }
 
-    /// A row as the window draws it: shown, listed by Show while hidden, or
-    /// left out; a group brings its open rows.
-    #[allow(clippy::too_many_arguments)]
-    fn push_row(
-        &mut self,
-        out: &mut Vec<AnyElement>,
-        character: CharacterId,
-        row: &RowView,
-        place: HiddenIn,
-        group: Option<RowId>,
-        s: Scale,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) {
-        if row.hidden {
-            if self.listing_hidden.contains(&place) {
-                if let Some(listed) = self.listed_row(character, row, group, s, window, cx) {
-                    out.push(listed);
-                }
-            }
-            return;
-        }
+    fn push_row(&mut self, out: &mut Vec<AnyElement>, character: CharacterId, row: &RowView, s: Scale, window: &Window, cx: &mut Context<Self>) {
         match &row.kind {
-            RowKind::Tick { done } => out.push(self.tick_row(character, row, *done, group, s, window, cx)),
-            RowKind::Count { count, target, done } => {
-                out.push(self.count_row(character, row, (*count, *target), *done, group, s, window, cx))
-            }
+            RowKind::Tick { done } => out.push(self.tick_row(character, row, *done, s, window, cx)),
+            RowKind::Count { count, target, done } => out.push(self.count_row(character, row, (*count, *target), *done, s, window, cx)),
             RowKind::Amount(amount) => {
-                if let Some(element) = self.amount_row(character, row, amount, None, s, window, cx) {
+                if let Some(element) = self.amount_row(character, row, amount, s, window, cx) {
                     out.push(element);
                 }
             }
-            RowKind::Group(view) => self.group_rows(out, character, row, view, s, window, cx),
         }
     }
 
-    /// The row's frame: at least 26 px, the 12 px gutter first; a group's
-    /// rows sit 18 px further in. The pointer entering and leaving it is all
-    /// it reports.
-    fn shell(&self, id: RowId, in_group: bool, s: Scale, cx: &Context<Self>) -> Stateful<Div> {
+    /// The row's frame: at least 26 px, the 12 px gutter first. The pointer
+    /// entering and leaving it is all it reports.
+    fn shell(&self, id: RowId, s: Scale, cx: &Context<Self>) -> Stateful<Div> {
         let key = row_key(id);
         let shell = div()
             .id(element_id("row", &key))
@@ -157,7 +132,7 @@ impl TodoView {
             })
             .flex_none()
             .min_h(s.px(26.))
-            .pl(s.px(if in_group { 22. } else { 4. }))
+            .pl(s.px(4.))
             .pr(s.px(3.))
             .flex()
             .items_center()
@@ -200,7 +175,7 @@ impl TodoView {
         if !revealed {
             return Some(slot);
         }
-        let (id, label) = (row.id, row.accessible_name());
+        let (id, label) = (row.id, row.label.clone());
         let name = if row.yours {
             fl!("todos-window-remove", label = label.as_str())
         } else {
@@ -220,29 +195,17 @@ impl TodoView {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn tick_row(&mut self, character: CharacterId, row: &RowView, done: bool, group: Option<RowId>, s: Scale, window: &Window, cx: &mut Context<Self>) -> AnyElement {
-        let (id, label) = (row.id, row.accessible_name());
+    fn tick_row(&mut self, character: CharacterId, row: &RowView, done: bool, s: Scale, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let (id, label) = (row.id, row.label.clone());
         let key = row_key(id);
         let focus_key = format!("row:{key}");
         let focus = self.focus_of(&focus_key, true, window, cx);
         let revealed = self.is_revealed(id, std::slice::from_ref(&focus_key), window);
-        self.drawn.push(Drawn { id, group, focus_key });
-        let from_game = is_game_row(&row.source);
-        let typed_over = row.source == Source::Typed;
-        // A tick the game fills is typed over: the opposite of the game's
-        // value, and a second press goes back to it.
+        self.drawn.push(Drawn { id, focus_key });
         let toggle = {
             let label = label.clone();
             move |this: &mut Self, cx: &mut Context<Self>| {
-                let change = match id {
-                    RowId::Builtin(builtin) if from_game => {
-                        let value = (!typed_over).then_some(u32::from(!done));
-                        let changed = this.todos.update(cx, |todos, cx| todos.set_progress(character, builtin, value, cx));
-                        changed.then_some(super::super::ProgressChange { was_done: done, is_done: !done })
-                    }
-                    _ => this.todos.update(cx, |todos, cx| todos.toggle_tick(character, id, cx)),
-                };
+                let change = this.todos.update(cx, |todos, cx| todos.toggle_tick(character, id, cx));
                 this.announce_progress(label.clone(), change);
             }
         };
@@ -282,14 +245,13 @@ impl TodoView {
                     toggle(this, cx);
                 }))
         });
-        let state = match (done, from_game) {
-            (true, false) => fl!("todos-window-row-done", label = label.as_str()),
-            (false, false) => fl!("todos-window-row-not-done", label = label.as_str()),
-            (true, true) => fl!("todos-window-row-done-from-game", label = label.as_str()),
-            (false, true) => fl!("todos-window-row-not-done-from-game", label = label.as_str()),
+        let state = if done {
+            fl!("todos-window-row-done", label = label.as_str())
+        } else {
+            fl!("todos-window-row-not-done", label = label.as_str())
         };
         let shell = self
-            .shell(id, group.is_some(), s, cx)
+            .shell(id, s, cx)
             .aria_label(SharedString::from(state))
             .role(Role::Button)
             .cursor_pointer()
@@ -298,8 +260,8 @@ impl TodoView {
         let shell = self.deletable(shell, character, id, label, cx);
         let x = self.x_slot(revealed, character, row, s, cx);
         focusable(shell, &focus, 6., s)
-            .child(gutter(typed_over.then(|| pencil(s)), s))
-            .child(name_block(row, done, false, s))
+            .child(gutter(None, s))
+            .child(self.name_block(row, done, false, s))
             .children(check)
             .children(x)
             .into_any_element()
@@ -312,17 +274,16 @@ impl TodoView {
         row: &RowView,
         (count, target): (u32, u32),
         done: bool,
-        group: Option<RowId>,
         s: Scale,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (id, label) = (row.id, row.accessible_name());
+        let (id, label) = (row.id, row.label.clone());
         let key = row_key(id);
         let keys = [format!("less:{key}"), format!("fig:{key}"), format!("more:{key}")];
         let pointer_in = self.pointer_row == Some(id);
         let revealed = self.is_revealed(id, &keys, window);
-        self.drawn.push(Drawn { id, group, focus_key: keys[1].clone() });
+        self.drawn.push(Drawn { id, focus_key: keys[1].clone() });
         if is_game_row(&row.source) {
             let RowId::Builtin(builtin) = id else {
                 return div().into_any_element();
@@ -354,11 +315,11 @@ impl TodoView {
                     }));
                 game_block(focusable(figure, &focus, 5., s), row.extra, s).into_any_element()
             };
-            let shell = self.deletable(self.shell(id, group.is_some(), s, cx), character, id, label, cx);
+            let shell = self.deletable(self.shell(id, s, cx), character, id, label, cx);
             let x = self.x_slot(revealed, character, row, s, cx);
             return shell
                 .child(gutter(typed_over.then(|| pencil(s)), s))
-                .child(name_block(row, done, false, s))
+                .child(self.name_block(row, done, false, s))
                 .child(controls)
                 .children(x)
                 .into_any_element();
@@ -409,23 +370,21 @@ impl TodoView {
                 adjust(this, delta, cx);
             }));
         let figure = focusable(figure, &focus, 5., s);
-        let shell = self.deletable(self.shell(id, group.is_some(), s, cx), character, id, label, cx);
+        let shell = self.deletable(self.shell(id, s, cx), character, id, label, cx);
         let x = self.x_slot(revealed, character, row, s, cx);
         shell
             .child(gutter(None, s))
-            .child(name_block(row, done, false, s))
+            .child(self.name_block(row, done, false, s))
             .child(div().flex_none().flex().items_center().gap(s.px(1.)).child(less).child(figure).child(more))
             .children(x)
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn amount_row(
         &mut self,
         character: CharacterId,
         row: &RowView,
         amount: &AmountView,
-        group: Option<RowId>,
         s: Scale,
         window: &Window,
         cx: &mut Context<Self>,
@@ -433,11 +392,11 @@ impl TodoView {
         let RowId::Builtin(builtin) = row.id else {
             return None;
         };
-        let (id, label) = (row.id, row.accessible_name());
+        let (id, label) = (row.id, row.label.clone());
         let keys = [format!("less:{builtin}"), format!("fig:{builtin}"), format!("more:{builtin}")];
         let pointer_in = self.pointer_row == Some(id);
         let revealed = self.is_revealed(id, &keys, window);
-        self.drawn.push(Drawn { id, group, focus_key: keys[1].clone() });
+        self.drawn.push(Drawn { id, focus_key: keys[1].clone() });
         let editing = self.amount_edit.as_ref().is_some_and(|edit| edit.row == builtin);
         let controls: AnyElement = if editing {
             self.amount_field(amount.cap, amount.game_value.is_some(), &label, s, window, cx).into_any_element()
@@ -448,23 +407,23 @@ impl TodoView {
             div()
                 .flex_none()
                 .text_size(s.px(11.5))
-                .when(amount.full, |status| status.text_color(rgb(WARN)).font_weight(FontWeight::SEMIBOLD))
-                .when(!amount.full, |status| status.text_color(rgba(MUTED)).font_weight(FontWeight::MEDIUM))
+                .when(amount.warned, |status| status.text_color(rgb(WARN)).font_weight(FontWeight::SEMIBOLD))
+                .when(!amount.warned, |status| status.text_color(rgba(MUTED)).font_weight(FontWeight::MEDIUM))
                 .child(status)
         });
-        let shell = self.deletable(self.shell(id, group.is_some(), s, cx), character, id, label, cx);
+        let shell = self.deletable(self.shell(id, s, cx), character, id, label, cx);
         let x = self.x_slot(revealed, character, row, s, cx);
         let typed_over = row.source == Source::Typed && amount.game_value.is_some();
-        let mark = if amount.full {
+        let mark = if amount.warned {
             Some(chrome::icon(Icon::TriangleAlert, 12., rgb(WARN), s).into_any_element())
         } else {
             typed_over.then(|| pencil(s))
         };
         Some(
             shell
-                .when(amount.full, |row| row.bg(rgba(FULL_FILL)))
+                .when(amount.warned, |row| row.bg(rgba(FULL_FILL)))
                 .child(gutter(mark, s))
-                .child(name_block(row, false, !amount.tracked, s))
+                .child(self.name_block(row, false, !amount.tracked, s))
                 .children(status)
                 .child(controls)
                 .children(x)
@@ -488,15 +447,14 @@ impl TodoView {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let label = row.accessible_name();
-        let label = label.as_str();
+        let label = row.label.as_str();
         let focus = self.focus_of(&keys[1], true, window, cx);
         let tracked = amount.tracked.then_some(amount.value);
         let figure = figure_box(&keys[1], s).on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
             this.open_amount(builtin, Typing::Amount, tracked, matches!(event, ClickEvent::Keyboard(_)), window, cx);
         }));
         let (figure_colour, cap_colour): (Hsla, Hsla) =
-            if amount.full { (rgb(WARN).into(), rgba(WARN_SOFT).into()) } else { (rgba(TEXT).into(), rgba(FAINT).into()) };
+            if amount.warned { (rgb(WARN).into(), rgba(WARN_SOFT).into()) } else { (rgba(TEXT).into(), rgba(FAINT).into()) };
         if amount.game_value.is_some() {
             let value = match row.extra {
                 0 => amount.value_text(),
@@ -631,124 +589,21 @@ impl TodoView {
         focusable(element, &focus, 5., s).into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn group_rows(
-        &mut self,
-        out: &mut Vec<AnyElement>,
-        character: CharacterId,
-        row: &RowView,
-        view: &GroupView,
-        s: Scale,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) {
-        let RowId::Builtin(builtin) = row.id else {
-            return;
-        };
-        let (id, label) = (row.id, row.accessible_name());
-        let focus_key = format!("row:{builtin}");
-        let focus = self.focus_of(&focus_key, true, window, cx);
-        let revealed = self.is_revealed(id, std::slice::from_ref(&focus_key), window);
-        self.drawn.push(Drawn { id, group: None, focus_key });
-        let open = view.open;
-        let shell = self
-            .shell(id, false, s, cx)
-            .role(Role::Button)
-            .aria_label(SharedString::from(format!("{label}, {}", view.summary)))
-            .aria_expanded(open)
-            .cursor_pointer()
-            .when(revealed, |row| row.bg(rgba(SOFT)))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.todos.update(cx, |todos, cx| todos.set_group_open(builtin, !open, cx));
-            }));
-        let shell = self.deletable(shell, character, id, label, cx);
-        let x = self.x_slot(revealed, character, row, s, cx);
-        let chevron = chrome::icon(if open { Icon::ChevronDown } else { Icon::ChevronRight }, 12., rgba(FAINT), s);
-        out.push(
-            focusable(shell, &focus, 6., s)
-                .child(gutter(Some(chevron.into_any_element()), s))
-                .child(name_block(row, view.all_done, false, s))
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(s.px(11.5))
-                        .font_weight(if view.full_children > 0 { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM })
-                        .text_color(if view.all_done {
-                            rgb(GOOD).into()
-                        } else if view.full_children > 0 {
-                            rgb(WARN).into()
-                        } else {
-                            gpui::Hsla::from(rgba(MUTED))
-                        })
-                        .child(view.summary.clone()),
-                )
-                .children(x)
-                .into_any_element(),
-        );
-        if !open {
-            return;
-        }
-        let place = HiddenIn::Group(builtin);
-        for child in &view.children {
-            match &child.kind {
-                RowKind::Tick { done } if !child.hidden => {
-                    out.push(self.tick_row(character, child, *done, Some(id), s, window, cx));
-                }
-                RowKind::Count { count, target, done } if !child.hidden => {
-                    out.push(self.count_row(character, child, (*count, *target), *done, Some(id), s, window, cx));
-                }
-                RowKind::Amount(amount) if !child.hidden => {
-                    out.extend(self.amount_row(character, child, amount, Some(id), s, window, cx));
-                }
-                _ if child.hidden && self.listing_hidden.contains(&place) => {
-                    if let Some(listed) = self.listed_row(character, child, Some(id), s, window, cx) {
-                        out.push(listed);
-                    }
-                }
-                _ => {}
-            }
-        }
-        if view.hidden_children > 0 && self.contents == Contents::Todos {
-            out.push(self.hidden_line(place, view.hidden_children, true, s, window, cx).into_any_element());
-        }
-    }
-
-    /// A hidden row listed by Show: faded, with only its figure, and the
+    /// A hidden to-do listed by Show: faded, with only its figure, and the
     /// put-back button in the × slot.
-    fn listed_row(&mut self, character: CharacterId, row: &RowView, group: Option<RowId>, s: Scale, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn listed_row(&mut self, character: CharacterId, row: &RowView, s: Scale, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         let RowId::Builtin(builtin) = row.id else {
             return None;
         };
-        let label = row.accessible_name();
+        let label = row.label.clone();
         let focus_key = format!("put:{builtin}");
         let focus = self.focus_of(&focus_key, true, window, cx);
-        self.drawn.push(Drawn { id: row.id, group, focus_key });
-        let figure: Option<AnyElement> = match &row.kind {
-            RowKind::Tick { .. } => None,
+        self.drawn.push(Drawn { id: row.id, focus_key });
+        let figure = match &row.kind {
             RowKind::Count { count, target, .. } => Some(
-                div().w(s.px(46.)).flex().justify_center().child(figure_text(count.to_string(), format!("/{target}"), rgba(TEXT), rgba(FAINT), s)).into_any_element(),
+                div().w(s.px(46.)).flex().justify_center().child(figure_text(count.to_string(), format!("/{target}"), rgba(TEXT), rgba(FAINT), s)),
             ),
-            RowKind::Amount(amount) if amount.tracked => Some(
-                div()
-                    .w(s.px(46.))
-                    .flex()
-                    .justify_center()
-                    .child(figure_text(amount.value.to_string(), format!("/{}", amount.cap), rgba(TEXT), rgba(FAINT), s))
-                    .into_any_element(),
-            ),
-            RowKind::Amount(_) => Some(
-                div()
-                    .w(s.px(46.))
-                    .flex()
-                    .justify_center()
-                    .text_size(s.px(12.5))
-                    .text_color(rgba(FAINT))
-                    .child("\u{2014}")
-                    .into_any_element(),
-            ),
-            RowKind::Group(view) => Some(
-                div().text_size(s.px(11.5)).text_color(rgba(MUTED)).child(view.summary.clone()).into_any_element(),
-            ),
+            RowKind::Tick { .. } | RowKind::Amount(_) => None,
         };
         let put = focusable(
             small_button(&format!("put-{builtin}"), Icon::Eye, s)
@@ -760,7 +615,7 @@ impl TodoView {
             s,
         );
         Some(
-            self.shell(row.id, group.is_some(), s, cx)
+            self.shell(row.id, s, cx)
                 .child(
                     div()
                         .flex_1()
@@ -770,7 +625,7 @@ impl TodoView {
                         .gap(s.px(6.))
                         .opacity(HIDDEN_OPACITY)
                         .child(gutter(None, s))
-                        .child(name_block(row, row.is_done(), false, s))
+                        .child(self.name_block(row, row.is_done(), false, s))
                         .children(figure),
                 )
                 .child(put)
@@ -779,11 +634,8 @@ impl TodoView {
     }
 
     /// "2 hidden · Show", or "· Hide again" while they are listed.
-    fn hidden_line(&mut self, place: HiddenIn, count: usize, in_group: bool, s: Scale, window: &Window, cx: &mut Context<Self>) -> Div {
-        let key = match place {
-            HiddenIn::Section(section) => section_key(section).to_string(),
-            HiddenIn::Group(group) => group.to_string(),
-        };
+    fn hidden_line(&mut self, place: Section, count: usize, s: Scale, window: &Window, cx: &mut Context<Self>) -> Div {
+        let key = section_key(place);
         let listing = self.listing_hidden.contains(&place);
         let focus = self.focus_of(&format!("show:{key}"), true, window, cx);
         let (text, name) = if listing {
@@ -809,7 +661,7 @@ impl TodoView {
         div()
             .flex_none()
             .h(s.px(20.))
-            .pl(s.px(if in_group { 40. } else { 22. }))
+            .pl(s.px(22.))
             .flex()
             .items_center()
             .gap(s.px(5.))
@@ -820,25 +672,73 @@ impl TodoView {
             .child("\u{b7}")
             .child(toggle)
     }
+
+    /// The name, then the "Account" tag as its icon alone, the word in its
+    /// tooltip and accessible name, or the "Yours" tag. Done: `muted` with a
+    /// line through, "Yours" not struck.
+    fn name_block(&self, row: &RowView, done: bool, quiet: bool, s: Scale) -> Div {
+        div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .items_baseline()
+            .overflow_hidden()
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(s.px(13.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgba(if done || quiet { MUTED } else { TEXT }))
+                    .when(done, |name| name.line_through())
+                    .child(row.label.clone()),
+            )
+            .when(row.account, |name| name.child(self.account_tag(row.id, s)))
+            .when(row.yours, |name| {
+                name.child(div().flex_none().ml(s.px(5.)).text_size(s.px(11.)).font_weight(FontWeight::MEDIUM).text_color(rgba(FAINT)).child(fl!("todos-window-yours")))
+            })
+    }
+
+    fn account_tag(&self, id: RowId, s: Scale) -> Stateful<Div> {
+        let key = row_key(id);
+        let account = fl!("todos-window-account");
+        let tag = div()
+            .id(element_id("account", &key))
+            .debug_selector({
+                let key = key.clone();
+                move || format!("account-{key}")
+            })
+            .role(Role::Image)
+            .aria_label(SharedString::from(account.clone()))
+            .tooltip(chrome::tooltip(account.into(), s))
+            .flex_none()
+            .self_center()
+            // 3 px, not the 5 px before "Yours": a warned Daily Dungeon
+            // ("Full, spend by Wed 04:00") keeps its whole name with this gap.
+            .ml(s.px(3.))
+            .child(chrome::icon(Icon::Users, 11., rgba(FAINT), s));
+        #[cfg(feature = "probes")]
+        let tag = tag.relative().child(self.row_marks.borrow_mut().entry(format!("account-{key}")).or_default().marker());
+        tag
+    }
 }
 
 pub(super) fn section_key(section: Section) -> &'static str {
     match section {
         Section::Today => "today",
-        Section::Recharges => "recharges",
         Section::ThisWeek => "week",
     }
 }
 
-/// The 12 px gutter before a name: a group's chevron, a full amount's
-/// warning, a typed-over value's pencil, or nothing.
+/// The 12 px gutter before a name: a full amount's warning, a typed-over
+/// value's pencil, or nothing.
 pub(super) fn gutter(content: Option<AnyElement>, s: Scale) -> Div {
     div().flex_none().w(s.px(12.)).flex().items_center().justify_center().children(content)
 }
 
-/// A tick or count the game fills: given by the game, itself or through
-/// another character, or typed over the game's value (the player's own
-/// counts are `Manual` or `NoneYet`).
+/// A count the game fills: given by the game, itself or through another
+/// character, or typed over the game's value (the player's own counts are
+/// `Manual` or `NoneYet`).
 fn is_game_row(source: &Source) -> bool {
     matches!(source, Source::GameLive | Source::GameEarlier { .. } | Source::Shared { .. } | Source::Typed)
 }
@@ -873,55 +773,6 @@ fn game_block(figure: impl IntoElement, extra: u32, s: Scale) -> Div {
 
 fn figure_tooltip(tip: FigureTip, s: Scale) -> impl Fn(&mut Window, &mut App) -> gpui::AnyView + 'static {
     chrome::tooltip_with_detail(tip.text.into(), tip.detail.map(SharedString::from), s)
-}
-
-/// The name, its quieter second part and the "Account" or "Yours" tag. Done:
-/// `muted` with a line through, "Yours" not struck.
-fn name_block(row: &RowView, done: bool, quiet: bool, s: Scale) -> Div {
-    div()
-        .flex_1()
-        .min_w_0()
-        .flex()
-        .items_baseline()
-        .gap(s.px(5.))
-        .overflow_hidden()
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .text_size(s.px(13.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(rgba(if done || quiet { MUTED } else { TEXT }))
-                .when(done, |name| name.line_through())
-                .child(row.label.clone()),
-        )
-        .children(row.sub.clone().map(|sub| {
-            div()
-                .flex_none()
-                .text_size(s.px(11.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(rgba(if done { SUB_DONE } else { FAINT }))
-                .when(done, |sub| sub.line_through())
-                .child(sub)
-        }))
-        .when(row.account, |name| {
-            name.child(
-                div()
-                    .flex_none()
-                    .ml(s.px(1.))
-                    .flex()
-                    .items_center()
-                    .gap(s.px(3.))
-                    .text_size(s.px(11.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(rgba(FAINT))
-                    .child(chrome::icon(Icon::Users, 11., rgba(FAINT), s))
-                    .child(fl!("todos-window-account")),
-            )
-        })
-        .when(row.yours, |name| {
-            name.child(div().flex_none().text_size(s.px(11.)).font_weight(FontWeight::MEDIUM).text_color(rgba(FAINT)).child(fl!("todos-window-yours")))
-        })
 }
 
 /// The 46 × 20 figure of a count or an amount.

@@ -1,10 +1,10 @@
 //! The to-do window (docs/gpui-mockups/approved/todos.html, values in
-//! tokens.md, "To-do window"): one character's list in three sections, Today,
-//! Recharges and This week, with the character picker above and the reset
-//! hour below. What it shows comes from the `Todos` entity, and every action
-//! goes back to it with the character the window showed. The Resources window
-//! (resources.html, tokens.md "Resources window") is the same view showing
-//! only the Recharges rows, so both windows always agree.
+//! tokens.md, "To-do window"): one character's to-dos in two sections, Today
+//! and This week, with the character picker above and the reset hour below.
+//! What it shows comes from the `Todos` entity, and every action goes back to
+//! it with the character the window showed. The Resources window
+//! (resources.html, tokens.md "Resources window") is the same view listing
+//! the resources instead, so both windows follow the same character.
 //!
 //! A line under the picker says where the values come from; a value the game
 //! gave has no arrows, a click on it types over it, and its tooltip says when
@@ -62,7 +62,6 @@ const FULL_FILL: u32 = 0xf2c66d1f;
 const PRESS: u32 = 0xfff0e133;
 const CHIP_WARN: u32 = 0xf2c66d21;
 const NOTE_GOOD: u32 = 0x86e3a81f;
-const SUB_DONE: u32 = 0xfff6ec5c;
 const FOCUS_RING: u32 = 0xf3ebe1e6;
 const DIVIDER: u32 = 0xfff0e12e;
 const LINK_UNDERLINE: u32 = 0xfff6ec40;
@@ -78,17 +77,10 @@ const DISABLED_OPACITY: f32 = 0.45;
 /// What the window lists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Contents {
-    /// The to-do window: Today, Recharges, This week and your own to-dos.
+    /// The to-do window: Today, This week and your own to-dos.
     Todos,
-    /// The Resources window: the Recharges rows alone, nothing to hide or add.
+    /// The Resources window: every resource, nothing to hide or add.
     Resources,
-}
-
-/// Where hidden rows are listed by "Show": a section, or an open group.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum HiddenIn {
-    Section(Section),
-    Group(&'static str),
 }
 
 /// What the field types: an amount, or how much of a row the game fills is
@@ -130,7 +122,6 @@ enum Note {
 /// one leaves.
 struct Drawn {
     id: RowId,
-    group: Option<RowId>,
     focus_key: String,
 }
 
@@ -158,7 +149,7 @@ pub struct TodoView {
     form_group: FocusHandle,
     amount_edit: Option<AmountEdit>,
     adding: Option<AddForm>,
-    listing_hidden: HashSet<HiddenIn>,
+    listing_hidden: HashSet<Section>,
     /// The row the pointer is in, from its enter and leave only.
     pointer_row: Option<RowId>,
     /// After a row left under the pointer, the row now there keeps its check
@@ -693,9 +684,8 @@ impl TodoView {
     /// The row the keyboard goes to when `id` leaves the list: the next one,
     /// else the one before.
     fn neighbour_of(&self, id: RowId) -> Option<String> {
-        let kept: Vec<&Drawn> = self.drawn.iter().filter(|drawn| drawn.id == id || drawn.group != Some(id)).collect();
-        let at = kept.iter().position(|drawn| drawn.id == id)?;
-        kept.get(at + 1).or_else(|| at.checked_sub(1).and_then(|before| kept.get(before))).map(|drawn| drawn.focus_key.clone())
+        let at = self.drawn.iter().position(|drawn| drawn.id == id)?;
+        self.drawn.get(at + 1).or_else(|| at.checked_sub(1).and_then(|before| self.drawn.get(before))).map(|drawn| drawn.focus_key.clone())
     }
 
     /// The row's ×: a built-in hides, your own is removed with an Undo note.
@@ -741,11 +731,11 @@ impl TodoView {
         }
     }
 
-    /// The control a row is reached by: the row itself for ticks and groups,
-    /// the figure for counts and amounts.
+    /// The control a row is reached by: the row itself for ticks, the figure
+    /// for counts and amounts.
     fn primary_key_of(&self, id: RowId, cx: &App) -> String {
         let kind = self.todos.read(cx).list().and_then(|list| {
-            list.sections.into_iter().flat_map(|section| section.rows).find_map(|row| find_kind(row, id))
+            list.sections.into_iter().flat_map(|section| section.rows).find(|row| row.id == id).map(|row| row.kind)
         });
         match kind {
             Some(RowKind::Count { .. } | RowKind::Amount(_)) => format!("fig:{}", row_key(id)),
@@ -848,15 +838,16 @@ impl TodoView {
     // ---- Drawing ----
 
     fn header(&mut self, list: Option<&TodoList>, s: Scale, window: &Window, cx: &mut Context<Self>) -> Div {
-        let full_chip = list.and_then(|list| list.full_text.clone()).map(|text| warn_chip(text, s));
         let title = match self.contents {
             Contents::Todos => {
                 let left = list.map(|list| SharedString::from(list.left_text.clone()));
                 chrome::title(Icon::ListChecks, fl!("todos-window-title"), left, s)
             }
-            Contents::Resources => chrome::title(Icon::Package, fl!("resources-window-title"), None, s),
-        }
-        .children(full_chip);
+            Contents::Resources => {
+                let full_chip = list.and_then(|list| list.resources.full_text.clone()).map(|text| warn_chip(text, s));
+                chrome::title(Icon::Package, fl!("resources-window-title"), None, s).children(full_chip)
+            }
+        };
         let close_focus = self.focus_of("close", false, window, cx);
         let close = focusable(
             chrome::tool_button("close", Icon::Close, false, s)
@@ -971,14 +962,7 @@ impl TodoView {
                         .text_color(rgba(MUTED))
                         .child(character.class_and_server()),
                 )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(s.px(11.))
-                        .when(character.status_is_warning, |status| status.text_color(rgb(WARN)).font_weight(FontWeight::SEMIBOLD))
-                        .when(!character.status_is_warning, |status| status.text_color(rgba(FAINT)))
-                        .child(character.status.clone()),
-                )
+                .child(div().flex_none().text_size(s.px(11.)).text_color(rgba(FAINT)).child(character.status.clone()))
         });
         let menu = chrome::popover(s)
             .id("character-picker")
@@ -998,7 +982,10 @@ impl TodoView {
                     .line_height(relative(1.35))
                     .text_size(s.px(11.))
                     .text_color(rgba(MUTED))
-                    .child(fl!("todos-window-picker-note")),
+                    .child(match self.contents {
+                        Contents::Todos => fl!("todos-window-picker-note"),
+                        Contents::Resources => fl!("resources-window-picker-note"),
+                    }),
             );
         let scrim = chrome::scrim("picker-scrim").on_any_mouse_down(cx.listener(|this, _, window, cx| this.close_picker(false, window, cx)));
         Some(vec![scrim.into_any_element(), menu.into_any_element()])
@@ -1015,14 +1002,9 @@ impl TodoView {
                 let text = if *replaced { fl!("todos-window-login-note-replaced") } else { fl!("todos-window-login-note") };
                 (Icon::Check, true, text, None)
             }
-            None if self.contents == Contents::Todos => {
-                let done = list.everything_done.as_ref()?;
-                let first = copy::everything_done(&self.overlay.display_name(&list.character.name));
-                let text = match &done.fills_first {
-                    Some(fills) => format!("{first} {fills}"),
-                    None => first.clone(),
-                };
-                (Icon::Check, true, text, Some(first))
+            None if self.contents == Contents::Todos && list.left == 0 => {
+                let text = copy::everything_done(&self.overlay.display_name(&list.character.name));
+                (Icon::Check, true, text.clone(), Some(text))
             }
             None => return None,
         };
@@ -1073,10 +1055,20 @@ impl TodoView {
     /// times and names brighter, cut off with an ellipsis.
     fn source_line(&self, list: &TodoList, s: Scale) -> Stateful<Div> {
         let name = self.overlay.display_name(&list.character.name);
-        let (text, strong): (String, Vec<String>) = match &list.source_line {
+        let source_line = match self.contents {
+            Contents::Todos => &list.source_line,
+            Contents::Resources => &list.resources.source_line,
+        };
+        let (text, strong): (String, Vec<String>) = match source_line {
             SourceLine::Live { logged_in_at: Some(time) } => (fl!("todos-source-live", time = time.as_str()), vec![time.clone()]),
             SourceLine::Live { logged_in_at: None } => (fl!("todos-source-live-now"), Vec::new()),
-            SourceLine::Earlier { at } => (fl!("todos-source-earlier", stamp = at.as_str()), vec![at.clone()]),
+            SourceLine::Earlier { at } => {
+                let text = match self.contents {
+                    Contents::Todos => fl!("todos-source-earlier-to-dos", stamp = at.as_str()),
+                    Contents::Resources => fl!("todos-source-earlier", stamp = at.as_str()),
+                };
+                (text, vec![at.clone()])
+            }
             SourceLine::Shared { from } => {
                 let from = self.overlay.display_name(from);
                 (fl!("todos-source-shared", name = name.as_str(), from = from.as_str()), vec![name, from])
@@ -1153,7 +1145,7 @@ impl Render for TodoView {
         let s = look.s;
         let list = self.todos.read(cx).list();
         self.drawn.clear();
-        self.typed_shown = list.as_ref().is_some_and(has_typed_value);
+        self.typed_shown = list.as_ref().is_some_and(|list| self.has_typed_value(list));
 
         let (selector, title) = match self.contents {
             Contents::Todos => ("todos", fl!("todos-window-title")),
@@ -1200,12 +1192,15 @@ impl Render for TodoView {
     }
 }
 
-/// A row shows a value the player typed.
-fn has_typed_value(list: &TodoList) -> bool {
-    list.sections.iter().flat_map(|section| &section.rows).any(|row| match &row.kind {
-        RowKind::Group(group) => group.children.iter().any(|child| child.source == Source::Typed),
-        _ => row.source == Source::Typed,
-    })
+impl TodoView {
+    /// A row of this window shows a value the player typed.
+    fn has_typed_value(&self, list: &TodoList) -> bool {
+        let typed = |row: &super::RowView| row.source == Source::Typed;
+        match self.contents {
+            Contents::Todos => list.sections.iter().flat_map(|section| &section.rows).any(typed),
+            Contents::Resources => list.resources.rows.iter().any(typed),
+        }
+    }
 }
 
 /// Saves what the amount field holds, unless it still holds what it opened
@@ -1234,16 +1229,6 @@ fn set_typed(todos: &Entity<Todos>, character: CharacterId, row: &'static str, t
         Typing::Amount => todos.set_amount(character, row, value, cx),
         Typing::Progress => todos.set_progress(character, row, value, cx),
     });
-}
-
-fn find_kind(row: super::RowView, id: RowId) -> Option<RowKind> {
-    if row.id == id {
-        return Some(row.kind);
-    }
-    match row.kind {
-        RowKind::Group(group) => group.children.into_iter().find_map(|child| find_kind(child, id)),
-        _ => None,
-    }
 }
 
 /// The stable part of a row's control keys: the catalogue id, or "own-<n>".
@@ -1297,6 +1282,7 @@ fn link(key: &str, text: impl Into<SharedString>, s: Scale) -> Stateful<Div> {
 /// The `chip-warn` "N full", 18 px tall.
 fn warn_chip(text: impl Into<SharedString>, s: Scale) -> Div {
     div()
+        .debug_selector(|| "full-chip".to_string())
         .flex_none()
         .h(s.px(18.))
         .px(s.px(7.))
@@ -1332,7 +1318,7 @@ impl TodoView {
         cx.notify();
     }
 
-    pub fn list_hidden(&mut self, place: HiddenIn, cx: &mut Context<Self>) {
+    pub fn list_hidden(&mut self, place: Section, cx: &mut Context<Self>) {
         self.listing_hidden.insert(place);
         cx.notify();
     }

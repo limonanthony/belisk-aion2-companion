@@ -18,14 +18,6 @@ pub fn done() -> String {
     fl!("todos-done")
 }
 
-pub fn tracked(count: usize) -> String {
-    fl!("todos-tracked", count = count)
-}
-
-pub fn amounts_optional() -> String {
-    fl!("todos-amounts-optional")
-}
-
 pub fn weekly_on_wednesday() -> String {
     fl!("todos-weekly-on-wednesday")
 }
@@ -51,25 +43,8 @@ pub fn done_of(done: usize, total: usize) -> String {
     fl!("todos-done-of", done = done, total = total)
 }
 
-/// A group of amounts: "10–13 of 14 each", or "12 of 14 each" when they agree.
-pub fn of_each(low: u32, high: u32, cap: u32) -> String {
-    if low == high {
-        fl!("todos-value-of-each", value = low, cap = cap)
-    } else {
-        fl!("todos-range-of-each", low = low, high = high, cap = cap)
-    }
-}
-
-pub fn dungeons(count: usize) -> String {
-    fl!("todos-dungeons", count = count)
-}
-
 pub fn resets_in(ms: i64) -> String {
     fl!("todos-resets-in", time = duration_words(ms))
-}
-
-pub fn next_full_in(ms: i64) -> String {
-    fl!("todos-next-full-in", time = duration_words(ms))
 }
 
 pub fn weekly_reset_when(zone: &dyn Zone, reset_ms: i64, now_ms: i64) -> String {
@@ -88,14 +63,13 @@ pub fn full_spend_by(stamp: &str) -> String {
     fl!("todos-full-spend-by", stamp = stamp)
 }
 
+pub fn full_refills(stamp: &str) -> String {
+    fl!("todos-full-refills", stamp = stamp)
+}
+
 /// "Everything is done on <name>." with the name as the window shows it.
 pub fn everything_done(character_name: &str) -> String {
     fl!("todos-everything-done", name = character_name)
-}
-
-/// What follows [`everything_done`]: the tracked amount that fills first.
-pub fn amount_full_note(label: &str, ms: i64) -> String {
-    fl!("todos-amount-full-note", label = label, time = duration_words(ms))
 }
 
 pub fn removed_note(name: &str) -> String {
@@ -230,11 +204,11 @@ mod tests {
     fn the_reset_dialog_drops_the_own_to_dos_clause_when_there_are_none() {
         assert_eq!(
             reset_dialog_body(3),
-            "On every character: your own to-dos (3) are removed, every hidden to-do comes back, and every count and amount you typed is emptied. Values from the game stay."
+            "On every character: your own to-dos (3) are removed, every hidden to-do comes back, and every count you typed and every amount typed in the Resources window is emptied. Values from the game stay."
         );
         assert_eq!(
             reset_dialog_body(0),
-            "On every character: every hidden to-do comes back, and every count and amount you typed is emptied. Values from the game stay."
+            "On every character: every hidden to-do comes back, and every count you typed and every amount typed in the Resources window is emptied. Values from the game stay."
         );
     }
 
@@ -243,14 +217,11 @@ mod tests {
         assert_eq!(added_note("Legion check-in", "This week"), "Added Legion check-in to This week.");
         assert_eq!(removed_note("Legion check-in"), "Removed Legion check-in.");
         assert_eq!(everything_done("Mirelle"), "Everything is done on Mirelle.");
-        assert_eq!(amount_full_note("Odyle Energy", 3 * 3_600_000), "Odyle Energy is full in 3 h 0 min.");
     }
 
     #[test]
-    fn a_tooltip_counts_the_refills_and_a_group_of_amounts_its_spread() {
+    fn a_tooltip_counts_the_refills() {
         assert_eq!(tip_refills(8, 15), "+120 since: 8 refills of 15, estimated.");
         assert_eq!(tip_refills(1, 3), "+3 since: one refill of 3, estimated.");
-        assert_eq!(of_each(10, 13, 14), "10\u{2013}13 of 14 each");
-        assert_eq!(of_each(12, 12, 14), "12 of 14 each");
     }
 }

@@ -70,13 +70,7 @@ list-and = { $rest } et { $last }
 ## To-dos
 
 todos-section-today = Aujourd'hui
-todos-section-recharges = Recharges
 todos-section-this-week = Cette semaine
-
-todos-sub-attempts = tentatives
-todos-sub-final-boss = boss final
-todos-sub-final-boss-kills = kills du boss final
-todos-sub-runs-per-dungeon = 7 runs par donjon
 
 todos-left = { $count } à faire
 todos-full =
@@ -89,11 +83,6 @@ todos-hidden =
         [one] { $count } masquée
        *[other] { $count } masquées
     }
-todos-tracked =
-    { $count ->
-        [one] { $count } suivi
-       *[other] { $count } suivis
-    }
 todos-done-of =
     { $done } sur { $total } { $done ->
         [one] faite
@@ -101,29 +90,25 @@ todos-done-of =
     }
 todos-all-done = tout est fait
 todos-done = fait
-todos-amounts-optional = montants facultatifs
 todos-weekly-on-wednesday = Hebdo le mercredi
 todos-not-tracked = non suivi
 todos-value-of = { $value } sur { $cap }
-todos-value-of-each = { $value } sur { $cap } chacun
-todos-range-of-each = { $low }–{ $high } sur { $cap } chacun
-todos-dungeons = { $count } donjons
 
 todos-resets-in = reset dans { $time }
-todos-next-full-in = prochain plein dans { $time }
 todos-weekly-reset-when = { $day } · dans { $time }
 todos-amount-full-in = Max en { $time }
 todos-full-being-wasted = Plein, gaspillé
 todos-full-spend-by = À vider avant { $stamp }
+todos-full-refills = Plein · rech. { $stamp }
 
 todos-everything-done = Tout est fait sur { $name }.
-todos-amount-full-note = { $label } : plein dans { $time }.
 todos-removed-note = Retiré : { $name }.
 todos-added-note = Ajouté à { $section } : { $name }.
 
 todos-source-live = Depuis le jeu, en direct · connecté à { $time }
 todos-source-live-now = Depuis le jeu, en direct
 todos-source-earlier = Depuis le jeu à la connexion, { $stamp } · recharges depuis estimées
+todos-source-earlier-to-dos = Depuis le jeu à la connexion, { $stamp }
 todos-source-shared = { $name } pas encore vu à la connexion · lignes Compte de { $from }
 todos-source-none = Aucune valeur du jeu pour l'instant. Connectez-vous avec { $name } pendant que { -app-name } tourne.
 
@@ -158,13 +143,13 @@ todos-hidden-description =
         [one] { $characters } personnage
        *[other] { $characters } personnages
     }. { todos-restore-keeps }
-todos-reset-dialog-body = Sur chaque personnage : toutes les tâches masquées reviennent, et chaque compteur et chaque montant saisi est vidé. Les valeurs du jeu restent.
-todos-reset-dialog-body-with-own = Sur chaque personnage : vos propres tâches ({ $own }) sont supprimées, toutes les tâches masquées reviennent, et chaque compteur et chaque montant saisi est vidé. Les valeurs du jeu restent.
+todos-reset-dialog-body = Sur chaque personnage : toutes les tâches masquées reviennent, et chaque compteur saisi et chaque montant saisi dans la fenêtre des ressources est vidé. Les valeurs du jeu restent.
+todos-reset-dialog-body-with-own = Sur chaque personnage : vos propres tâches ({ $own }) sont supprimées, toutes les tâches masquées reviennent, et chaque compteur saisi et chaque montant saisi dans la fenêtre des ressources est vidé. Les valeurs du jeu restent.
 todos-reset-dialog-keeps = L'heure de reset et l'abonnement sont conservés. Cette action est irréversible.
 
 todos-window-title = Tâches
 todos-window-playing = En jeu
-todos-window-picker-note = Les personnages vus par { -app-name }, avec ce qu'il reste à chacun. Les Duty Missions, les Shugo Festival keys, les Invasion keys et l'Unknown Fissure sont partagés par vos personnages d'un même serveur.
+todos-window-picker-note = Les personnages vus par { -app-name }, avec ce qu'il reste à chacun. Les Duty Missions sont partagées par vos personnages d'un même serveur.
 todos-window-no-character-title = Aucun personnage
 todos-window-no-character-line = Vos tâches apparaissent dès que { -app-name } a vu votre personnage. Lancez-le avant la connexion, ou relog via le choix du perso.
 todos-window-undo = Annuler
@@ -214,9 +199,6 @@ todos-window-amount-input = { $label } : combien vous en avez maintenant
 todos-window-back-to-game = Revenir à la valeur du jeu : { $label }
 todos-window-figure-from-game = { $label }, { $value }, d'après le jeu. Saisir par-dessus
 todos-window-figure-typed = { $label }, { $value }, saisi par vous. Saisir par-dessus
-todos-window-count-from-game = { $label }, { $progress }, d'après le jeu
-todos-window-row-done-from-game = { $label }, faite, d'après le jeu
-todos-window-row-not-done-from-game = { $label }, à faire, d'après le jeu
 todos-window-with-extra = { $value }, { $extra } en plus
 todos-window-login-note = Rempli depuis le jeu à la connexion.
 todos-window-login-note-replaced = Rempli depuis le jeu à la connexion. Les valeurs saisies ont été remplacées.
@@ -225,6 +207,7 @@ resources-window-title = Ressources
 resources-window-membership-caps = Plafonds avec abonnement
 resources-window-plain-caps = Plafonds sans abonnement
 resources-window-no-character-line = Vos ressources apparaissent dès que { -app-name } a vu votre personnage. Lancez-le avant la connexion, ou relog via le choix du perso.
+resources-window-picker-note = Les personnages vus par { -app-name }, avec ce qu'il reste à chacun. Les Shugo keys, les Invasion keys et le Daily Dungeon sont partagés par vos personnages d'un même serveur.
 
 ## Event reminders
 
@@ -463,21 +446,21 @@ settings-event-nahma-text = Vendredi et dimanche à 21:00. Niv. 65, et l'Enragé
 settings-event-arena-text = 11:00 et 19:00, à l'ouverture de la file 10 contre 10 (jusqu'à 14:00 et 21:00).
 settings-event-keys-text = 16:00. Clés du Shugo Festival et de la Dimensional Invasion.
 
-settings-todos-lead = La fenêtre des tâches, ouverte depuis la barre d'outils. Les compteurs et les montants se remplissent depuis le jeu quand vous vous connectez pendant que { -app-name } tourne.
+settings-todos-lead = La fenêtre des tâches, ouverte depuis la barre d'outils. L'heure de reset et l'abonnement règlent aussi les heures de recharge et les plafonds de la fenêtre des ressources.
 settings-todos-resets = Resets
-settings-todos-daily-reset-text = Signalé, non confirmé. Vérifiez le compte à rebours en jeu.
+settings-todos-daily-reset-text = Aussi l'heure des recharges quotidiennes de la fenêtre des ressources. Signalé, non confirmé : vérifiez le compte à rebours en jeu.
 settings-todos-weekly-reset = Reset hebdomadaire
-settings-todos-weekly-reset-text = Les tâches de la semaine repartent le mercredi, à l'heure du reset quotidien.
+settings-todos-weekly-reset-text = Les tâches de la semaine et les tickets du Daily Dungeon repartent le mercredi, à l'heure du reset quotidien.
 settings-todos-weekly-at = Mercredi { $time }
 settings-todos-membership = Abonnement
-settings-todos-membership-text = Plafonds plus hauts sur chaque personnage : Odyle Energy 840 au lieu de 560, Shugo Festival keys 21 au lieu de 12.
+settings-todos-membership-text = Plafonds plus hauts dans la fenêtre des ressources, pour chaque personnage. Odyle Energy 840 au lieu de 560, Shugo keys 21 au lieu de 12.
 settings-todos-membership-hint = Le jeu affiche { $amount } sur { $name }, plus que { $cap }. Avez-vous un abonnement ?
 settings-todos-membership-amount = { $count } { $label }
 settings-todos-defaults = Tâches par défaut
 settings-todos-hidden = Tâches masquées
 settings-todos-restore = Restaurer les tâches par défaut
 settings-todos-start-over = Repartir de zéro
-settings-todos-start-over-text = Supprime vos propres tâches, fait revenir toutes celles qui sont masquées et vide chaque compteur et chaque montant saisi.
+settings-todos-start-over-text = Supprime vos propres tâches, fait revenir toutes celles qui sont masquées et vide chaque compteur saisi et chaque montant saisi dans la fenêtre des ressources.
 settings-todos-reset-completely = Tout réinitialiser…
 settings-todos-reset-done = Tâches réinitialisées
 settings-todos-set-aside = Les tâches enregistrées ont été mises de côté
@@ -528,6 +511,7 @@ settings-reset-body = Les paramètres reviennent à leurs valeurs par défaut, y
 meter-report-header = Durée { $duration } · Dégâts totaux { $damage } · DPS du groupe { $dps }
 meter-copy-defeated = { $boss }{ $place } · vaincu en { $duration }
 meter-copy-ended = { $boss }{ $place } · combat terminé en { $duration }
+meter-copy-wiped = { $boss }{ $place } · wipe, boss à { $hp } après { $duration }
 meter-copy-rank = #{ $rank } sur { $total }
 meter-copy-crit = crit { $percent }
 meter-copy-first-record = Premier record
@@ -569,7 +553,9 @@ meter-menu-automatic = Automatique
 
 meter-summary-defeated = Vaincu
 meter-summary-ended = Combat terminé
+meter-summary-wiped = Wipe
 meter-summary-may-resume = peut reprendre
+meter-summary-hp-left = { $hp } restants
 meter-summary-party-dps = DPS du groupe
 meter-summary-rank = Rang
 meter-summary-share = Part
@@ -621,6 +607,8 @@ history-delete-all-confirm =
     }
 history-report = Rapport de combat
 history-boss-record = Boss, { $name }
+history-wiped-record = Boss, { $name }, wipe
+history-wiped-record-hp = Boss, { $name }, wipe avec { $hp } restants
 
 ## Player detail
 

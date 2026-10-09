@@ -80,17 +80,8 @@ impl<'a> Resets<'a> {
         self.weekly().next_after(self.zone, now_ms)
     }
 
-    /// The first `hour`:00 on the local clock after `after_ms`.
-    pub fn next_daily_at(&self, hour: u8, after_ms: i64) -> i64 {
-        self.daily_at(hour).next_after(self.zone, after_ms)
-    }
-
     fn daily(&self) -> Recurrence {
         Recurrence { clock: self.clock, weekday: None }
-    }
-
-    fn daily_at(&self, hour: u8) -> Recurrence {
-        Recurrence { clock: ResetClock::Local(hour), weekday: None }
     }
 
     fn weekly(&self) -> Recurrence {
@@ -215,11 +206,11 @@ mod tests {
     }
 
     #[test]
-    fn a_daily_refill_hour_is_independent_of_the_reset_hour() {
+    fn the_next_daily_reset_follows_the_chosen_reset_hour() {
         let zone = summer();
-        let resets = Resets::new(&zone, 9);
-        assert_eq!(resets.next_daily_at(16, local(5, 10, 0)), local(5, 16, 0));
-        assert_eq!(resets.next_daily_at(16, local(5, 16, 0)), local(6, 16, 0));
+        let resets = Resets::new(&zone, 16);
+        assert_eq!(resets.next_daily(local(5, 10, 0)), local(5, 16, 0));
+        assert_eq!(resets.next_daily(local(5, 16, 0)), local(6, 16, 0));
     }
 
     #[test]

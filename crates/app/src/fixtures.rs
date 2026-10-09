@@ -353,8 +353,9 @@ pub fn pvp_stats_long() -> Vec<PvpCombatStatsRow> {
     rows
 }
 
-/// Saved fights, newest last in the vector; the history sorts them. Two
-/// targets and two main players, so the filters have something to filter.
+/// Saved fights, newest first in the vector; the history sorts them. Two
+/// targets and two main players, so the filters have something to filter;
+/// the second newest is a wipe at 12.8%, under a kill.
 pub fn history_records() -> Vec<HistoryRecord> {
     const NOW: u64 = 1_791_052_949_892;
     let fights: [(&str, &str, f64, u64); 14] = [
@@ -404,12 +405,13 @@ pub fn history_records() -> Vec<HistoryRecord> {
                 })
                 .collect();
             let is_boss = boss != "Thornback Boar";
+            let wiped = index == 1;
             let target = TargetInfo {
                 id: target_id,
                 target_mob_code: Some(if is_boss { BOSS_MOB } else { MOB_CODE }),
                 target_name: Some(boss.to_string()),
                 is_boss,
-                current_hp: Some(0),
+                current_hp: Some(if wiped { 128 } else { 0 }),
                 max_hp: Some(1_000),
                 target_start_time: HashMap::from([(YOUR_ID, 1_000.0)]),
                 target_last_time: HashMap::from([(YOUR_ID, 1_000.0 + secs)]),
@@ -428,6 +430,7 @@ pub fn history_records() -> Vec<HistoryRecord> {
                 player_stats: players,
                 use_buffs_by_target: boss_snapshot.use_buffs_by_target,
                 ledger: None,
+                wiped,
                 created_at: NOW - index as u64 * 5_400_000,
             }
         })
@@ -460,19 +463,27 @@ pub enum ReportDeaths {
     Several,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ReportEnd {
+    Defeated,
+    /// The boss lived: "Fight ended, may resume".
+    Ended,
+    /// The attempt was wiped with the boss at 12.8%.
+    Wiped,
+}
+
 #[derive(Clone, Copy)]
 pub struct ReportFixture {
     pub fight: ReportFight,
     pub deaths: ReportDeaths,
-    /// The boss lived: "Fight ended, may resume".
-    pub ended: bool,
+    pub end: ReportEnd,
     /// Saved before the meter kept healing, damage taken and deaths.
     pub old: bool,
 }
 
 impl ReportFixture {
     pub const fn of(fight: ReportFight) -> Self {
-        Self { fight, deaths: ReportDeaths::Usual, ended: false, old: false }
+        Self { fight, deaths: ReportDeaths::Usual, end: ReportEnd::Defeated, old: false }
     }
 }
 
@@ -880,7 +891,11 @@ pub fn report_record(fixture: ReportFixture) -> HistoryRecord {
             target_mob_code: Some(arena.boss.0),
             target_name: Some(arena.boss.1.to_string()),
             is_boss: true,
-            current_hp: Some(if fixture.ended { 183 } else { 0 }),
+            current_hp: Some(match fixture.end {
+                ReportEnd::Defeated => 0,
+                ReportEnd::Ended => 183,
+                ReportEnd::Wiped => 128,
+            }),
             max_hp: Some(1_000),
             target_start_time: HashMap::from([(you, window.started_at)]),
             target_last_time: HashMap::from([(you, window.ended_at)]),
@@ -898,6 +913,7 @@ pub fn report_record(fixture: ReportFixture) -> HistoryRecord {
         player_stats,
         use_buffs_by_target,
         ledger,
+        wiped: fixture.end == ReportEnd::Wiped,
         created_at: (window.ended_at * 1000.0) as u64,
     }
 }
@@ -909,31 +925,15 @@ pub fn fight_report(fixture: ReportFixture) -> meter_core::report::fight_report:
 
 /// Mirelle's tickets as the approved to-do and Resources pages draw them
 /// (todos.js, hub.js): (ticket, regular pool, extra pool). Odyle 245 +380,
-/// Shugo keys 7 +3, Invasion keys 2, Nightmare 0 +3, the Conquest dungeons
-/// 10 to 13 of 14, Deus and Arkanis 4 of 4, Balaur and Fafnium 6 of 7; this
-/// week the Unknown Fissure with 9 entries left of 14 (+7), Ascension Trial
-/// with 1 left (+1), the Abyssal Forge's final boss done.
+/// Shugo keys 7 +3, Invasion keys 2, Nightmare 0 +3, the Daily Dungeon 9 of 14 (+7);
+/// this week Ascension Trial with 1 left (+1).
 pub const MIRELLE_TICKETS: &[(u32, u32, u32)] = &[
     (60_000_001, 245, 380),
     (1, 7, 3),
     (8, 2, 0),
     (4, 0, 3),
-    (60_000_101, 12, 0),
-    (60_001_201, 12, 0),
-    (60_002_201, 10, 0),
-    (60_003_201, 12, 0),
-    (60_007_201, 13, 0),
-    (60_009_201, 12, 0),
-    (60_005_301, 4, 0),
-    (60_006_301, 4, 0),
-    (102, 6, 0),
-    (103, 6, 0),
     (101, 9, 7),
     (80_000_001, 1, 1),
-    (70_000_001, 3, 0),
-    (90_000_001, 2, 0),
-    (90_000_002, 0, 0),
-    (60_000_008, 20, 0),
 ];
 
 /// The game listing `character`'s tickets at login: (ticket, regular pool,

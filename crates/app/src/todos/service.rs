@@ -324,7 +324,7 @@ impl Todos {
     }
 
     /// What the selected character has at its cap with a refill coming, in
-    /// the window's order, for the toolbar's warning.
+    /// the Resources window's order, for the toolbar's warning.
     pub fn full_resources(&self) -> Vec<FullResource> {
         let Some(id) = self.selected() else {
             return Vec::new();
@@ -475,12 +475,6 @@ impl Todos {
 
     pub fn set_section_folded(&mut self, section: Section, folded: bool, cx: &mut Context<Self>) {
         if self.data.set_folded(section, folded) {
-            self.changed(cx);
-        }
-    }
-
-    pub fn set_group_open(&mut self, group: &'static str, open: bool, cx: &mut Context<Self>) {
-        if self.data.set_group_open(group, open) {
             self.changed(cx);
         }
     }
@@ -769,8 +763,8 @@ mod tests {
         cx.update(|cx| {
             todos.update(cx, |todos, cx| {
                 todos.hide(ids[0], "trial", cx);
-                todos.hide(ids[1], "shugo", cx);
-                todos.adjust_count(ids[1], RowId::Builtin("fissure"), 4, cx);
+                todos.hide(ids[1], "duty", cx);
+                todos.adjust_count(ids[1], RowId::Builtin("trial"), 3, cx);
                 todos
                     .add_own(ids[0], NewOwnTodo { name: "Mine".into(), kind: OwnKind::Tick, cadence: Cadence::Weekly }, cx)
                     .unwrap();
@@ -781,14 +775,14 @@ mod tests {
         let back = cx.update(|cx| todos.update(cx, |todos, cx| todos.restore_defaults(cx)));
         assert_eq!(back, 4);
         assert_eq!(cx.update(|cx| todos.read(cx).own_total()), 1, "own to-dos stay");
-        let fissure = cx.update(|cx| todos.read(cx).list_of(ids[1])).unwrap().sections[2].rows.iter().find(|row| row.id == RowId::Builtin("fissure")).cloned().unwrap();
-        assert!(matches!(fissure.kind, crate::todos::RowKind::Count { count: 4, .. }), "progress stays");
+        let trial = cx.update(|cx| todos.read(cx).list_of(ids[1])).unwrap().sections[1].rows.iter().find(|row| row.id == RowId::Builtin("trial")).cloned().unwrap();
+        assert!(matches!(trial.kind, crate::todos::RowKind::Count { count: 3, .. }), "progress stays");
 
         cx.update(|cx| todos.update(cx, |todos, cx| todos.reset_completely(cx)));
         assert_eq!(cx.update(|cx| todos.read(cx).own_total()), 0);
         let list = cx.update(|cx| todos.read(cx).list_of(ids[1])).unwrap();
-        assert_eq!(list.sections[2].hidden_rows, 0);
-        assert!(list.sections[2].rows.iter().all(|row| !matches!(row.kind, crate::todos::RowKind::Count { count, .. } if count > 0)));
+        assert_eq!(list.sections[1].hidden_rows, 0);
+        assert!(list.sections[1].rows.iter().all(|row| !matches!(row.kind, crate::todos::RowKind::Count { count, .. } if count > 0)));
     }
 
     #[gpui::test]
@@ -836,8 +830,8 @@ mod tests {
         };
         cx.update(|cx| todos.update(cx, |todos, cx| todos.apply_tickets(&[report], cx)));
 
-        let recharges = |cx: &mut TestAppContext| cx.update(|cx| todos.read(cx).list()).unwrap().sections.remove(1).rows;
-        let rows = recharges(cx);
+        let resources = |cx: &mut TestAppContext| cx.update(|cx| todos.read(cx).list()).unwrap().resources.rows;
+        let rows = resources(cx);
         let amount = |id: &'static str| match &rows.iter().find(|row| row.id == RowId::Builtin(id)).unwrap().kind {
             crate::todos::RowKind::Amount(amount) => amount.clone(),
             other => panic!("{id} is {other:?}"),
@@ -848,14 +842,15 @@ mod tests {
         assert_eq!(rows[0].source, crate::todos::Source::GameLive);
         let hint = cx.update(|cx| todos.read(cx).membership_hint()).expect("the membership hint");
         assert_eq!((hint.character.as_str(), hint.label, hint.count, hint.cap), ("Alder", "Odyle Energy", 600, 560));
-        let full: Vec<String> = cx.update(|cx| todos.read(cx).full_resources()).into_iter().map(|resource| resource.label).collect();
-        assert_eq!(full, ["Shugo Festival keys"], "Odyle is above its plain cap, not full");
+        assert!(amount("shugo").full, "Shugo keys are at the plain cap");
+        let warned: Vec<String> = cx.update(|cx| todos.read(cx).full_resources()).into_iter().map(|resource| resource.label).collect();
+        assert!(!warned.contains(&"Odyle Energy".to_string()), "Odyle is above its plain cap, not full");
         let nightmare = amount("nightmare");
         assert_eq!((nightmare.tracked, nightmare.value), (true, 0));
 
         cx.update(|cx| todos.update(cx, |todos, cx| todos.set_membership(true, cx)));
         assert_eq!(cx.update(|cx| todos.read(cx).membership_hint()), None);
-        let odyle = match &recharges(cx)[0].kind {
+        let odyle = match &resources(cx)[0].kind {
             crate::todos::RowKind::Amount(amount) => amount.clone(),
             other => panic!("{other:?}"),
         };
@@ -914,17 +909,14 @@ mod tests {
         cx.update(|cx| {
             todos.update(cx, |todos, cx| {
                 todos.adjust_count(id, RowId::Builtin("trial"), 2, cx);
-                todos.set_section_folded(Section::Recharges, true, cx);
-                todos.set_group_open("sanct", true, cx);
+                todos.set_section_folded(Section::ThisWeek, true, cx);
                 todos.flush();
             })
         });
         let reopened = cx.update(|cx| cx.new(|cx| Todos::open(&settings, Some(&dir), false, cx)));
         let list = cx.update(|cx| reopened.read(cx).list()).unwrap();
         assert!(list.sections[1].folded);
-        let sanctuary = list.sections[2].rows.iter().find(|row| row.id == RowId::Builtin("sanct")).unwrap();
-        assert!(matches!(&sanctuary.kind, crate::todos::RowKind::Group(group) if group.open));
-        let trial = list.sections[2].rows.iter().find(|row| row.id == RowId::Builtin("trial")).unwrap();
+        let trial = list.sections[1].rows.iter().find(|row| row.id == RowId::Builtin("trial")).unwrap();
         assert!(matches!(trial.kind, crate::todos::RowKind::Count { count: 2, .. }));
         let _ = std::fs::remove_dir_all(&dir);
     }

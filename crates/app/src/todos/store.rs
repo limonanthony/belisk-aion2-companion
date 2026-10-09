@@ -205,9 +205,93 @@ mod tests {
         let alder = &loaded.data.characters()[0];
         assert_eq!(alder.typed_amount("odyle").map(|typed| typed.value), Some(425));
         assert_eq!(alder.typed_amount("shugo").map(|typed| typed.value), Some(28), "a typed amount above the cap is kept");
-        assert_eq!(alder.typed_amount("conquest"), None, "a row that became a group costs that entry only");
+        assert_eq!(alder.typed_amount("conquest"), None, "a row the catalogue no longer has costs that entry only");
         assert_eq!(alder.logged_in_ms(), None);
         assert_eq!(loaded.data.duty_missions_done(1001), 2);
+    }
+
+    #[test]
+    fn rows_removed_from_the_catalogue_are_dropped_on_load_and_not_saved_back() {
+        let dir = TempDir::new("removed-rows");
+        fs::write(
+            dir.file(),
+            br#"{"version":1,"openGroups":["conquest","sanct","explore"],"characters":[{"id":1,"name":"Alder","serverId":1001,
+                "amounts":{"odyle":{"value":425,"atMs":10},"c-krao":{"value":9,"atMs":10},"deus":{"value":3,"atMs":10},"arkanis":{"value":2,"atMs":10},"balaur":{"value":5,"atMs":10},"fafnium":{"value":5,"atMs":10}},
+                "progress":{"trial":2,"subj":1,"transc":12,"conqk":3,"cradle":1,"dramata":1,"ordeal":2,"forge":3,"forgeboss":1,"corr":1,"corrboss":1,"chal":1,"chalboss":1,"x-krao":4,"x-azure":2},
+                "hidden":["trial","c-horn","deus","conquest","balaur","fafnium","subj","sanct","explore","x-horn","forgeboss","ordeal"],
+                "tickets":{"60000001":{"count":5,"charge":0,"atMs":10},"60000101":{"count":14,"charge":0,"atMs":10},
+                           "60005301":{"count":4,"charge":0,"atMs":10},"60006301":{"count":4,"charge":0,"atMs":10},
+                           "102":{"count":7,"charge":0,"atMs":10},"103":{"count":7,"charge":0,"atMs":10},
+                           "60000008":{"count":5,"charge":0,"atMs":10},"60000007":{"count":5,"charge":0,"atMs":10},
+                           "60012201":{"count":5,"charge":0,"atMs":10},"60004201":{"count":5,"charge":0,"atMs":10},
+                           "60015101":{"count":5,"charge":0,"atMs":10},"70000001":{"count":2,"charge":0,"atMs":10},
+                           "90000001":{"count":2,"charge":0,"atMs":10},"90000006":{"count":2,"charge":0,"atMs":10},
+                           "60014101":{"count":2,"charge":0,"atMs":10},"60007101":{"count":2,"charge":0,"atMs":10}}}]}"#,
+        )
+        .unwrap();
+        let loaded = load(&dir.file(), 0);
+        assert_eq!(loaded.notice, None);
+        let alder = &loaded.data.characters()[0];
+        assert_eq!(alder.typed_amount("odyle").map(|typed| typed.value), Some(425));
+        assert_eq!(alder.progress.iter().map(|(id, count)| (id.as_str(), *count)).collect::<Vec<_>>(), [("trial", 2)]);
+        assert!(alder.is_hidden("trial") && !alder.is_hidden("subj") && !alder.is_hidden("sanct") && !alder.is_hidden("balaur"));
+
+        save(&dir.file(), &loaded.data).unwrap();
+        let text = fs::read_to_string(dir.file()).unwrap();
+        let removed_ids = [
+            "c-krao", "c-horn", "deus", "arkanis", "balaur", "fafnium", "conquest", "subj", "transc", "conqk", "cradle", "dramata",
+            "ordeal", "forge", "corr", "chal", "sanct", "explore", "x-krao", "x-azure", "x-horn", "openGroups",
+        ];
+        let removed_tickets = [
+            "60000101", "60005301", "60006301", "\"102\"", "\"103\"", "60000008", "60000007", "60012201", "60004201", "60015101",
+            "70000001", "90000001", "90000006", "60014101", "60007101",
+        ];
+        for removed in removed_ids.into_iter().chain(removed_tickets) {
+            assert!(!text.contains(removed), "{removed} was written back: {text}");
+        }
+        assert!(text.contains("60000001") && text.contains("\"trial\""), "{text}");
+    }
+
+    #[test]
+    fn the_weekly_count_of_the_daily_dungeon_in_an_older_file_is_dropped_and_not_saved_back() {
+        let dir = TempDir::new("daily-dungeon-count");
+        fs::write(
+            dir.file(),
+            br#"{"version":1,"characters":[{"id":1,"name":"Alder","serverId":1001,"progress":{"fissure":4,"trial":1}}]}"#,
+        )
+        .unwrap();
+        let loaded = load(&dir.file(), 0);
+        assert_eq!(loaded.notice, None);
+        let alder = &loaded.data.characters()[0];
+        assert_eq!(alder.progress.keys().collect::<Vec<_>>(), ["trial"]);
+        assert_eq!(alder.typed_amount("fissure"), None);
+
+        save(&dir.file(), &loaded.data).unwrap();
+        let text = fs::read_to_string(dir.file()).unwrap();
+        assert!(!text.contains("fissure") && text.contains("trial"), "{text}");
+    }
+
+    #[test]
+    fn resources_hidden_in_an_older_file_are_dropped_on_load_and_not_saved_back() {
+        let dir = TempDir::new("hidden-resources");
+        fs::write(
+            dir.file(),
+            br#"{"version":1,"folded":["recharges","thisWeek"],"characters":[{"id":1,"name":"Alder","serverId":1001,
+                "hidden":["odyle","shugo","invasion","nightmare","fissure","trial"]}]}"#,
+        )
+        .unwrap();
+        let loaded = load(&dir.file(), 0);
+        assert_eq!(loaded.notice, None);
+        let alder = &loaded.data.characters()[0];
+        assert_eq!(alder.hidden.iter().collect::<Vec<_>>(), ["trial"], "only to-dos stay hidden");
+        assert!(loaded.data.is_folded(crate::todos::catalogue::Section::ThisWeek));
+
+        save(&dir.file(), &loaded.data).unwrap();
+        let text = fs::read_to_string(dir.file()).unwrap();
+        for removed in ["odyle", "shugo", "invasion", "nightmare", "fissure", "recharges"] {
+            assert!(!text.contains(removed), "{removed} was written back: {text}");
+        }
+        assert!(text.contains("\"trial\"") && text.contains("thisWeek"), "{text}");
     }
 
     #[test]

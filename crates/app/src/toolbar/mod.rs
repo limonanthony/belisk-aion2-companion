@@ -1,6 +1,6 @@
 //! The toolbar, the app's hub (docs/gpui-mockups/approved/toolbar.html,
 //! values in tokens.md, "Hub"): a small horizontal overlay that opens and
-//! closes every tool, with the Odyle Energy and Shugo Festival keys counts.
+//! closes every tool, with the Odyle Energy and Shugo keys counts.
 //! At launch only the toolbar opens, and the meter with it when Settings ›
 //! Overlay › "Open the meter at launch" is on. Fights are tracked only while
 //! the meter is open; closing the toolbar quits the app.

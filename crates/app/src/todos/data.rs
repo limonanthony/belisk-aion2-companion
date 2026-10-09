@@ -147,7 +147,7 @@ pub struct HiddenSummary {
     pub characters: usize,
 }
 
-/// "The game shows 18 Shugo Festival keys on Mirelle, more than 12."
+/// "The game shows 18 Shugo keys on Mirelle, more than 12."
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PoolAbovePlainCap {
     pub character: String,
@@ -239,13 +239,12 @@ impl CharacterState {
     }
 
     fn clear_section(&mut self, section: Section) {
-        self.progress.retain(|id, _| catalogue::builtin(id).is_none_or(|builtin| builtin.section != section));
+        self.progress.retain(|id, _| catalogue::builtin(id).is_none_or(|builtin| builtin.section() != Some(section)));
         let cadence = match section {
-            Section::Today => Some(Cadence::Daily),
-            Section::ThisWeek => Some(Cadence::Weekly),
-            Section::Recharges => None,
+            Section::Today => Cadence::Daily,
+            Section::ThisWeek => Cadence::Weekly,
         };
-        for todo in self.own.iter_mut().filter(|todo| Some(todo.cadence) == cadence) {
+        for todo in self.own.iter_mut().filter(|todo| todo.cadence == cadence) {
             todo.done = 0;
         }
     }
@@ -254,8 +253,7 @@ impl CharacterState {
         self.name = self.name.trim().to_string();
         self.progress.retain(|id, count| {
             let target = match catalogue::builtin(id).map(|builtin| builtin.kind) {
-                Some(Kind::Tick) => 1,
-                Some(Kind::Count { target }) => target,
+                Some(Kind::Count { target, .. }) => target,
                 _ => return false,
             };
             *count = (*count).min(target);
@@ -267,7 +265,9 @@ impl CharacterState {
                 catalogue::rows_of_ticket(ticket).next().is_some() && !catalogue::is_server_ticket(ticket)
             })
         });
-        self.hidden.retain(|id| catalogue::builtin(id).is_some());
+        // Older builds let a resource be hidden in the to-do window; the
+        // Resources window has no way to show it again.
+        self.hidden.retain(|id| catalogue::builtin(id).is_some_and(|builtin| builtin.section().is_some()));
         let mut seen = BTreeSet::new();
         self.own.retain_mut(|todo| {
             todo.name = truncated_name(&todo.name);
@@ -308,9 +308,6 @@ pub struct TodoData {
     /// Sections folded shut, by [`Section::key`].
     #[serde(deserialize_with = "lenient_set")]
     folded: BTreeSet<String>,
-    /// Groups opened, by built-in id.
-    #[serde(deserialize_with = "lenient_set")]
-    open_groups: BTreeSet<String>,
 }
 
 fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
@@ -364,7 +361,7 @@ impl TodoData {
         let after_last = self.characters.iter().map(|character| character.id.0).max().map_or(1, |last| last + 1);
         self.next_character_id = self.next_character_id.max(after_last);
         let target = catalogue::builtin(catalogue::DUTY_MISSIONS).map_or(0, |duty| match duty.kind {
-            Kind::Count { target } => target,
+            Kind::Count { target, .. } => target,
             _ => 0,
         });
         self.duty_missions.retain(|server, count| {
@@ -378,7 +375,6 @@ impl TodoData {
                 && seen.insert((known.server_id, known.ticket))
         });
         self.folded.retain(|key| Section::from_key(key).is_some());
-        self.open_groups.retain(|id| catalogue::builtin(id).is_some_and(|builtin| builtin.kind == Kind::Group));
         self
     }
 
@@ -542,26 +538,11 @@ impl TodoData {
         self.folded.contains(section.key())
     }
 
-    pub fn is_group_open(&self, id: &str) -> bool {
-        self.open_groups.contains(id)
-    }
-
     pub fn set_folded(&mut self, section: Section, folded: bool) -> bool {
         if folded {
             self.folded.insert(section.key().to_string())
         } else {
             self.folded.remove(section.key())
-        }
-    }
-
-    pub fn set_group_open(&mut self, group: &'static str, open: bool) -> bool {
-        if catalogue::builtin(group).is_none_or(|builtin| builtin.kind != Kind::Group) {
-            return false;
-        }
-        if open {
-            self.open_groups.insert(group.to_string())
-        } else {
-            self.open_groups.remove(group)
         }
     }
 
@@ -680,9 +661,10 @@ impl TodoData {
         Some(ProgressChange { was_done: done >= target, is_done: next >= target })
     }
 
-    /// Hides a built-in row. Returns whether it was shown before.
+    /// Hides a built-in to-do. Returns whether it was shown before.
     pub fn hide(&mut self, id: CharacterId, row: &'static str) -> bool {
-        catalogue::builtin(row).is_some() && self.character_mut(id).is_some_and(|character| character.hidden.insert(row.to_string()))
+        catalogue::builtin(row).is_some_and(|builtin| builtin.section().is_some())
+            && self.character_mut(id).is_some_and(|character| character.hidden.insert(row.to_string()))
     }
 
     pub fn show(&mut self, id: CharacterId, row: &'static str) -> bool {
@@ -810,9 +792,8 @@ enum Shape {
 fn shape_of(character: &CharacterState, row: RowId) -> Option<(Shape, u32)> {
     match row {
         RowId::Builtin(id) => match catalogue::builtin(id)?.kind {
-            Kind::Tick => Some((Shape::Tick, 1)),
-            Kind::Count { target } => Some((Shape::Count, target)),
-            Kind::Amount(_) | Kind::Group => None,
+            Kind::Count { target, .. } => Some((Shape::Count, target)),
+            Kind::Amount(_) => None,
         },
         RowId::Own(id) => character.own.iter().find(|todo| todo.id == id).map(|todo| match todo.kind {
             OwnKind::Tick => (Shape::Tick, 1),
@@ -904,9 +885,11 @@ mod tests {
     #[test]
     fn a_tick_toggles_and_a_count_is_clamped_to_zero_and_its_target() {
         let (mut data, id, _) = two_characters();
-        let forge_boss = RowId::Builtin("forgeboss");
-        assert_eq!(data.toggle_tick(id, forge_boss), Some(ProgressChange { was_done: false, is_done: true }));
-        assert_eq!(data.toggle_tick(id, forge_boss), Some(ProgressChange { was_done: true, is_done: false }));
+        let tick = RowId::Own(
+            data.add_own(id, NewOwnTodo { name: "Legion".into(), kind: OwnKind::Tick, cadence: Cadence::Weekly }).unwrap(),
+        );
+        assert_eq!(data.toggle_tick(id, tick), Some(ProgressChange { was_done: false, is_done: true }));
+        assert_eq!(data.toggle_tick(id, tick), Some(ProgressChange { was_done: true, is_done: false }));
 
         let trial = RowId::Builtin("trial");
         assert_eq!(data.adjust_count(id, trial, -1), None, "already at 0");
@@ -917,7 +900,7 @@ mod tests {
         assert_eq!(data.adjust_count(id, trial, 1), None);
         assert_eq!(data.adjust_count(id, trial, -1), Some(ProgressChange { was_done: true, is_done: false }));
         assert_eq!(data.toggle_tick(id, trial), None, "a count is not a tick");
-        assert_eq!(data.adjust_count(id, forge_boss, 1), None, "a tick is not a count");
+        assert_eq!(data.adjust_count(id, tick, 1), None, "a tick is not a count");
     }
 
     #[test]
@@ -941,9 +924,9 @@ mod tests {
     #[test]
     fn other_counts_belong_to_one_character() {
         let (mut data, alder, birch) = two_characters();
-        data.adjust_count(alder, RowId::Builtin("fissure"), 3);
-        assert_eq!(count_of(&data, alder, "fissure"), 3);
-        assert_eq!(count_of(&data, birch, "fissure"), 0);
+        data.adjust_count(alder, RowId::Builtin("trial"), 2);
+        assert_eq!(count_of(&data, alder, "trial"), 2);
+        assert_eq!(count_of(&data, birch, "trial"), 0);
     }
 
     #[test]
@@ -952,7 +935,7 @@ mod tests {
         let (mut data, id, _) = two_characters();
         data.apply_resets(&moment(&zone, local(5, 12, 0)));
         data.adjust_count(id, RowId::Builtin("duty"), 3);
-        data.adjust_count(id, RowId::Builtin("fissure"), 4);
+        data.adjust_count(id, RowId::Builtin("trial"), 3);
         let daily = data.add_own(id, NewOwnTodo { name: "Legion".into(), kind: OwnKind::Tick, cadence: Cadence::Daily }).unwrap();
         let weekly = data.add_own(id, NewOwnTodo { name: "Market".into(), kind: OwnKind::Count(3), cadence: Cadence::Weekly }).unwrap();
         data.toggle_tick(id, RowId::Own(daily));
@@ -962,7 +945,7 @@ mod tests {
         assert!(data.apply_resets(&moment(&zone, local(6, 9, 0))));
 
         assert_eq!(count_of(&data, id, "duty"), 0);
-        assert_eq!(count_of(&data, id, "fissure"), 4, "This week does not reset on Tuesday");
+        assert_eq!(count_of(&data, id, "trial"), 3, "This week does not reset on Tuesday");
         let state = data.character(id).unwrap();
         assert_eq!(data.progress_of(state, RowId::Own(daily)), 0);
         assert_eq!(data.progress_of(state, RowId::Own(weekly)), 2);
@@ -973,17 +956,12 @@ mod tests {
         let zone = summer();
         let (mut data, id, _) = two_characters();
         data.apply_resets(&moment(&zone, local(5, 12, 0)));
-        data.adjust_count(id, RowId::Builtin("fissure"), 6);
-        data.adjust_count(id, RowId::Builtin("forge"), 2);
-        data.toggle_tick(id, RowId::Builtin("forgeboss"));
-        data.adjust_count(id, RowId::Builtin("x-krao"), 1);
+        data.adjust_count(id, RowId::Builtin("trial"), 2);
 
         data.apply_resets(&moment(&zone, local(7, 8, 59)));
-        assert_eq!(count_of(&data, id, "fissure"), 6);
+        assert_eq!(count_of(&data, id, "trial"), 2);
         data.apply_resets(&moment(&zone, local(7, 9, 0)));
-        for row in ["fissure", "forge", "forgeboss", "x-krao"] {
-            assert_eq!(count_of(&data, id, row), 0, "{row} starts over, group rows included");
-        }
+        assert_eq!(count_of(&data, id, "trial"), 0, "starts over");
     }
 
     #[test]
@@ -1046,16 +1024,16 @@ mod tests {
         let (mut data, id, _) = two_characters();
         data.apply_resets(&moment(&zone, local(5, 12, 0)));
         data.apply_resets(&moment(&zone, local(7, 9, 0)));
-        data.adjust_count(id, RowId::Builtin("fissure"), 4);
+        data.adjust_count(id, RowId::Builtin("trial"), 3);
         data.adjust_count(id, RowId::Builtin("duty"), 2);
 
         data.apply_resets(&moment(&zone, local(6, 12, 0)));
         data.apply_resets(&moment(&zone, local(7, 12, 0)));
-        assert_eq!(count_of(&data, id, "fissure"), 4, "the same Wednesday does not clear again");
+        assert_eq!(count_of(&data, id, "trial"), 3, "the same Wednesday does not clear again");
         assert_eq!(count_of(&data, id, "duty"), 2, "nor the same day");
 
         data.apply_resets(&moment(&zone, local(14, 9, 0)));
-        assert_eq!(count_of(&data, id, "fissure"), 0, "a later Wednesday still clears");
+        assert_eq!(count_of(&data, id, "trial"), 0, "a later Wednesday still clears");
     }
 
     #[test]
@@ -1093,7 +1071,7 @@ mod tests {
         assert!(!data.set_amount(id, "odyle", Some(9_999), &now), "same value, same time");
         assert!(data.set_amount(id, "odyle", None, &now));
         assert_eq!(data.character(id).unwrap().typed_amount("odyle"), None);
-        assert!(!data.set_amount(id, "trial", Some(1), &now), "only recharges hold amounts");
+        assert!(!data.set_amount(id, "trial", Some(1), &now), "only resources hold amounts");
     }
 
     #[test]
@@ -1151,7 +1129,7 @@ mod tests {
     }
 
     #[test]
-    fn hide_and_show_move_built_ins_in_and_out_of_the_hidden_set() {
+    fn hide_and_show_move_to_dos_in_and_out_of_the_hidden_set_and_resources_never_hide() {
         let (mut data, id, other) = two_characters();
         assert!(data.hide(id, "trial"));
         assert!(!data.hide(id, "trial"));
@@ -1159,6 +1137,8 @@ mod tests {
         assert!(!data.character(other).unwrap().is_hidden("trial"), "per character");
         assert!(data.show(id, "trial"));
         assert!(!data.show(id, "trial"));
+        assert!(!data.hide(id, "odyle"), "the Resources window has nothing to hide");
+        assert!(!data.character(id).unwrap().is_hidden("odyle"));
     }
 
     #[test]
@@ -1206,15 +1186,15 @@ mod tests {
         let zone = summer();
         let (mut data, alder, birch) = two_characters();
         data.hide(alder, "trial");
-        data.hide(alder, "sanct");
-        data.hide(birch, "shugo");
-        data.adjust_count(alder, RowId::Builtin("fissure"), 5);
+        data.hide(alder, "duty");
+        data.hide(birch, "duty");
+        data.adjust_count(alder, RowId::Builtin("trial"), 5);
         data.set_amount(birch, "odyle", Some(200), &moment(&zone, local(5, 12, 0)));
         data.add_own(alder, NewOwnTodo { name: "Mine".into(), kind: OwnKind::Tick, cadence: Cadence::Weekly }).unwrap();
 
         assert_eq!(data.restore_defaults(), 5, "Duty Commands on both, plus three more");
         assert_eq!(data.hidden_summary(), HiddenSummary::default());
-        assert_eq!(count_of(&data, alder, "fissure"), 5);
+        assert_eq!(count_of(&data, alder, "trial"), 3);
         assert!(data.character(birch).unwrap().typed_amount("odyle").is_some());
         assert_eq!(data.own_total(), 1);
         assert_eq!(data.restore_defaults(), 0);
@@ -1226,32 +1206,28 @@ mod tests {
         let (mut data, alder, birch) = two_characters();
         data.hide(birch, "trial");
         data.adjust_count(alder, RowId::Builtin("duty"), 2);
-        data.adjust_count(birch, RowId::Builtin("fissure"), 5);
+        data.adjust_count(birch, RowId::Builtin("trial"), 3);
         data.set_amount(alder, "shugo", Some(9), &moment(&zone, local(5, 12, 0)));
         data.add_own(alder, NewOwnTodo { name: "Mine".into(), kind: OwnKind::Tick, cadence: Cadence::Daily }).unwrap();
         data.set_folded(Section::Today, true);
-        data.set_group_open("sanct", true);
 
         assert!(data.reset_completely());
         assert_eq!(data.hidden_summary(), HiddenSummary::default(), "Duty Commands comes back too");
         assert_eq!(data.own_total(), 0);
         assert_eq!(count_of(&data, alder, "duty"), 0);
-        assert_eq!(count_of(&data, birch, "fissure"), 0);
+        assert_eq!(count_of(&data, birch, "trial"), 0);
         assert_eq!(data.character(alder).unwrap().typed_amount("shugo"), None);
         assert_eq!(data.characters.len(), 2, "the characters stay");
-        assert!(data.is_folded(Section::Today) && data.is_group_open("sanct"));
+        assert!(data.is_folded(Section::Today));
         assert!(!data.reset_completely(), "nothing left to clear");
     }
 
     #[test]
-    fn fold_and_group_state_is_kept_and_only_groups_open() {
+    fn fold_state_is_kept_per_section() {
         let mut data = TodoData::default();
-        assert!(data.set_folded(Section::Recharges, true));
-        assert!(!data.set_folded(Section::Recharges, true));
-        assert!(data.is_folded(Section::Recharges) && !data.is_folded(Section::Today));
-        assert!(data.set_group_open("explore", true));
-        assert!(!data.set_group_open("trial", true), "a count is not a group");
-        assert!(data.is_group_open("explore"));
+        assert!(data.set_folded(Section::ThisWeek, true));
+        assert!(!data.set_folded(Section::ThisWeek, true));
+        assert!(data.is_folded(Section::ThisWeek) && !data.is_folded(Section::Today));
     }
 
     #[test]
@@ -1313,7 +1289,6 @@ mod tests {
         assert_eq!(data.duty_missions_done(1001), 5, "clamped to 5 a day");
         assert_eq!(data.duty_missions.len(), 1);
         assert_eq!(data.folded.iter().collect::<Vec<_>>(), ["today"]);
-        assert_eq!(data.open_groups.iter().collect::<Vec<_>>(), ["sanct"]);
         assert!(data.next_character_id > 4);
     }
 
@@ -1350,7 +1325,7 @@ mod tests {
         let now = moment(&zone, local(5, 12, 0));
         data.set_amount(alder, "odyle", Some(425), &now);
         data.adjust_count(alder, RowId::Builtin("trial"), 2);
-        data.adjust_count(alder, RowId::Builtin("subj"), 1);
+        data.set_amount(alder, "shugo", Some(5), &now);
 
         let listed = vec![record(60_000_001, 0, 245), record(80_000_001, 3, 1), record(4, 0, 3), record(999_999, 5, 5)];
         assert!(data.apply_tickets(&snapshot(&character("Alder", 1001, None), 1_000.0, listed)));
@@ -1361,7 +1336,7 @@ mod tests {
         assert_eq!(game_count(&data, alder, 999_999), None, "no row follows it");
         assert_eq!(state.typed_amount("odyle"), None, "the game's value replaces the typed one");
         assert_eq!(count_of(&data, alder, "trial"), 0, "so does a count the player kept");
-        assert_eq!(count_of(&data, alder, "subj"), 1, "a ticket the snapshot does not list is left alone");
+        assert_eq!(state.typed_amount("shugo").map(|typed| typed.value), Some(5), "a ticket the snapshot does not list is left alone");
         assert_eq!(state.logged_in_ms(), Some(1_000_000));
     }
 

@@ -68,19 +68,22 @@ fn refills_between(refill: Refill, resets: &Resets, from_ms: i64, to_ms: i64, li
             }
             u32::try_from(1 + (to_ms - first) / every).map_or(limit, |count| count.min(limit))
         }
-        Refill::AtDailyReset { .. } => {
-            let mut at = from_ms;
-            let mut count = 0;
-            while count < limit {
-                at = resets.next_daily(at);
-                if at > to_ms {
-                    break;
-                }
-                count += 1;
-            }
-            count
-        }
+        Refill::AtDailyReset { .. } => count_resets(|at| resets.next_daily(at), from_ms, to_ms, limit),
+        Refill::AtWeeklyReset { .. } => count_resets(|at| resets.next_weekly(at), from_ms, to_ms, limit),
     }
+}
+
+fn count_resets(next: impl Fn(i64) -> i64, from_ms: i64, to_ms: i64, limit: u32) -> u32 {
+    let mut at = from_ms;
+    let mut count = 0;
+    while count < limit {
+        at = next(at);
+        if at > to_ms {
+            break;
+        }
+        count += 1;
+    }
+    count
 }
 
 /// The `k`-th refill after `from_ms` (`k` of at least 1).
@@ -91,6 +94,7 @@ fn refill_instant(refill: Refill, resets: &Resets, from_ms: i64, k: u32) -> i64 
             first_on_grid(resets, every, from_ms) + i64::from(k - 1) * every
         }
         Refill::AtDailyReset { .. } => (0..k).fold(from_ms, |at, _| resets.next_daily(at)),
+        Refill::AtWeeklyReset { .. } => (0..k).fold(from_ms, |at, _| resets.next_weekly(at)),
     }
 }
 
@@ -214,7 +218,7 @@ mod tests {
         let zone = summer();
         let resets = Resets::new(&zone, 9);
         assert_eq!(next_refill(&spec("shugo"), &resets, local(5, 12, 0)), local(6, 9, 0));
-        assert_eq!(next_refill(&spec("balaur"), &resets, local(5, 9, 0)), local(6, 9, 0));
+        assert_eq!(next_refill(&spec("invasion"), &resets, local(5, 9, 0)), local(6, 9, 0));
         assert_eq!(next_refill(&spec(ODYLE), &resets, local(5, 12, 0)), local(5, 15, 0));
     }
 

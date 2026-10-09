@@ -6,7 +6,7 @@ use meter_core::tickets::{TicketContent, TicketReport};
 use gpui::{point, AppContext as _, Bounds, KeyUpEvent, Keystroke, Modifiers, MouseButton, TestAppContext, VisualTestContext};
 
 use super::*;
-use crate::clock::now_ms;
+use crate::clock::{clock_time, now_ms, LocalZone};
 use crate::secondary::text_input;
 use crate::settings::{AppSettings, Settings};
 use crate::todos::{self, NewOwnTodo, OwnKind};
@@ -15,6 +15,7 @@ struct Opened<'a> {
     view: Entity<TodoView>,
     todos: Entity<Todos>,
     character: CharacterId,
+    contents: Contents,
     cx: &'a mut VisualTestContext,
 }
 
@@ -29,12 +30,23 @@ fn open(cx: &mut TestAppContext) -> Opened<'_> {
 }
 
 fn open_listing(contents: Contents, cx: &mut TestAppContext) -> Opened<'_> {
+    open_on(contents, Settings::in_memory(AppSettings::default()), cx)
+}
+
+/// The window over `todos.json` as an earlier run left it, in a folder of its own.
+fn open_with_stored<'a>(contents: Contents, folder: &std::path::Path, stored: &str, cx: &'a mut TestAppContext) -> Opened<'a> {
+    std::fs::create_dir_all(folder).unwrap();
+    std::fs::write(folder.join("todos.json"), stored).unwrap();
+    open_on(contents, Settings::load(Some(folder)), cx)
+}
+
+fn open_on(contents: Contents, settings: Settings, cx: &mut TestAppContext) -> Opened<'_> {
     let (todos, meter) = cx.update(|cx| {
         text_input::bind_keys(cx);
-        let store = cx.new(|_| {
-            let mut all = AppSettings::default();
-            all.known_characters = vec![known("Alder", "RANGER"), known("Birch", "CLERIC")];
-            Settings::in_memory(all)
+        let store = cx.new(|cx| {
+            let mut settings = settings;
+            settings.update(cx, |all| all.known_characters = vec![known("Alder", "RANGER"), known("Birch", "CLERIC")]);
+            settings
         });
         settings::install(&store, cx);
         todos::install(&store, false, cx);
@@ -43,7 +55,7 @@ fn open_listing(contents: Contents, cx: &mut TestAppContext) -> Opened<'_> {
     });
     let (view, cx) = cx.add_window_view(|window, cx| TodoView::new(contents, meter, window, cx));
     let character = cx.update(|_, cx| todos.read(cx).selected()).expect("a remembered character");
-    Opened { view, todos, character, cx }
+    Opened { view, todos, character, contents, cx }
 }
 
 impl Opened<'_> {
@@ -84,7 +96,10 @@ impl Opened<'_> {
 
     /// A press on the window's title, where no control is.
     fn click_title(&mut self) {
-        let card = self.bounds("todos");
+        let card = self.bounds(match self.contents {
+            Contents::Todos => "todos",
+            Contents::Resources => "resources",
+        });
         self.cx.simulate_click(card.origin + point(px(60.), px(14.)), Modifiers::none());
     }
 
@@ -103,10 +118,7 @@ impl Opened<'_> {
         list.sections
             .into_iter()
             .flat_map(|section| section.rows)
-            .flat_map(|row| match row.kind.clone() {
-                RowKind::Group(group) => std::iter::once(row).chain(group.children).collect::<Vec<_>>(),
-                _ => vec![row],
-            })
+            .chain(list.resources.rows)
             .find(|row| row.id == id)
             .expect("the row is in the list")
     }
@@ -152,6 +164,12 @@ impl Opened<'_> {
 
     fn source(&mut self, row: &'static str) -> Source {
         self.row(RowId::Builtin(row)).source
+    }
+
+    /// The daily reset an hour away at most: a full daily resource warns.
+    fn reset_within_the_hour(&mut self) {
+        let hour = (clock_time(&LocalZone, now_ms()).hour + 1) % 24;
+        self.update(|todos, cx| todos.set_reset_hour(hour, cx));
     }
 }
 
@@ -222,7 +240,7 @@ fn arrows_and_keys_move_a_count_within_its_limits(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn an_amount_typed_is_kept_by_enter_and_a_click_outside_and_dropped_by_escape(cx: &mut TestAppContext) {
-    let mut window = open(cx);
+    let mut window = open_listing(Contents::Resources, cx);
     window.tab_to("fig:shugo");
     window.press("enter");
     assert!(window.view(|view| view.amount_field_is_open() && view.is_typing()), "the field opens and takes the keyboard");
@@ -320,21 +338,22 @@ fn a_rows_controls_come_on_entering_and_go_on_leaving_and_never_flash_inside(cx:
 #[gpui::test]
 fn after_a_hide_by_pointer_the_row_now_there_waits_for_the_pointer_to_move(cx: &mut TestAppContext) {
     let mut window = open(cx);
-    let odyle = window.bounds("row-odyle");
-    window.move_to(odyle.center());
-    let x = window.bounds("x-odyle").center();
+    let own = window.add_own("Mine", OwnKind::Tick);
+    let duty = window.bounds("row-duty");
+    window.move_to(duty.center());
+    let x = window.bounds("x-duty").center();
     window.move_to(x);
     window.cx.simulate_click(x, Modifiers::none());
-    assert!(window.row(RowId::Builtin("odyle")).hidden);
+    assert!(window.row(RowId::Builtin("duty")).hidden);
     assert_eq!(window.view(|view| view.revealed_row()), None, "the row that slid under the pointer shows nothing yet");
-    assert!(!window.is_drawn("x-shugo"));
+    assert!(!window.is_drawn("x-own-1"));
 
     window.cx.simulate_mouse_move(point(x.x - px(3.), x.y), None::<MouseButton>, Modifiers::none());
-    assert_eq!(window.view(|view| view.revealed_row()), Some(RowId::Builtin("shugo")), "the pointer moved: its controls come");
+    assert_eq!(window.view(|view| view.revealed_row()), Some(RowId::Own(own)), "the pointer moved: its controls come");
 }
 
 #[gpui::test]
-fn sections_and_groups_fold_and_show_lists_hidden_rows_with_put_back(cx: &mut TestAppContext) {
+fn sections_fold_and_show_lists_hidden_rows_with_put_back(cx: &mut TestAppContext) {
     let mut window = open(cx);
     window.tab_to("section:today");
     window.press("space");
@@ -371,8 +390,8 @@ fn no_remembered_character_shows_the_empty_state(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn a_game_value_has_no_arrows_a_click_types_over_it_and_its_clear_button_goes_back(cx: &mut TestAppContext) {
-    let mut window = open(cx);
-    window.login(&[(1, 7, 3), (101, 9, 7)]);
+    let mut window = open_listing(Contents::Resources, cx);
+    window.login(&[(1, 7, 3)]);
     assert!(window.is_drawn("fig-shugo"));
     assert!(!window.is_drawn("more-shugo") && !window.is_drawn("less-shugo"), "no arrows on the game's value");
 
@@ -391,35 +410,30 @@ fn a_game_value_has_no_arrows_a_click_types_over_it_and_its_clear_button_goes_ba
     assert_eq!(window.amount("shugo"), Some(7), "the field's × goes back to the game's value");
     assert!(matches!(window.source("shugo"), Source::GameEarlier { .. }));
     assert!(!window.view(|view| view.amount_field_is_open() || view.is_typing()));
+}
 
-    let fissure = RowId::Builtin("fissure");
-    assert!(!window.is_drawn("more-fissure"), "this week's game rows read without arrows");
-    window.tab_to("fig:fissure");
+#[gpui::test]
+fn a_weekly_game_row_has_no_arrows_and_a_click_types_over_it(cx: &mut TestAppContext) {
+    let mut window = open(cx);
+    window.login(&[(80_000_001, 1, 1)]);
+    let trial = RowId::Builtin("trial");
+    assert!(window.is_drawn("fig-trial") && !window.is_drawn("more-trial"), "this week's game rows read without arrows");
+    window.tab_to("fig:trial");
     window.press("up");
-    assert_eq!(window.count(fissure), 5, "done is 14 minus the 9 left; the arrow keys change nothing");
+    assert_eq!(window.count(trial), 2, "done is 3 minus the 1 left; the arrow keys change nothing");
     window.press("enter");
     assert!(window.view(|view| view.amount_field_is_open() && view.is_typing()), "Enter types over a weekly game row too");
-    window.cx.simulate_input("8");
+    window.cx.simulate_input("1");
     window.press("enter");
-    assert_eq!((window.count(fissure), window.source("fissure")), (8, Source::Typed));
+    assert_eq!((window.count(trial), window.source("trial")), (1, Source::Typed));
     window.press("enter");
     window.click("amount-clear");
-    assert_eq!(window.count(fissure), 5, "the × goes back to the game's count");
-
-    window.login(&[(90_000_002, 0, 0)]);
-    window.update(|todos, cx| todos.set_group_open("sanct", true, cx));
-    window.tab_to("row:forgeboss");
-    window.press("enter");
-    let forgeboss = RowId::Builtin("forgeboss");
-    assert!(!window.row(forgeboss).is_done(), "a game-done tick is typed over as not done");
-    assert_eq!(window.source("forgeboss"), Source::Typed);
-    window.press("enter");
-    assert!(window.row(forgeboss).is_done(), "and pressed again it goes back to the game's");
+    assert_eq!(window.count(trial), 2, "the × goes back to the game's count");
 }
 
 #[gpui::test]
 fn a_login_while_the_window_is_open_shows_its_note_for_four_seconds(cx: &mut TestAppContext) {
-    let mut window = open(cx);
+    let mut window = open_listing(Contents::Resources, cx);
     let character = window.character;
     window.update(|todos, cx| todos.set_amount(character, "shugo", Some(9), cx));
     window.move_to(point(px(1.), px(1.)));
@@ -439,12 +453,53 @@ fn a_login_while_the_window_is_open_shows_its_note_for_four_seconds(cx: &mut Tes
 }
 
 #[gpui::test]
-fn the_resources_window_lists_the_recharges_alone_and_its_rows_hide_nothing(cx: &mut TestAppContext) {
+fn the_to_do_window_lists_no_resource_and_counts_only_its_to_dos(cx: &mut TestAppContext) {
+    let mut window = open(cx);
+    let character = window.character;
+    window.reset_within_the_hour();
+    window.update(|todos, cx| todos.set_amount(character, "shugo", Some(12), cx));
+    window.cx.run_until_parked();
+    let full = window.update(|todos, _| todos.list().map(|list| list.resources.full));
+    assert_eq!(full, Some(1), "Shugo keys warn, an hour from the refill");
+
+    for row in ["row-odyle", "row-shugo", "row-invasion", "row-nightmare", "row-fissure"] {
+        assert!(!window.is_drawn(row), "{row} is the Resources window's");
+    }
+    assert!(window.is_drawn("row-duty") && window.is_drawn("row-trial"));
+    assert!(!window.is_drawn("full-chip"), "nothing full in the to-do window's header");
+    let statuses: Vec<String> = window.update(|todos, _| todos.characters().into_iter().map(|character| character.status).collect());
+    assert_eq!(statuses, ["2 left", "2 left"], "the picker counts the to-dos left");
+}
+
+#[gpui::test]
+fn a_resource_hidden_in_the_to_do_window_of_an_older_build_shows_in_resources_and_warns(cx: &mut TestAppContext) {
+    let folder = std::env::temp_dir().join(format!("aion-todos-hidden-resource-{}", now_ms()));
+    let stored = format!(
+        r#"{{"version":1,"characters":[{{"id":1,"name":"Alder","serverId":1001,"class":"RANGER",
+            "hidden":["shugo","trial"],"amounts":{{"shugo":{{"value":12,"atMs":{now}}}}}}}]}}"#,
+        now = now_ms()
+    );
+    let mut window = open_with_stored(Contents::Resources, &folder, &stored, cx);
+    window.reset_within_the_hour();
+    window.cx.run_until_parked();
+    assert!(window.is_drawn("row-shugo"), "nothing can hide a resource in the Resources window");
+    assert!(!window.row(RowId::Builtin("shugo")).hidden);
+    assert!(window.row(RowId::Builtin("trial")).hidden, "a hidden to-do stays hidden");
+    assert!(window.is_drawn("full-chip"), "it counts in the header's \"1 full\"");
+    let warned: Vec<String> = window.update(|todos, _| todos.full_resources().into_iter().map(|resource| resource.label).collect());
+    assert_eq!(warned, ["Shugo keys"], "and in the toolbar's warning");
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[gpui::test]
+fn the_resources_window_lists_every_resource_and_its_rows_hide_nothing(cx: &mut TestAppContext) {
     let mut window = open_listing(Contents::Resources, cx);
     assert!(window.is_drawn("resources"));
-    assert!(window.is_drawn("row-odyle") && window.is_drawn("row-conquest") && window.is_drawn("row-fafnium"));
-    assert!(!window.is_drawn("row-duty") && !window.is_drawn("row-fissure"), "to-dos stay in the to-do window");
-    assert!(!window.is_drawn("section-recharges") && !window.is_drawn("add-line") && !window.is_drawn("change"));
+    for row in ["row-odyle", "row-shugo", "row-invasion", "row-nightmare", "row-fissure"] {
+        assert!(window.is_drawn(row), "{row} is drawn");
+    }
+    assert!(!window.is_drawn("row-duty") && !window.is_drawn("row-trial"), "to-dos stay in the to-do window");
+    assert!(!window.is_drawn("section-today") && !window.is_drawn("add-line") && !window.is_drawn("change"));
 
     let row = window.bounds("row-odyle");
     for at in [row.center(), point(row.left() + px(2.), row.center().y), point(row.right() - px(2.), row.top() + px(2.))] {
@@ -466,8 +521,15 @@ fn the_resources_window_lists_the_recharges_alone_and_its_rows_hide_nothing(cx: 
     assert_eq!(window.amount("odyle"), Some(300), "the to-dos' own data");
     assert!(!window.view(|view| view.is_typing()), "the keyboard goes back");
     assert_eq!(window.focused().as_deref(), Some("fig:odyle"));
+}
 
-    window.tab_to("row:conquest");
-    window.press("enter");
-    assert!(window.is_drawn("row-c-krao"), "the Conquest dungeons open in place");
+#[gpui::test]
+fn the_account_tag_is_its_icon_alone_on_the_rows_the_server_shares(cx: &mut TestAppContext) {
+    let mut window = open_listing(Contents::Resources, cx);
+    for (tag, row) in [("account-shugo", "row-shugo"), ("account-invasion", "row-invasion"), ("account-fissure", "row-fissure")] {
+        let (tag_bounds, row_bounds) = (window.bounds(tag), window.bounds(row));
+        assert!(tag_bounds.size.width < px(14.), "{tag} holds the 11 px icon, not the word: {:?}", tag_bounds.size);
+        assert!(row_bounds.contains(&tag_bounds.center()), "{tag} sits in {row}");
+    }
+    assert!(!window.is_drawn("account-odyle") && !window.is_drawn("account-nightmare"), "per-character rows have no tag");
 }

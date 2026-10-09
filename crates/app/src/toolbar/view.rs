@@ -1,6 +1,6 @@
 //! The toolbar (docs/gpui-mockups/approved/toolbar.html, values in tokens.md,
 //! "Hub"): grip; DPS meter, PvP meter, To-dos, Fight history, Reminders,
-//! Settings; Odyle Energy, Shugo Festival keys and the warning while other
+//! Settings; Odyle Energy, Shugo keys and the warning while other
 //! resources are full; fold and quit. A lit tool is open. Controls light on
 //! the pointer's enter and go on its leave, never on moves inside; tooltips
 //! follow after 500 ms. The warning's and the bell's dropdowns and every

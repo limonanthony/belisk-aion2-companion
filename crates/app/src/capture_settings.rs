@@ -367,7 +367,7 @@ async fn reminders_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()
     Ok(())
 }
 
-/// The page with five built-ins hidden on two characters, the reset hour's
+/// The page with three to-dos hidden on two characters, the reset hour's
 /// list, Restore with its badge, and the complete reset through its dialog.
 async fn todos_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
     let todos = cx.update(|cx| todos::global(cx));
@@ -375,7 +375,7 @@ async fn todos_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
     cx.update(|cx| {
         todos.update(cx, |todos, cx| {
             for (index, id) in characters.iter().take(2).enumerate() {
-                for row in ["trial", "subj", "deus"].iter().skip(index) {
+                for row in ["trial", "duty"].iter().skip(index) {
                     todos.hide(*id, row, cx);
                 }
             }

@@ -71,44 +71,33 @@ list-and = { $rest } and { $last }
 ## To-dos
 
 todos-section-today = Today
-todos-section-recharges = Recharges
 todos-section-this-week = This week
-
-todos-sub-attempts = attempts
-todos-sub-final-boss = final boss
-todos-sub-final-boss-kills = final boss kills
-todos-sub-runs-per-dungeon = 7 runs a dungeon
 
 todos-left = { $count } left
 todos-full = { $count } full
 todos-hidden = { $count } hidden
-todos-tracked = { $count } tracked
 todos-done-of = { $done } of { $total } done
 todos-all-done = all done
 todos-done = done
-todos-amounts-optional = amounts optional
 todos-weekly-on-wednesday = Weekly on Wednesday
 todos-not-tracked = not tracked
 todos-value-of = { $value } of { $cap }
-todos-value-of-each = { $value } of { $cap } each
-todos-range-of-each = { $low }–{ $high } of { $cap } each
-todos-dungeons = { $count } dungeons
 
 todos-resets-in = resets in { $time }
-todos-next-full-in = next full in { $time }
 todos-weekly-reset-when = { $day } · in { $time }
 todos-amount-full-in = Full in { $time }
 todos-full-being-wasted = Full, being wasted
 todos-full-spend-by = Full, spend by { $stamp }
+todos-full-refills = Full · refills { $stamp }
 
 todos-everything-done = Everything is done on { $name }.
-todos-amount-full-note = { $label } is full in { $time }.
 todos-removed-note = Removed { $name }.
 todos-added-note = Added { $name } to { $section }.
 
 todos-source-live = From the game, live · logged in at { $time }
 todos-source-live-now = From the game, live
 todos-source-earlier = From the game at login, { $stamp } · refills since estimated
+todos-source-earlier-to-dos = From the game at login, { $stamp }
 todos-source-shared = { $name } not seen at login yet · Account rows from { $from }
 todos-source-none = No game values yet. Log in with { $name } while { -app-name } runs.
 
@@ -140,13 +129,13 @@ todos-hidden-description =
         [one] { $characters } character
        *[other] { $characters } characters
     }. { todos-restore-keeps }
-todos-reset-dialog-body = On every character: every hidden to-do comes back, and every count and amount you typed is emptied. Values from the game stay.
-todos-reset-dialog-body-with-own = On every character: your own to-dos ({ $own }) are removed, every hidden to-do comes back, and every count and amount you typed is emptied. Values from the game stay.
+todos-reset-dialog-body = On every character: every hidden to-do comes back, and every count you typed and every amount typed in the Resources window is emptied. Values from the game stay.
+todos-reset-dialog-body-with-own = On every character: your own to-dos ({ $own }) are removed, every hidden to-do comes back, and every count you typed and every amount typed in the Resources window is emptied. Values from the game stay.
 todos-reset-dialog-keeps = The reset hour and the membership stay. This cannot be undone.
 
 todos-window-title = To-dos
 todos-window-playing = Playing
-todos-window-picker-note = Characters { -app-name } has seen, with what each has left. Duty Missions, Shugo Festival keys, Invasion keys and the Unknown Fissure are shared by your characters on one server.
+todos-window-picker-note = Characters { -app-name } has seen, with what each has left. Duty Missions are shared by your characters on one server.
 todos-window-no-character-title = No character yet
 todos-window-no-character-line = Your to-dos appear once { -app-name } has seen your character. Start it before login, or relog via character select.
 todos-window-undo = Undo
@@ -196,9 +185,6 @@ todos-window-amount-input = { $label }: how many you have now
 todos-window-back-to-game = Back to the game's value: { $label }
 todos-window-figure-from-game = { $label }, { $value }, from the game. Type over it
 todos-window-figure-typed = { $label }, { $value }, typed by you. Type over it
-todos-window-count-from-game = { $label }, { $progress }, from the game
-todos-window-row-done-from-game = { $label }, done, from the game
-todos-window-row-not-done-from-game = { $label }, not done, from the game
 todos-window-with-extra = { $value }, { $extra } extra
 todos-window-login-note = Filled from the game at login.
 todos-window-login-note-replaced = Filled from the game at login. Values you typed were replaced.
@@ -207,6 +193,7 @@ resources-window-title = Resources
 resources-window-membership-caps = Membership caps
 resources-window-plain-caps = Caps without membership
 resources-window-no-character-line = Your resources appear once { -app-name } has seen your character. Start it before login, or relog via character select.
+resources-window-picker-note = Characters { -app-name } has seen, with what each has left. Shugo keys, Invasion keys and the Daily Dungeon are shared by your characters on one server.
 
 ## Event reminders
 
@@ -448,21 +435,21 @@ settings-event-nahma-text = Friday and Sunday at 21:00. Lv 65, and the Enraged L
 settings-event-arena-text = 11:00 and 19:00, when the 10 vs 10 queue opens (until 14:00 and 21:00).
 settings-event-keys-text = 16:00. Shugo Festival and Dimensional Invasion keys.
 
-settings-todos-lead = The to-do window, opened from the toolbar. Counts and amounts fill from the game when you log in while { -app-name } runs.
+settings-todos-lead = The to-do window, opened from the toolbar. The reset hour and the membership also set the Resources window's refill times and caps.
 settings-todos-resets = Resets
-settings-todos-daily-reset-text = Reported, not confirmed. Check the countdown in game.
+settings-todos-daily-reset-text = Also when the Resources window's daily refills come. Reported, not confirmed: check the countdown in game.
 settings-todos-weekly-reset = Weekly reset
-settings-todos-weekly-reset-text = This week's to-dos start over on Wednesday, at the daily reset hour.
+settings-todos-weekly-reset-text = This week's to-dos and the Daily Dungeon's tickets start over on Wednesday, at the daily reset hour.
 settings-todos-weekly-at = Wednesday { $time }
 settings-todos-membership = Membership
-settings-todos-membership-text = Higher caps on every character: Odyle Energy 840 instead of 560, Shugo Festival keys 21 instead of 12.
+settings-todos-membership-text = Higher caps in the Resources window, on every character: Odyle Energy 840 instead of 560, Shugo keys 21 instead of 12.
 settings-todos-membership-hint = The game shows { $amount } on { $name }, more than { $cap }. Do you have a membership?
 settings-todos-membership-amount = { $count } { $label }
 settings-todos-defaults = Default to-dos
 settings-todos-hidden = Hidden to-dos
 settings-todos-restore = Restore default to-dos
 settings-todos-start-over = Start over
-settings-todos-start-over-text = Removes your own to-dos, brings back every hidden one and empties every count and amount you typed.
+settings-todos-start-over-text = Removes your own to-dos, brings back every hidden one and empties every count you typed and every amount typed in the Resources window.
 settings-todos-reset-completely = Reset to-dos completely…
 settings-todos-reset-done = To-dos reset
 settings-todos-set-aside = The stored to-dos were set aside
@@ -513,6 +500,7 @@ settings-reset-body = Settings go back to their defaults, including the Capture 
 meter-report-header = Duration { $duration } · Total damage { $damage } · Party DPS { $dps }
 meter-copy-defeated = { $boss }{ $place } · defeated in { $duration }
 meter-copy-ended = { $boss }{ $place } · fight ended in { $duration }
+meter-copy-wiped = { $boss }{ $place } · wiped, boss at { $hp } after { $duration }
 meter-copy-rank = #{ $rank } of { $total }
 meter-copy-crit = crit { $percent }
 meter-copy-first-record = First record
@@ -554,7 +542,9 @@ meter-menu-automatic = Automatic
 
 meter-summary-defeated = Defeated
 meter-summary-ended = Fight ended
+meter-summary-wiped = Wiped
 meter-summary-may-resume = may resume
+meter-summary-hp-left = { $hp } left
 meter-summary-party-dps = Party DPS
 meter-summary-rank = Rank
 meter-summary-share = Share
@@ -606,6 +596,8 @@ history-delete-all-confirm =
     }
 history-report = Fight report
 history-boss-record = Boss, { $name }
+history-wiped-record = Boss, { $name }, wiped
+history-wiped-record-hp = Boss, { $name }, wiped with { $hp } left
 
 ## Player detail
 

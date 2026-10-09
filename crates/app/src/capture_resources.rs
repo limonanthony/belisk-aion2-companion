@@ -1,9 +1,9 @@
 //! Off-screen captures of the values the game fills, run by `--capture
 //! --fixtures` inside the to-do window's run: the to-do window before the
-//! first login, from an earlier login, typed over, shared from another
-//! character of the server, just logged in, live, this week's rows and the
-//! Conquest dungeons; then the Resources window, opened from the toolbar's
-//! Odyle Energy count, live, with the Conquest group open, full, and with the membership
+//! first login, from an earlier login, typed over, on a character not seen
+//! at login, just logged in, live and this week's rows; then the Resources
+//! window, opened from the toolbar's Odyle Energy count, live, typed over,
+//! amounts typed before the game said any, full, and with the membership
 //! off. The values are invented (`fixtures::MIRELLE_TICKETS`). Both windows
 //! stay past every monitor and are checked never to take the focus.
 
@@ -15,13 +15,13 @@ use windows::Win32::UI::WindowsAndMessaging::{WM_CHAR, WM_MOUSEMOVE};
 
 use crate::capture_reminders;
 use crate::capture_secondary::{close, pack, pause, post, report_window, shoot_window, window_handle, window_hwnd};
-use crate::capture_todos::{amount_of, device, gone, identify, key, known, row_bounds, set_membership, shot};
+use crate::capture_todos::{device, gone, identify, key, known, row_bounds, set_membership, set_reset_ahead, shot, until_field_closes};
 use crate::clock::now_ms;
 use crate::fixtures;
 use crate::meter::MeterModel;
 use crate::overlay::off_screen;
 use crate::secondary::{self, WindowKind};
-use crate::todos::{self, CharacterId, Section, TodoView, Todos, Typing};
+use crate::todos::{self, CharacterId, RowId, RowKind, Section, TodoView, Todos, Typing};
 use crate::capture_toolbar;
 use crate::toolbar::Slot;
 
@@ -33,6 +33,7 @@ const TOOLTIP_WAIT: Duration = Duration::from_millis(900);
 /// Past the login note's 4 s.
 const NOTE_GONE: Duration = Duration::from_millis(4_300);
 const VK_RETURN: usize = 0x0D;
+const VK_ESCAPE: usize = 0x1B;
 const DAY_MS: i64 = 86_400_000;
 
 pub async fn from_fixtures(
@@ -47,9 +48,6 @@ pub async fn from_fixtures(
         for section in Section::ALL {
             todos.set_section_folded(section, false, cx);
         }
-        for group in ["explore", "sanct", "conquest"] {
-            todos.set_group_open(group, false, cx);
-        }
         todos.select(sefa, cx);
     });
     shot(dir, "todos-20-game-before-first-login", cx).await?;
@@ -59,59 +57,42 @@ pub async fn from_fixtures(
     edit(&todos, cx, |todos, cx| todos.select(mirelle, cx));
     pause(cx, TICK).await;
     shot(dir, "todos-21-game-earlier-login", cx).await?;
-    tooltip_on(view, WindowKind::Todos, "odyle", cx).await?;
+    tooltip_on(view, WindowKind::Todos, "trial", cx).await?;
     shot(dir, "todos-22-game-tooltip", cx).await?;
     pointer_away(view, WindowKind::Todos, cx).await?;
 
     edit(&todos, cx, |todos, cx| {
-        todos.set_amount(mirelle, "shugo", Some(9), cx);
+        todos.set_progress(mirelle, "trial", Some(1), cx);
     });
     shot(dir, "todos-23-game-typed-over", cx).await?;
 
     edit(&todos, cx, |todos, cx| todos.follow_the_game(cx));
     let shown = cx.update(|cx| todos.read(cx).selected());
     println!("game values: Tavrin in game, never seen at login: window on Tavrin {}", shown == Some(tavrin));
-    shot(dir, "todos-24-game-shared-from-mirelle", cx).await?;
+    shot(dir, "todos-24-game-not-seen-yet", cx).await?;
 
     identify("Mirelle", cx);
     pause(cx, TICK).await;
     login(&todos, "Mirelle", now_ms(), fixtures::MIRELLE_TICKETS, cx);
     pause(cx, TICK).await;
-    let shugo = amount_of(&todos, mirelle, "shugo", cx);
-    println!("game values: Mirelle logs in: Shugo Festival keys {shugo:?} (the typed 9 replaced by the game's 7)");
-    if shugo != Some(7) {
-        return Err("the login did not replace the value typed over the game's".to_string());
+    let trial = count_of(&todos, mirelle, "trial", cx);
+    println!("game values: Mirelle logs in: Ascension Trial {trial:?} done (the typed 1 replaced by the game's 2)");
+    if trial != Some(2) {
+        return Err("the login did not replace the count typed over the game's".to_string());
     }
     shot(dir, "todos-25-game-just-logged-in", cx).await?;
     pause(cx, NOTE_GONE).await;
     shot(dir, "todos-26-game-live", cx).await?;
 
-    type_over(view, &todos, mirelle, dir, cx).await?;
-
-    edit(&todos, cx, |todos, cx| {
-        todos.set_section_folded(Section::Today, true, cx);
-        todos.set_section_folded(Section::Recharges, true, cx);
-        todos.set_group_open("sanct", true, cx);
-    });
+    edit(&todos, cx, |todos, cx| todos.set_section_folded(Section::Today, true, cx));
     shot(dir, "todos-29-game-this-week", cx).await?;
     type_over_weekly(view, &todos, mirelle, dir, cx).await?;
-    edit(&todos, cx, |todos, cx| {
-        todos.set_section_folded(Section::Recharges, false, cx);
-        todos.set_section_folded(Section::ThisWeek, true, cx);
-        todos.set_group_open("sanct", false, cx);
-        todos.set_group_open("conquest", true, cx);
-    });
-    shot(dir, "todos-30-game-conquest-open", cx).await?;
-    edit(&todos, cx, |todos, cx| {
-        todos.set_group_open("conquest", false, cx);
-        todos.set_section_folded(Section::Today, false, cx);
-        todos.set_section_folded(Section::ThisWeek, false, cx);
-    });
+    edit(&todos, cx, |todos, cx| todos.set_section_folded(Section::Today, false, cx));
 
-    resources_window(model, &todos, dir, cx).await
+    resources_window(model, &todos, [mirelle, sefa], dir, cx).await
 }
 
-async fn resources_window(model: &Entity<MeterModel>, todos: &Entity<Todos>, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
+async fn resources_window(model: &Entity<MeterModel>, todos: &Entity<Todos>, [mirelle, sefa]: [CharacterId; 2], dir: &Path, cx: &mut AsyncApp) -> Result<()> {
     let foreground_before = capture_reminders::foreground();
     open_from_toolbar(model, cx).await?;
     report_window(WindowKind::Resources, cx)?;
@@ -119,12 +100,22 @@ async fn resources_window(model: &Entity<MeterModel>, todos: &Entity<Todos>, dir
     view.update(cx, |view, _, _| view.keep_keyboard_in_app()).map_err(gone)?;
     resources_shot(dir, "resources-01-live", cx).await?;
 
-    edit(todos, cx, |todos, cx| todos.set_group_open("conquest", true, cx));
-    resources_shot(dir, "resources-02-conquest-open", cx).await?;
-    edit(todos, cx, |todos, cx| todos.set_group_open("conquest", false, cx));
-
     tooltip_on(&view, WindowKind::Resources, "shugo", cx).await?;
     resources_shot(dir, "resources-03-tooltip", cx).await?;
+    pointer_away(&view, WindowKind::Resources, cx).await?;
+    account_tooltip_on(&view, WindowKind::Resources, "shugo", cx).await?;
+    resources_shot(dir, "resources-03b-account-tooltip", cx).await?;
+    pointer_away(&view, WindowKind::Resources, cx).await?;
+    type_over(&view, todos, mirelle, dir, cx).await?;
+
+    edit(todos, cx, |todos, cx| todos.select(sefa, cx));
+    type_an_amount(&view, todos, sefa, dir, cx).await?;
+    edit(todos, cx, |todos, cx| {
+        todos.set_amount(sefa, "shugo", Some(24), cx);
+        todos.set_amount(sefa, "nightmare", Some(14), cx);
+    });
+    resources_shot(dir, "resources-09-typed-full", cx).await?;
+    edit(todos, cx, |todos, cx| todos.follow_the_game(cx));
     pointer_away(&view, WindowKind::Resources, cx).await?;
 
     let full: Vec<(u32, u32, u32)> = fixtures::MIRELLE_TICKETS
@@ -133,13 +124,18 @@ async fn resources_window(model: &Entity<MeterModel>, todos: &Entity<Todos>, dir
             60_000_001 => (ticket, 840, 245),
             1 => (ticket, 21, 3),
             8 => (ticket, 2, 12),
-            60_005_301 => (ticket, 2, 0),
-            60_006_301 => (ticket, 3, 0),
+            4 => (ticket, 14, 0),
+            101 => (ticket, 14, 7),
             _ => (ticket, count, charge),
         })
         .collect();
     login(todos, "Mirelle", now_ms(), &full, cx);
+    set_reset_ahead(5, cx);
     pause(cx, NOTE_GONE).await;
+    resources_shot(dir, "resources-04a-full-calm", cx).await?;
+    shot(dir, "todos-31a-game-full-calm", cx).await?;
+    set_reset_ahead(1, cx);
+    pause(cx, TICK).await;
     resources_shot(dir, "resources-04-full", cx).await?;
     shot(dir, "todos-31-game-full", cx).await?;
 
@@ -184,22 +180,23 @@ async fn open_from_toolbar(model: &Entity<MeterModel>, cx: &mut AsyncApp) -> Res
     Ok(())
 }
 
-/// A click on Shugo Festival keys' figure opens the field on the game's 7;
+/// A click on Shugo keys' figure opens the field on the game's 7;
 /// "9" typed and Enter keeps it over the game's value.
 async fn type_over(view: &WindowHandle<TodoView>, todos: &Entity<Todos>, mirelle: CharacterId, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
-    let hwnd = window_hwnd(WindowKind::Todos, cx)?;
+    let hwnd = window_hwnd(WindowKind::Resources, cx)?;
     view.update(cx, |view, window, cx| view.open_amount_field("shugo", Typing::Amount, Some(7), window, cx)).map_err(gone)?;
     pause(cx, TICK).await;
     post(hwnd, WM_CHAR, '9' as usize, 0);
     pause(cx, TICK).await;
-    shot(dir, "todos-27-game-typing-over", cx).await?;
+    resources_shot(dir, "resources-02a-typing-over", cx).await?;
     key(hwnd, VK_RETURN, cx).await;
+    until_field_closes(view, cx).await;
     let value = amount_of(todos, mirelle, "shugo", cx);
-    println!("typing over: \"9\" over the game's 7 on Shugo Festival keys, then Enter: {value:?}");
+    println!("typing over: \"9\" over the game's 7 on Shugo keys, then Enter: {value:?}");
     if value != Some(9) {
         return Err("typing over: Enter did not keep the value typed over the game's".to_string());
     }
-    shot(dir, "todos-28-game-typed-over-live", cx).await?;
+    resources_shot(dir, "resources-02b-typed-over-live", cx).await?;
     edit(todos, cx, |todos, cx| {
         todos.set_amount(mirelle, "shugo", None, cx);
     });
@@ -211,17 +208,68 @@ async fn type_over(view: &WindowHandle<TodoView>, todos: &Entity<Todos>, mirelle
     Ok(())
 }
 
-/// Daily Dungeon's 5 of 14 from the game typed over as 8: the pencil, then
+/// Before the game said anything (Sefa): a field opened on Shugo keys takes
+/// typed digits and Enter keeps them; one on Invasion keys keeps nothing on
+/// Escape.
+async fn type_an_amount(view: &WindowHandle<TodoView>, todos: &Entity<Todos>, sefa: CharacterId, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
+    let hwnd = window_hwnd(WindowKind::Resources, cx)?;
+    view.update(cx, |view, window, cx| view.open_amount_field("shugo", Typing::Amount, None, window, cx)).map_err(gone)?;
+    pause(cx, TICK).await;
+    for digit in "24".chars() {
+        post(hwnd, WM_CHAR, digit as usize, 0);
+    }
+    pause(cx, TICK).await;
+    resources_shot(dir, "resources-07-typing-an-amount", cx).await?;
+    key(hwnd, VK_RETURN, cx).await;
+    until_field_closes(view, cx).await;
+    let value = amount_of(todos, sefa, "shugo", cx);
+    let open = view.update(cx, |view, _, _| view.amount_field_is_open()).map_err(gone)?;
+    println!("amount: \"24\" typed on Shugo keys, then Enter: tracked {value:?}, field still open {open}");
+    if value != Some(24) || open {
+        return Err("amount: Enter did not keep the typed amount".to_string());
+    }
+    resources_shot(dir, "resources-08-amount-kept", cx).await?;
+
+    view.update(cx, |view, window, cx| view.open_amount_field("invasion", Typing::Amount, None, window, cx)).map_err(gone)?;
+    pause(cx, TICK).await;
+    post(hwnd, WM_CHAR, '3' as usize, 0);
+    key(hwnd, VK_ESCAPE, cx).await;
+    let value = amount_of(todos, sefa, "invasion", cx);
+    println!("amount: \"3\" typed on Invasion keys, then Escape: tracked {value:?}");
+    if value.is_some() {
+        return Err("amount: Escape kept what was typed".to_string());
+    }
+    capture_reminders::check_never_focused(WindowKind::Resources, "after typing an amount", capture_reminders::foreground(), cx)
+}
+
+fn amount_of(todos: &Entity<Todos>, id: CharacterId, row: &'static str, cx: &mut AsyncApp) -> Option<u32> {
+    let list = cx.update(|cx| todos.read(cx).list_of(id))?;
+    list.resources.rows.iter().find_map(|candidate| match &candidate.kind {
+        RowKind::Amount(amount) if candidate.id == RowId::Builtin(row) && amount.tracked => Some(amount.value),
+        _ => None,
+    })
+}
+
+fn count_of(todos: &Entity<Todos>, id: CharacterId, row: &'static str, cx: &mut AsyncApp) -> Option<u32> {
+    let list = cx.update(|cx| todos.read(cx).list_of(id))?;
+    list.sections.iter().flat_map(|section| &section.rows).find_map(|candidate| match candidate.kind {
+        RowKind::Count { count, .. } if candidate.id == RowId::Builtin(row) => Some(count),
+        _ => None,
+    })
+}
+
+/// Ascension Trial's 2 of 3 from the game typed over as 1: the pencil, then
 /// back to the game's value.
 async fn type_over_weekly(view: &WindowHandle<TodoView>, todos: &Entity<Todos>, mirelle: CharacterId, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
     let hwnd = window_hwnd(WindowKind::Todos, cx)?;
-    view.update(cx, |view, window, cx| view.open_amount_field("fissure", Typing::Progress, Some(5), window, cx)).map_err(gone)?;
+    view.update(cx, |view, window, cx| view.open_amount_field("trial", Typing::Progress, Some(2), window, cx)).map_err(gone)?;
     pause(cx, TICK).await;
-    post(hwnd, WM_CHAR, '8' as usize, 0);
+    post(hwnd, WM_CHAR, '1' as usize, 0);
     key(hwnd, VK_RETURN, cx).await;
+    until_field_closes(view, cx).await;
     shot(dir, "todos-29b-game-weekly-typed-over", cx).await?;
     edit(todos, cx, |todos, cx| {
-        todos.set_progress(mirelle, "fissure", None, cx);
+        todos.set_progress(mirelle, "trial", None, cx);
     });
     Ok(())
 }
@@ -231,15 +279,26 @@ async fn type_over_weekly(view: &WindowHandle<TodoView>, todos: &Entity<Todos>, 
 /// gap, half of 46), which end 3 px from the row's edge, before the × slot
 /// (20 and a 6 px gap) in the to-do window.
 async fn tooltip_on(view: &WindowHandle<TodoView>, kind: WindowKind, row: &str, cx: &mut AsyncApp) -> Result<()> {
-    let hwnd = window_hwnd(kind, cx)?;
     let (bounds, scale) = row_bounds(view, row, cx)?;
     let x_slot = if kind == WindowKind::Resources { 0. } else { 26. };
     let figure = device(f32::from(bounds.right()) - 3. - x_slot - 50., f32::from(bounds.center().y), scale);
-    post(hwnd, WM_MOUSEMOVE, 0, pack((figure.0 - 2, figure.1)));
+    hover_until_tooltip(kind, figure, &format!("the {row} figure"), cx).await
+}
+
+/// The pointer on a row's "Account" icon until its tooltip shows.
+async fn account_tooltip_on(view: &WindowHandle<TodoView>, kind: WindowKind, row: &str, cx: &mut AsyncApp) -> Result<()> {
+    let (bounds, scale) = row_bounds(view, &format!("account-{row}"), cx)?;
+    let tag = device(f32::from(bounds.center().x), f32::from(bounds.center().y), scale);
+    hover_until_tooltip(kind, tag, &format!("the {row} Account icon"), cx).await
+}
+
+async fn hover_until_tooltip(kind: WindowKind, at: (i32, i32), what: &str, cx: &mut AsyncApp) -> Result<()> {
+    let hwnd = window_hwnd(kind, cx)?;
+    post(hwnd, WM_MOUSEMOVE, 0, pack((at.0 - 2, at.1)));
     pause(cx, TICK).await;
-    post(hwnd, WM_MOUSEMOVE, 0, pack(figure));
+    post(hwnd, WM_MOUSEMOVE, 0, pack(at));
     pause(cx, TOOLTIP_WAIT).await;
-    println!("{kind:?}: pointer on the {row} figure: {}", off_screen::frame_report(hwnd));
+    println!("{kind:?}: pointer on {what}: {}", off_screen::frame_report(hwnd));
     Ok(())
 }
 

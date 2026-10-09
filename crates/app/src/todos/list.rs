@@ -1,6 +1,6 @@
-//! What the window shows for one character at a moment: sections, rows with
-//! their display state, the counts and the words for them. Built fresh from the
-//! stored data each time; nothing here is stored.
+//! What the to-do and Resources windows show for one character at a moment:
+//! the to-do sections, the resources, the counts and the words for them.
+//! Built fresh from the stored data each time; nothing here is stored.
 
 use super::catalogue::{self, AmountSpec, Builtin, Kind, Section};
 use super::copy;
@@ -12,22 +12,31 @@ use crate::i18n::duration_words;
 #[derive(Clone, Debug, PartialEq)]
 pub struct TodoList {
     pub character: CharacterSummary,
-    /// Rows still to do in Today and This week, groups counted as one.
+    /// To-dos still to do in Today and This week; none left: "Everything is
+    /// done on <character>.".
     pub left: usize,
     /// "9 left", or "all done".
     pub left_text: String,
-    /// Tracked amounts at their cap.
-    pub full: usize,
-    /// "2 full" when there is one.
-    pub full_text: Option<String>,
-    /// Set while nothing is left in Today and This week.
-    pub everything_done: Option<EverythingDone>,
-    /// Today, Recharges, This week, in that order.
+    /// Today and This week, in that order.
     pub sections: Vec<SectionView>,
+    /// Where the to-dos' values come from, for the line under the character selector.
+    pub source_line: SourceLine,
+    pub resources: Resources,
     pub footer: Footer,
     /// When the game last listed this character's tickets at login (Unix ms): "logged in at 19:02".
     pub logged_in_ms: Option<i64>,
-    /// Where the values come from, for the line under the character selector.
+}
+
+/// What the Resources window lists.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Resources {
+    /// Every resource, in the window's order.
+    pub rows: Vec<RowView>,
+    /// Resources that warn: at their cap with the refill close.
+    pub full: usize,
+    /// "2 full" when there is one.
+    pub full_text: Option<String>,
+    /// Where the resources' values come from, for the line under the character selector.
     pub source_line: SourceLine,
 }
 
@@ -44,15 +53,6 @@ pub enum SourceLine {
     Shared { from: String },
     /// "No game values yet. Log in with Sefa while the meter runs."
     NoneYet,
-}
-
-/// The note "Everything is done on <character>." with, when a tracked amount is
-/// still filling, the one that fills first. Build the first sentence with
-/// [`copy::everything_done`] and the name as the window shows it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EverythingDone {
-    /// "Odyle Energy is full in 2 d 3 h."
-    pub fills_first: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,11 +78,8 @@ pub struct CharacterSummary {
     /// The character the game is showing right now.
     pub playing: bool,
     pub left: usize,
-    pub full: usize,
-    /// What the picker shows at the end: "N full" (warning) when an amount is
-    /// full, else "N left" or "all done".
+    /// What the picker shows at the end: "N left" or "all done".
     pub status: String,
-    pub status_is_warning: bool,
 }
 
 impl CharacterSummary {
@@ -101,28 +98,22 @@ pub struct SectionView {
     pub section: Section,
     pub title: String,
     pub folded: bool,
-    /// Every row, hidden ones included and flagged; groups hold their rows.
+    /// Every row, hidden ones included and flagged.
     pub rows: Vec<RowView>,
     /// Hidden rows at the section's level ("N hidden · Show").
     pub hidden_rows: usize,
-    /// Rows still to do (Today and This week).
+    /// Rows still to do.
     pub left: usize,
-    /// Tracked amounts, and those at their cap (Recharges).
-    pub tracked: usize,
-    pub full: usize,
-    /// After the title: "2 left", "done", "3 tracked" or empty.
+    /// After the title: "2 left" or "done".
     pub count_text: String,
     /// `count_text` is "done": drawn in the good colour.
     pub count_is_done: bool,
-    /// "N full" chip (Recharges).
-    pub full_text: Option<String>,
-    /// The section's right part: "resets in 11 h 12 min", "next full in 1 d 2 h",
-    /// "Wed 09:00 · in 1 d 11 h", "amounts optional" or empty.
+    /// The section's right part: "resets in 11 h 12 min" or "Wed 09:00 · in 1 d 11 h".
     pub when_text: String,
     /// Where the countdown, drawn brighter, starts in `when_text`.
     pub when_time_at: Option<usize>,
-    /// The reset the right part counts down to (Today and This week).
-    pub next_reset_ms: Option<i64>,
+    /// The reset the right part counts down to.
+    pub next_reset_ms: i64,
 }
 
 /// Where a row's figure comes from.
@@ -147,9 +138,8 @@ pub enum Source {
 pub struct RowView {
     pub id: RowId,
     pub label: String,
-    pub sub: Option<String>,
     /// Shown with the "Account" tag: Duty Missions, and what the game counts
-    /// for the whole server (Shugo Festival keys, Invasion keys, the Unknown Fissure).
+    /// for the whole server (Shugo keys, Invasion keys, the Daily Dungeon).
     pub account: bool,
     /// Shown with the "Yours" tag; its × removes instead of hides.
     pub yours: bool,
@@ -172,18 +162,9 @@ pub struct FigureTip {
 }
 
 impl RowView {
-    /// "Daily Dungeon, Unknown Fissure": what a screen reader says.
-    pub fn accessible_name(&self) -> String {
-        match &self.sub {
-            Some(sub) => format!("{}, {sub}", self.label),
-            None => self.label.clone(),
-        }
-    }
-
     pub fn is_done(&self) -> bool {
         match &self.kind {
             RowKind::Tick { done } | RowKind::Count { done, .. } => *done,
-            RowKind::Group(group) => group.all_done,
             RowKind::Amount(_) => false,
         }
     }
@@ -194,23 +175,6 @@ pub enum RowKind {
     Tick { done: bool },
     Count { count: u32, target: u32, done: bool },
     Amount(AmountView),
-    Group(GroupView),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct GroupView {
-    pub open: bool,
-    /// Counted over the rows not hidden.
-    pub done_children: usize,
-    pub total_children: usize,
-    /// Every row not hidden is done (and there is one).
-    pub all_done: bool,
-    /// Amount rows at their cap (a group of amounts, like Conquest dungeons).
-    pub full_children: usize,
-    /// "2 of 6 done"; "2 full" or "3 tracked" for a group of amounts, empty when none is tracked.
-    pub summary: String,
-    pub children: Vec<RowView>,
-    pub hidden_children: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -227,12 +191,15 @@ pub struct AmountView {
     /// The regular pool is at or above the cap. Not while the membership
     /// switch is off and the game shows more than the plain cap.
     pub full: bool,
+    /// Full and the refill that would be lost is close (within the refill's warning lead):
+    /// the row warns, counts in the "N full" chips and is listed in the toolbar's warning.
+    pub warned: bool,
     /// When it reaches the cap, while it is filling.
     pub full_at_ms: Option<i64>,
     /// While full: the refill coming, the one wasted unless spent first.
     pub refill_at_ms: Option<i64>,
-    /// "Full in 2 d 16 h" while filling, "Full, being wasted" or "Full, spend by
-    /// Tue 16:00" at the cap; none when not tracked.
+    /// "Full in 2 d 16 h" while filling; at the cap "Full, being wasted" or "Full, spend by
+    /// Tue 16:00" while it warns, "Full · refills Tue 16:00" while it does not; none when not tracked.
     pub status_text: Option<String>,
     /// Refills come continuously (Odyle Energy), not on a schedule.
     pub continuous: bool,
@@ -259,20 +226,22 @@ impl AmountView {
 }
 
 pub fn build(data: &TodoData, character: &CharacterState, playing: bool, moment: &Moment) -> TodoList {
-    let sections: Vec<SectionView> =
-        Section::ALL.into_iter().map(|section| section_view(data, character, section, playing, moment)).collect();
-    let left: usize = sections.iter().map(|section| section.left).sum();
-    let full = sections.iter().map(|section| section.full).sum();
-    let fills_first = soonest_filling(&sections).map(|(label, at_ms)| copy::amount_full_note(label, at_ms - moment.now_ms));
+    let sections = todo_sections(data, character, playing, moment);
+    let left = left_in(&sections);
+    let resource_rows = resource_rows(data, character, playing, moment);
+    let full = resource_rows.iter().filter_map(amount_of).filter(|amount| amount.warned).count();
     TodoList {
-        character: summary(character, playing, left, full),
+        character: summary(character, playing, left),
         left,
-        left_text: if left > 0 { copy::left(left) } else { copy::all_done() },
-        full,
-        full_text: (full > 0).then(|| copy::full(full)),
-        everything_done: (left == 0).then_some(EverythingDone { fills_first }),
-        source_line: source_line(&sections, character, moment),
+        left_text: left_text(left),
+        source_line: source_line(sections.iter().flat_map(|section| &section.rows), character, moment),
         sections,
+        resources: Resources {
+            full,
+            full_text: (full > 0).then(|| copy::full(full)),
+            source_line: source_line(&resource_rows, character, moment),
+            rows: resource_rows,
+        },
         logged_in_ms: character.logged_in_ms(),
         footer: Footer {
             reset_time: moment.resets.clock_at(moment.now_ms).to_string(),
@@ -281,15 +250,9 @@ pub fn build(data: &TodoData, character: &CharacterState, playing: bool, moment:
     }
 }
 
-fn source_line(sections: &[SectionView], character: &CharacterState, moment: &Moment) -> SourceLine {
+fn source_line<'a>(rows: impl IntoIterator<Item = &'a RowView>, character: &CharacterState, moment: &Moment) -> SourceLine {
     let zone = moment.resets.zone();
-    let mut sources: Vec<&Source> = Vec::new();
-    for row in sections.iter().flat_map(|section| &section.rows) {
-        sources.push(&row.source);
-        if let RowKind::Group(group) = &row.kind {
-            sources.extend(group.children.iter().map(|child| &child.source));
-        }
-    }
+    let sources: Vec<&Source> = rows.into_iter().map(|row| &row.source).collect();
     if sources.contains(&&Source::GameLive) {
         let logged_in_at = character
             .logged_in_ms()
@@ -318,10 +281,11 @@ fn source_line(sections: &[SectionView], character: &CharacterState, moment: &Mo
 }
 
 pub fn summary_of(data: &TodoData, character: &CharacterState, playing: bool, moment: &Moment) -> CharacterSummary {
-    build(data, character, playing, moment).character
+    let sections = todo_sections(data, character, playing, moment);
+    summary(character, playing, left_in(&sections))
 }
 
-fn summary(character: &CharacterState, playing: bool, left: usize, full: usize) -> CharacterSummary {
+fn summary(character: &CharacterState, playing: bool, left: usize) -> CharacterSummary {
     CharacterSummary {
         id: character.id,
         name: character.name.clone(),
@@ -331,15 +295,15 @@ fn summary(character: &CharacterState, playing: bool, left: usize, full: usize) 
         class_name: class_name(&character.class),
         playing,
         left,
-        full,
-        status: if full > 0 {
-            copy::full(full)
-        } else if left > 0 {
-            copy::left(left)
-        } else {
-            copy::all_done()
-        },
-        status_is_warning: full > 0,
+        status: left_text(left),
+    }
+}
+
+fn left_text(left: usize) -> String {
+    if left > 0 {
+        copy::left(left)
+    } else {
+        copy::all_done()
     }
 }
 
@@ -349,32 +313,20 @@ fn class_name(code: &str) -> String {
     letters.next().map(|first| first.to_uppercase().chain(letters.flat_map(char::to_lowercase)).collect()).unwrap_or_default()
 }
 
-/// The amount rows of `rows` still shown, the ones inside groups too.
-fn shown_amounts(rows: &[RowView]) -> Vec<(&RowView, &AmountView)> {
-    let mut found = Vec::new();
-    for row in rows.iter().filter(|row| !row.hidden) {
-        match &row.kind {
-            RowKind::Amount(amount) => found.push((row, amount)),
-            RowKind::Group(group) => found.extend(shown_amounts(&group.children)),
-            _ => {}
-        }
+fn amount_of(row: &RowView) -> Option<&AmountView> {
+    match &row.kind {
+        RowKind::Amount(amount) => Some(amount),
+        _ => None,
     }
-    found
 }
 
-fn soonest_filling(sections: &[SectionView]) -> Option<(&str, i64)> {
-    sections
+/// The resources in the Resources window's order.
+fn resource_rows(data: &TodoData, character: &CharacterState, playing: bool, moment: &Moment) -> Vec<RowView> {
+    catalogue::CATALOGUE
         .iter()
-        .filter(|section| section.section == Section::Recharges)
-        .flat_map(|section| shown_amounts(&section.rows))
-        .filter_map(|(row, amount)| amount.full_at_ms.map(|at_ms| (row.label.as_str(), at_ms)))
-        .min_by_key(|&(_, at_ms)| at_ms)
-}
-
-/// The Recharges section's rows in the window's order, groups holding their
-/// rows.
-fn recharges(data: &TodoData, character: &CharacterState, playing: bool, moment: &Moment) -> Vec<RowView> {
-    section_rows(data, character, Section::Recharges, playing, moment)
+        .filter(|builtin| builtin.section().is_none())
+        .map(|builtin| builtin_row(data, character, builtin, playing, moment))
+        .collect()
 }
 
 /// A resource at its cap with a refill coming: the refill is wasted unless
@@ -384,8 +336,6 @@ pub struct FullResource {
     /// The built-in row's id.
     pub id: &'static str,
     pub label: String,
-    /// The group the row sits in ("Conquest dungeons"), if any.
-    pub group: Option<&'static str>,
     pub value: u32,
     pub cap: u32,
     pub extra: u32,
@@ -393,20 +343,18 @@ pub struct FullResource {
     pub refill_at_ms: i64,
 }
 
-/// The rows of Recharges that are full, hidden rows left out, in order.
+/// The resources that warn, in the Resources window's order.
 pub fn full_resources(data: &TodoData, character: &CharacterState, playing: bool, moment: &Moment) -> Vec<FullResource> {
-    let rows = recharges(data, character, playing, moment);
-    shown_amounts(&rows)
-        .into_iter()
-        .filter(|(_, amount)| amount.full)
-        .filter_map(|(row, amount)| {
+    resource_rows(data, character, playing, moment)
+        .iter()
+        .filter_map(|row| {
             let RowId::Builtin(id) = row.id else {
                 return None;
             };
+            let amount = amount_of(row).filter(|amount| amount.warned)?;
             Some(FullResource {
                 id,
                 label: row.label.clone(),
-                group: catalogue::builtin(id)?.group.and_then(catalogue::builtin).map(|group| group.label),
                 value: amount.value,
                 cap: amount.cap,
                 extra: row.extra,
@@ -416,10 +364,18 @@ pub fn full_resources(data: &TodoData, character: &CharacterState, playing: bool
         .collect()
 }
 
+fn todo_sections(data: &TodoData, character: &CharacterState, playing: bool, moment: &Moment) -> Vec<SectionView> {
+    Section::ALL.into_iter().map(|section| section_view(data, character, section, playing, moment)).collect()
+}
+
+fn left_in(sections: &[SectionView]) -> usize {
+    sections.iter().map(|section| section.left).sum()
+}
+
 fn section_rows(data: &TodoData, character: &CharacterState, section: Section, playing: bool, moment: &Moment) -> Vec<RowView> {
     let mut rows: Vec<RowView> = catalogue::CATALOGUE
         .iter()
-        .filter(|builtin| builtin.section == section && builtin.group.is_none())
+        .filter(|builtin| builtin.section() == Some(section))
         .map(|builtin| builtin_row(data, character, builtin, playing, moment))
         .collect();
     rows.extend(character.own_todos().iter().filter(|todo| todo.cadence.section() == section).map(|todo| own_row(data, character, todo)));
@@ -429,43 +385,20 @@ fn section_rows(data: &TodoData, character: &CharacterState, section: Section, p
 fn section_view(data: &TodoData, character: &CharacterState, section: Section, playing: bool, moment: &Moment) -> SectionView {
     let rows = section_rows(data, character, section, playing, moment);
     let hidden_rows = rows.iter().filter(|row| row.hidden).count();
-    let zone = moment.resets.zone();
+    let left = rows.iter().filter(|row| !row.hidden && !row.is_done()).count();
     let now = moment.now_ms;
-
-    let (left, tracked, full) = match section {
-        Section::Recharges => {
-            let amounts: Vec<&AmountView> =
-                shown_amounts(&rows).into_iter().map(|(_, amount)| amount).filter(|amount| amount.tracked).collect();
-            (0, amounts.len(), amounts.iter().filter(|amount| amount.full).count())
+    let (next_reset_ms, when_text) = match section {
+        Section::Today => {
+            let at = moment.resets.next_daily(now);
+            (at, copy::resets_in(at - now))
         }
-        _ => (rows.iter().filter(|row| !row.hidden && needs_doing(row)).count(), 0, 0),
+        Section::ThisWeek => {
+            let at = moment.resets.next_weekly(now);
+            (at, copy::weekly_reset_when(moment.resets.zone(), at, now))
+        }
     };
-    let next_reset_ms = match section {
-        Section::Today => Some(moment.resets.next_daily(now)),
-        Section::ThisWeek => Some(moment.resets.next_weekly(now)),
-        Section::Recharges => None,
-    };
-    let soonest_full_at = shown_amounts(&rows).into_iter().filter_map(|(_, amount)| amount.full_at_ms).min();
-    let countdown_ms = match (section, next_reset_ms) {
-        (Section::Today | Section::ThisWeek, Some(at)) => Some(at - now),
-        _ => soonest_full_at.map(|at| at - now),
-    };
-    let when_text = match (section, next_reset_ms) {
-        (Section::Today, Some(at)) => copy::resets_in(at - now),
-        (Section::ThisWeek, Some(at)) => copy::weekly_reset_when(zone, at, now),
-        _ => match soonest_full_at {
-            Some(at) => copy::next_full_in(at - now),
-            None if tracked == 0 => copy::amounts_optional(),
-            None => String::new(),
-        },
-    };
-    let when_time_at = countdown_ms.and_then(|ms| when_text.strip_suffix(duration_words(ms).as_str()).map(str::len));
-    let (count_text, count_is_done) = match section {
-        Section::Recharges if tracked > 0 => (copy::tracked(tracked), false),
-        Section::Recharges => (String::new(), false),
-        _ if left > 0 => (copy::left(left), false),
-        _ => (copy::done(), true),
-    };
+    let when_time_at = when_text.strip_suffix(duration_words(next_reset_ms - now).as_str()).map(str::len);
+    let (count_text, count_is_done) = if left > 0 { (copy::left(left), false) } else { (copy::done(), true) };
     SectionView {
         section,
         title: section.title(),
@@ -473,24 +406,11 @@ fn section_view(data: &TodoData, character: &CharacterState, section: Section, p
         rows,
         hidden_rows,
         left,
-        tracked,
-        full,
         count_text,
         count_is_done,
-        full_text: (full > 0).then(|| copy::full(full)),
         when_text,
         when_time_at,
         next_reset_ms,
-    }
-}
-
-/// A row that still has something to do: not done, and for a group, with a
-/// row left to show.
-fn needs_doing(row: &RowView) -> bool {
-    match &row.kind {
-        RowKind::Group(group) => group.total_children > 0 && !group.all_done,
-        RowKind::Amount(_) => false,
-        _ => !row.is_done(),
     }
 }
 
@@ -538,11 +458,7 @@ impl Origin {
 fn builtin_row(data: &TodoData, character: &CharacterState, builtin: &'static Builtin, playing: bool, moment: &Moment) -> RowView {
     let id = RowId::Builtin(builtin.id);
     let (kind, origin) = match builtin.kind {
-        Kind::Tick => {
-            let (done, origin) = progress(data, character, builtin, 1, playing, moment);
-            (RowKind::Tick { done: done >= 1 }, origin)
-        }
-        Kind::Count { target } => {
+        Kind::Count { target, .. } => {
             let (done, origin) = progress(data, character, builtin, target, playing, moment);
             (RowKind::Count { count: done, target, done: done >= target }, origin)
         }
@@ -550,13 +466,11 @@ fn builtin_row(data: &TodoData, character: &CharacterState, builtin: &'static Bu
             let (view, origin) = amount_view(data, character, builtin, &spec, playing, moment);
             (RowKind::Amount(view), origin)
         }
-        Kind::Group => (RowKind::Group(group_view(data, character, builtin, playing, moment)), Origin::counted_by_the_player(false)),
     };
     let tip = figure_tip(character, &kind, &origin, moment);
     RowView {
         id,
         label: builtin.label.to_string(),
-        sub: builtin.sub.map(catalogue::Sub::text),
         account: builtin.is_account(),
         yours: false,
         hidden: character.is_hidden(builtin.id),
@@ -573,7 +487,7 @@ fn builtin_row(data: &TodoData, character: &CharacterState, builtin: &'static Bu
 fn figure_tip(character: &CharacterState, kind: &RowKind, origin: &Origin, moment: &Moment) -> Option<FigureTip> {
     let stamp = |at_ms: i64| crate::i18n::day_stamp(moment.resets.zone(), at_ms);
     let (text, detail) = match (&origin.source, kind) {
-        (_, RowKind::Tick { .. } | RowKind::Group(_)) => return None,
+        (_, RowKind::Tick { .. }) => return None,
         (Source::GameLive, RowKind::Amount(amount)) => (copy::tip_live(), (origin.extra > 0).then(|| copy::tip_extra(origin.extra, amount.cap))),
         (Source::GameLive, _) => (copy::tip_live(), (origin.extra > 0).then(|| copy::tip_extra_entries(origin.extra))),
         (&Source::GameEarlier { at_ms, game_value, refills }, RowKind::Amount(amount)) => (
@@ -602,7 +516,6 @@ fn own_row(data: &TodoData, character: &CharacterState, todo: &OwnTodo) -> RowVi
     RowView {
         id,
         label: todo.name.clone(),
-        sub: None,
         account: false,
         yours: true,
         hidden: false,
@@ -629,45 +542,13 @@ fn progress(
         let own = data.progress_of(character, RowId::Builtin(builtin.id));
         return (own, Origin::counted_by_the_player(builtin.ticket.is_some()));
     };
-    let restarted = builtin.section == Section::ThisWeek && moment.resets.last_weekly(moment.now_ms) > game.value.at_ms;
+    let restarted = builtin.section() == Some(Section::ThisWeek) && moment.resets.last_weekly(moment.now_ms) > game.value.at_ms;
     let left = if restarted { game.value.count.max(target) } else { game.value.count };
     let game_done = target.saturating_sub(left);
     let origin = game.origin(playing, moment, u32::from(left > game.value.count));
     match character.progress.get(builtin.id) {
         Some(&typed) => (typed.min(target), Origin { source: Source::Typed, typed_over: Some(game_done), ..origin }),
         None => (game_done, origin),
-    }
-}
-
-fn group_view(data: &TodoData, character: &CharacterState, group: &'static Builtin, playing: bool, moment: &Moment) -> GroupView {
-    let children: Vec<RowView> =
-        catalogue::children_of(group.id).map(|builtin| builtin_row(data, character, builtin, playing, moment)).collect();
-    let shown = children.iter().filter(|row| !row.hidden);
-    let total_children = shown.clone().count();
-    let done_children = shown.filter(|row| row.is_done()).count();
-    let amounts = shown_amounts(&children);
-    let tracked: Vec<&AmountView> = amounts.iter().map(|(_, amount)| *amount).filter(|amount| amount.tracked).collect();
-    let full_children = amounts.iter().filter(|(_, amount)| amount.full).count();
-    let summary = if amounts.is_empty() {
-        copy::done_of(done_children, total_children)
-    } else if full_children > 0 {
-        copy::full(full_children)
-    } else {
-        let values = tracked.iter().map(|amount| amount.value);
-        match (values.clone().min(), values.max(), tracked.first()) {
-            (Some(low), Some(high), Some(first)) => copy::of_each(low, high, first.cap),
-            _ => copy::dungeons(total_children),
-        }
-    };
-    GroupView {
-        open: data.is_group_open(group.id),
-        done_children,
-        total_children,
-        all_done: total_children > 0 && done_children == total_children,
-        full_children,
-        summary,
-        hidden_children: children.len() - total_children,
-        children,
     }
 }
 
@@ -691,6 +572,7 @@ fn amount_view(
         tracked: false,
         value: 0,
         full: false,
+        warned: false,
         full_at_ms: None,
         refill_at_ms: None,
         status_text: None,
@@ -712,21 +594,24 @@ fn amount_view(
         _ => return (base, Origin::counted_by_the_player(true)),
     };
     let full = standing.is_full() && !(game_is_basis && above_plain_cap);
+    let refill_at_ms = full.then(|| super::amount::next_refill(spec, &moment.resets, moment.now_ms));
+    let warned = refill_at_ms.is_some_and(|at_ms| at_ms - moment.now_ms <= spec.refill.warning_lead_ms());
     let status_text = match standing.full_at_ms {
         Some(at_ms) => Some(copy::amount_full_in(at_ms - moment.now_ms)),
         None if !full => None,
-        None if continuous => Some(copy::full_being_wasted()),
-        None => {
-            let next = super::amount::next_refill(spec, &moment.resets, moment.now_ms);
-            Some(copy::full_spend_by(&crate::i18n::day_stamp(moment.resets.zone(), next)))
-        }
+        None if warned && continuous => Some(copy::full_being_wasted()),
+        None => refill_at_ms.map(|at_ms| {
+            let stamp = crate::i18n::day_stamp(moment.resets.zone(), at_ms);
+            if warned { copy::full_spend_by(&stamp) } else { copy::full_refills(&stamp) }
+        }),
     };
     let view = AmountView {
         tracked: true,
         value: standing.value,
         full,
+        warned,
         full_at_ms: standing.full_at_ms,
-        refill_at_ms: full.then(|| super::amount::next_refill(spec, &moment.resets, moment.now_ms)),
+        refill_at_ms,
         status_text,
         ..base
     };
@@ -777,14 +662,12 @@ mod tests {
 
     fn row<'a>(list: &'a TodoList, id: &str) -> &'a RowView {
         let wanted = RowId::Builtin(catalogue::builtin(id).unwrap().id);
-        let mut rows: Vec<&RowView> = Vec::new();
-        for row in list.sections.iter().flat_map(|section| &section.rows) {
-            rows.push(row);
-            if let RowKind::Group(group) = &row.kind {
-                rows.extend(&group.children);
-            }
-        }
-        rows.into_iter().find(|row| row.id == wanted).unwrap_or_else(|| panic!("no row {id}"))
+        list.sections
+            .iter()
+            .flat_map(|section| &section.rows)
+            .chain(&list.resources.rows)
+            .find(|row| row.id == wanted)
+            .unwrap_or_else(|| panic!("no row {id}"))
     }
 
     fn amount<'a>(list: &'a TodoList, id: &str) -> &'a AmountView {
@@ -795,7 +678,7 @@ mod tests {
     }
 
     fn hide_everything_to_do(data: &mut TodoData, id: CharacterId) {
-        for builtin in catalogue::CATALOGUE.iter().filter(|builtin| builtin.section != Section::Recharges) {
+        for builtin in catalogue::CATALOGUE.iter().filter(|builtin| builtin.section().is_some()) {
             data.hide(id, builtin.id);
         }
     }
@@ -805,15 +688,26 @@ mod tests {
         let zone = summer();
         let (data, id) = tracked();
         let list = list_of(&data, id, &monday_noon(&zone));
-        let [today, recharges, week] = &list.sections[..] else { panic!("three sections") };
-        assert_eq!((today.left, week.left, recharges.left), (1, 10, 0), "groups count as one row each");
-        assert_eq!((list.left, list.left_text.as_str()), (11, "11 left"));
-        assert_eq!((today.count_text.as_str(), week.count_text.as_str()), ("1 left", "10 left"));
+        let [today, week] = &list.sections[..] else { panic!("two sections") };
+        assert_eq!((today.left, week.left), (1, 1));
+        assert_eq!((list.left, list.left_text.as_str()), (2, "2 left"));
+        assert_eq!((today.count_text.as_str(), week.count_text.as_str()), ("1 left", "1 left"));
         assert_eq!(week.hidden_rows, 1);
         assert!(row(&list, "dutycmd").hidden);
-        assert!(list.everything_done.is_none() && list.full_text.is_none());
-        let names: Vec<&str> = week.rows.iter().map(|row| row.label.as_str()).take(4).collect();
-        assert_eq!(names, ["Daily Dungeon", "Ascension Trial", "Subjugation", "Sanctuary"]);
+        let names: Vec<&str> = week.rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(names, ["Ascension Trial", "Duty Commands"]);
+    }
+
+    #[test]
+    fn the_to_do_window_holds_the_to_dos_and_the_resources_window_every_resource() {
+        let zone = summer();
+        let (data, id) = tracked();
+        let list = list_of(&data, id, &monday_noon(&zone));
+        let to_dos: Vec<&str> = list.sections.iter().flat_map(|section| &section.rows).map(|row| row.label.as_str()).collect();
+        assert_eq!(to_dos, ["Duty Missions", "Ascension Trial", "Duty Commands"]);
+        let resources: Vec<&str> = list.resources.rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(resources, ["Odyle Energy", "Shugo keys", "Invasion keys", "Nightmare", "Daily Dungeon"]);
+        assert!(list.resources.rows.iter().all(|row| !row.hidden));
     }
 
     #[test]
@@ -822,9 +716,9 @@ mod tests {
         let (data, id) = tracked();
         let list = list_of(&data, id, &monday_noon(&zone));
         assert_eq!(list.sections[0].when_text, "resets in 20 h 12 min");
-        assert_eq!(list.sections[0].next_reset_ms, Some(local(6, 9, 0)));
-        assert_eq!(list.sections[2].when_text, "Wed 09:00 \u{b7} in 1 d 20 h");
-        assert_eq!(list.sections[2].next_reset_ms, Some(local(7, 9, 0)));
+        assert_eq!(list.sections[0].next_reset_ms, local(6, 9, 0));
+        assert_eq!(list.sections[1].when_text, "Wed 09:00 \u{b7} in 1 d 20 h");
+        assert_eq!(list.sections[1].next_reset_ms, local(7, 9, 0));
         assert_eq!((list.footer.reset_time.as_str(), list.footer.weekly.as_str()), ("09:00", "Weekly on Wednesday"));
     }
 
@@ -838,51 +732,9 @@ mod tests {
         let list = list_of(&data, id, &monday_noon(&zone));
         let today = &list.sections[0];
         assert_eq!((today.count_text.as_str(), today.count_is_done, today.left), ("done", true, 0));
-        assert_eq!(list.left, 10);
+        assert_eq!(list.left, 1);
         assert!(matches!(row(&list, "duty").kind, RowKind::Count { count: 5, target: 5, done: true }));
         assert!(row(&list, "duty").account);
-    }
-
-    #[test]
-    fn a_group_is_one_row_that_is_done_when_all_its_shown_rows_are() {
-        let zone = summer();
-        let (mut data, id) = tracked();
-        let sanctuary = |data: &TodoData| match &row(&list_of(data, id, &monday_noon(&zone)), "sanct").kind {
-            RowKind::Group(group) => group.clone(),
-            other => panic!("{other:?}"),
-        };
-        data.toggle_tick(id, RowId::Builtin("forgeboss"));
-        data.adjust_count(id, RowId::Builtin("forge"), 4);
-        let group = sanctuary(&data);
-        assert_eq!((group.done_children, group.total_children, group.summary.as_str()), (2, 6, "2 of 6 done"));
-        assert!(!group.all_done && !group.open);
-        assert_eq!(list_of(&data, id, &monday_noon(&zone)).sections[2].left, 10, "still one row left");
-
-        for (row_id, times) in [("corr", 4), ("corrboss", 2), ("chal", 4), ("chalboss", 2)] {
-            data.adjust_count(id, RowId::Builtin(row_id), times);
-        }
-        assert!(sanctuary(&data).all_done);
-        let list = list_of(&data, id, &monday_noon(&zone));
-        assert_eq!(list.sections[2].left, 9);
-        assert!(row(&list, "sanct").is_done());
-    }
-
-    #[test]
-    fn hiding_a_row_of_a_group_shrinks_the_group_and_a_group_with_nothing_shown_is_not_left() {
-        let zone = summer();
-        let (mut data, id) = tracked();
-        data.hide(id, "chalboss");
-        data.set_group_open("sanct", true);
-        let list = list_of(&data, id, &monday_noon(&zone));
-        let RowKind::Group(group) = &row(&list, "sanct").kind else { panic!("a group") };
-        assert_eq!((group.total_children, group.hidden_children, group.open), (5, 1, true));
-        assert_eq!(group.children.len(), 6, "the hidden row is still listed, flagged, for Show");
-
-        for child in ["forge", "forgeboss", "corr", "corrboss", "chal"] {
-            data.hide(id, child);
-        }
-        let list = list_of(&data, id, &monday_noon(&zone));
-        assert_eq!(list.sections[2].left, 9, "nothing shown inside, so nothing left to do there");
     }
 
     #[test]
@@ -895,10 +747,10 @@ mod tests {
             .unwrap();
         data.add_own(id, NewOwnTodo { name: "Market".into(), kind: OwnKind::Count(3), cadence: Cadence::Weekly }).unwrap();
         let list = list_of(&data, id, &monday_noon(&zone));
-        assert_eq!((list.sections[0].left, list.sections[2].left), (2, 10), "Legion added, Trial hidden, Market added");
+        assert_eq!((list.sections[0].left, list.sections[1].left), (2, 1), "Legion added, Trial hidden, Market added");
         let today: Vec<(&str, bool)> = list.sections[0].rows.iter().map(|row| (row.label.as_str(), row.yours)).collect();
         assert_eq!(today, [("Duty Missions", false), ("Legion", true)]);
-        let last = list.sections[2].rows.last().unwrap();
+        let last = list.sections[1].rows.last().unwrap();
         assert_eq!((last.label.as_str(), last.yours), ("Market", true));
         assert!(matches!(last.kind, RowKind::Count { count: 0, target: 3, done: false }));
 
@@ -907,72 +759,121 @@ mod tests {
     }
 
     #[test]
-    fn the_accessible_name_adds_the_sub_label() {
-        let zone = summer();
-        let (data, id) = tracked();
-        let list = list_of(&data, id, &monday_noon(&zone));
-        assert_eq!(row(&list, "fissure").accessible_name(), "Daily Dungeon, Unknown Fissure");
-        assert_eq!(row(&list, "trial").accessible_name(), "Ascension Trial");
-    }
-
-    #[test]
     fn amounts_are_empty_and_out_of_every_count_until_typed() {
         let zone = summer();
         let (data, id) = tracked();
         let list = list_of(&data, id, &monday_noon(&zone));
-        let recharges = &list.sections[1];
-        assert_eq!((recharges.when_text.as_str(), recharges.count_text.as_str()), ("amounts optional", ""));
-        assert_eq!((recharges.tracked, recharges.full, list.full), (0, 0, 0));
+        assert_eq!((list.resources.full, list.resources.full_text.as_deref()), (0, None));
         let odyle = amount(&list, "odyle");
         assert_eq!((odyle.tracked, odyle.status_text.as_deref(), odyle.value_text().as_str()), (false, None, "not tracked"));
         assert_eq!((odyle.step, odyle.cap), (10, 560));
     }
 
     #[test]
-    fn a_typed_amount_says_when_it_is_full_and_the_section_names_the_soonest() {
+    fn a_typed_amount_says_when_it_is_full() {
         let zone = summer();
         let (mut data, id) = tracked();
         let now = monday_noon(&zone);
         data.set_amount(id, "odyle", Some(425), &now);
         data.set_amount(id, "shugo", Some(10), &now);
         let list = list_of(&data, id, &now);
-        let recharges = &list.sections[1];
-        assert_eq!((recharges.tracked, recharges.count_text.as_str()), (2, "2 tracked"));
         let odyle = amount(&list, "odyle");
         assert_eq!(odyle.value, 425);
         assert_eq!(odyle.status_text.as_deref(), Some("Full in 1 d 2 h"), "(560 - 425) / 15 = 9 refills on the 3 h clock, the last one 26 h 12 min away");
         assert_eq!(odyle.value_text(), "425 of 560");
         assert_eq!(amount(&list, "shugo").status_text.as_deref(), Some("Full in 20 h 12 min"), "+3 at 09:00 reaches 12");
-        assert_eq!(recharges.when_text, "next full in 20 h 12 min");
     }
 
     #[test]
-    fn a_full_amount_is_wasted_or_names_the_refill_it_will_lose() {
+    fn a_full_amount_stays_calm_while_its_refill_is_far() {
         let zone = summer();
         let (mut data, id) = tracked();
         let now = monday_noon(&zone);
         data.set_amount(id, "odyle", Some(560), &now);
         data.set_amount(id, "shugo", Some(12), &now);
-        data.set_amount(id, "balaur", Some(7), &now);
+        data.set_amount(id, "invasion", Some(7), &now);
+        data.set_amount(id, "fissure", Some(14), &now);
         let list = list_of(&data, id, &now);
-        assert_eq!(amount(&list, "odyle").status_text.as_deref(), Some("Full, being wasted"));
-        assert_eq!(amount(&list, "shugo").status_text.as_deref(), Some("Full, spend by Tue 09:00"));
-        assert_eq!(amount(&list, "balaur").status_text.as_deref(), Some("Full, spend by Tue 09:00"));
-        assert_eq!((list.full, list.full_text.as_deref()), (3, Some("3 full")));
-        let recharges = &list.sections[1];
-        assert_eq!((recharges.full, recharges.full_text.as_deref(), recharges.when_text.as_str()), (3, Some("3 full"), ""));
+        assert_eq!(amount(&list, "odyle").status_text.as_deref(), Some("Full \u{b7} refills Mon 15:00"));
+        assert_eq!(amount(&list, "shugo").status_text.as_deref(), Some("Full \u{b7} refills Tue 09:00"));
+        assert_eq!(amount(&list, "invasion").status_text.as_deref(), Some("Full \u{b7} refills Tue 09:00"));
+        assert_eq!(amount(&list, "fissure").status_text.as_deref(), Some("Full \u{b7} refills Wed 09:00"));
+        for id in ["odyle", "shugo", "invasion", "fissure"] {
+            let calm = amount(&list, id);
+            assert!(calm.full && !calm.warned, "{id} is at its cap and calm");
+        }
+        assert_eq!((list.resources.full, list.resources.full_text.as_deref()), (0, None));
+        let character = data.character(id).unwrap();
+        assert!(full_resources(&data, character, false, &now).is_empty(), "the toolbar's warning lists nothing");
     }
 
     #[test]
-    fn a_hidden_amount_is_left_out_of_the_counts() {
+    fn a_full_amount_is_wasted_or_names_the_refill_it_will_lose_once_the_refill_is_close() {
         let zone = summer();
         let (mut data, id) = tracked();
-        let now = monday_noon(&zone);
-        data.set_amount(id, "odyle", Some(560), &now);
-        data.hide(id, "odyle");
-        let list = list_of(&data, id, &now);
-        assert_eq!((list.full, list.sections[1].tracked), (0, 0));
-        assert!(row(&list, "odyle").hidden);
+        let typed_at = monday_noon(&zone);
+        for (row, value) in [("odyle", 560), ("shugo", 12), ("invasion", 7), ("fissure", 14)] {
+            data.set_amount(id, row, Some(value), &typed_at);
+        }
+        let odyle_close = Moment::new(&zone, 9, false, local(5, 14, 30));
+        let list = list_of(&data, id, &odyle_close);
+        assert_eq!(amount(&list, "odyle").status_text.as_deref(), Some("Full, being wasted"));
+        assert_eq!(amount(&list, "shugo").status_text.as_deref(), Some("Full \u{b7} refills Tue 09:00"));
+        assert_eq!((list.resources.full, list.resources.full_text.as_deref()), (1, Some("1 full")));
+
+        let daily_close = Moment::new(&zone, 9, false, local(6, 7, 0));
+        let list = list_of(&data, id, &daily_close);
+        assert_eq!(amount(&list, "shugo").status_text.as_deref(), Some("Full, spend by Tue 09:00"));
+        assert_eq!(amount(&list, "invasion").status_text.as_deref(), Some("Full, spend by Tue 09:00"));
+        assert_eq!(amount(&list, "fissure").status_text.as_deref(), Some("Full \u{b7} refills Wed 09:00"));
+        assert_eq!((list.resources.full, list.resources.full_text.as_deref()), (2, Some("2 full")));
+        assert_eq!((list.left, list.character.status.as_str()), (2, "2 left"), "the to-dos count none of it");
+
+        let weekly_close = Moment::new(&zone, 9, false, local(6, 19, 0));
+        let list = list_of(&data, id, &weekly_close);
+        assert_eq!(amount(&list, "fissure").status_text.as_deref(), Some("Full, spend by Wed 09:00"));
+        let character = data.character(id).unwrap();
+        let labels: Vec<String> = full_resources(&data, character, false, &weekly_close).into_iter().map(|resource| resource.label).collect();
+        assert_eq!(labels, ["Daily Dungeon"], "only the warned rows are listed");
+    }
+
+    #[test]
+    fn each_refill_kind_warns_from_its_own_lead_before_the_refill() {
+        let zone = summer();
+        let (mut data, id) = tracked();
+        let typed_at = monday_noon(&zone);
+        for (row, value) in [("odyle", 560), ("shugo", 12), ("fissure", 14)] {
+            data.set_amount(id, row, Some(value), &typed_at);
+        }
+        let warned = |row: &str, at_ms: i64| {
+            let moment = Moment::new(&zone, 9, false, at_ms);
+            amount(&list_of(&data, id, &moment), row).warned
+        };
+        let odyle_refill = local(5, 15, 0);
+        assert!(!warned("odyle", odyle_refill - HOUR - 1) && warned("odyle", odyle_refill - HOUR), "an hour before Odyle's refill");
+        let daily_refill = local(6, 9, 0);
+        assert!(!warned("shugo", daily_refill - 3 * HOUR - 1) && warned("shugo", daily_refill - 3 * HOUR), "three hours before a daily refill");
+        let weekly_refill = local(7, 9, 0);
+        assert!(!warned("fissure", weekly_refill - 24 * HOUR - 1) && warned("fissure", weekly_refill - 24 * HOUR), "a day before the weekly refill");
+    }
+
+    #[test]
+    fn a_resource_hidden_by_an_older_build_shows_and_warns() {
+        let zone = summer();
+        let stored = serde_json::json!({
+            "characters": [{ "id": 1, "name": "Alder", "serverId": 1001, "class": "GLADIATOR", "hidden": ["odyle", "trial"] }]
+        });
+        let mut data = serde_json::from_value::<TodoData>(stored).unwrap().sanitised();
+        let id = data.characters()[0].id;
+        let typed_at = monday_noon(&zone);
+        data.set_amount(id, "odyle", Some(560), &typed_at);
+        let odyle_close = Moment::new(&zone, 9, false, local(5, 14, 30));
+        let list = list_of(&data, id, &odyle_close);
+        assert!(!row(&list, "odyle").hidden && row(&list, "trial").hidden);
+        assert_eq!(list.resources.full, 1);
+        let character = data.character(id).unwrap();
+        let labels: Vec<String> = full_resources(&data, character, false, &odyle_close).into_iter().map(|resource| resource.label).collect();
+        assert_eq!(labels, ["Odyle Energy"], "the toolbar's warning lists it");
     }
 
     #[test]
@@ -986,36 +887,30 @@ mod tests {
     }
 
     #[test]
-    fn everything_done_carries_the_amount_that_fills_first() {
+    fn everything_done_counts_the_to_dos_alone() {
         let zone = summer();
         let (mut data, id) = tracked();
-        let now = monday_noon(&zone);
+        let now = Moment::new(&zone, 9, false, local(5, 14, 30));
         hide_everything_to_do(&mut data, id);
+        data.set_amount(id, "odyle", Some(560), &now);
         let list = list_of(&data, id, &now);
         assert_eq!((list.left, list.left_text.as_str()), (0, "all done"));
-        assert_eq!(list.everything_done, Some(EverythingDone { fills_first: None }));
         assert_eq!(list.sections[0].count_text, "done");
-
-        data.set_amount(id, "odyle", Some(425), &now);
-        let list = list_of(&data, id, &now);
-        assert_eq!(
-            list.everything_done,
-            Some(EverythingDone { fills_first: Some("Odyle Energy is full in 1 d 2 h.".to_string()) })
-        );
+        assert_eq!(list.resources.full, 1, "a full resource is the Resources window's");
     }
 
     #[test]
-    fn the_picker_shows_full_before_left_and_all_done_last() {
+    fn the_picker_counts_the_to_dos_left_and_never_the_resources() {
         let zone = summer();
         let (mut data, id) = tracked();
-        let now = monday_noon(&zone);
-        assert_eq!(list_of(&data, id, &now).character.status, "11 left");
+        let now = Moment::new(&zone, 9, false, local(5, 14, 30));
+        assert_eq!(list_of(&data, id, &now).character.status, "2 left");
         data.set_amount(id, "odyle", Some(560), &now);
-        let summary = list_of(&data, id, &now).character;
-        assert_eq!((summary.status.as_str(), summary.status_is_warning), ("1 full", true));
-        data.set_amount(id, "odyle", None, &now);
+        assert_eq!(list_of(&data, id, &now).resources.full, 1);
+        assert_eq!(list_of(&data, id, &now).character.status, "2 left");
         hide_everything_to_do(&mut data, id);
-        assert_eq!(list_of(&data, id, &now).character.status, "all done");
+        let character = data.character(id).unwrap();
+        assert_eq!(summary_of(&data, character, false, &now).status, "all done");
     }
 
     #[test]
@@ -1052,7 +947,7 @@ mod tests {
         let zone = summer();
         let (mut data, id) = tracked();
         let seen_at = local(4, 22, 40);
-        let ticket_list = vec![record(60_000_001, 125, 245), record(1, 3, 3), record(4, 12, 0), record(8, 2, 0), record(102, 0, 0)];
+        let ticket_list = vec![record(60_000_001, 125, 245), record(1, 3, 3), record(4, 12, 0), record(8, 0, 0)];
         login(&mut data, &alder(), seen_at, ticket_list);
         let list = list_of(&data, id, &monday_noon(&zone));
 
@@ -1062,10 +957,9 @@ mod tests {
         assert_eq!(row(&list, "odyle").source, Source::GameEarlier { at_ms: seen_at, game_value: 125, refills: 5 });
         assert_eq!(row(&list, "odyle").last_seen_ms, Some(seen_at));
         assert_eq!(amount(&list, "shugo").value, 6, "3 and the +3 of Monday 09:00");
-        assert_eq!(amount(&list, "invasion").value, 3);
         let nightmare = amount(&list, "nightmare");
-        assert_eq!((nightmare.value, nightmare.full, nightmare.status_text.as_deref()), (14, true, Some("Full, spend by Tue 09:00")));
-        assert_eq!(amount(&list, "balaur").value, 1, "an empty pool is not guessed fuller than the table says");
+        assert_eq!((nightmare.value, nightmare.full, nightmare.status_text.as_deref()), (14, true, Some("Full \u{b7} refills Tue 09:00")));
+        assert_eq!(amount(&list, "invasion").value, 1, "an empty pool is not guessed fuller than the table says");
     }
 
     #[test]
@@ -1085,25 +979,15 @@ mod tests {
         let zone = summer();
         let (mut data, id) = tracked();
         let seen_at = local(4, 22, 40);
-        let ticket_list = vec![
-            record(80_000_001, 1, 1),
-            record(90_000_002, 0, 0),
-            record(90_000_004, 2, 0),
-            record(101, 5, 7),
-            record(60_000_008, 28, 0),
-            record(60_000_201, 0, 0),
-        ];
-        login(&mut data, &alder(), seen_at, ticket_list);
+        login(&mut data, &alder(), seen_at, vec![record(80_000_001, 1, 1), record(101, 5, 7)]);
         let list = list_of(&data, id, &monday_noon(&zone));
 
         assert!(matches!(row(&list, "trial").kind, RowKind::Count { count: 2, target: 3, done: false }), "1 left of 3");
         assert_eq!(row(&list, "trial").extra, 1);
-        assert!(matches!(row(&list, "forgeboss").kind, RowKind::Tick { done: true }), "the final boss ticks at 0 left");
-        assert!(matches!(row(&list, "corrboss").kind, RowKind::Count { count: 0, target: 2, done: false }));
-        assert!(matches!(row(&list, "fissure").kind, RowKind::Count { count: 9, target: 14, done: false }), "5 left of 14");
+        let dungeon = amount(&list, "fissure");
+        assert_eq!((dungeon.value, dungeon.cap, dungeon.full), (5, 14, false), "5 tickets left of 14");
         assert_eq!(row(&list, "fissure").extra, 7);
         assert!(row(&list, "fissure").account, "the server's, not the character's");
-        assert!(matches!(row(&list, "transc").kind, RowKind::Count { count: 0, target: 28, done: false }));
 
         change(&mut data, &alder(), local(5, 12, 30), record(80_000_001, 0, 1));
         let list = list_of(&data, id, &monday_noon(&zone));
@@ -1112,8 +996,7 @@ mod tests {
         let after_the_reset = Moment::new(&zone, 9, false, local(7, 9, 30));
         let list = list_of(&data, id, &after_the_reset);
         assert!(matches!(row(&list, "trial").kind, RowKind::Count { count: 0, target: 3, done: false }), "Wednesday's reset");
-        assert!(matches!(row(&list, "forgeboss").kind, RowKind::Tick { done: false }));
-        assert!(matches!(row(&list, "fissure").kind, RowKind::Count { count: 0, target: 14, .. }));
+        assert_eq!(amount(&list, "fissure").value, 14, "the weekly refill after Wednesday's reset");
         assert_eq!(row(&list, "trial").extra, 1, "the extra pool does not start over");
         assert_eq!(row(&list, "trial").source, Source::GameEarlier { at_ms: local(5, 12, 30), game_value: 0, refills: 1 });
     }
@@ -1125,10 +1008,10 @@ mod tests {
         login(&mut data, &alder(), local(5, 12, 30), vec![record(4, 6, 0)]);
         let now = Moment::new(&zone, 9, false, local(5, 12, 48)).running_since(local(5, 12, 0));
         let character = data.character(id).unwrap();
-        assert_eq!(build(&data, character, true, &now).sections[1].rows[3].source, Source::GameLive);
+        assert_eq!(build(&data, character, true, &now).resources.rows[3].source, Source::GameLive);
         let earlier_run = now.running_since(local(5, 12, 40));
-        assert!(matches!(build(&data, character, true, &earlier_run).sections[1].rows[3].source, Source::GameEarlier { .. }));
-        assert!(matches!(build(&data, character, false, &now).sections[1].rows[3].source, Source::GameEarlier { .. }));
+        assert!(matches!(build(&data, character, true, &earlier_run).resources.rows[3].source, Source::GameEarlier { .. }));
+        assert!(matches!(build(&data, character, false, &now).resources.rows[3].source, Source::GameEarlier { .. }));
     }
 
     #[test]
@@ -1181,8 +1064,9 @@ mod tests {
         let shugo = amount(&list, "shugo");
         assert_eq!((shugo.value, shugo.full, shugo.above_plain_cap, shugo.status_text.as_deref()), (18, false, true, None));
         assert_eq!(shugo.refill_at_ms, None);
-        assert!(amount(&list, "odyle").full, "560 is the plain cap itself");
-        assert_eq!(list.full, 1);
+        let odyle = amount(&list, "odyle");
+        assert_eq!((odyle.full, odyle.warned), (true, false), "560 is the plain cap itself, its refill is still far");
+        assert_eq!(list.resources.full, 0);
 
         let member = Moment::new(&zone, 9, true, local(5, 12, 48));
         let shugo = amount(&list_of(&data, id, &member), "shugo").clone();
@@ -1210,56 +1094,21 @@ mod tests {
     }
 
     #[test]
-    fn conquest_dungeons_are_a_group_of_amounts_and_the_full_ones_are_listed_for_the_warning() {
+    fn the_full_resources_are_listed_for_the_warning_in_the_windows_order() {
         let zone = summer();
         let (mut data, id) = tracked();
-        let now = monday_noon(&zone);
-        login(
-            &mut data,
-            &alder(),
-            local(5, 12, 30),
-            vec![record(60_000_101, 14, 0), record(60_001_201, 6, 0), record(1, 12, 0), record(60_005_301, 4, 0)],
-        );
+        let now = Moment::new(&zone, 9, false, local(6, 7, 0));
+        login(&mut data, &alder(), local(5, 12, 30), vec![record(1, 12, 0), record(8, 7, 0), record(4, 6, 0)]);
         let list = list_of(&data, id, &now);
-        let RowKind::Group(group) = &row(&list, "conquest").kind else {
-            panic!("Conquest dungeons is a group");
-        };
-        assert_eq!(group.children.len(), 6);
-        assert_eq!((group.full_children, group.summary.as_str()), (1, "1 full"));
-        assert_eq!(amount(&list, "c-urugugu").value, 6);
-        assert_eq!(list.sections[1].tracked, 4);
+        assert_eq!(amount(&list, "nightmare").value, 6);
+        assert_eq!(list.resources.full, 2);
 
         let character = data.character(id).unwrap();
         let full = full_resources(&data, character, false, &now);
-        let labels: Vec<(&str, Option<&str>)> = full.iter().map(|resource| (resource.label.as_str(), resource.group)).collect();
-        assert_eq!(labels, [("Shugo Festival keys", None), ("Krao Cave", Some("Conquest dungeons")), ("Deus Research Base", None)]);
+        let labels: Vec<&str> = full.iter().map(|resource| resource.label.as_str()).collect();
+        assert_eq!(labels, ["Shugo keys", "Invasion keys"]);
         assert!(full.iter().all(|resource| resource.refill_at_ms == local(6, 9, 0)));
-        assert_eq!((full[1].value, full[1].cap), (14, 14));
-        let ids: Vec<RowId> = recharges(&data, character, false, &now).iter().map(|row| row.id).collect();
-        assert_eq!(ids[..2], [RowId::Builtin("odyle"), RowId::Builtin("shugo")]);
-
-        data.hide(id, "c-krao");
-        let character = data.character(id).unwrap();
-        assert_eq!(full_resources(&data, character, false, &now).len(), 2, "a hidden row is not warned about");
-        let list = list_of(&data, id, &now);
-        let RowKind::Group(group) = &row(&list, "conquest").kind else {
-            panic!("Conquest dungeons is a group");
-        };
-        assert_eq!(group.summary, "6 of 14 each", "the tracked dungeons' spread once none is full");
-    }
-
-    #[test]
-    fn a_group_of_amounts_reads_the_spread_of_its_dungeons_or_how_many_there_are() {
-        let zone = summer();
-        let (mut data, id) = tracked();
-        let now = monday_noon(&zone);
-        let summary = |data: &TodoData| match &row(&list_of(data, id, &now), "conquest").kind {
-            RowKind::Group(group) => group.summary.clone(),
-            other => panic!("{other:?}"),
-        };
-        assert_eq!(summary(&data), "6 dungeons");
-        login(&mut data, &alder(), local(5, 12, 30), vec![record(60_000_101, 10, 0), record(60_001_201, 13, 0)]);
-        assert_eq!(summary(&data), "10\u{2013}13 of 14 each");
+        assert_eq!((full[1].value, full[1].cap), (7, 7));
     }
 
     #[test]
@@ -1271,16 +1120,21 @@ mod tests {
         let (alder_id, birch_id) = (data.characters()[0].id, data.characters()[1].id);
         let now = monday_noon(&zone);
         assert_eq!(list_of(&data, alder_id, &now).source_line, SourceLine::NoneYet);
+        assert_eq!(list_of(&data, alder_id, &now).resources.source_line, SourceLine::NoneYet);
 
         login(&mut data, &alder(), local(4, 22, 40), vec![record(60_000_001, 125, 245), record(8, 2, 0)]);
-        assert_eq!(list_of(&data, alder_id, &now).source_line, SourceLine::Earlier { at: "Sun 22:40".to_string() });
-        assert_eq!(list_of(&data, birch_id, &now).source_line, SourceLine::Shared { from: "Alder".to_string() });
+        let alder_list = list_of(&data, alder_id, &now);
+        assert_eq!(alder_list.resources.source_line, SourceLine::Earlier { at: "Sun 22:40".to_string() });
+        assert_eq!(alder_list.source_line, SourceLine::NoneYet, "no to-do follows those tickets");
+        assert_eq!(list_of(&data, birch_id, &now).resources.source_line, SourceLine::Shared { from: "Alder".to_string() });
 
-        login(&mut data, &alder(), local(5, 12, 30), vec![record(60_000_001, 300, 245)]);
+        login(&mut data, &alder(), local(5, 12, 30), vec![record(60_000_001, 300, 245), record(80_000_001, 1, 1)]);
         let character = data.character(alder_id).unwrap();
         let this_run = Moment::new(&zone, 9, false, local(5, 12, 48)).running_since(local(5, 12, 0));
-        let live = build(&data, character, true, &this_run).source_line;
-        assert_eq!(live, SourceLine::Live { logged_in_at: Some("12:30".to_string()) });
+        let live = build(&data, character, true, &this_run);
+        assert_eq!(live.source_line, SourceLine::Live { logged_in_at: Some("12:30".to_string()) }, "Ascension Trial from the game");
+        assert_eq!(live.resources.source_line, SourceLine::Live { logged_in_at: Some("12:30".to_string()) });
+        assert_eq!(list_of(&data, birch_id, &now).source_line, SourceLine::NoneYet, "Ascension Trial is each character's own");
     }
 
     #[test]

@@ -25,14 +25,14 @@ pub use data::{
     Cadence, CharacterId, HiddenSummary, NewOwnTodo, OwnKind, PoolAbovePlainCap, ProgressChange, RemovedOwnTodo, RowId,
     MAX_OWN_NAME_CHARS, OWN_COUNT_RANGE,
 };
-pub use list::{AmountView, FigureTip, GroupView, RowKind, RowView, SectionView, Source, SourceLine, TodoList};
+pub use list::{AmountView, FigureTip, RowKind, RowView, SectionView, Source, SourceLine, TodoList};
 pub use service::{follow_player, global, identified_by, install, record_tickets, Identified, Todos};
 pub use settings::TodoSettings;
 pub use view::{Contents, TodoView};
 #[cfg(feature = "probes")]
 pub use service::PlayerRef;
 #[cfg(feature = "probes")]
-pub use view::{HiddenIn, Typing};
+pub use view::Typing;
 
 /// A built-in row's name, as the windows show it.
 pub fn row_label(id: &str) -> Option<&'static str> {

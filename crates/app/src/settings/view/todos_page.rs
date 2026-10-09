@@ -1,7 +1,7 @@
 //! Settings → To-dos (docs/gpui-mockups/approved/settings.html, tokens.md
 //! "Settings → To-dos"): the reset hour, the membership, and the two ways to
-//! bring the built-in to-dos back, for every character. The rest of the
-//! to-dos lives in the to-do window.
+//! bring the built-in to-dos back, for every character. The reset hour and
+//! the membership also set the Resources window's refills and caps.
 
 use gpui::{HighlightStyle, StyledText};
 
@@ -40,7 +40,7 @@ impl SettingsView {
             .child(description(fl!("settings-todos-membership-text")))
             .children(self.todos_seen.membership_hint.as_ref().map(|hint| membership_hint(hint, settings)))
             .into_any_element();
-        let recharges = group(vec![row(membership_label, Some(membership_text), membership)]);
+        let resources = group(vec![row(membership_label, Some(membership_text), membership)]);
 
         let hidden = self.todos_seen.hidden;
         let restore_focus = self.focus_of("todos-restore", true, window, cx);
@@ -96,8 +96,8 @@ impl SettingsView {
             .children(notices)
             .child(group_title(fl!("settings-todos-resets"), true))
             .child(resets)
-            .child(group_title(fl!("todos-section-recharges"), false))
-            .child(recharges)
+            .child(group_title(fl!("resources-window-title"), false))
+            .child(resources)
             .child(group_title(fl!("settings-todos-defaults"), false))
             .child(defaults)
     }
@@ -151,8 +151,8 @@ impl SettingsView {
     }
 }
 
-/// "The game shows **18 Shugo Festival keys** on Mirelle, more than 12. Do
-/// you have a membership?": the figure and name brighter.
+/// "The game shows **18 Shugo keys** on Mirelle, more than 12. Do you have a
+/// membership?": the figure and name brighter.
 fn membership_hint(hint: &todos::PoolAbovePlainCap, settings: &AppSettings) -> Div {
     let amount = fl!("settings-todos-membership-amount", count = hint.count, label = hint.label);
     let name = settings.overlay.display_name(&hint.character);
