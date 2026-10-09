@@ -43,8 +43,8 @@
     <script src="hub.js"></script>
     <script>
       (function () {
-        const { toolbar, meter, prompt, view, snapshot, CALM } = Hub;
-        const bar = (ctx, o = {}) => toolbar(ctx, { v: view({ g: snapshot(CALM) }), lit: { meter: true }, ...o });
+        const { toolbar, meter, prompt } = Hub;
+        const bar = (ctx, o = {}) => toolbar(ctx, { lit: { meter: true }, ...o });
         const capsule = `<div class="ov d is-capsule is-idle"><span style="font-weight:600">DPS Meter</span><span class="d-label">Standing by</span></div>`;
 
         function render(state, ctx) {

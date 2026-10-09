@@ -2,14 +2,16 @@
 // game (approved 2026-10-08). Drawn by todos.html; its styles are todos.css.
 //
 // Everything here is invented: counts, times, character names. Limits and
-// refill rules: the reset research (MetaBot's client tables for the Global
+// reset rules: the reset research (MetaBot's client tables for the Global
 // client 0.0.4387.0; Game8 for Duty Missions and Duty Commands) and the
-// game's ticket table (caps, refills, which ticket a row reads). Nothing is
-// saved or sent anywhere.
+// game's ticket table (which ticket a row reads). Nothing is saved or sent
+// anywhere.
 //
-// To confirm in game (drawn with the build's default, dashed on the page):
-// the Deus Research Base / Shattered Arkanis cap (4), Conquest dungeons as
-// one ticket per dungeon (14, +2 a day).
+// No Recharges (decided 2026-10-08, "I think we can remove the recharges
+// from the todos now no ?"): Odyle Energy, Shugo keys, Invasion keys,
+// Nightmare and the Daily Dungeon are drawn only in the Resources window
+// (hub.js) and the toolbar. The to-do window keeps Today, This week and
+// your own to-dos.
 (function () {
   "use strict";
 
@@ -32,7 +34,6 @@
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const nm = (ctx, name) => esc(ctx.opts.mask ? ctx.fmt.mask(name) : name);
-  const warnChip = (text) => `<span class="o-chip is-warn">${icon("alert")}${text}</span>`;
 
   // ---- Clock (mocked): Monday 21:48, daily reset 09:00, weekly Wednesday ----
   const DAY = 1440;
@@ -69,100 +70,14 @@
     return t;
   }
 
-  // The k-th refill from now: every `every` minutes (from `off` past
-  // midnight), or once a day at `at`.
-  const refill = (r, now, k) => (r.every ? (Math.floor((now - (r.off || 0)) / r.every) + k) * r.every + (r.off || 0) : nextAt(now, r.at) + (k - 1) * DAY);
-
-  // Refills between two moments (a value seen earlier, brought to now).
-  function refillsBetween(r, from, to) {
-    if (r.every) return Math.floor((to - (r.off || 0)) / r.every) - Math.floor((from - (r.off || 0)) / r.every);
-    let k = 0;
-    for (let t = nextAt(from, r.at); t <= to; t += DAY) k++;
-    return k;
-  }
-
-  // Full when the regular pool reaches the cap; extras never count.
-  function estimate(r, v, cap, now) {
-    if (v >= cap) return { full: true, next: refill(r, now, 1) };
-    return { full: false, at: refill(r, now, Math.ceil((cap - v) / r.add)) };
-  }
-
   // ---- The default list ----------------------------------------------------
   const TODAY = [{ id: "duty", kind: "count", name: "Duty Missions", of: 5, account: true, manual: true }];
 
-  // To confirm in game: one ticket per dungeon (six, 14, +2 a day), a
-  // folding group like Sanctuary.
-  const CONQUEST_DUNGEONS = [
-    ["krao", "Krao Cave"],
-    ["urugugu", "Urugugu Canyon"],
-    ["fire", "Fire Temple"],
-    ["draupnir", "Draupnir"],
-    ["vakron", "Vakron Sky Island"],
-    ["horn", "Ferocious Horn Den"],
-  ];
-
-  // Shugo Festival keys: 12 (21 with membership), +3 a day, extra pool up to
-  // 30. Shugo keys, Invasion keys and the Unknown Fissure are shared by the
-  // characters of one server. Daily refills follow the ticket table's daily
-  // clock (16:00 KST = the 09:00 daily reset here). Deus and Arkanis: cap 4,
-  // to confirm in game.
-  const CHARGES = [
-    { id: "odyle", name: "Odyle Energy", cap: 560, mcap: 840, add: 15, every: 180, step: 10 },
-    { id: "shugo", name: "Shugo Festival keys", cap: 12, mcap: 21, add: 3, at: RESET, account: true },
-    { id: "invasion", name: "Invasion keys", cap: 7, add: 1, at: RESET, account: true },
-    { id: "nightmare", name: "Nightmare", cap: 14, add: 2, at: RESET },
-    {
-      id: "conquest",
-      kind: "cgroup",
-      name: "Conquest dungeons",
-      open: "conquest",
-      items: CONQUEST_DUNGEONS.map(([id, name]) => ({ id: "c-" + id, name, cap: 14, add: 2, at: RESET })),
-    },
-    { id: "deus", name: "Deus Research Base", cap: 4, add: 2, at: RESET, open: "deus" },
-    { id: "arkanis", name: "Shattered Arkanis", cap: 4, add: 2, at: RESET, open: "deus" },
-    { id: "balaur", name: "Abandoned Balaur Fortress", cap: 7, add: 1, at: RESET },
-    { id: "fafnium", name: "Fafnium Laboratory", cap: 7, add: 1, at: RESET },
-  ];
-
-  const chargeLeaves = () => CHARGES.flatMap((r) => (r.kind === "cgroup" ? r.items : [r]));
-  const findCharge = (id) => chargeLeaves().find((r) => r.id === id);
-
-  const EXPLORE = [
-    ["azure", "Azure Breath Island"],
-    ["cradle", "Cradle of Nihility"],
-    ["draupnir", "Draupnir"],
-    ["dramata", "Dying Dramata's Nest"],
-    ["horn", "Ferocious Horn Den"],
-    ["fire", "Fire Temple"],
-    ["illusion", "Hall of Illusion"],
-    ["krao", "Krao Cave"],
-    ["urugugu", "Urugugu Canyon"],
-    ["vakron", "Vakron Sky Island"],
-  ];
-
+  // This week: only what the game's menu has a weekly limit for (settled in
+  // game, 2026-10-08: no cap on Transcendence, Exploration or Conquest; no
+  // Subjugation, Sanctuary or Ordeal entry in the menu).
   const WEEK = [
-    { id: "fissure", kind: "count", name: "Daily Dungeon", sub: "Unknown Fissure", of: 14, account: true },
     { id: "trial", kind: "count", name: "Ascension Trial", of: 3 },
-    { id: "subj", kind: "count", name: "Subjugation", of: 3 },
-    {
-      id: "sanct",
-      kind: "group",
-      name: "Sanctuary",
-      items: [
-        { id: "forge", kind: "count", name: "Abyssal Forge", sub: "attempts", of: 4 },
-        { id: "forgeboss", kind: "tick", name: "Abyssal Forge", sub: "final boss" },
-        { id: "corr", kind: "count", name: "Corroded Facility", sub: "attempts", of: 4 },
-        { id: "corrboss", kind: "count", name: "Corroded Facility", sub: "final boss", of: 2 },
-        { id: "chal", kind: "count", name: "Chalice of Muspel", sub: "attempts", of: 4 },
-        { id: "chalboss", kind: "count", name: "Chalice of Muspel", sub: "final boss", of: 2 },
-      ],
-    },
-    { id: "transc", kind: "count", name: "Transcendence", sub: "final boss kills", of: 28 },
-    { id: "conqk", kind: "count", name: "Conquest", sub: "final boss kills", of: 35 },
-    { id: "cradle", kind: "count", name: "Cradle of Nihility", sub: "Conquest", of: 7 },
-    { id: "dramata", kind: "count", name: "Dying Dramata's Nest", sub: "Conquest", of: 7 },
-    { id: "ordeal", kind: "count", name: "Ordeal", sub: "final boss kills", of: 7 },
-    { id: "explore", kind: "group", name: "Exploration", sub: "7 runs a dungeon", items: EXPLORE.map(([id, name]) => ({ id: "x-" + id, kind: "count", name, of: 7 })) },
     { id: "dutycmd", kind: "count", name: "Duty Commands", of: 20, manual: true },
   ];
 
@@ -179,45 +94,9 @@
     { id: "sefa", name: "Sefa", cls: "cleric", klass: "Cleric", server: "Lyss" },
   ];
 
-  // Rows the game fills for every character of a server.
-  const SERVER_ROWS = new Set(["shugo", "invasion", "fissure"]);
-
-  // ---- What the game sent (n = regular pool or entries left; x = extra) -----
+  // ---- What the game sent (n = entries left; x = extra entries) ------------
   function snapshot(o = {}) {
-    const g = {
-      odyle: { n: 245, x: 380 },
-      shugo: { n: 7, x: 3 },
-      invasion: { n: 2, x: 0 },
-      nightmare: { n: 0, x: 3 },
-      "c-krao": { n: 12, x: 0 },
-      "c-urugugu": { n: 12, x: 0 },
-      "c-fire": { n: 10, x: 0 },
-      "c-draupnir": { n: 12, x: 0 },
-      "c-vakron": { n: 13, x: 0 },
-      "c-horn": { n: 12, x: 0 },
-      deus: { n: 4, x: 0 },
-      arkanis: { n: 4, x: 0 },
-      balaur: { n: 6, x: 0 },
-      fafnium: { n: 6, x: 0 },
-      fissure: { n: 9, x: 7 },
-      trial: { n: 0, x: 1 },
-      subj: { n: 2, x: 0 },
-      forge: { n: 2, x: 0 },
-      forgeboss: { n: 0, x: 0 },
-      corr: { n: 4, x: 0 },
-      corrboss: { n: 2, x: 0 },
-      chal: { n: 3, x: 0 },
-      chalboss: { n: 2, x: 0 },
-      transc: { n: 16, x: 0 },
-      conqk: { n: 0, x: 0 },
-      cradle: { n: 3, x: 0 },
-      dramata: { n: 7, x: 0 },
-      ordeal: { n: 5, x: 0 },
-    };
-    EXPLORE.forEach(([id]) => (g["x-" + id] = { n: 7, x: 0 }));
-    g["x-fire"].n = 0;
-    g["x-krao"].n = 0;
-    g["x-draupnir"].n = 4;
+    const g = { trial: { n: 1, x: 1 } };
     for (const [id, val] of Object.entries(o)) g[id] = { ...g[id], ...val };
     return g;
   }
@@ -225,15 +104,14 @@
   // Every weekly row's entries left set to `left(item)`: a fresh week (all
   // of them) or everything done (0).
   function weekly(g, left) {
-    flat(WEEK).forEach((it) => {
-      if (it.kind !== "group" && !it.manual && g[it.id]) g[it.id] = { ...g[it.id], n: left(it) };
+    WEEK.forEach((it) => {
+      if (!it.manual && g[it.id]) g[it.id] = { ...g[it.id], n: left(it) };
     });
     return g;
   }
 
   // ---- Lookups ---------------------------------------------------------------
-  const flat = (list) => list.flatMap((it) => (it.kind === "group" ? [it, ...it.items] : [it]));
-  const findItem = (v, id) => flat(TODAY.concat(WEEK, v.custom)).find((it) => it.id === id);
+  const findItem = (v, id) => TODAY.concat(WEEK, v.custom).find((it) => it.id === id);
   const todayList = (v) => TODAY.concat(v.custom.filter((c) => c.reset === "daily"));
   const weekList = (v) => WEEK.concat(v.custom.filter((c) => c.reset === "weekly"));
   // Hidden rows never count; "Show" lists them in place, faded.
@@ -242,64 +120,31 @@
   const listed = (list, v, key) => (v.reveal[key] ? list : active(list, v));
   const label = (it) => (it.sub ? `${it.name}, ${it.sub}` : it.name);
   const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
-  const capOf = (v, r) => (v.member && r.mcap ? r.mcap : r.cap);
 
   // The game's value for a row. Live values are the game's latest (it sends
-  // every spend, refill and gain); a value from an earlier login is brought
-  // to now with the refills the table knows (never the spends).
+  // every run and gain); a value from an earlier login is the game's then,
+  // except that a weekly row seen before this week's reset starts over.
   function gameOf(v, id) {
     const g = v.g[id];
     if (!g) return null;
     const at = g.at == null ? v.seen : g.at;
-    if (v.src.kind !== "stale") return { ...g, at, seen: g.n, est: 0 };
-    const r = findCharge(id);
-    if (r) {
-      const cap = capOf(v, r);
-      const k = refillsBetween(r, at, v.now);
-      const n = g.n >= cap ? g.n : Math.min(cap, g.n + k * r.add);
-      return { ...g, at, seen: g.n, n, est: n - g.n };
-    }
+    if (v.src.kind !== "stale") return { ...g, at, seen: g.n };
     const it = findItem(v, id);
-    if (it && at < nextWeekly(v.now) - 7 * DAY) return { ...g, at, seen: g.n, n: it.of || 1, est: 0, weekly: true };
-    return { ...g, at, seen: g.n, est: 0 };
+    if (it && at < nextWeekly(v.now) - 7 * DAY) return { ...g, at, seen: g.n, n: it.of || 1, weekly: true };
+    return { ...g, at, seen: g.n };
   }
 
   // Done count of a count or tick row: typed over, from the game (done =
-  // target − entries left; a tick is done at 0 left), or counted by hand.
+  // target − entries left), or counted by hand.
   function countOf(v, it) {
     if (v.over[it.id] != null) return v.over[it.id];
     const g = gameOf(v, it.id);
-    if (g) return it.kind === "tick" ? (g.n <= 0 ? 1 : 0) : Math.max(0, it.of - g.n);
+    if (g) return Math.max(0, it.of - g.n);
     return v.n[it.id] || 0;
   }
 
-  const isDone = (it, v) => (it.kind === "group" ? active(it.items, v).every((s) => isDone(s, v)) : countOf(v, it) >= (it.of || 1));
+  const isDone = (it, v) => countOf(v, it) >= (it.of || 1);
   const left = (list, v) => active(list, v).filter((it) => !isDone(it, v)).length;
-
-  // An amount's state: { src: "game" | "over" | "typed" | "empty", n, x, cap, e }.
-  function amountOf(v, r) {
-    const cap = capOf(v, r);
-    if (v.over[r.id] != null) {
-      const n = v.over[r.id];
-      const g = gameOf(v, r.id);
-      return { src: "over", n, x: g ? g.x || 0 : 0, cap, e: estimate(r, n, cap, v.now) };
-    }
-    const g = gameOf(v, r.id);
-    // A regular pool above the cap in force can only come from a membership
-    // the switch does not know: shown as is, never full, no estimate.
-    if (g && g.n > cap) return { src: "game", n: g.n, x: g.x || 0, g, cap, e: { full: false, above: true } };
-    if (g) return { src: "game", n: g.n, x: g.x || 0, g, cap, e: estimate(r, g.n, cap, v.now) };
-    // Before the game fills a row, a typed number is the total: at or above
-    // the cap it counts as full.
-    if (v.amt[r.id] != null) {
-      const n = v.amt[r.id];
-      return { src: "typed", n, x: 0, cap, e: estimate(r, n, cap, v.now) };
-    }
-    return { src: "empty", cap };
-  }
-
-  const parentOf = (id) => (id.startsWith("c-") ? "conquest" : "");
-  const isFull = (v, r) => !v.hidden.has(r.id) && !v.hidden.has(parentOf(r.id)) && (amountOf(v, r).e || {}).full;
 
   function view(o = {}) {
     return {
@@ -307,17 +152,14 @@
       seen: LOGIN,
       who: CHARS[0],
       playing: true,
-      member: true,
       src: { kind: "live" },
       n: { duty: 2, legion: 1 },
       g: snapshot(),
       over: {},
-      amt: {},
       custom: [{ ...LEGION }],
       hidden: new Set(HIDDEN),
       reveal: {},
-      fold: { today: false, charges: false, week: true },
-      open: { sanct: false, explore: false, conquest: false },
+      fold: { today: false, week: false },
       ui: {},
       live: false,
       menu: false,
@@ -350,16 +192,21 @@
     return `<button type="button" class="o-btn${sm ? " is-sm" : ""}${cls}" ${attr({ "data-act": act, "data-id": id, "aria-label": lbl, disabled, tabindex: tab })}>${icon(name)}</button>`;
   }
 
-  function nameHtml(it) {
-    const acct = it.account ? `<span class="t-acct">${icon("users")}Account</span>` : "";
+  // "Account" is its Lucide users icon only, 3 px after the name; the word
+  // shows under the pointer (2026-10-08: the word left no room for warned
+  // names).
+  function nameHtml(v, it) {
+    const acct = it.account ? `<span class="t-acct${mark(v, `acct:${it.id}`)}" role="img" aria-label="Account" title="Account">${icon("users")}</span>` : "";
     return `<span class="t-name">${esc(it.name)}${it.sub ? `<small>${esc(it.sub)}</small>` : ""}${acct}${it.custom ? '<small class="t-yours">Yours</small>' : ""}</span>`;
   }
 
-  // A control's tooltip, under it.
+  // A control's tooltip, under it: right-aligned to a control at the row's
+  // end, or from `left` under the Account icon.
   function tip(v, id) {
     const t = v.ui.tip;
     if (!t || t.id !== id) return "";
-    return `<div class="t-tip g-tip" role="tooltip" style="top:${t.top || 24}px;right:${t.right == null ? 20 : t.right}px">${t.text}</div>`;
+    const at = t.left != null ? `left:${t.left}px` : `right:${t.right == null ? 20 : t.right}px`;
+    return `<div class="t-tip g-tip" role="tooltip" style="top:${t.top || 24}px;${at}">${t.text}</div>`;
   }
 
   function rowCls(v, it, extra) {
@@ -380,25 +227,22 @@
   }
 
   // One less, the figure, one more: what you count yourself (Duty Missions,
-  // Duty Commands, your own, every row before the game has filled it). A
-  // typed amount has no upper stop: it may go above the cap.
-  function stepper(v, id, n, of, lbl, { amt = false, step = 1, inner } = {}) {
-    const less = step > 1 ? `${step} less` : "One less";
-    const more = step > 1 ? `${step} more` : "One more";
-    const dn = button("chevronDown", `${less}: ${lbl}`, { act: "dec", id, cls: " t-arrow" + mark(v, `dec:${id}`), disabled: n <= 0 });
-    const up = button("chevronUp", `${more}: ${lbl}`, { act: "inc", id, cls: " t-arrow" + mark(v, `inc:${id}`), disabled: !amt && n >= of });
+  // Duty Commands, your own, every row before the game has filled it).
+  function stepper(v, id, n, of, lbl) {
+    const dn = button("chevronDown", `One less: ${lbl}`, { act: "dec", id, cls: " t-arrow" + mark(v, `dec:${id}`), disabled: n <= 0 });
+    const up = button("chevronUp", `One more: ${lbl}`, { act: "inc", id, cls: " t-arrow" + mark(v, `inc:${id}`), disabled: n >= of });
     const a = attr({
       role: "spinbutton",
       tabindex: 0,
       "aria-label": lbl,
       "aria-valuemin": 0,
-      "aria-valuemax": amt ? undefined : of,
+      "aria-valuemax": of,
       "aria-valuenow": n,
-      "aria-valuetext": `${n} of ${of}${!amt && n >= of ? ", done" : ""}`,
-      "data-act": amt ? "amt-edit" : "bump",
+      "aria-valuetext": `${n} of ${of}${n >= of ? ", done" : ""}`,
+      "data-act": "bump",
       "data-id": id,
     });
-    return `<span class="t-step">${dn}<span class="t-fig${amt ? " is-amt" : ""}${mark(v, `count:${id}`)}" ${a}>${inner || `${n}<small>/${of}</small>`}</span>${up}</span>`;
+    return `<span class="t-step">${dn}<span class="t-fig${mark(v, `count:${id}`)}" ${a}>${n}<small>/${of}</small></span>${up}</span>`;
   }
 
   // A value from the game: the figure where a manual figure sits, no arrows;
@@ -415,23 +259,23 @@
 
   const typedGut = () => `<span class="t-gut is-typed" title="Typed by you">${icon("pencil")}</span>`;
 
-  function countRow(v, it, isSub) {
+  function countRow(v, it) {
     const n = countOf(v, it);
     const done = n >= it.of;
     const g = gameOf(v, it.id);
     let right;
     if (v.hidden.has(it.id)) right = ghost(`${Math.min(n, it.of)}<small>/${it.of}</small>`);
-    else if (v.ui.editAmt === it.id) right = field(v, it, it.of, g);
-    else if (g) right = gameFig(v, it.id, `${n}<small>/${it.of}</small>`, label(it), `${n} of ${it.of} done`, g.x);
+    else if (v.ui.editAmt === it.id) right = field(v, it, it.of);
+    else if (g) right = gameFig(v, it.id, `${n}<small>/${it.of}</small>`, label(it), `${n} of ${it.of} done${g.x ? `, ${g.x} extra` : ""}`, g.x);
     else right = stepper(v, it.id, Math.min(n, it.of), it.of, label(it));
     const gut = v.over[it.id] != null ? typedGut() : `<span class="t-gut"></span>`;
-    return `<div class="${rowCls(v, it, [isSub && "is-sub", done && "is-done"])}" data-row="${it.id}">${gut}${nameHtml(it)}${right}${xSlot(v, it)}${tip(v, it.id)}</div>`;
+    return `<div class="${rowCls(v, it, [done && "is-done"])}" data-row="${it.id}">${gut}${nameHtml(v, it)}${right}${xSlot(v, it)}${tip(v, it.id)}</div>`;
   }
 
   // The whole row is the button. Under the pointer (or keyboard focus) the
   // check at its end appears, undo on a done row. It does what a click on
   // the row does; the row stays the keyboard's target.
-  function tickRow(v, it, isSub) {
+  function tickRow(v, it) {
     const done = countOf(v, it) >= 1;
     const off = v.hidden.has(it.id);
     const word = done ? "Undo" : "Mark done";
@@ -440,97 +284,33 @@
       : `<button type="button" class="o-btn is-sm t-check${done ? " is-undo" : ""}${mark(v, `check:${it.id}`)}" ${attr({ "data-act": "tick", "data-id": it.id, "aria-label": `${word}: ${label(it)}`, title: word, tabindex: -1 })}>${icon(done ? "undo" : "check")}</button>`;
     const a = off ? "" : attr({ role: "button", tabindex: 0, "aria-label": `${label(it)}, ${done ? "done" : "not done"}`, "data-act": "tick", "data-id": it.id });
     const gut = v.over[it.id] != null ? typedGut() : `<span class="t-gut"></span>`;
-    return `<div class="${rowCls(v, it, ["is-tick", isSub && "is-sub", done && "is-done"])}" data-row="${it.id}"><span class="t-main" ${a}>${gut}${nameHtml(it)}</span>${check}${xSlot(v, it)}${tip(v, it.id)}</div>`;
+    return `<div class="${rowCls(v, it, ["is-tick", done && "is-done"])}" data-row="${it.id}"><span class="t-main" ${a}>${gut}${nameHtml(v, it)}</span>${check}${xSlot(v, it)}${tip(v, it.id)}</div>`;
   }
 
-  function hiddenLine(v, list, key, sub = false) {
+  function hiddenLine(v, list, key) {
     const h = hiddenIn(list, v).length;
     if (!h) return "";
     const on = !!v.reveal[key];
     const lbl = on ? `Hide again: ${h} hidden` : `Show ${h} hidden`;
-    return `<div class="t-hid${sub ? " is-sub" : ""}"><span>${h} hidden</span><span aria-hidden="true">·</span><button type="button" class="t-link${mark(v, `show:${key}`)}" data-act="reveal" data-id="${key}" aria-expanded="${on}" aria-label="${lbl}">${on ? "Hide again" : "Show"}</button></div>`;
+    return `<div class="t-hid"><span>${h} hidden</span><span aria-hidden="true">·</span><button type="button" class="t-link${mark(v, `show:${key}`)}" data-act="reveal" data-id="${key}" aria-expanded="${on}" aria-label="${lbl}">${on ? "Hide again" : "Show"}</button></div>`;
   }
 
-  function groupRow(v, it) {
-    const act = active(it.items, v);
-    const done = act.filter((s) => isDone(s, v)).length;
-    const open = !!v.open[it.id];
-    const all = act.length > 0 && done === act.length;
-    const off = v.hidden.has(it.id);
-    const a = off ? "" : attr({ role: "button", tabindex: 0, "aria-expanded": String(open), "aria-label": `${it.name}, ${done} of ${act.length} done`, "data-act": "group", "data-id": it.id });
-    const head = `<div class="${rowCls(v, it, ["is-group", all && "is-done"])}" data-row="${it.id}"><span class="t-main" ${a}><span class="t-gut">${icon(open && !off ? "chevronDown" : "chevronRight")}</span>${nameHtml(it)}<span class="t-sum${all ? " is-good" : ""}">${done} of ${act.length} done</span></span>${xSlot(v, it)}</div>`;
-    if (!open || off) return head;
-    return head + listed(it.items, v, it.id).map((s) => rowFor(v, s, true)).join("") + hiddenLine(v, it.items, it.id, true);
-  }
+  const rowFor = (v, it) => (it.kind === "tick" ? tickRow(v, it) : countRow(v, it));
 
-  function rowFor(v, it, isSub = false) {
-    if (it.kind === "group") return groupRow(v, it);
-    if (it.kind === "tick") return tickRow(v, it, isSub);
-    return countRow(v, it, isSub);
-  }
-
-  // Typing: the field takes the figure's place. On a game value its × goes
-  // back to the game's value; on a value only you have it stops tracking.
-  function field(v, r, cap, g) {
+  // Typing over a game value: the field takes the figure's place; its ×
+  // goes back to the game's value.
+  function field(v, it, of) {
     const val = v.ui.editVal == null ? "" : String(v.ui.editVal);
     const input = v.live
-      ? `<input class="t-input" data-id="${r.id}" inputmode="numeric" autocomplete="off" placeholder="Amount" aria-label="${esc(r.name)}: how many you have now" value="${esc(val)}">`
+      ? `<input class="t-input" data-id="${it.id}" inputmode="numeric" autocomplete="off" placeholder="Done" aria-label="${esc(it.name)}: how many done" value="${esc(val)}">`
       : `<span class="val">${esc(val)}</span><span class="o-caret"></span>`;
-    const back = g ? `Back to the game's value: ${r.name}` : `Stop tracking ${r.name}`;
-    return `<span class="t-field">${input}<span class="t-cap">/${cap}</span>${button("close", back, { act: g ? "g-back" : "amt-clear", id: r.id, cls: " t-clear" + mark(v, `clear:${r.id}`) })}</span>`;
+    return `<span class="t-field">${input}<span class="t-cap">/${of}</span>${button("close", `Back to the game's value: ${it.name}`, { act: "g-back", id: it.id, cls: " t-clear" + mark(v, `clear:${it.id}`) })}</span>`;
   }
 
-  function amountRow(v, r, isSub) {
-    const s = amountOf(v, r);
-    const extra = [isSub && "is-sub"];
-    let gut = `<span class="t-gut"></span>`;
-    let right;
-    let when = "";
-    if (v.hidden.has(r.id)) {
-      if (s.src === "empty") extra.push("is-empty");
-      right = ghost(s.src === "empty" ? "&mdash;" : `${s.n}<small>/${s.cap}</small>`);
-    } else if (v.ui.editAmt === r.id) {
-      right = field(v, r, s.cap, s.src === "game" || s.src === "over" ? gameOf(v, r.id) : null);
-    } else if (s.src === "empty") {
-      extra.push("is-empty");
-      const at = attr({ role: "spinbutton", tabindex: 0, "aria-label": r.name, "aria-valuetext": "not tracked", "data-act": "amt-edit", "data-id": r.id });
-      right = `<span class="t-step"><span class="t-gap"></span><span class="t-fig is-amt is-blank${mark(v, `count:${r.id}`)}" ${at}>&mdash;</span><span class="t-gap"></span></span>`;
-    } else {
-      const e = s.e;
-      if (s.src === "over") gut = typedGut();
-      if (e.full) {
-        extra.push("is-waste");
-        gut = `<span class="t-gut is-warn">${icon("alert")}</span>`;
-      }
-      const w = e.above ? "" : e.full ? (r.every ? "Full, being wasted" : `Full, spend by ${stamp(e.next)}`) : `Full in ${span(e.at - v.now)}`;
-      when = w ? `<span class="t-when${e.full ? " is-warn" : ""}">${w}</span>` : "";
-      const inner = `${s.n}<small${r.open === "deus" ? ' class="mk-open"' : ""}>/${s.cap}</small>`;
-      if (s.src === "game" || s.src === "over") right = gameFig(v, r.id, inner, r.name, `${s.n} of ${s.cap}${s.x ? `, ${s.x} extra` : ""}`, s.x);
-      else right = stepper(v, r.id, s.n, s.cap, r.name, { amt: true, step: r.step || 1, inner });
-    }
-    return `<div class="${rowCls(v, r, extra)}" data-row="${r.id}">${gut}${nameHtml(r)}${when}${right}${xSlot(v, r)}${tip(v, r.id)}</div>`;
-  }
-
-  // Conquest dungeons, one ticket per dungeon (to confirm in game): a folding
-  // group like Sanctuary, each dungeon its own amount.
-  function conquestGroup(v, it) {
-    const open = !!v.open[it.id];
-    const off = v.hidden.has(it.id);
-    const vals = it.items.map((r) => amountOf(v, r)).filter((s) => s.src !== "empty");
-    const full = it.items.filter((r) => isFull(v, r)).length;
-    const lo = vals.length ? Math.min(...vals.map((s) => s.n)) : null;
-    const hi = vals.length ? Math.max(...vals.map((s) => s.n)) : null;
-    const sum = full ? `<span class="t-sum" style="color:var(--o-warn);font-weight:600">${full} full</span>` : `<span class="t-sum">${lo == null ? "6 dungeons" : `${lo === hi ? lo : `${lo}–${hi}`} of 14 each`}</span>`;
-    const a = off ? "" : attr({ role: "button", tabindex: 0, "aria-expanded": String(open), "aria-label": `${it.name}, ${it.items.length} dungeons`, "data-act": "group", "data-id": it.id });
-    const head = `<div class="${rowCls(v, it, ["is-group"])} mk-open" data-row="${it.id}"><span class="t-main" ${a}><span class="t-gut">${icon(open && !off ? "chevronDown" : "chevronRight")}</span>${nameHtml(it)}${sum}</span>${xSlot(v, it)}</div>`;
-    if (!open || off) return head;
-    return head + it.items.map((r) => amountRow(v, r, true)).join("");
-  }
-
-  function sec(v, id, title, { n = "", good = false, at = "", chip = "" } = {}) {
+  function sec(v, id, title, { n = "", good = false, at = "" } = {}) {
     const open = !v.fold[id];
     const a = attr({ role: "button", tabindex: 0, "aria-expanded": String(open), "data-act": "fold", "data-id": id });
-    return `<div class="t-sec${mark(v, `sec:${id}`)}" ${a}>${icon(open ? "chevronDown" : "chevronRight")}<span>${title}</span>${n ? `<span class="n${good ? " is-good" : ""}">${n}</span>` : ""}${chip}<span class="at">${at}</span></div>`;
+    return `<div class="t-sec${mark(v, `sec:${id}`)}" ${a}>${icon(open ? "chevronDown" : "chevronRight")}<span>${title}</span>${n ? `<span class="n${good ? " is-good" : ""}">${n}</span>` : ""}<span class="at">${at}</span></div>`;
   }
 
   function todaySec(v) {
@@ -539,18 +319,6 @@
     const head = sec(v, "today", "Today", { n: l ? `${l} left` : "done", good: !l, at: `resets in <b>${span(nextAt(v.now, RESET) - v.now)}</b>` });
     if (v.fold.today) return head;
     return head + `<div class="t-list">${listed(list, v, "today").map((it) => rowFor(v, it)).join("")}${hiddenLine(v, list, "today")}</div>`;
-  }
-
-  function chargeSec(v) {
-    const leaves = chargeLeaves().filter((r) => !v.hidden.has(r.id) && !v.hidden.has(parentOf(r.id)));
-    const tracked = leaves.filter((r) => amountOf(v, r).src !== "empty");
-    const full = tracked.filter((r) => amountOf(v, r).e.full).length;
-    const filling = tracked.map((r) => amountOf(v, r).e).filter((e) => !e.full && !e.above).map((e) => e.at);
-    const at = filling.length ? `next full in <b>${span(Math.min(...filling) - v.now)}</b>` : tracked.length ? "" : "amounts optional";
-    const head = sec(v, "charges", "Recharges", { n: tracked.length ? `${tracked.length} tracked` : "", chip: full ? warnChip(`${full} full`) : "", at });
-    if (v.fold.charges) return head;
-    const rows = listed(CHARGES, v, "charges").map((r) => (r.kind === "cgroup" ? conquestGroup(v, r) : amountRow(v, r)));
-    return head + `<div class="t-list">${rows.join("")}${hiddenLine(v, CHARGES, "charges")}</div>`;
   }
 
   function weekSec(v) {
@@ -584,13 +352,9 @@
     return `<div class="t-add" role="group" aria-label="Add a to-do"><div class="t-add-top">${name}${add}${button("close", "Cancel", { act: "add-cancel" })}</div><div class="t-add-row">${seg("kind", "Kind", [["tick", "Tick"], ["count", "Count"]])}${of}<span class="grow"></span>${seg("reset", "Resets", [["daily", "Daily"], ["weekly", "Weekly"]])}</div></div>`;
   }
 
-  const fullCount = (v) => chargeLeaves().filter((r) => isFull(v, r)).length;
-
   function head(v) {
     const l = left(todayList(v), v) + left(weekList(v), v);
-    const full = fullCount(v);
-    const chip = full ? warnChip(`${full} full`) : "";
-    return `<div class="o-head"><span class="o-title">${icon("listChecks")}To-dos</span><span class="o-count">${l ? `${l} left` : "all done"}</span>${chip}<span class="grow"></span>${button("close", "Close", { sm: false })}</div>`;
+    return `<div class="o-head"><span class="o-title">${icon("listChecks")}To-dos</span><span class="o-count">${l ? `${l} left` : "all done"}</span><span class="grow"></span>${button("close", "Close", { sm: false })}</div>`;
   }
 
   function charSelect(v, ctx) {
@@ -601,23 +365,22 @@
     const box = `<span class="o-input${open ? " is-focus" : ""}" ${a}><img src="${ctx.classIcon(me.cls)}" alt=""><span class="nm">${nm(ctx, me.name)}</span><span class="meta">${me.klass} · ${me.server}</span>${live}${icon(open ? "chevronUp" : "chevronDown")}</span>`;
     if (!open) return `<div class="t-char">${box}</div>`;
     const l = left(todayList(v), v) + left(weekList(v), v);
-    const full = fullCount(v);
-    const status = { mirelle: [full ? `${full} full` : l ? `${l} left` : "all done", full ? "is-warn" : ""], tavrin: ["1 full", "is-warn"], sefa: ["9 left", ""] };
+    const status = { mirelle: l ? `${l} left` : "all done", tavrin: "3 left", sefa: "2 left" };
     const items = CHARS.map(
       (c, i) =>
-        `<div class="o-menu-item t-who${i === 1 ? " is-hot" : ""}" role="option" aria-selected="${c.id === me.id}"><img src="${ctx.classIcon(c.cls)}" alt=""><b>${nm(ctx, c.name)}</b><span class="srv">${c.klass} · ${c.server}</span><span class="left ${status[c.id][1]}">${status[c.id][0]}</span></div>`
+        `<div class="o-menu-item t-who${i === 1 ? " is-hot" : ""}" role="option" aria-selected="${c.id === me.id}"><img src="${ctx.classIcon(c.cls)}" alt=""><b>${nm(ctx, c.name)}</b><span class="srv">${c.klass} · ${c.server}</span><span class="left">${status[c.id]}</span></div>`
     ).join("");
-    return `<div class="t-char">${box}<div class="o-menu" role="listbox">${items}<div class="o-menu-sep"></div><div class="t-menu-note">Characters the meter has seen, with what each has left. Duty Missions, Shugo Festival keys, Invasion keys and the Unknown Fissure are shared by your characters on one server.</div></div></div>`;
+    return `<div class="t-char">${box}<div class="o-menu" role="listbox">${items}<div class="o-menu-sep"></div><div class="t-menu-note">Characters the meter has seen, with what each has left. Duty Missions are shared by your characters on one server.</div></div></div>`;
   }
 
-  // One line under the selector says where the values come from.
+  // One line under the selector says where the game's values come from. The
+  // to-do window's are weekly entries: nothing refills between logins.
   function sourceLine(v) {
     const s = v.src;
     const dot = '<span class="faint">·</span>';
     let text;
     if (s.kind === "live") text = `From the game, live ${dot} logged in at <b>${clock(v.seen)}</b>`;
-    else if (s.kind === "stale") text = `From the game at login, <b>${stamp(v.seen)}</b> ${dot} refills since estimated`;
-    else if (s.kind === "shared") text = `<b>${esc(v.who.name)}</b> not seen at login yet ${dot} Account rows from ${esc(s.from)}`;
+    else if (s.kind === "stale") text = `From the game at login, <b>${stamp(v.seen)}</b>`;
     else text = `No game values yet. Log in with <b>${esc(v.who.name)}</b> while Kisk runs.`;
     return `<div class="g-src">${icon("gamepad")}<span>${text}</span></div>`;
   }
@@ -633,7 +396,7 @@
   }
 
   function windowHtml(v, ctx) {
-    const body = todaySec(v) + chargeSec(v) + weekSec(v) + addHtml(v);
+    const body = todaySec(v) + weekSec(v) + addHtml(v);
     const scroll = `<div class="t-scrollwrap"><div class="t-scroll" style="max-height:${v.max}px"${v.scroll ? ` data-scroll="${v.scroll}"` : ""}>${body}</div><span class="o-thumb t-thumb" aria-hidden="true"></span></div>`;
     const still = v.ui.still ? " is-still" : "";
     return `<div class="ov o td${still}" role="dialog" aria-label="To-dos"${v.live ? " data-live" : ""}>${head(v)}${charSelect(v, ctx)}${sourceLine(v)}${noteHtml(v)}${scroll}${foot()}</div>`;
@@ -669,7 +432,7 @@
   document.addEventListener("scroll", (e) => e.target.classList && e.target.classList.contains("t-scroll") && thumb(e.target), true);
 
   // ---- The working window ("Try it"); nothing is stored ------------------------
-  const LIVE = view({ live: true, fold: { today: false, charges: false, week: false } });
+  const LIVE = view({ live: true });
   let lastCtx = null;
   let lastTile = 0;
   let redrawing = false;
@@ -751,41 +514,25 @@
   }
 
   // The value the field opens with: the figure as shown.
-  function shownValue(v, id) {
-    const r = findCharge(id);
-    if (r) {
-      const s = amountOf(v, r);
-      return s.src === "empty" ? "" : String(s.n);
-    }
-    return String(countOf(v, findItem(v, id)));
-  }
+  const shownValue = (v, id) => String(countOf(v, findItem(v, id)));
 
-  // Enter keeps (numbers above the cap too), Esc cancels; from the keyboard,
-  // focus returns to the figure. An empty field goes back to the game's
-  // value on a game row, else stops tracking.
+  // Enter keeps (0 to the target), Esc cancels; from the keyboard, focus
+  // returns to the figure. An empty field goes back to the game's value.
   function commit(input, save, refocus) {
     const v = LIVE;
     const id = v.ui.editAmt;
     if (!id) return;
     if (save) {
       const s = input.value.trim();
-      const fromGame = !!v.g[id];
       const it = findItem(v, id);
-      if (s === "") {
-        if (fromGame) delete v.over[id];
-        else delete v.amt[id];
-      } else {
-        let num = parseInt(s.replace(/[^0-9]/g, ""), 10);
-        if (!Number.isNaN(num)) {
-          if (it) num = clamp(num, 0, it.of);
-          if (fromGame) v.over[id] = num;
-          else if (it) v.n[id] = num;
-          else v.amt[id] = num;
-        }
+      if (s === "") delete v.over[id];
+      else {
+        const num = parseInt(s.replace(/[^0-9]/g, ""), 10);
+        if (!Number.isNaN(num)) v.over[id] = clamp(num, 0, it.of);
       }
     }
     v.ui.editAmt = null;
-    redraw(refocus ? [v.g[id] ? "g-edit" : "amt-edit", id] : null);
+    redraw(refocus ? ["g-edit", id] : null);
   }
 
   // A value you change on a game row is typed over it; elsewhere it is yours.
@@ -796,19 +543,13 @@
 
   function act(name, id, { keyboard = false } = {}) {
     const v = LIVE;
-    const r = findCharge(id);
     const it = findItem(v, id);
     let focus;
     switch (name) {
       case "inc":
       case "dec": {
         const d = name === "inc" ? 1 : -1;
-        if (r) {
-          const s = amountOf(v, r);
-          const next = Math.max(0, (s.n || 0) + d * (r.step || 1));
-          if (v.g[id]) v.over[id] = next;
-          else v.amt[id] = next;
-        } else if (it) {
+        if (it) {
           const was = countOf(v, it) >= it.of;
           const next = clamp(countOf(v, it) + d, 0, it.of);
           setCount(v, id, next);
@@ -835,11 +576,7 @@
       case "fold":
         v.fold[id] = !v.fold[id];
         break;
-      case "group":
-        v.open[id] = !v.open[id];
-        break;
       case "g-edit":
-      case "amt-edit":
         v.ui.editAmt = id;
         v.ui.editVal = shownValue(v, id);
         break;
@@ -847,11 +584,7 @@
         delete v.over[id];
         v.ui.editAmt = null;
         focus = ["g-edit", id];
-        say(`${(r || it).name}: back to the game's value`);
-        break;
-      case "amt-clear":
-        delete v.amt[id];
-        v.ui.editAmt = null;
+        say(`${it.name}: back to the game's value`);
         break;
       case "menu":
         v.menu = !v.menu;
@@ -862,11 +595,11 @@
         // pointer to move, so a double click cannot hide two rows.
         else v.ui.still = true;
         v.hidden.add(id);
-        say(`${label(it || r || CHARGES.find((c) => c.id === id))} hidden`);
+        say(`${label(it)} hidden`);
         break;
       case "unhide":
         v.hidden.delete(id);
-        say(`${label(it || r || CHARGES.find((c) => c.id === id))} put back`);
+        say(`${label(it)} put back`);
         focus = { row: id };
         break;
       case "reveal":
@@ -936,20 +669,14 @@
   function simulate(kind) {
     const v = LIVE;
     const g = v.g;
-    const spend = (id) => {
-      if (g[id].n > 0) g[id].n -= 1;
-      else if (g[id].x > 0) g[id].x -= 1;
-      delete v.over[id];
-    };
-    if (kind === "shugo") spend("shugo");
-    if (kind === "fissure") spend("fissure");
-    if (kind === "odyle") {
-      g.odyle.n = Math.min(capOf(v, findCharge("odyle")), g.odyle.n + 15);
-      delete v.over.odyle;
+    if (kind === "trial") {
+      if (g.trial.n > 0) g.trial.n -= 1;
+      else if (g.trial.x > 0) g.trial.x -= 1;
+      delete v.over.trial;
     }
     if (kind === "gain") {
-      g.shugo.x += 2;
-      delete v.over.shugo;
+      g.trial.x += 1;
+      delete v.over.trial;
     }
     if (kind === "login") {
       v.g = snapshot();
@@ -1069,161 +796,83 @@
   });
 
   // ---- States ------------------------------------------------------------------
-  const ONLY_CHARGES = { today: true, charges: false, week: true };
   const tipText = (main, sub) => `${main}${sub ? `<br><span class="faint">${sub}</span>` : ""}`;
 
   // Counts you keep yourself while the week is under way.
   const MID = { duty: 2, legion: 1 };
-  const HID = new Set(["dutycmd", "ordeal", "deus", "arkanis", "balaur", "fafnium"]);
-
-  // Yesterday's login: what the game said then; the window adds the refills
-  // since (one daily reset, Monday 09:00; eight Odyle ticks).
-  const STALE_G = snapshot({
-    odyle: { n: 125, x: 380 },
-    shugo: { n: 4, x: 3 },
-    invasion: { n: 1, x: 0 },
-    nightmare: { n: 0, x: 3 },
-    "c-krao": { n: 10 },
-    "c-urugugu": { n: 10 },
-    "c-fire": { n: 8 },
-    "c-draupnir": { n: 10 },
-    "c-vakron": { n: 11 },
-    "c-horn": { n: 10 },
-    deus: { n: 2 },
-    arkanis: { n: 2 },
-    balaur: { n: 5 },
-    fafnium: { n: 5 },
-  });
-
-  // Tavrin, never seen at login: only the rows his server shares come from
-  // the game (Mirelle's login today).
-  const SHARED_G = Object.fromEntries(Object.entries(snapshot()).filter(([id]) => SERVER_ROWS.has(id)));
+  const HID = new Set(["duty", "dutycmd"]);
 
   // Sefa, alone on Lyss, never seen at login: everything by hand.
   const SEFA = { who: CHARS[2], playing: false, src: { kind: "none" }, g: {}, n: { duty: 0 } };
 
   const STATES = {
-    live: () => view({ fold: ONLY_CHARGES }),
+    live: () => view(),
+    // The word "Account" under the pointer, on Duty Missions.
+    hoverAcct: () => view({ ui: { hover: ["acct:duty"], tip: { id: "duty", left: 95, text: "Account" } } }),
     hoverGame: () =>
       view({
-        fold: ONLY_CHARGES,
         ui: {
-          hover: ["row:shugo", "count:shugo"],
-          tip: { id: "shugo", right: 24, text: tipText("From the game, live.", "+3 extra from items: they never refill and are not part of the 21.") },
+          hover: ["row:trial", "count:trial"],
+          tip: { id: "trial", right: 24, text: tipText("From the game, live.", "+1 extra entry from an item: not part of the 3.") },
         },
       }),
-    full: () =>
-      view({
-        fold: ONLY_CHARGES,
-        g: snapshot({ odyle: { n: 840, x: 245 }, shugo: { n: 21, x: 3 }, invasion: { n: 2, x: 12 }, deus: { n: 2 }, arkanis: { n: 2 } }),
-      }),
-    progress: () => view({ n: { ...MID }, fold: { today: false, charges: true, week: false }, open: { sanct: true, explore: false } }),
-    compare: () =>
-      view({
-        fold: { today: false, charges: false, week: true },
-        ui: { hover: ["row:duty", "count:duty"], tip: { id: "duty", right: 44, text: tipText("Counted by you.", "The game does not send Duty Missions.") } },
-      }),
-    hover: () =>
-      view({
-        n: { ...MID, legion: 0 },
-        fold: { today: false, charges: true, week: false },
-        ui: { hover: ["row:legion", "check:legion"], tip: { id: "legion", text: "Mark done" } },
-      }),
-    hoverDone: () =>
-      view({
-        fold: { today: true, charges: true, week: false },
-        open: { sanct: true },
-        ui: { hover: ["row:forgeboss", "check:forgeboss"], tip: { id: "forgeboss", text: "Undo" } },
-      }),
-    reach: () => view({ n: { ...MID, duty: 5 }, fold: { today: false, charges: true, week: false }, ui: { hover: "row:duty" } }),
-    press: () => view({ n: { ...MID, duty: 3 }, fold: { today: false, charges: true, week: false }, ui: { hover: "row:duty", press: "inc:duty" } }),
+    progress: () => view({ n: { ...MID }, g: snapshot({ trial: { n: 0 } }) }),
+    compare: () => view({ ui: { hover: ["row:duty", "count:duty"], tip: { id: "duty", right: 44, text: tipText("Counted by you.", "The game does not send Duty Missions.") } } }),
+    hover: () => view({ n: { ...MID, legion: 0 }, ui: { hover: ["row:legion", "check:legion"], tip: { id: "legion", text: "Mark done" } } }),
+    hoverDone: () => view({ fold: { today: false, week: true }, ui: { hover: ["row:legion", "check:legion"], tip: { id: "legion", text: "Undo" } } }),
+    reach: () => view({ n: { ...MID, duty: 5 }, ui: { hover: "row:duty" } }),
+    press: () => view({ n: { ...MID, duty: 3 }, ui: { hover: "row:duty", press: "inc:duty" } }),
     stale: () =>
       view({
         playing: false,
         seen: SUN,
         src: { kind: "stale" },
-        g: STALE_G,
-        fold: ONLY_CHARGES,
         ui: {
-          hover: ["row:odyle", "count:odyle"],
-          tip: { id: "odyle", right: 24, text: tipText("125 at your login Sun 22:40.", "+120 since: eight refills of 15, estimated.") },
+          hover: ["row:trial", "count:trial"],
+          tip: { id: "trial", right: 24, text: tipText("2/3 at your login Sun 22:40.", "A run since shows at your next login.") },
         },
       }),
-    typeOver: () =>
-      view({
-        fold: ONLY_CHARGES,
-        ui: { editAmt: "shugo", editVal: "9", hover: ["clear:shugo"], tip: { id: "shugo", right: 21, text: tipText("Back to the game's value, 7") } },
-      }),
+    typeOver: () => view({ ui: { editAmt: "trial", editVal: "3", hover: ["clear:trial"], tip: { id: "trial", right: 21, text: tipText("Back to the game's value, 2") } } }),
     typed: () =>
       view({
-        fold: ONLY_CHARGES,
-        over: { shugo: 9 },
-        ui: { hover: ["row:shugo", "count:shugo"], tip: { id: "shugo", right: 44, text: tipText("Typed by you. The game said 7.", "Its next value replaces yours: a spend, a refill or your next login.") } },
+        over: { trial: 3 },
+        ui: { hover: ["row:trial", "count:trial"], tip: { id: "trial", right: 44, text: tipText("Typed by you. The game said 2.", "Its next value replaces yours: a run, an entry from an item or your next login.") } },
       }),
-    login: () => view({ fold: ONLY_CHARGES, note: "Filled from the game at login. Values you typed were replaced." }),
-    first: () => view({ ...SEFA, amt: { odyle: 425, shugo: 24 }, fold: { today: false, charges: false, week: true } }),
-    firstShared: () =>
-      view({
-        who: CHARS[1],
-        playing: false,
-        src: { kind: "shared", from: "Mirelle" },
-        g: SHARED_G,
-        n: { duty: 2 },
-        custom: [],
-        fold: { today: true, charges: false, week: false },
-        max: 520,
-      }),
-    amount: () => view({ ...SEFA, amt: { odyle: 425, nightmare: 10 }, fold: ONLY_CHARGES, ui: { hover: ["row:odyle", "count:odyle"] } }),
-    typing: () => view({ ...SEFA, amt: { odyle: 425, nightmare: 10 }, fold: ONLY_CHARGES, ui: { editAmt: "shugo", editVal: "24" } }),
-    waste: () => view({ ...SEFA, amt: { odyle: 840, invasion: 7, shugo: 24, nightmare: 10 }, fold: ONLY_CHARGES }),
-    memberOff: () =>
-      view({
-        member: false,
-        fold: ONLY_CHARGES,
-        g: snapshot({ shugo: { n: 18, x: 3 }, odyle: { n: 605, x: 380 } }),
-        ui: { hover: ["row:shugo", "count:shugo"], tip: { id: "shugo", right: 24, text: tipText("From the game, live.", "18 is more than 12: only a membership allows that. Settings, To-dos asks about it.") } },
-      }),
-    openData: () => view({ fold: ONLY_CHARGES, open: { conquest: true } }),
-    hidden: () => view({ n: { ...MID }, hidden: new Set(HID), fold: { today: true, charges: false, week: false }, ui: { hover: "show:charges" } }),
-    reveal: () => view({ n: { ...MID }, hidden: new Set(HID), reveal: { charges: true }, fold: { today: true, charges: false, week: true }, ui: { hover: ["row:deus", "x:deus"] } }),
+    login: () => view({ note: "Filled from the game at login. Values you typed were replaced." }),
+    first: () => view({ ...SEFA }),
+    hidden: () => view({ n: { ...MID, legion: 0 }, hidden: new Set(HID), ui: { hover: "show:today" } }),
+    reveal: () => view({ n: { ...MID, legion: 0 }, hidden: new Set(HID), reveal: { today: true }, fold: { today: false, week: true }, ui: { hover: ["row:duty", "x:duty"] } }),
     adding: () =>
       view({
         n: { ...MID },
-        fold: { today: true, charges: true, week: false },
+        fold: { today: true, week: false },
         adding: true,
         add: { name: "Arena of Tactics wins", kind: "count", of: 3, reset: "weekly" },
         scroll: "end",
       }),
-    removed: () => view({ n: { ...MID }, custom: [], removed: { it: { ...LEGION }, at: 0 }, fold: { today: false, charges: true, week: false } }),
-    done: () => {
-      const v = view({ n: { duty: 5, legion: 1 }, g: weekly(snapshot({ deus: { n: 2 }, arkanis: { n: 3 } }), () => 0), fold: { today: true, charges: true, week: true } });
-      const odyle = amountOf(v, findCharge("odyle"));
-      v.note = `<b class="t-strong">Everything is done on Mirelle.</b> Odyle Energy is full in ${span(odyle.e.at - v.now)}.`;
-      return v;
-    },
+    removed: () => view({ n: { ...MID }, custom: [], removed: { it: { ...LEGION }, at: 0 } }),
+    done: () => view({ n: { duty: 5, legion: 1 }, g: weekly(snapshot(), () => 0), fold: { today: true, week: true }, note: '<b class="t-strong">Everything is done on Mirelle.</b>' }),
     fresh: () =>
       view({
         now: WED,
         seen: WEEKLY + 5,
         n: { duty: 0, legion: 0 },
-        g: weekly(snapshot({ deus: { n: 2 }, arkanis: { n: 3 } }), (it) => it.of || 1),
-        fold: { today: false, charges: true, week: false },
+        g: weekly(snapshot(), (it) => it.of || 1),
       }),
-    focus: () => view({ n: { ...MID, legion: 0 }, fold: { today: false, charges: true, week: false }, ui: { focus: "row:legion" } }),
-    focusFig: () => view({ n: { ...MID }, fold: { today: true, charges: true, week: false }, ui: { focus: "count:fissure" } }),
-    switch: () => view({ n: { ...MID }, menu: true, fold: { today: false, charges: true, week: false } }),
+    focus: () => view({ n: { ...MID, legion: 0 }, ui: { focus: "row:legion" } }),
+    focusFig: () => view({ n: { ...MID }, fold: { today: true, week: false }, ui: { focus: "count:trial" } }),
+    switch: () => view({ n: { ...MID }, menu: true }),
   };
 
   function simStrip() {
-    return `<div class="mk-sim" role="group" aria-label="Messages from the game, played by hand"><b>Page only: messages from the game</b><button type="button" data-sim="shugo">Spend a Shugo key</button><button type="button" data-sim="gain">+2 Shugo keys from an item</button><button type="button" data-sim="odyle">Odyle refill +15</button><button type="button" data-sim="fissure">Run the Unknown Fissure</button><button type="button" data-sim="login">Log in again</button></div>`;
+    return `<div class="mk-sim" role="group" aria-label="Messages from the game, played by hand"><b>Page only: messages from the game</b><button type="button" data-sim="trial">Run the Ascension Trial</button><button type="button" data-sim="gain">+1 Ascension Trial entry from an item</button><button type="button" data-sim="login">Log in again</button></div>`;
   }
 
   // Opening it: the toolbar's checklist (hub.js), lit while the window is
-  // open. Nothing else full, so the toolbar shows no warning.
+  // open. Nothing full, so the toolbar shows no warning.
   function opening(ctx) {
-    const calm = { deus: { n: 2 }, arkanis: { n: 3 } };
-    const bar = Hub.toolbar(ctx, { v: Hub.view({ g: Hub.snapshot(calm) }), lit: { todos: true }, hover: "todos" });
-    return `<div class="hb-col">${bar}${windowHtml(view({ g: snapshot(calm), fold: { today: false, charges: false, week: true } }), ctx)}</div>`;
+    const bar = Hub.toolbar(ctx, { lit: { todos: true }, hover: "todos" });
+    return `<div class="hb-col">${bar}${windowHtml(view(), ctx)}</div>`;
   }
 
   function render(state, ctx) {
@@ -1240,37 +889,31 @@
 
   Kit.mount({
     states: [
-      { id: "live", title: "Filled from the game, live", sub: "\"7/21\" and \"+3\": the regular pool against its cap, the extra pool beside it; membership on, so Shugo keys 21 and Odyle 840. Game values have no arrows; the line under the selector says where they come from; Shugo and Invasion keys are \"Account\". Deus and Arkanis 4/4 are full with the cap of 4 (to confirm in game, dashed)" },
-      { id: "hoverGame", title: "Pointer on a game value", sub: "the figure reads as a field (a click types over it); its tooltip says where it comes from and what \"+3\" is" },
-      { id: "full", title: "Full, being wasted", sub: "only when the regular pool is at its cap: Odyle 840/840 +245 and Shugo 21/21 +3 are full; Invasion keys 2/7 +12 (14 in all, above the cap) is normal, never an error or a warning" },
-      { id: "progress", title: "This week from the game, under way", sub: "the game sends entries left; the row reads done = target − left (Unknown Fissure: 9 left of 14 → 5/14), the extra entries beside it (+7). Done at 0 left, struck through and muted where it stands" },
-      { id: "compare", title: "A game value next to a manual one", sub: "Duty Missions keep the arrows: the game does not send them, so you count them; pointer on its figure. Game rows below have no arrows" },
+      { id: "live", title: "Filled from the game, live", sub: "Today and This week, no Recharges (they are in the Resources window only). Ascension Trial from the game: 1 entry left of 3 reads 2/3, the extra entry beside it (+1), no arrows; the line under the selector says where it comes from. Duty Missions and your own to-dos are yours to count; Duty Missions carry the Account icon; the title counts what is left" },
+      { id: "hoverAcct", title: "Pointer on the Account icon", sub: "Duty Missions, shared by your characters on the server: \"Account\" is the icon alone; under the pointer it lights and the tooltip says \"Account\"" },
+      { id: "hoverGame", title: "Pointer on a game value", sub: "the figure reads as a field (a click types over it); its tooltip says where it comes from and what \"+1\" is" },
+      { id: "progress", title: "This week from the game, done", sub: "Ascension Trial at 0 entries left: 3/3, struck through and muted where it stands; the extra entry (+1) does not stop it from being done" },
+      { id: "compare", title: "A game value next to a manual one", sub: "Duty Missions keep the arrows: the game does not send them, so you count them; pointer on its figure. Ascension Trial below has no arrows" },
       { id: "hover", title: "Pointer on a to-do", sub: "the row lights, the check and the × appear at its end; the pointer on the check: \"Mark done\"" },
-      { id: "hoverDone", title: "Pointer on a done to-do", sub: "the undo arrow in place of the check; the pointer on it: \"Undo\". The Abyssal Forge's final boss is done because its ticket is at 0" },
+      { id: "hoverDone", title: "Pointer on a done to-do", sub: "Legion check-in, done: the undo arrow in place of the check; the pointer on it: \"Undo\"" },
       { id: "reach", title: "A count at its limit", sub: "Duty Missions 5/5: done like a tick; the up arrow dims, the down arrow takes one back; no check on counts" },
       { id: "press", title: "Pressing one-more", sub: "Duty Missions going from 2 to 3; a click on the figure does the same" },
-      { id: "stale", title: "From yesterday's login", sub: "Mirelle is not in game; values are from Sunday 22:40, plus the refills the table knows since (Monday 09:00 reset, Odyle every 3 h), said once on the line under the selector; pointer on Odyle's figure" },
-      { id: "typeOver", title: "Typing over a game value", sub: "a click on the figure opens the field; a typed number may be above the cap; its × (or an empty field) goes back to the game's value" },
-      { id: "typed", title: "After typing over it", sub: "your number takes the figure's place with a pencil in the gutter; the extra pool stays the game's (+3). The game's next value for that ticket (spend, refill, item, login) replaces yours" },
-      { id: "login", title: "Just logged in", sub: "the snapshot at login fills every row and replaces values you typed; a note for 4 s" },
-      { id: "first", title: "Before the first login is seen", sub: "Sefa, alone on Lyss: nothing from the game yet; the line says how to get values; everything works by hand. A typed 24 Shugo keys (above 21) is kept, not cut: a typed number is your total, so at or above the cap it counts as full" },
-      { id: "firstShared", title: "New character, server already seen", sub: "Tavrin has never logged in with the meter, but Mirelle shares his server: Shugo keys, Invasion keys and the Unknown Fissure come from her login, the rest waits for his" },
-      { id: "amount", title: "An amount entered by hand", sub: "before the game has filled it: Odyle Energy typed as 425 keeps the arrows; the meter adds +15 every 3 h and says when it is full; pointer on its figure (it reads as a field)" },
-      { id: "typing", title: "Typing an amount by hand", sub: "Shugo Festival keys before the game has filled them: Enter keeps 24 (above the cap too), Esc cancels; an empty field or × stops tracking" },
-      { id: "waste", title: "Full, typed by hand", sub: "typed totals at or above the cap: yellow rows with the warning in the gutter; \"3 full\" on the section and the title" },
-      { id: "memberOff", title: "Membership off, the game shows more", sub: "a total above the cap is normal: with the switch off, 18 Shugo keys (above 12) and 605 Odyle Energy (above 560) can only come from a membership: shown as they are, never full, no estimate; Settings, To-dos asks about the membership" },
-      { id: "openData", title: "To confirm in game", sub: "drawn with the build's default and dashed: Conquest dungeons as one ticket per dungeon (a folding group like Sanctuary, 14, +2 a day) and the Deus / Arkanis cap of 4" },
-      { id: "hidden", title: "Hidden rows", sub: "four recharges and two weekly rows hidden: \"4 hidden · Show\"; the pointer on Show" },
-      { id: "reveal", title: "After Show", sub: "the hidden recharges listed in place, faded, each with a put-back button; \"Hide again\" folds them away" },
+      { id: "stale", title: "From yesterday's login", sub: "Mirelle is not in game: Ascension Trial is the game's value at Sunday 22:40, said once on the line under the selector; nothing refills in this window, and a weekly row seen before Wednesday's reset starts over at the reset; pointer on its figure" },
+      { id: "typeOver", title: "Typing over a game value", sub: "a click on the figure opens the field (0 to 3); its × (or an empty field) goes back to the game's value" },
+      { id: "typed", title: "After typing over it", sub: "your number takes the figure's place with a pencil in the gutter; 3/3 is done; the extra entry stays the game's (+1). The game's next value (a run, an entry from an item, your next login) replaces yours" },
+      { id: "login", title: "Just logged in", sub: "the snapshot at login fills Ascension Trial and replaces a value you typed there; a note for 4 s" },
+      { id: "first", title: "Before the first login is seen", sub: "Sefa, alone on Lyss: nothing from the game yet; the line says how to get values; Ascension Trial keeps the arrows until the game fills it" },
+      { id: "hidden", title: "Hidden rows", sub: "Duty Missions and Duty Commands hidden: \"1 hidden · Show\" under Today and under This week; hidden rows never count; the pointer on Show" },
+      { id: "reveal", title: "After Show", sub: "the hidden row listed in place, faded, with a put-back button; \"Hide again\" folds it away" },
       { id: "adding", title: "Adding a to-do", sub: "\"+ Add a to-do\" opened in place: a name, Count of 3, Weekly; Enter adds, Esc cancels" },
       { id: "removed", title: "Removing your own", sub: "the × on a to-do of your own removes it, with Undo for 4 s" },
-      { id: "done", title: "Everything done", sub: "every section folded; one note says when Odyle Energy is full" },
+      { id: "done", title: "Everything done", sub: "both sections folded, \"done\" in good; the title reads \"all done\"" },
       { id: "fresh", title: "Fresh week", sub: "Wednesday 09:12, just after the reset: the game's entries are back to their targets, so nothing is done; Duty Commands start hidden" },
       { id: "focus", title: "Keyboard focus on a row", sub: "read as \"Legion check-in, not done, button\": the ring 1 px outside the row; the check and × show; Space or Enter marks it done, Delete removes it" },
-      { id: "focusFig", title: "Keyboard focus on a game figure", sub: "read as \"Daily Dungeon, Unknown Fissure, 5 of 14 done, from the game. Type over it\"; Enter types over it" },
-      { id: "switch", title: "Character selector", sub: "the characters the meter remembers, with what each has left" },
+      { id: "focusFig", title: "Keyboard focus on a game figure", sub: "read as \"Ascension Trial, 2 of 3 done, 1 extra, from the game. Type over it\"; Enter types over it" },
+      { id: "switch", title: "Character selector", sub: "the characters the meter remembers, with what each has left (to-dos only: full resources are the Resources window's)" },
       { id: "opening", title: "Opening it", sub: "the toolbar's checklist opens and closes the window; it is lit while the window is open" },
-      { id: "try", title: "Try it", sub: "a working window: rows, the check, arrows, ×, Show, add and remove; click a game figure to type over it (above the cap too), × or an empty field goes back to the game's value; the buttons under it play messages from the game. Nothing is saved" },
+      { id: "try", title: "Try it", sub: "a working window: rows, the check, arrows, ×, Show, add and remove; click Ascension Trial's figure to type over it, × or an empty field goes back to the game's value; the buttons under it play messages from the game. Nothing is saved" },
     ],
     controls: ["alpha", "scale", "mask"],
     tileMin: 430,

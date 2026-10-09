@@ -18,11 +18,12 @@
         <a href="todos.html">To-do window</a>
         <a href="settings.html?states=todos,todos:hint">Settings, To-dos</a>
       </nav>
-      <h1>Resources window <small>approved 2026-10-08 (the hub)</small></h1>
+      <h1>Resources window <small>approved 2026-10-08 (the hub); the only window with the recharges since 2026-10-08</small></h1>
       <ul class="rationale">
-        <li>Every resource the game fills, for the current character, in a floating window of its own: opened by a click on Odyle Energy or Shugo keys in the <a href="toolbar.html">toolbar</a>, or on "All resources" at the end of the warning's dropdown. The <a href="todos.html">to-do window</a> keeps its Recharges section too.</li>
-        <li>Built from the to-do window: the same frame, character selector, source line, rows and display rules, so both windows always agree. Values are in <a href="tokens.md">tokens.md</a>, "Hub" (Resources window) and "To-do window".</li>
-        <li><span class="mk-legend">Dashed</span>: to confirm in game, drawn with the build's default (the Deus Research Base and Shattered Arkanis cap of 4; Conquest dungeons as one ticket per dungeon). Values and times are invented; the clock is Monday 21:48, Mirelle logged in at 19:02, membership on.</li>
+        <li>Every resource the game fills, for the current character, in a floating window of its own: opened by a click on Odyle Energy or Shugo keys in the <a href="toolbar.html">toolbar</a>, or on "All resources" at the end of the warning's dropdown.</li>
+        <li><b>Changed 2026-10-08</b>: the recharges left the to-do window ("I think we can remove the recharges from the todos now no ?", which replaces the earlier "we can still keep them in todo too"). Odyle Energy, Shugo keys, Invasion keys, Nightmare and the Daily Dungeon are drawn only here and in the toolbar's counts and warning; the <a href="todos.html">to-do window</a> keeps Today, This week and your own to-dos. The states about amounts that the to-do window drew (typed by hand, full typed by hand, a new character on a server already seen, just logged in, keyboard focus on a figure, the fresh week) are on this page now.</li>
+        <li>Built from the to-do window: the same frame, character selector, source line and row values. Values are in <a href="tokens.md">tokens.md</a>, "Hub" (Resources window) and "To-do window" (rows, amount, amount field, values from the game).</li>
+        <li>Values and times are invented; the clock is Monday 21:48, Mirelle logged in at 19:02, membership on.</li>
       </ul>
     </header>
 
@@ -31,13 +32,26 @@
     <section class="notes">
       <h2>Behaviour</h2>
       <ul>
-        <li><b>Rows</b>: the to-do window's Recharges rows, in the same order. Weekly entries (Unknown Fissure, Sanctuary…) stay to-dos: they are done or not, not a pool that refills.</li>
-        <li><b>Display</b>: the regular pool against its cap ("7/21"), the extra pool beside it when not zero ("+3"); above the cap is normal, never an error; "Full, spend by …" / "Full, being wasted" only when the regular pool is at its cap and a refill is coming. Membership (Settings, To-dos) picks the membership caps (Shugo keys 12 → 21, Odyle Energy 560 → 840). Shugo keys and Invasion keys are shared by the characters of a server ("Account").</li>
-        <li><b>Always up to date</b>: resources follow the game's messages whether the meter is open or not.</li>
-        <li><b>Same data as the to-dos</b>: typing over a value, the pencil, the tooltips and "from yesterday's login" work here as in the to-do window, and a change in one window shows in the other.</li>
-        <li><b>Frame</b>: the to-do window's 370 px, a header with Lucide package and "Resources", the "2 full" chip, the character selector (follows the character in game; others can be looked at), the source line; no × slot on rows (nothing to hide). Footer: the daily reset, and which caps are in force ("Membership caps").</li>
+        <li><b>Rows</b>: Odyle Energy, Shugo keys, Invasion keys, Nightmare, Daily Dungeon, in that order. The Daily Dungeon (ticket 101) is tickets left of 14 with the extra entries beside it ("9/14 +7"), +14 at the weekly reset on Wednesday; it has no dungeon name, because its menu lists one dungeon ("I think you don't need to put the dungeon name in the todo just put daily dungeon with the tickets and it's ok", 2026-10-08). Shugo keys, Invasion keys and the Daily Dungeon carry the Account icon (Lucide users) without the word; the word shows under the pointer, so a warned row keeps its whole name ("yeah shugo keys is ok", 2026-10-08). Weekly entries (Ascension Trial) stay to-dos: they are done or not, not a pool that refills. Conquest dungeons, Deus Research Base and Shattered Arkanis have no row: on the Global servers only Odyle Energy limits them. Abandoned Balaur Fortress and Fafnium Laboratory have no row: the Daily Dungeon menu lists only the Unknown Fissure. Both settled in game, 2026-10-08.</li>
+        <li><b>Nothing to hide</b>: no × slot on rows, so names get 26 px more. A row hidden earlier in the to-do window (Nightmare, say) shows here like the others and counts in "N full" and in the toolbar's warning.</li>
+        <li><b>Two pools</b>: the regular pool against its cap ("7/21"), the extra pool beside it when not zero ("+3"). A total above the cap is normal: no error, no colour. Extras never make a row full, and "Full in …" counts only the regular pool. Settings, To-dos sets the caps (Membership: Shugo keys 12 → 21, Odyle Energy 560 → 840) and the refill times (Daily reset: Shugo keys +3, Invasion keys +1 and Nightmare +2 at that hour, the ticket table's daily clock, 16:00 KST = 09:00 here; the Daily Dungeon +14 on Wednesday at that hour; Odyle Energy +15 every 3 h).</li>
+        <li><b>Full warns only near the refill</b> (2026-10-08: "if the main tickets are at 14/14 we put a warning but only when it's near the end of the possible usage if possible. Otherwise it's annoying to always have warnings even when not near the end (or near a replenishment for some currencies)"). A full regular pool turns the row yellow with the warning in the gutter, "Full, being wasted" (Odyle) or "Full, spend by Tue 09:00", and counts in "N full" (the header and the toolbar) only when the refill it would lose is near: within 1 h of Odyle's 3-hour refill, 3 h of a daily refill (Shugo keys, Invasion keys, Nightmare), 24 h of the weekly one (Daily Dungeon). Further away the row looks normal: the figure at its cap and "Full · refills Wed 09:00" in the muted status style, no warning, not counted.</li>
+        <li><b>Where the values come from</b>: one line under the selector. "From the game, live · logged in at 19:02"; between sessions "From the game at login, Sun 22:40 · refills since estimated"; before any login "No game values yet. Log in with Sefa while Kisk runs."; a new character on a server already seen "Tavrin not seen at login yet · Account rows from Mirelle" (a login with any character of the server fills Shugo keys, Invasion keys and the Daily Dungeon for all of them). The figure's tooltip repeats it for that row ("125 at your login Sun 22:40. +120 since: eight refills of 15, estimated.").</li>
+        <li><b>Game values have no arrows</b>: the figure sits where a counted figure sits, the extra pool after it in the arrows' width, so nothing else in the row moves.</li>
+        <li><b>Typing over a game value</b>: a click on the figure (Enter on the keyboard) opens the field with the regular pool in it. Enter keeps your number, above the cap too; Esc cancels. Your number takes the figure's place with a pencil in the gutter ("Typed by you. The game said 7."); the extra pool stays the game's. The game's next value for that ticket (a spend, a refill, an item, your next login) replaces it. In the field, × or an empty field goes back to the game's value at once.</li>
+        <li><b>At login</b> the game's snapshot fills every row it covers and replaces what you typed there; a good note says so for 4 s ("Filled from the game at login. Values you typed were replaced.").</li>
+        <li><b>Between sessions</b> the window keeps each character's last game values and adds the refills the table knows since (daily +N at the reset, Odyle +15 every 3 h), up to the cap. Spends are never guessed.</li>
+        <li><b>Amounts before the game fills them</b>: empty by default, a quiet "—", left out of every count and warning. A click on it (or Enter) opens a field: Enter keeps (above the cap too), Esc cancels, an empty field or its × stops tracking. A typed number is your total: at or above the cap the row counts as full. Once typed, the meter adds the refill on schedule, says "Full in 2 d 16 h", and at the cap reads "Full · refills …", then, near the refill, turns the row yellow with the warning in the gutter. After spending, correct it with the arrows (Odyle Energy 10 at a time, everything else 1) or by retyping. Once the game fills the row, its values take over. Settings, To-dos › Start over empties what you typed here too.</li>
+        <li><b>Membership off, the game shows more</b>: a regular pool above the cap in force (18 Shugo keys with the switch off) can only come from a membership: the row shows it as it is, never full and without an estimate, and Settings, To-dos asks about the membership. Membership off again cuts nothing.</li>
+        <li><b>Keyboard and screen readers</b>: Tab goes through the figures in reading order. A game figure is a button, "Daily Dungeon, 9 of 14, 7 extra, from the game. Type over it": Enter opens the field. An amount you count is a spin button, "Odyle Energy, 425 of 840": Up and Down change it, Enter opens the field.</li>
+        <li><b>Always up to date</b>: resources follow the game's messages whether the meter is open or not, and whether this window is open or not.</li>
+        <li><b>Frame</b>: the to-do window's 370 px, a header with Lucide package and "Resources", the "2 full" chip, the character selector (follows the character in game; others can be looked at, with what each has left, and the note "Characters Kisk has seen, with what each has left. Shugo keys, Invasion keys and the Daily Dungeon are shared by your characters on one server."), the source line. Footer: the daily reset, and which caps are in force ("Membership caps").</li>
         <li><b>Window</b>: an overlay window like the to-do window (no-activate, except while a field takes the keyboard); opens where you left it, one at a time; the toolbar's counts read lit while it is open, and a click on a count closes it again.</li>
-        <li><b>To confirm in game</b>: the Deus Research Base and Shattered Arkanis cap (drawn: 4, the ticket table) and whether a Conquest entry spends its dungeon's ticket (drawn: six rows of 14, +2 a day) or a shared pool.</li>
+      </ul>
+
+      <h2>To confirm in game</h2>
+      <ul>
+        <li>What the game shows for keys above 21 (premium items: one number, the two pools, or "24/21"), which decides whether a typed number is your total (built as drawn).</li>
       </ul>
     </section>
 
@@ -45,8 +59,14 @@
     <script src="hub.js"></script>
     <script>
       (function () {
-        const { resources, snapshot } = Hub;
+        const { resources, snapshot, SOON } = Hub;
+        const FULL = { odyle: { n: 840, x: 245 }, shugo: { n: 21, x: 3 }, invasion: { n: 2, x: 12 }, dungeon: { n: 14 } };
         const tipText = (a, b) => `${a}${b ? `<br><span class="faint">${b}</span>` : ""}`;
+        const DAY = 1440;
+        const WEEKLY = 2 * DAY + 9 * 60; // Wednesday at the reset hour
+        const TAVRIN = { name: "Tavrin", cls: "templar", klass: "Templar", server: "Ossia" };
+        // Sefa, alone on Lyss, never seen at login: everything by hand.
+        const SEFA = { who: { name: "Sefa", cls: "cleric", klass: "Cleric", server: "Lyss" }, playing: false, src: "none", g: {} };
 
         function render(state, ctx) {
           const R = (o) => resources(ctx, o);
@@ -54,7 +74,11 @@
             case "live":
               return R();
             case "full":
-              return R({ g: snapshot({ odyle: { n: 840, x: 245 }, shugo: { n: 21, x: 3 }, invasion: { n: 2, x: 12 }, deus: { n: 2 }, arkanis: { n: 3 } }) });
+              return R({ now: SOON, g: snapshot(FULL) });
+            case "fullCalm":
+              return R({ g: snapshot(FULL) });
+            case "hoverAcct":
+              return R({ now: SOON, g: snapshot(FULL), acctHover: "shugo", tip: { id: "shugo", left: 73, text: "Account" } });
             case "hover":
               return R({ hover: "shugo", tip: { id: "shugo", right: 4, text: tipText("From the game, live.", "+3 extra from items: they never refill and are not part of the 21.") } });
             case "stale":
@@ -63,27 +87,47 @@
               return R({ edit: "shugo", editVal: "9" });
             case "typed":
               return R({ over: { shugo: 9 }, hover: "shugo", tip: { id: "shugo", right: 4, text: tipText("Typed by you. The game said 7.", "Its next value replaces yours: a spend, a refill or your next login.") } });
+            case "login":
+              return R({ note: "Filled from the game at login. Values you typed were replaced." });
             case "first":
-              return R({ who: { name: "Sefa", cls: "cleric", klass: "Cleric", server: "Lyss" }, playing: false, src: "none", g: {} });
+              return R({ ...SEFA });
+            case "firstShared":
+              return R({ who: TAVRIN, playing: false, src: "shared", from: "Mirelle", g: snapshot({ odyle: null, nightmare: null }) });
+            case "amount":
+              return R({ ...SEFA, amt: { odyle: 425, nightmare: 10 }, hover: "odyle" });
+            case "typingAmount":
+              return R({ ...SEFA, amt: { odyle: 425, nightmare: 10 }, edit: "shugo", editVal: "24" });
+            case "waste":
+              return R({ ...SEFA, now: SOON, amt: { odyle: 840, invasion: 7, shugo: 24, nightmare: 10 } });
             case "memberOff":
               return R({ member: false, g: snapshot({ shugo: { n: 18, x: 3 }, odyle: { n: 605, x: 380 } }) });
-            case "conquest":
-              return R({ openConquest: true });
+            case "fresh":
+              return R({ now: WEEKLY + 12, seen: WEEKLY + 5, g: snapshot({ dungeon: { n: 14 } }) });
+            case "focusFig":
+              return R({ focus: "dungeon" });
           }
           return "";
         }
 
         Kit.mount({
           states: [
-            { id: "live", title: "Filled from the game, live", sub: "\"7/21\" and \"+3\"; Account on Shugo and Invasion keys; the to-do window's rows, frame and source line. Deus and Arkanis 4/4 are full with the cap of 4 (to confirm in game, dashed)" },
-            { id: "full", title: "Full, being wasted", sub: "only when the regular pool is at its cap: Odyle 840/840 +245 and Shugo 21/21 +3 are full; Invasion keys 2/7 +12 (above the cap in all) is normal" },
+            { id: "live", title: "Filled from the game, live", sub: "\"7/21\" and \"+3\": the regular pool against its cap, the extra pool beside it; membership on, so Shugo keys 21 and Odyle 840. Game values have no arrows; the Account icon on Shugo keys, Invasion keys and the Daily Dungeon (tickets left, 9/14 +7, +14 on Wednesday); the to-do window's frame and source line" },
+            { id: "full", title: "Full, near the refill", sub: "Tuesday 08:12: Odyle 840/840 +245 (refill in 48 min, within 1 h) and Shugo 21/21 +3 (daily refill in 48 min, within 3 h) warn, \"2 full\"; the Daily Dungeon 14/14 +7 refills Wednesday, more than 24 h away: \"Full · refills Wed 09:00\", quiet. Invasion keys 2/7 +12 (above the cap in all) is normal" },
+            { id: "hoverAcct", title: "Pointer on the Account icon", sub: "the warned Shugo keys row keeps its whole name beside \"Full, spend by Tue 09:00\"; the icon lights and the tooltip says \"Account\"" },
+            { id: "fullCalm", title: "Full, the refill not near", sub: "Monday 21:48, the same pools: every refill is hours away, so nothing warns; each full row reads \"Full · refills …\" in the muted status style, no chip" },
             { id: "hover", title: "Pointer on a value", sub: "the figure reads as a field (a click types over it); the tooltip says where it comes from and what \"+3\" is" },
-            { id: "stale", title: "From yesterday's login", sub: "Mirelle is not in game: the last values plus the refills the table knows since, said on the source line" },
-            { id: "typing", title: "Typing over a value", sub: "a typed number may be above the cap; × goes back to the game's value" },
-            { id: "typed", title: "After typing over it", sub: "the pencil in the gutter; the game's next value replaces yours" },
-            { id: "first", title: "Before the first login is seen", sub: "Sefa, alone on Lyss: dashes, and the source line says how to get values" },
-            { id: "memberOff", title: "Membership off, the game shows more", sub: "above the cap is normal: 18 Shugo keys and 605 Odyle with the switch off are shown as they are, never full; the footer says which caps are in force" },
-            { id: "conquest", title: "Conquest, one ticket per dungeon", sub: "to confirm in game (dashed): a folding group as in the to-do window, each dungeon 14, +2 a day" },
+            { id: "stale", title: "From yesterday's login", sub: "Mirelle is not in game: the last values plus the refills the table knows since (Monday 09:00 reset, Odyle every 3 h), said on the source line; pointer on Odyle's figure" },
+            { id: "typing", title: "Typing over a value", sub: "a click on the figure opens the field; a typed number may be above the cap; × (or an empty field) goes back to the game's value" },
+            { id: "typed", title: "After typing over it", sub: "your number takes the figure's place with a pencil in the gutter; the extra pool stays the game's (+3). The game's next value for that ticket (spend, refill, item, login) replaces yours" },
+            { id: "login", title: "Just logged in", sub: "the snapshot at login fills every row and replaces values you typed; a note for 4 s under the source line" },
+            { id: "first", title: "Before the first login is seen", sub: "Sefa, alone on Lyss: dashes, and the source line says how to get values; a click on a dash types an amount" },
+            { id: "firstShared", title: "New character, server already seen", sub: "Tavrin has never logged in with the meter, but Mirelle shares his server: Shugo keys, Invasion keys and the Daily Dungeon come from her login; Odyle Energy and Nightmare wait for his" },
+            { id: "amount", title: "An amount entered by hand", sub: "before the game has filled it: Odyle Energy typed as 425 keeps the arrows (10 at a time); the meter adds +15 every 3 h and says when it is full; pointer on its figure (it reads as a field)" },
+            { id: "typingAmount", title: "Typing an amount by hand", sub: "Shugo keys before the game has filled them: Enter keeps 24 (above the cap too), Esc cancels; an empty field or × stops tracking" },
+            { id: "waste", title: "Full, typed by hand", sub: "Tuesday 08:12, the refills near: typed totals at or above the cap (Odyle 840, Shugo keys 24, Invasion keys 7) turn yellow with the warning in the gutter; \"3 full\" on the header" },
+            { id: "memberOff", title: "Membership off, the game shows more", sub: "above the cap is normal: 18 Shugo keys and 605 Odyle with the switch off are shown as they are, never full, no estimate; the footer says which caps are in force; Settings, To-dos asks about the membership" },
+            { id: "fresh", title: "Fresh week", sub: "Wednesday 09:12, just after the reset: the Daily Dungeon is back to 14/14, quiet (\"Full · refills Wed 09:00\", next week) until a day before next Wednesday" },
+            { id: "focusFig", title: "Keyboard focus on a game figure", sub: "read as \"Daily Dungeon, 9 of 14, 7 extra, from the game. Type over it\": the ring 1 px outside the figure; Enter types over it" },
           ],
           controls: ["alpha", "scale", "mask"],
           tileMin: 430,

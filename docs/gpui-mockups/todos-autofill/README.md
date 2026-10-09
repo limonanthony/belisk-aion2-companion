@@ -155,15 +155,94 @@ filling from the game.
 
 Built with the drawn default; settled by your in-game comparison:
 
-1. **Deus Research Base / Shattered Arkanis cap**: 4 (ticket table) or 14
-   (our list before). Built: 4; with 4, a 4/4 is full.
-2. **Which ticket a Conquest entry spends**: its dungeon's own ticket (six
+1. ~~**Deus Research Base / Shattered Arkanis cap**: 4 (ticket table) or 14
+   (our list before). Built: 4; with 4, a 4/4 is full.~~ **Settled in game,
+   2026-10-08**: no entry limit on the Global servers, only Odyle Energy
+   ("For these it's the same as long as you have odyle"). The rows are
+   dropped from the to-do window, the Resources window and the toolbar's
+   warning.
+2. ~~**Which ticket a Conquest entry spends**: its dungeon's own ticket (six
    rows, 14, +2 a day: the row becomes a folding group like Sanctuary) or a
    shared pool (one row; drawn with the Normal pool, 21, +1 every 8 h).
-   Built: per-dungeon tickets. Needs a recorded run.
+   Built: per-dungeon tickets. Needs a recorded run.~~ **Settled in game,
+   2026-10-08**: no entry limit on the Global servers, only Odyle Energy
+   ("I think this is for korea, we can do them as much as we have odyle
+   now"). The "Conquest dungeons" group is dropped from the to-do window,
+   the Resources window and the toolbar's warning; the weekly "Conquest,
+   final boss kills" and Exploration stay.
 3. **What the game shows for keys above 21** (premium items): one number
    ("24"), the two pools ("21 +3") or "24/21"? It decides whether item 8
    above (a typed number is your total) is right. Built: item 8.
-4. Data that changes nothing on screen, for the same comparison: which of
-   tickets 102/103 is Balaur Fortress or Fafnium Laboratory, the exact reset
-   hour, and Ordeal's ticket (matched by name only).
+4. Data that changes nothing on screen, for the same comparison: ~~which of
+   tickets 102/103 is Balaur Fortress or Fafnium Laboratory~~ (**settled in
+   game, 2026-10-08**: neither row exists, the Daily Dungeon menu lists
+   only the Unknown Fissure, "I only have 1 dungeon in the daily dungeon
+   menu though"; the two names came from fan sites and were never seen in
+   game, so both rows are dropped from the to-do window, the Resources
+   window and the toolbar's warning), the exact reset hour, and ~~Ordeal's
+   ticket (matched by name only)~~ (the Ordeal row is removed, item 3 of
+   "Decided after approval" below).
+
+### Decided after approval (2026-10-08)
+
+Built and drawn on the approved pages (`../approved/`); this folder's
+drawings are not changed.
+
+1. **Daily Dungeon as a resource.** The game's Daily Dungeon page shows one
+   dungeon with "Attempt Count 14(+7)/14" (ticket 101). The user: "I think
+   you don't need to put the dungeon name in the todo just put daily
+   dungeon with the tickets and it's ok". The weekly row "Daily Dungeon ·
+   Unknown Fissure" (done of 14) is replaced by a Recharges amount row
+   "Daily Dungeon": tickets left / 14 with "+7" beside it, +14 at the weekly
+   reset on Wednesday, "Account"; also in the Resources window and the
+   toolbar's warning.
+2. **Full warns only near the refill.** The user: "if the main tickets are
+   at 14/14 we put a warning but only when it's near the end of the
+   possible usage if possible. Otherwise it's annoying to always have
+   warnings even when not near the end (or near a replenishment for some
+   currencies)". The full warning (yellow row, gutter glyph, "N full", the
+   toolbar) shows only when the refill a full pool would lose is within
+   1 h (Odyle's 3-hour refill), 3 h (daily refills) or 24 h (the weekly
+   Daily Dungeon). Before that the row looks normal and reads "Full ·
+   refills Fri 09:00"; the texts near the refill stay "Full, being wasted"
+   (Odyle) and "Full, spend by …".
+3. **This week keeps only what the game limits.** The user: "No cap on
+   transcendence or exploration or Conquest. Not sure for: Subjugation,
+   Sanctuary, Ordeal", then, with a screenshot of the game's full menu with
+   no Subjugation, Sanctuary or Ordeal entry, "That's all I have". Removed:
+   Transcendence final boss kills, Conquest final boss kills, Cradle of
+   Nihility, Dying Dramata's Nest, Ordeal, Subjugation, the Sanctuary group
+   (Abyssal Forge, Corroded Facility, Chalice of Muspel) and the
+   Exploration group (ten dungeons). This week keeps Ascension Trial, Duty
+   Commands (counted by hand, hidden at first) and your own to-dos; Today
+   keeps Duty Missions; Recharges is unchanged. No folding group is left.
+4. **Short names on warned rows.** In the 370 px to-do and Resources
+   windows, warned rows read "Shu…" and "Daily D…": the "Account" tag and
+   the status text took the room. Proposed: name the row "Shugo keys", as
+   the toolbar already says, and show "Account" as its person icon only
+   (Lucide `users`), with the word on hover. The user: "yeah shugo keys is
+   ok". The row, the Resources window, the toolbar and Settings › To-dos ›
+   Membership say "Shugo keys" (in French too, like every row name); the
+   reminder event keeps its name, "Shugo Festival". Duty Missions, Shugo
+   keys, Invasion keys and the Daily Dungeon carry the icon alone; the
+   pointer on it lights it and shows the tooltip "Account" (state "Pointer
+   on the Account icon" in `../approved/todos.html`).
+5. **The recharges leave the to-do window.** Looking at the to-do window's
+   Recharges section, the user: "I think we can remove the recharges from
+   the todos now no ?" (it replaces the hub round's "we can still keep them
+   in todo too"). The to-do window has no Recharges section: Odyle Energy,
+   Shugo keys, Invasion keys, Nightmare and the Daily Dungeon are in the
+   Resources window only, and in the toolbar's counts and warning dropdown,
+   unchanged. The to-do window keeps Today (Duty Missions), This week
+   (Ascension Trial, Duty Commands hidden at first) and your own to-dos; the
+   game fills only Ascension Trial there, so its source line between
+   sessions reads "From the game at login, Sun 22:40" with no refill
+   estimate, and its title and character list no longer count full
+   resources. A recharge hidden earlier in the to-do window shows in the
+   Resources window, which has no hide control. Settings › To-dos keeps the
+   membership and the reset hour, described as also setting the Resources
+   window's caps and refill times. Every amount state of this round (live,
+   full near and not near the refill, typed over, typed by hand, first
+   login, a new character on a known server, membership off, just logged
+   in) is drawn in `../approved/resources.html`; `../approved/todos.html`
+   draws the to-do rows only.

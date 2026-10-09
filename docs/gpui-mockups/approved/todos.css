@@ -1,7 +1,9 @@
 /* The approved to-do window (direction E, 2026-10-06; values from the
    game approved 2026-10-08) on top of overlay.css. Values are in
    tokens.md, "To-do window"; a change here changes them too. The
-   Resources window (hub.js) draws its rows with these classes. */
+   Resources window (hub.js) draws its rows with these classes; the
+   amount rows (full, typed by hand, the amount field) are drawn only
+   there since the Recharges left the to-do window (2026-10-08). */
 
 @font-face {
   font-family: "Meter Barlow";
@@ -80,15 +82,13 @@
   cursor: pointer;
 }
 
-.o-head .o-chip,
-.t-sec .o-chip {
+.o-head .o-chip {
   height: 18px;
   padding: 0 7px;
   font-size: 11px;
 }
 
-.o-head .o-chip .i,
-.t-sec .o-chip .i {
+.o-head .o-chip .i {
   width: 11px;
   height: 11px;
 }
@@ -178,11 +178,6 @@
   font-size: 11px;
 }
 
-.t-who .left.is-warn {
-  color: var(--o-warn);
-  font-weight: 600;
-}
-
 .t-menu-note {
   padding: 4px 8px;
   color: var(--o-muted);
@@ -255,9 +250,9 @@
   gap: 2px;
 }
 
-/* 26 px, 2 px apart; 4 px left inset, a 12 px gutter (a group's
-   chevron, a full amount's warning, else empty) and 6 px gaps, so
-   names start 22 px in, under the section labels. */
+/* 26 px, 2 px apart; 4 px left inset, a 12 px gutter (a full amount's
+   warning, the typed-over pencil, else empty) and 6 px gaps, so names
+   start 22 px in, under the section labels. */
 .t-row {
   position: relative;
   display: flex;
@@ -269,22 +264,14 @@
   cursor: default;
 }
 
-/* A group's rows start under its name. */
-.t-row.is-sub {
-  padding-left: 22px;
-}
-
-/* Only rows a click acts on light up (ticks and groups); on counts and
-   amounts the pointer brightens the arrows and brings the ×. */
-.t-row.is-tick,
-.t-row.is-group {
+/* Only rows a click acts on light up (ticks); on counts and amounts the
+   pointer brightens the arrows and brings the ×. */
+.t-row.is-tick {
   cursor: pointer;
 }
 
 .t-row.is-tick:hover,
-.t-row.is-group:hover,
-.t-row.is-tick.is-hover,
-.t-row.is-group.is-hover {
+.t-row.is-tick.is-hover {
   background: var(--o-soft);
 }
 
@@ -368,14 +355,18 @@
   display: inline-block;
 }
 
+/* "Account": the Lucide users icon only, 3 px after the name (so a warned
+   Daily Dungeon keeps its whole name); the word is its tooltip. */
 .t-acct {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  margin-left: 6px;
+  margin-left: 3px;
   color: var(--o-faint);
-  font-size: 11px;
-  font-weight: 500;
+  vertical-align: -1px;
+}
+
+.t-acct.is-hover {
+  color: var(--o-muted);
 }
 
 .t-acct .i {
@@ -704,18 +695,7 @@
   color: var(--o-text);
 }
 
-/* ---- Groups, hidden rows, links ------------------------------------ */
-.t-sum {
-  flex-shrink: 0;
-  color: var(--o-muted);
-  font-size: 11.5px;
-  font-weight: 500;
-}
-
-.t-sum.is-good {
-  color: var(--o-good);
-}
-
+/* ---- Hidden rows, links -------------------------------------------- */
 .t-link {
   color: var(--o-muted);
   font-weight: 600;
@@ -739,10 +719,6 @@
   color: var(--o-faint);
   font-size: 11.5px;
   font-weight: 500;
-}
-
-.t-hid.is-sub {
-  padding-left: 40px;
 }
 
 /* ---- Adding a to-do ------------------------------------------------ */

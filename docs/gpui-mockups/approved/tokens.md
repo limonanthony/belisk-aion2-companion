@@ -63,7 +63,7 @@ default 150, so `a = 150/255 ≈ 0.59`).
 | `you-rim` | `rgba(255, 246, 236, 0.45)`, 1 px inside the track | Your bar |
 | `good` | `#86e3a8` | Ahead of PB, defeated, good ping, live, success notes |
 | `warn` | `#f2c66d` | Fight ended (provisional), history mode |
-| `bad` | `#f7a8a8` | Behind PB, delete confirmation, deaths in the fight report (at 0.10 for a player's deaths plate) |
+| `bad` | `#f7a8a8` | Behind PB, delete confirmation, deaths in the fight report (at 0.10 for a player's deaths plate), a wiped attempt (`chip-bad`) |
 | `hp` | `#e8735f` | Boss gauge fill; health bars and the fight report's damage-taken bars as a 0.16 → 0.55 gradient; the crown on boss records in History |
 | `gauge-empty` | `rgba(255, 240, 225, 0.12)` | Empty gauge segment |
 | `pb-new` | `rgba(250, 204, 21, 0.17)` bg, `#fde68a` text | New personal best chip |
@@ -75,7 +75,7 @@ default 150, so `a = 150/255 ≈ 0.59`).
 | `popover` | `rgba(30, 26, 22, 0.98)`, border `rgba(255, 236, 214, 0.14)`, shadow `0 10 24 rgba(0, 0, 0, 0.5)` | Menus, dropdowns, suggestions, the meter's tooltip over the Session \| Target switch (drawn inside the card, so its shadow is not clipped) |
 | `input` | `rgba(0, 0, 0, 0.34)` bg, border `rgba(255, 240, 225, 0.12)`; focus border `rgba(255, 246, 236, 0.55)` | Text fields and selects |
 | `scroll-thumb` | `rgba(255, 240, 225, 0.28)`, 3 px wide | Scrolling lists |
-| `full-fill` | `rgba(242, 198, 109, 0.12)` (`warn` at 0.12) | A to-do amount at its cap, being wasted: the whole row, also under the pointer |
+| `full-fill` | `rgba(242, 198, 109, 0.12)` (`warn` at 0.12) | A Resources window amount at its cap with the refill it would lose near: the whole row, also under the pointer; the toolbar's full count and warning |
 | `press` | `rgba(255, 240, 225, 0.20)` | A to-do count's arrow or figure while pressed |
 
 Class colours are the only strong hues. Bars use them, and so do the capsule
@@ -293,41 +293,45 @@ An overlay window of its own for what resets and is lost if not done
 from the game and opened from the toolbar, approved on 2026-10-08 (see
 "Values from the game" below). It uses the overlay values above: `card` at
 the user's opacity, `card-border`, no shadow, Barlow Semi Condensed, the
-meter's content scale, the window header and footer.
+meter's content scale, the window header and footer. Since 2026-10-08 it
+has no Recharges section ("I think we can remove the recharges from the
+todos now no ?"): the amount rows below (Amount, Amount field, the full
+warning, Daily Dungeon) are drawn in the Resources window only, which
+takes its row values from this table.
 
 | Element | Value |
 |---|---|
 | Window | 370 px wide; card padding 6 px top, 8 px sides and bottom. Height hugs the content; the list scrolls past 452 px, so the window is at most 558 px (590 while a 4 s note shows). All times the content scale |
-| Header | The 28 px window header: Lucide `list-checks` 13 px in `muted`, "To-dos" 13.5 px / 600, then "9 left" (or "all done") 11.5 px / 500 `faint`; while an amount is full, a `chip-warn` "1 full" 18 px tall, 11 px text, Lucide `triangle-alert` 11 px; the close tool button (22 px) flush right |
-| Character selector | 2 px above, 6 px below; the 26 px input at 28 px; 16 px class icon; name 13 px / 600; "Ranger · Ossia" 11.5 px `muted`; "Playing" 11 px / 600 `good` after a 6 px dot, pushed right; Lucide `chevron-down` 13 px `muted`. Open: a popover over the full width, 30 px items, the count left at 11 px `faint` (`warn` / 600 for "1 full"), a 1 px divider at 0.18 and an 11 px `muted` note |
+| Header | The 28 px window header: Lucide `list-checks` 13 px in `muted`, "To-dos" 13.5 px / 600, then "9 left" (or "all done") 11.5 px / 500 `faint`; no "N full" chip (resources are the Resources window's); the close tool button (22 px) flush right |
+| Character selector | 2 px above, 6 px below; the 26 px input at 28 px; 16 px class icon; name 13 px / 600; "Ranger · Ossia" 11.5 px `muted`; "Playing" 11 px / 600 `good` after a 6 px dot, pushed right; Lucide `chevron-down` 13 px `muted`. Open: a popover over the full width, 30 px items, the count left at 11 px `faint` ("3 left", "all done": to-dos only), a 1 px divider at 0.18 and an 11 px `muted` note |
 | Section label | 24 px, 6 px above (none above the first), 4 px left and 6 px right inset, 6 px radius, 6 px gaps; Lucide `chevron-down` / `chevron-right` 12 px `faint`; title 12 px / 600 `muted` (pointer over: `text`); count 11 px / 500 `faint` ("done" in `good`); the countdown pushed right, 11 px / 500 `faint` with the time in `muted` / 600 |
-| Row | At least 26 px, 2 px apart, 6 px radius; 4 px left and 3 px right inset; a 12 px gutter (a group's chevron, a full amount's `triangle-alert` 12 px in `warn`, else empty), 6 px gaps, so names start 22 px in, under the section label's text. A group's rows: 22 px left inset (names 40 px in) |
-| Name | 13 px / 500 `text`, cut off with an ellipsis; its second part ("final boss", "Unknown Fissure") 11 px / 500 `faint`, 5 px after; "Account" 11 px / 500 `faint` with Lucide `users` 11 px, 6 px after; "Yours" as the second part |
-| Pointer on a row | Tick and group rows (a click acts on the whole row): `soft` fill. Count and amount rows: no fill; their arrows go from `muted` to `text` |
-| Done | The name in `muted` with a line through it: 1 px, the text's own colour (GPUI `StrikethroughStyle`); its second part at `rgba(255, 246, 236, 0.36)`, struck too; "Yours" is not struck. A count's figure turns `muted`. Rows never move; no icon, no other colour. A group whose rows are all done is struck through and its "6 of 6 done" turns `good` |
+| Row | At least 26 px, 2 px apart, 6 px radius; 4 px left and 3 px right inset; a 12 px gutter (a full amount's `triangle-alert` 12 px in `warn` in the Resources window, the typed-over pencil, else empty), 6 px gaps, so names start 22 px in, under the section label's text |
+| Name | 13 px / 500 `text`, cut off with an ellipsis; its second part ("Yours" on your own to-dos) 11 px / 500 `faint`, 5 px after; "Account": Lucide `users` 11 px in `faint`, 3 px after, centred on the name's text, no word (2026-10-08: the word cut warned names to "Shu…", "Daily D…"; at 3 px a warned Daily Dungeon, "Full, spend by Wed 09:00", keeps its whole name in the 370 px Resources window); pointer on it: `muted` and the tooltip "Account" under it, one line, the check button's tooltip style |
+| Pointer on a row | Tick rows (a click acts on the whole row): `soft` fill. Count and amount rows: no fill; their arrows go from `muted` to `text` |
+| Done | The name in `muted` with a line through it: 1 px, the text's own colour (GPUI `StrikethroughStyle`); "Yours" is not struck. A count's figure turns `muted`. Rows never move; no icon, no other colour |
 | Check button | Tick rows only: 20 × 20 px, 5 px radius, Lucide `check` 12 px at stroke 2.5 in `text` on `soft`; pointer on it: `hot`. On a done row, Lucide `undo-2` 12 px at stroke 2.25 in `muted`, no fill; pointer on it: `soft`, `text`. 6 px before the × slot. Tooltip under it: "Mark done" / "Undo", one line, 11.5 px / 500 `text`, 4 × 8 px padding, 6 px radius, `popover` colours |
 | × slot | 20 px on every row, kept when empty so nothing shifts. The button: 20 × 20 px, 5 px radius, Lucide `x` 12 px in `muted`; pointer on it: `soft`, `text`. On a hidden row listed by Show: Lucide `eye`, always shown |
 | Hover × rule | Check and × are shown while the pointer is in the row (enter shows, leave hides; moves inside change nothing) or while the row has keyboard focus. After a hide or removal, the row now under the pointer keeps them hidden until the pointer moves |
 | Count | Lucide `chevron-down`, the figure, Lucide `chevron-up`, 1 px apart. Arrows 20 × 20 px, 5 px radius, 12 px at stroke 2.25, `muted`; pointer on one: `soft`, `text`; pressed: `press`; at 0 or N the arrow is `faint` at 0.45. Figure 46 × 20 px, 5 px radius, centred, "9" 12.5 px / 600 `text` and "/14" 11 px / 500 `faint` 1 px after; pointer on it: `soft`; pressed: `press` |
-| Amount | Empty: "—" 12.5 px / 500 `faint` in the figure's place, 20 px gaps for the arrows, the name `muted`. Tracked: "Full in 2 d 16 h" 11.5 px / 500 `muted` before the count's controls; the figure reads as a field under the pointer (`track` fill, 1 px inset `rgba(255, 240, 225, 0.12)`). Full: the row on `full-fill`, the warning glyph in the gutter, "Full, being wasted" / "Full, spend by Tue 09:00" in `warn` / 600, the figure `warn` with "/840" at `warn` 0.7 |
-| Amount field | Replaces the arrows and figure: 112 × 22 px, 6 px radius, `track` fill, 1 px `rgba(255, 246, 236, 0.55)` border, 7 px left padding; the typed figure right-aligned, 12.5 px / 600; "/21" 11 px `faint`; an 18 × 18 px clear button (4 px radius, Lucide `x`; on a game value it goes back to the game's value, else it stops tracking) |
-| Group row | Chevron in the gutter, the name, then "2 of 6 done" 11.5 px / 500 `muted` (`good` when all done) at the row's end, before the × slot |
-| Hidden line | Ends each section (and an open group) with hidden rows: 20 px, 11.5 px / 500 `faint`, 22 px in (40 in a group): "2 hidden · Show". Show / Hide again: `muted` / 600, underlined at `rgba(255, 246, 236, 0.25)`, 3 px offset; pointer over: `text`. Hidden rows listed by Show: everything but the put-back button at 0.42 opacity |
+| Amount | Resources window rows only. Empty: "—" 12.5 px / 500 `faint` in the figure's place, 20 px gaps for the arrows, the name `muted`. Tracked: "Full in 2 d 16 h" 11.5 px / 500 `muted` before the count's controls; the figure reads as a field under the pointer (`track` fill, 1 px inset `rgba(255, 240, 225, 0.12)`). Full, the refill not near: the row as tracked, "Full · refills Fri 09:00" in the same `muted` status style, the figure at its cap in `text`; no fill, no glyph, not counted. Full near the refill (within 1 h of Odyle's 3-hour refill, 3 h of a daily one, 24 h of a weekly one): the row on `full-fill`, the warning glyph in the gutter, "Full, being wasted" / "Full, spend by Tue 09:00" in `warn` / 600, the figure `warn` with "/840" at `warn` 0.7 |
+| Amount field | Replaces the arrows and figure: 112 × 22 px, 6 px radius, `track` fill, 1 px `rgba(255, 246, 236, 0.55)` border, 7 px left padding; the typed figure right-aligned, 12.5 px / 600; "/21" 11 px `faint`; an 18 × 18 px clear button (4 px radius, Lucide `x`; on a game value it goes back to the game's value, else it stops tracking). In the to-do window the same field types over a game count ("/3", 0 to its target) |
+| Group row | Removed 2026-10-08: no folding group is left (Sanctuary and Exploration went with the weekly rows the game has no limit for) |
+| Hidden line | Ends each section with hidden rows: 20 px, 11.5 px / 500 `faint`, 22 px in: "2 hidden · Show". Show / Hide again: `muted` / 600, underlined at `rgba(255, 246, 236, 0.25)`, 3 px offset; pointer over: `text`. Hidden rows listed by Show: everything but the put-back button at 0.42 opacity |
 | Add line | The list's last line, 6 px above: 26 px, 6 px radius, Lucide `plus` 12 px `faint` in the gutter, "Add a to-do" 12.5 px / 500 `muted`; pointer over: `soft` fill, `text` |
 | Add form | In the add line's place: `rgba(255, 240, 225, 0.05)` plate, 6 px radius, 6 px padding, 6 px between its two lines. Line 1: the 26 px input ("Name" placeholder), the small text button "Add" (22 px, Lucide `plus` 11 px; 0.4 opacity while the name is empty), Cancel as a 20 px × button. Line 2: segmented Tick \| Count, "of" with a count stepper (figure 26 px wide), then Daily \| Weekly pushed right. Segmented: track `rgba(0, 0, 0, 0.30)`, 7 px radius, 2 px inset and gap; options 20 px, 5 px radius, 11.5 px / 600 `muted`, selected `hot` with `text` |
 | Notes | The overlay note, 6 px under the character selector, for 4 s: "Removed Legion check-in." with an Undo link at its end (Lucide `trash`), or a `good` note "Added Arena of Tactics wins to This week." (Lucide `check`) |
 | Footer | The 26 px window footer, 5 px gaps: Lucide `clock` 12 px `faint`, "Daily reset" with "09:00" in `text` / 600, a `faint` "·", "Change" as a link (as Show), then "Weekly on Wednesday" in `faint` pushed right |
 | Scrolling | The list scrolls inside the window with the 3 px `scroll-thumb`, 4 px from the right; 11 px right padding while it overflows. 3 px of room around the rows so a focus ring is never clipped |
-| Focus ring | `focus-ring`, 2 px, 1 px outside the focused control (the row for tick and group rows, the figure on counts and amounts, a button), so a row's ring fits the 2 px gap between rows. Text fields show focus with their brighter border, no ring |
+| Focus ring | `focus-ring`, 2 px, 1 px outside the focused control (the row for tick rows, the figure on counts and amounts, a button), so a row's ring fits the 2 px gap between rows. Text fields show focus with their brighter border, no ring |
 | Opening it | The toolbar's checklist (Lucide `list-checks`), lit while the window is open; the meter's "…" menu no longer has it |
 
-- **One list per character**; Duty Missions, Shugo Festival keys, Invasion
-  keys and the Unknown Fissure are counted per account and server (shared by
-  your characters there, "Account"). The selector follows the character in
-  game.
+- **One list per character**; Duty Missions are counted per account and
+  server (shared by your characters there, the Account icon); in the
+  Resources window, Shugo keys, Invasion keys and the Daily Dungeon. The
+  selector follows the character in game.
 - **Focus**: the window never activates, except while a field takes the
-  keyboard (an amount, a value typed over the game's, the new to-do's
-  name), as the PvP name field does.
+  keyboard (a value typed over the game's, the new to-do's name; in the
+  Resources window an amount), as the PvP name field does.
 
 ### Values from the game
 
@@ -335,40 +339,67 @@ Approved on 2026-10-08 (the to-do autofill round,
 [../todos-autofill/README.md](../todos-autofill/README.md)). When you log in
 while Kisk runs, the meter open or not, the game sends every ticket (the
 regular pool it refills and an extra pool from items), then each change.
-Caps and refills come from the game's ticket table.
+Caps and refills come from the game's ticket table. The to-do window shows
+the weekly entries (Ascension Trial); every pool is the Resources window's.
 
 | Element | Value |
 |---|---|
-| Source line | Under the character selector (2 px into its 6 px gap), 4 px above the list: the meter's hint line, 20 px, 4 px inset, 6 px gap, Lucide `gamepad-2` 12 px `faint`, 11.5 px / 500 `muted`, times and names `text` / 600, "·" in `faint`, cut off with an ellipsis. "From the game, live · logged in at 19:02"; "From the game at login, Sun 22:40 · refills since estimated"; "No game values yet. Log in with Sefa while Kisk runs."; "Tavrin not seen at login yet · Account rows from Mirelle" |
+| Source line | Under the character selector (2 px into its 6 px gap), 4 px above the list: the meter's hint line, 20 px, 4 px inset, 6 px gap, Lucide `gamepad-2` 12 px `faint`, 11.5 px / 500 `muted`, times and names `text` / 600, "·" in `faint`, cut off with an ellipsis. "From the game, live · logged in at 19:02"; "From the game at login, Sun 22:40 · refills since estimated" (the to-do window, where nothing refills: "From the game at login, Sun 22:40"); "No game values yet. Log in with Sefa while Kisk runs."; the Resources window only: "Tavrin not seen at login yet · Account rows from Mirelle" |
 | Game figure | No arrows: a 14 px gap where the one-less arrow was, the 46 px figure ("7" 12.5 px / 600, "/21" 11 px `faint`), the extra pool in a 26 px slot after it, 1 px apart, so the block keeps the stepper's 88 px and nothing else in the row moves. Under the pointer it reads as a field (`track` fill, 1 px inset `rgba(255, 240, 225, 0.12)`); a click or Enter types over it |
 | Extra pool | "+3" 11.5 px / 600 `muted`, left-aligned in its 26 px slot ("+380" fits); never yellow, never part of the cap or of "Full in …" |
-| Weekly rows | Done of target: done = target − entries left ("5/14" for 9 left of 14); done (struck through) at 0 left; extra entries in the extra-pool slot ("+7"). A final-boss tick is done when its ticket reaches 0 |
+| Weekly rows | Done of target: done = target − entries left ("2/3" for 1 left of 3); done (struck through) at 0 left; extra entries in the extra-pool slot ("+1") |
 | Typed over | The typed number in the figure's place, Lucide `pencil` 12 px `faint` in the gutter (the full warning wins the gutter when both apply); the extra pool stays the game's. The game's next value for that ticket replaces it |
 | Figure tooltip | The control tooltip allowed two lines, up to 250 px: the source and time in `text`, the detail in `faint` ("125 at your login Sun 22:40." / "+120 since: eight refills of 15, estimated."; "Typed by you. The game said 7." / "Its next value replaces yours: a spend, a refill or your next login.") |
 | At login | A good note for 4 s under the source line: "Filled from the game at login. Values you typed were replaced." |
 | Above the cap | Normal, never an error or a colour. A regular pool above the cap in force (membership off): shown as is, never full, no estimate |
-| Conquest dungeons | A folding group like Sanctuary, one row per dungeon (14, +2 a day); the group row says "10–13 of 14 each", or "1 full" in `warn` / 600. To confirm in game |
-| Refill hour | Shugo Festival keys +3 and Invasion keys +1 at the daily reset (the ticket table's daily clock, 16:00 KST = 09:00 CEST) |
+| Refill hour | Shugo keys +3 and Invasion keys +1 at the daily reset (the ticket table's daily clock, 16:00 KST = 09:00 CEST); the Daily Dungeon +14 at the weekly reset |
+| Daily Dungeon | A Resources window row, the Account icon, no dungeon name (ticket 101, the game's "Attempt Count 14(+7)/14"): tickets left against 14, the extra entries in the extra-pool slot ("9/14 +7"); +14 on Wednesday at the reset hour. In the Resources window and the toolbar's warning; not in the to-do window |
+| Full near the refill | Warns (yellow row, gutter glyph, "N full" on the Resources window's header and the toolbar) only within 1 h of Odyle's 3-hour refill, 3 h of a daily refill (Shugo keys, Invasion keys, Nightmare), 24 h of the weekly one (Daily Dungeon). Earlier: "Full · refills …", quiet. The to-do window counts no resource |
 
-- **Caps**: Shugo Festival keys 12 (21 with membership), +3 a day, extra
-  pool up to 30; Odyle Energy 560 (840 with membership), +15 every 3 h;
+- **Rows**: no Conquest dungeons, Deus Research Base or Shattered Arkanis
+  row: on the Global servers they have no entry limit, only Odyle Energy
+  limits them. No Abandoned Balaur Fortress or Fafnium Laboratory row: the
+  Daily Dungeon menu lists only the Unknown Fissure. Both settled in game,
+  2026-10-08.
+- **This week** (settled 2026-10-08, "No cap on transcendence or
+  exploration or Conquest. Not sure for: Subjugation, Sanctuary, Ordeal",
+  and the game's full menu, "That's all I have", has no Subjugation,
+  Sanctuary or Ordeal entry): Transcendence, Conquest final boss kills,
+  Cradle of Nihility, Dying Dramata's Nest, Ordeal, Subjugation, the
+  Sanctuary group and the Exploration group are removed. This week keeps
+  Ascension Trial, Duty Commands (hidden at first) and your own to-dos.
+- **Daily Dungeon** (decided 2026-10-08, "I think you don't need to put the
+  dungeon name in the todo just put daily dungeon with the tickets and it's
+  ok"): one row with the tickets, no dungeon name, in the Resources window.
+- **No Recharges in the to-do window** (decided 2026-10-08, "I think we can
+  remove the recharges from the todos now no ?", replacing "we can still
+  keep them in todo too"): Odyle Energy, Shugo keys, Invasion keys,
+  Nightmare and the Daily Dungeon are in the Resources window and the
+  toolbar only. A row hidden in the to-do window before shows there again
+  (it has no hide control) and counts in the toolbar's warning; Settings ›
+  To-dos › Hidden to-dos counts to-dos only.
+- **Full warns only near the refill** (decided 2026-10-08, "if the main
+  tickets are at 14/14 we put a warning but only when it's near the end of
+  the possible usage if possible. Otherwise it's annoying to always have
+  warnings even when not near the end (or near a replenishment for some
+  currencies)").
+- **Caps**: Shugo keys 12 (21 with membership), +3 a day, extra pool up to
+  30; Odyle Energy 560 (840 with membership), +15 every 3 h;
   Invasion keys 7, +1 a day. The membership switch picks the membership cap
   of every ticket that has one; off again, nothing is cut.
 - **Yours to count**: Duty Missions, Duty Commands and your own to-dos keep
-  the arrows, and so does every row before the game has filled it. Before
-  the game fills a row, a typed number is your total: at or above the cap it
-  counts as full. Typed numbers may be above the cap; nothing cuts them.
+  the arrows, and so does every row before the game has filled it
+  (Ascension Trial; an amount in the Resources window). Before the game
+  fills an amount, a typed number is your total: at or above the cap it
+  counts as full. Typed amounts may be above the cap; nothing cuts them.
 - **Between sessions**: the last game values plus the refills the table
-  knows since, up to the cap; spends are never guessed. A weekly row seen
-  before Wednesday's reset starts over at the reset.
-- **Start over** (Settings) empties what you typed; the game's values stay.
-  There is no switch to stop filling from the game.
-- **To confirm in game** (drawn dashed, built with the drawn default): the
-  Deus Research Base and Shattered Arkanis cap (4); Conquest dungeons as one
-  ticket per dungeon; what the game shows for keys above 21 (premium items),
-  which decides whether a typed number is your total (built as drawn); which
-  of tickets 102 and 103 is Abandoned Balaur Fortress or Fafnium
-  Laboratory; the exact reset hour; Ordeal's ticket (matched by name only).
+  knows since, up to the cap (Resources window); spends are never guessed.
+  A weekly row seen before Wednesday's reset starts over at the reset.
+- **Start over** (Settings) empties what you typed, in both windows; the
+  game's values stay. There is no switch to stop filling from the game.
+- **To confirm in game** (built as drawn): what the game shows for keys
+  above 21 (premium items), which decides whether a typed number is your
+  total; the exact reset hour.
 
 ## Fight report
 
@@ -386,7 +417,7 @@ the window header and footer, the meter's bars and rank badges.
 | Element | Value |
 |---|---|
 | Window | 520 px wide (the detail window's); card padding 6 px top, 8 px sides and bottom. Height hugs the content; the player table scrolls past 8 rows, the deaths list stays under it. All times the content scale |
-| Header | The 28 px window header: Lucide `file-text` 13 px in `muted`, "Fight report" 13.5 px / 600; the outcome chip pushed right (20 px pill, 11.5 px / 600: `chip-good` "Defeated" with Lucide `check`, or `chip-warn` "Fight ended" with Lucide `hourglass` and "may resume" 11 px / 500 `muted`); the close tool button (22 px) flush right |
+| Header | The 28 px window header: Lucide `file-text` 13 px in `muted`, "Fight report" 13.5 px / 600; the outcome chip pushed right (20 px pill, 11.5 px / 600: `chip-good` "Defeated" with Lucide `check`, `chip-warn` "Fight ended" with Lucide `hourglass` and "may resume" 11 px / 500 `muted`, or `chip-bad` "Wiped" with Lucide `circle-x` and the boss's health left, "12.8% left", 11 px / 500 `muted`); the close tool button (22 px) flush right |
 | Boss block | 4 px inset, 2 px above: the boss 14.5 px / 600, cut off with an ellipsis; the fight time 14 px / 600 at the end, never cut. Under it, 3 px apart, one line 11.5 px `muted`: where (with the difficulty), when, "6 players", joined by " · " (a field boss has no place) |
 | Key figures | The detail window's plate: 6 px above, `track`, 8 px radius, 7 × 10 px padding; five equal cells 4 px apart, Damage, Party DPS, Healing, Damage taken, Deaths; label 11 px `faint` above the value 16 px / 600, 4 px apart, both at the left of the cell |
 | Player table header | 6 px under the plate; the 20 px table header, 11 px / 500 `faint`: "Player" and the count in `faint` 6 px after, starting on the names (52 px in); the five column labels over their figures, right-aligned, ending 27 px from the right (35 px while the table scrolls) |
@@ -454,9 +485,10 @@ rows and its header; a list that does not scroll has neither.
 
 | Element | Value |
 |---|---|
-| Summary card button | "Open the fight report" (French "Ouvrir le rapport de combat"): full width under the skills (under the hero on the party card), 8 px above; 24 px tall, 7 px radius, `soft` fill (pointer over: `hot`), Lucide `file-text` 12 px and 12 px / 600 `text`, centred, 6 px apart. On the final and the provisional ("Fight ended, may resume") card, personal or party. Makes the summary card 32 px taller. Locked (click-through): no button, as no Copy and no × |
+| Summary card button | "Open the fight report" (French "Ouvrir le rapport de combat"): full width under the skills (under the hero on the party card), 8 px above; 24 px tall, 7 px radius, `soft` fill (pointer over: `hot`), Lucide `file-text` 12 px and 12 px / 600 `text`, centred, 6 px apart. On the final, the provisional ("Fight ended, may resume") and the wiped card, personal or party; the wiped card's opens that attempt's own report, even after the boss is pulled again. Makes the summary card 32 px taller. Locked (click-through): no button, as no Copy and no × |
 | History report button | On boss records only, before Delete (6 px apart): the 20 px record button, 7 px radius, Lucide `file-text` 12 px in `muted`; pointer over: `soft` fill, `text`, and the tooltip "Fight report" under it (one line, 11.5 px / 500 `text`, 4 × 8 px padding, 6 px radius, `popover` colours). Mob records keep the 20 px slot empty |
 | Crown | Boss records only: Lucide `crown` 12 px at stroke 2 in `hp` (`#e8735f`), in a 12 px slot at the record's left edge, 5 px before the name; the name keeps its ellipsis. Not a button, no tooltip; the record's accessible name starts with "Boss,". Mob records keep the empty slot, so every name starts at the same edge |
+| Wiped mark | A wiped attempt keeps its crown and report button; 6 px after its name, the report header's outcome chip, shortened for the row: `chip-bad` "Wiped" with Lucide `circle-x` 12 px and the health left, "12.8%", 11 px / 500 `muted`. The name gives way first (ellipsis), so dates still line up. Accessible name "Boss, Orsikh, wiped with 12.8% left" |
 
 - **Window**: an overlay window of its own like History and the detail
   window (transparent, no-activate, tool window). One report window at a
@@ -466,6 +498,13 @@ rows and its header; a list that does not scroll has neither.
 - **Fight ended, may resume**: the report shows what the meter has, with the
   `chip-warn` outcome; if the fight resumes, the window keeps the figures it
   opened with and the next summary offers a new report.
+- **Wiped**: when the attempt is lost with the boss alive (its health back to
+  full, or it leaves the field), the card's outcome chip turns `chip-bad` "Wiped" with Lucide `circle-x` 13 px
+  and the health it had left, "12.8% left" 11 px / 500 `muted` (French "Wipe",
+  "12.8% restants"), the way "Fight ended" carries "may resume". The rest is
+  the final card's: no gauge (the chip holds the health), stats, skills and
+  the report button; no personal-best line. Not `skull` (deaths) or `crown`
+  (History, boss records).
 - **Back**: "‹ Report" returns to the report with its sort and scroll as they
   were. Esc does not reach a non-activating window.
 - **Keyboard** (accessibility tools only): report: the sort headers, the
@@ -477,7 +516,8 @@ rows and its header; a list that does not scroll has neither.
   `crown`, `skull`, `chevron-left` and `mouse-pointer` are added from Lucide
   (ISC) when the report is built, with their `assets.rs` entries, as the
   other icons were. `chevron-right`, `chevron-down`, `chevron-up`,
-  `arrow-down`, `check`, `hourglass`, `info`, `x` are there already.
+  `arrow-down`, `check`, `hourglass`, `info`, `x` are there already;
+  `circle-x` came with the wiped outcome.
 - To confirm on a recording before building: which effects count as heals
   (shields, life drain such as Blood Absorption; the drawing counts direct
   heals, heals over time and self-heals), and that a death can be tied to
@@ -498,15 +538,15 @@ toolbar opens, and every tool opens and closes from it. Pages:
 | Element | Value |
 |---|---|
 | Window | An overlay card of its own: `card` at the user's opacity, `card-border`, no shadow; 4 px padding, 12 px radius (the card's 14 px reads as a pill at this height); one row, 2 px gaps; the content scale. Horizontal only |
-| Order | Grip; DPS meter (Lucide `swords`), PvP meter (`crosshair`), To-dos (`list-checks`), Fight history (`crown`), Reminders (`bell`), Settings (`settings`); a rule; Odyle Energy (`zap`), Shugo Festival keys (`key-round`), the warning; a rule; fold (`chevrons-left`), quit (`x`) |
+| Order | Grip; DPS meter (Lucide `swords`), PvP meter (`crosshair`), To-dos (`list-checks`), Fight history (`crown`), Reminders (`bell`), Settings (`settings`); a rule; Odyle Energy (`zap`), Shugo keys (`key-round`), the warning; a rule; fold (`chevrons-left`), quit (`x`) |
 | Grip | 14 × 26 px, Lucide `grip-vertical` 12 px in `faint`; the bar's empty space drags too |
 | Tool | 26 × 26 px, 7 px radius, icon 14 px in `muted`. Pointer over: `soft`, `text`. Lit (the tool is open): `hot`, `text`, the icon 3 px higher and a 4 × 4 px dot (`currentColor`, the pin dot's size) 2 px above the bottom edge. Reminders paused: Lucide `bell-off` in `faint` |
 | Fold and quit | 20 × 26 px, icon 12 px in `faint`; pointer over: `soft`, `text` |
 | Rule | 1 × 16 px, `rgba(255, 240, 225, 0.18)` (the capsule's), 5 px each side |
 | Count | 26 px tall, 7 px radius, 7 px sides, 5 px gaps: icon 13 px `muted`; the regular pool 12.5 px / 600 `text`, "/840" 11 px / 500 `faint` 1 px after; the extra pool "+380" 11.5 px / 500 `muted` 3 px after. Icons only (no names). Pointer over: `soft`. Resources open: `hot`. Before any game value: "—" in `faint` / 500 |
-| Count, full | Regular pool at its cap and a refill coming: `full-fill`, the icon and figure `warn`, "/21" `warn` at 0.7, the extra pool `muted`; pointer over: `warn` at 0.20 |
-| Warning | Only while other resources are full and a refill is coming: 26 px, 7 px radius, 7 px sides, 4 px gap, `full-fill`; Lucide `triangle-alert` 13 px and the number 12.5 px / 600 in `warn`; pointer over or open: `warn` at 0.20 |
-| Folded | Grip, unfold (`chevrons-right`, as fold) and, when anything is full (Odyle and Shugo keys included), the warning with that number; a click on it unfolds |
+| Count, full | Regular pool at its cap and the refill it would lose near (1 h for Odyle, 3 h for Shugo keys): `full-fill`, the icon and figure `warn`, "/21" `warn` at 0.7, the extra pool `muted`; pointer over: `warn` at 0.20. Full but further away: drawn as a normal count |
+| Warning | Only while other resources are full and their refill is near (3 h for Invasion keys and Nightmare, 24 h for the Daily Dungeon): 26 px, 7 px radius, 7 px sides, 4 px gap, `full-fill`; Lucide `triangle-alert` 13 px and the number 12.5 px / 600 in `warn`; pointer over or open: `warn` at 0.20 |
+| Folded | Grip, unfold (`chevrons-right`, as fold) and, when anything is full near its refill (Odyle and Shugo keys included), the warning with that number; a click on it unfolds |
 | Tooltip | `popover` colours, 4 × 8 px padding, 6 px radius, 11.5 px / 500 `text`, a second line in `muted`; 6 px under the control, its left edge on the tool's (its right edge on a count's, the warning's, fold's and quit's); after 500 ms |
 | Focus ring | `focus-ring`, 2 px, 1 px outside the button (accessibility tools; Left and Right move along the bar) |
 
@@ -515,9 +555,9 @@ toolbar opens, and every tool opens and closes from it. Pages:
   "Fight history", "Reminders" ("Reminders / Paused"), "Settings", "Fold the
   toolbar", "Unfold the toolbar", "Quit Kisk / Closes every tool."; a count:
   its name, then "245 of 840, +380 extra · full in 2 d 14 h. Click for all
-  resources." ("Full, spend by Tue 09:00", "Full, being wasted"); before any
-  game value "No value yet. Log in while Kisk runs."; the warning "2 more
-  full".
+  resources." ("Full, spend by Tue 09:00", "Full, being wasted" near the
+  refill; "Full · refills Tue 09:00" further away); before any game value
+  "No value yet. Log in while Kisk runs."; the warning "2 more full".
 - **Clicks**: a tool opens or closes its window; a count opens or closes
   the Resources window; the warning opens its dropdown; quit ends the
   process at once, no confirmation.
@@ -546,9 +586,9 @@ toolbar opens, and every tool opens and closes from it. Pages:
 | Element | Value |
 |---|---|
 | Window | The to-do window's frame: 370 px, the 28 px header with Lucide `package` 13 px in `muted` and "Resources", the "2 full" `chip-warn`, the close tool button; the character selector; the source line; the list 2 px under it; the 26 px footer |
-| Rows | The to-do window's Recharges rows, in the same order, the same display and "Values from the game"; no × slot (nothing to hide), so names get 26 px more. Weekly entries stay to-dos |
+| Rows | Odyle Energy, Shugo keys, Invasion keys, Nightmare, Daily Dungeon: the only window with them since 2026-10-08 (the to-do window has no Recharges); the "To-do window" row, Amount and "Values from the game" values, the Account icon; no × slot (nothing to hide), so names get 26 px more; a row hidden in the to-do window before shows here. Weekly entries stay to-dos |
 | Footer | Lucide `clock` 12 px `faint`, "Daily reset" with "09:00" in `text` / 600, then "Membership caps" (or "Caps without membership") in `faint` pushed right |
-| Behaviour | No-activate except while a field takes the keyboard; one at a time; opens where you left it. The toolbar's counts read lit while it is open; a click on a count closes it. Same data as the to-dos: a change shows in both windows |
+| Behaviour | No-activate except while a field takes the keyboard; one at a time; opens where you left it. The toolbar's counts read lit while it is open; a click on a count closes it. Settings › To-dos sets its caps (Membership) and refill times (Daily reset) |
 
 ### First-open prompt
 
@@ -676,17 +716,19 @@ Text, `good`, `warn` and `bad` are the overlay values.
 ### Settings → To-dos
 
 Approved on 2026-10-06 with the to-do window; lead, Membership and Start
-over changed on 2026-10-08 with the values from the game.
+over changed on 2026-10-08 with the values from the game; the same day,
+when the recharges left the to-do window, the lead, the resets, Membership
+and Start over say what they do in the Resources window.
 
 | Part | Value |
 |---|---|
 | Place | Sidebar item after Reminders, Lucide `list-checks`; no preview column |
-| Lead | "The to-do window, opened from the toolbar. Counts and amounts fill from the game when you log in while Kisk runs." |
-| Resets | Daily reset (Select, 130 px minimum: every whole hour 00:00 to 23:00, 09:00 by default; the list shows eight 28 px items at a time, opens scrolled to the chosen hour, 3 px thumb); Weekly reset (not a control: "Wednesday 09:00" in display type 13.5 px / 600 `muted`, following the daily hour) |
-| Recharges | Membership (Switch, off; one for every character): "Higher caps on every character: Odyle Energy 840 instead of 560, Shugo Festival keys 21 instead of 12." |
-| The game shows more | With the switch off and a game regular pool above the cap: the field message under the description, in `muted`, Lucide `info`, 5 px above: "The game shows **18 Shugo Festival keys** on Mirelle, more than 12. Do you have a membership?" (the figure and name in `text` / 600). No dialog, no automatic switch |
-| Default to-dos | Hidden to-dos: secondary button "Restore default to-dos" with Lucide `rotate-ccw`, disabled while nothing is hidden. Start over ("…empties every count and amount you typed."): danger button "Reset to-dos completely…" |
-| Restored | A good badge "6 to-dos back" with a check, 2 px before the button, for 4 s; no dialog |
+| Lead | "The to-do window, opened from the toolbar. The reset hour and the membership also set the Resources window's refill times and caps." |
+| Resets | Daily reset (Select, 130 px minimum: every whole hour 00:00 to 23:00, 09:00 by default; the list shows eight 28 px items at a time, opens scrolled to the chosen hour, 3 px thumb): "Also when the Resources window's daily refills come. Reported, not confirmed: check the countdown in game."; Weekly reset (not a control: "Wednesday 09:00" in display type 13.5 px / 600 `muted`, following the daily hour): "This week's to-dos and the Daily Dungeon's tickets start over on Wednesday, at the daily reset hour." |
+| Resources | The group was "Recharges". Membership (Switch, off; one for every character): "Higher caps in the Resources window, on every character: Odyle Energy 840 instead of 560, Shugo keys 21 instead of 12." |
+| The game shows more | With the switch off and a game regular pool above the cap: the field message under the description, in `muted`, Lucide `info`, 5 px above: "The game shows **18 Shugo keys** on Mirelle, more than 12. Do you have a membership?" (the figure and name in `text` / 600). No dialog, no automatic switch |
+| Default to-dos | Hidden to-dos (to-dos only; resources have no hide control): secondary button "Restore default to-dos" with Lucide `rotate-ccw`, disabled while nothing is hidden. Start over ("…empties every count you typed and every amount typed in the Resources window."): danger button "Reset to-dos completely…" |
+| Restored | A good badge "3 to-dos back" with a check, 2 px before the button, for 4 s; no dialog |
 | Confirm dialog | The Dialog: "Reset the to-dos completely?", two paragraphs 6 px apart (the first ends "Values from the game stay."), Cancel (focused, the focus ring drawn) then the danger "Reset to-dos" |
 | After the reset | A good badge "To-dos reset" with a check before the button, for 4 s |
 

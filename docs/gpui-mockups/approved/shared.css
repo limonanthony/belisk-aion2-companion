@@ -329,28 +329,6 @@ main.scenes {
   font-size: 12.5px;
 }
 
-/* ---- To confirm in game (page chrome, not part of the product look) ----
-   Values drawn with the build's default while the user's in-game
-   comparison is pending: a dashed outline on the value, and the same
-   dashed legend in the page text. */
-
-.mk-open {
-  outline: 1px dashed rgba(143, 184, 255, 0.85);
-  outline-offset: 1px;
-  border-radius: 5px;
-}
-
-.t-row.mk-open {
-  border-radius: 6px;
-}
-
-.mk-legend {
-  padding: 0 4px;
-  border-radius: 4px;
-  outline: 1px dashed rgba(143, 184, 255, 0.85);
-  outline-offset: 1px;
-}
-
 /* Page chrome: buttons that play what the game or the user does, under a
    working window ("Try it"). */
 .mk-sim {

@@ -867,6 +867,8 @@ In Thamon (Tamon trial, mob 2300811) the boss's absorption buffs recover health 
 
 `packet-explorer unnamed-skills <recording>...` replays recordings through the shipped parser and lists the skill ids that still fall back to `Skill <id>` (hits, damage, class) so their names can be looked up in the source datasets and added.
 
+Consumable buffs (scrolls, potions) are ids from 20 to 29 million: the item skill's seven-digit id plus one digit (`22101051` = skill `2210105`, Courage Scroll; `20111011` = `2011101`, Life Potion). `resolve_skill_key` tries `code / 10` for that range, after the exact and eight-digit forms, and the 70 seven-digit consumable names (Kuroukihime/AIon2-Dps-Meter's `skills.json`, GPL-3.0) are in `skill_names_en.json`; `build-fr-names.mjs` gave 61 of them a French name, the rest fall back to English. The first Courage Scroll showed as `Skill 22101051` on the Buffs tab of an Elementalist's fight report.
+
 ## Reading the game's packets (TASK-14)
 
 Upstream read most packets by guessing: fixed skips, byte markers and value
@@ -896,7 +898,17 @@ before and after.
   and saturate.
 - **Death `42 36`** (`parser/death_record.rs`): flag 3 sets a known monster's HP
   to 0, the same state an HP packet of 0 leaves, so existing kill detection
-  confirms deaths it missed. Flags 1 and 7 are removals, not kills.
+  confirms deaths it missed. Flag 1 is an entity leaving range (a boss that
+  sent it reported HP again minutes later); flag 7 is a removal. A flag-7
+  removal of a boss somebody hit that was still alive is a wipe.
+- **Boss wipes** (`storage/boss_wipe.rs`): the game sends no wipe event and
+  instant-revive stones make "everyone dead" unreliable, so the boss is the
+  witness. A wipe is a boss (not a summon) that took damage while fights were
+  tracked and then either has its HP back at full after falling below 98%, or
+  is removed with flag 7 alive. Seen in recordings: Atiel's removal at 26.7%
+  and 61%/7.5%, Talisra's refill from 12.8%. The attempt is saved to History
+  with `wiped: true` and the HP it had left, kept out of personal bests, and
+  taken off the meter so the next pull counts from zero.
 - **Damage over time `05 38`**: only mode `0x0A` is damage. Mode `0x0B` (a
   self, party or pet effect, never a monster in the recordings) used to be
   counted, with its remaining total read as the tick.
@@ -956,3 +968,5 @@ builds the report; the report window is TASK-15.3 and 15.4.
   record of that target when the meter has been reset). One value carries the
   header, the five key figures, one row per player and, per player, the hit
   types as counts, the skills, buffs, heals and damage taken.
+- **Summoned objects are their owner (2026-10-08)**: a boss spawns many entities (projectiles, zones, copies of itself with its HP, e.g. Talisra of the Void's 2920519, 2920520, 2920521, 2920563, 2920564, 2920936) whose spawn record names the boss as owner. Their hits used to show as separate "Mob <code>" sources and as the killer of a death. A hit and a killer now also carry `owner_mob_code`, the mob code at the top of the owner chain (`owned_by_mob_code`, four steps), and `CombatEvents::credit_unfought_sources_to_their_owners` (run in `DataStorage::fight_ledger_inputs`) swaps the source for it, unless players ever damaged the entity itself: that is a real add (Atiel's clones, Nathara's adds, the boss's own phases) and stays its own source. "Damaged by players" is `entities_hit_by_players`, filled in `append_damage_at` before the Boss only filter (so the filter cannot turn a real add into an object), forgotten when the game reuses the entity id for another mob. Not covered: an object owned by a real add that is owned by a boss credits the boss, not the add. Fights already saved keep their old rows.
+- **Buffs follow the owner chain too (2026-10-08)**: `save_buff` credits a buff to the top of the caster's owner chain, as damage is. An Elementalist's spirits (hundreds of entities per fight, one per summon) used to be one buff row each; 219 of them became one row. In the report, casters it does not know (`UNKNOWN_CASTER_ID`, 0) are one row per buff with the longest uptime among them, which also folds the split rows of reports saved before.

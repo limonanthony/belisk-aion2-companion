@@ -254,14 +254,14 @@
         <a href="reminders.html">Reminder card</a>
         <a href="todos.html">To-do window</a>
       </nav>
-      <h1>Settings <small>approved, round 3; Reminders 2026-10-05; To-dos 2026-10-06; Overlay › Window and To-dos changed 2026-10-08</small></h1>
+      <h1>Settings <small>approved, round 3; Reminders 2026-10-05; To-dos 2026-10-06; Overlay › Window and To-dos changed 2026-10-08; To-dos describes the Resources window, 2026-10-08</small></h1>
       <ul class="rationale">
-        <li><b>Changed 2026-10-08</b> (hub and to-do autofill rounds, <a href="../hub/README.md">hub/</a>, <a href="../todos-autofill/README.md">todos-autofill/</a>): Settings opens from the <a href="toolbar.html">toolbar</a>'s gear. Overlay › Window gains "Open the meter at launch" (first, off by default) and "Show or hide everything" (Alt + Shift + CapsLock, read-only), and "Lock overlay" says the toolbar always takes clicks (states "Overlay, Window" and "After Yes in the first-open prompt"). To-dos: the lead says the window opens from the toolbar and fills from the game; Membership names Shugo Festival keys too and asks when the game shows more than the cap; Start over keeps the game's values (states "To-dos", "Membership off, the game shows more", "Reset to-dos completely").</li>
+        <li><b>Changed 2026-10-08</b> (hub and to-do autofill rounds, <a href="../hub/README.md">hub/</a>, <a href="../todos-autofill/README.md">todos-autofill/</a>): Settings opens from the <a href="toolbar.html">toolbar</a>'s gear. Overlay › Window gains "Open the meter at launch" (first, off by default) and "Show or hide everything" (Alt + Shift + CapsLock, read-only), and "Lock overlay" says the toolbar always takes clicks (states "Overlay, Window" and "After Yes in the first-open prompt"). To-dos: the lead says the window opens from the toolbar; Membership names Shugo keys too (the row's name, "yeah shugo keys is ok") and asks when the game shows more than the cap; Start over keeps the game's values (states "To-dos", "Membership off, the game shows more", "Reset to-dos completely"). Then the recharges left the to-do window ("I think we can remove the recharges from the todos now no ?"): the lead, Daily reset, Weekly reset and Membership (its group renamed "Resources") say they also set the Resources window's refill times and caps, Start over says it empties the amounts typed there, and Hidden to-dos counts to-dos only.</li>
         <li>Everything kept: overlay look and rows (with a live preview beside them), meter behaviour, the three shortcuts, capture (backend, connection status, recording and replay, log folder), personal bests, language and About. Changes apply at once; there is no Save.</li>
         <li>Rows are a label and one sentence on the left, the control on a stable right edge, in titled groups. Sidebar navigation, shared with Home.</li>
         <li>Same warm near-black, cream primary and status colours as the overlays, in Kit components: Switch, Slider, Select, segmented control, Kbd, Table, Tooltip, Dialog. Values are in <a href="tokens.md">tokens.md</a>.</li>
         <li>Reminders (approved 2026-10-05) sits after Personal bests: the master switch and how you are reminded, then one switch per event grouped by how often it comes. No preview column; the test button shows the real <a href="reminders.html">reminder card</a>.</li>
-        <li>To-dos (approved 2026-10-06) sits after Reminders: the daily reset hour (the weekly reset follows it), the membership, and two ways to bring the default to-dos back, for every character. Everything else about the to-dos lives in the <a href="todos.html">to-do window</a>.</li>
+        <li>To-dos (approved 2026-10-06) sits after Reminders: the daily reset hour (the weekly reset follows it), the membership, and two ways to bring the default to-dos back, for every character. The reset hour and the membership also set the <a href="resources.html">Resources window</a>'s refill times and caps, since the recharges left the to-do window (2026-10-08, "I think we can remove the recharges from the todos now no ?"). Everything else about the to-dos lives in the <a href="todos.html">to-do window</a>.</li>
       </ul>
     </header>
 
@@ -288,13 +288,13 @@
       </ul>
       <h2>To-dos</h2>
       <ul>
-        <li><b>Daily reset</b>: a select with every hour, 00:00 to 23:00, 09:00 by default; the list opens scrolled to the chosen hour. The hour moves Today's countdown, the daily recharges' estimates and the weekly reset with it, and the to-do window follows at once. "Change" in the to-do window's footer opens this section.</li>
-        <li><b>Weekly reset</b>: not a control. Wednesday, at the daily reset hour ("Wednesday 09:00", "Wednesday 17:00").</li>
-        <li><b>Membership</b>: one switch for every character, off by default. It picks the membership cap of every ticket that has one: "Higher caps on every character: Odyle Energy 840 instead of 560, Shugo Festival keys 21 instead of 12." Off again, nothing is cut: a number above the cap is normal.</li>
+        <li><b>Daily reset</b>: a select with every hour, 00:00 to 23:00, 09:00 by default; the list opens scrolled to the chosen hour. The hour moves Today's countdown and the weekly reset with it, and the Resources window's daily refills (Shugo keys, Invasion keys, Nightmare) and the Daily Dungeon's weekly one; both windows follow at once. "Change" in the to-do window's footer opens this section.</li>
+        <li><b>Weekly reset</b>: not a control. Wednesday, at the daily reset hour ("Wednesday 09:00", "Wednesday 17:00"): This week's to-dos start over and the Daily Dungeon gets its 14 tickets.</li>
+        <li><b>Membership</b>: one switch for every character, off by default, in the group "Resources" (it was "Recharges"). It picks the membership cap of every ticket that has one, in the Resources window and the toolbar's counts: "Higher caps in the Resources window, on every character: Odyle Energy 840 instead of 560, Shugo keys 21 instead of 12." Off again, nothing is cut: a number above the cap is normal.</li>
         <li><b>The game shows more</b>: the game never says whether you have a membership, but a regular pool above the cap without it (18 Shugo keys with membership off) can only come from one. Then a quiet line under the description asks "Do you have a membership?", until the switch is on. No dialog, no automatic switch.</li>
-        <li><b>Restore default to-dos</b>: on every character, every built-in to-do you hid comes back (Duty Commands too, which start hidden). Your own to-dos, every count and every amount stay. The description says how many are hidden now ("6 hidden, on 2 characters."); with none hidden it says "Nothing is hidden." and the button is disabled. No dialog; after a click a good badge "6 to-dos back" shows beside the button for 4 s.</li>
-        <li><b>Reset to-dos completely…</b>: opens the dialog with Cancel focused, so Enter or Esc changes nothing. "Reset to-dos", on every character: your own to-dos are removed, every hidden to-do comes back, every count and amount you typed is emptied ("—"); values from the game stay (they are the game's, and come back at each login anyway). The reset hour and the membership stay. Afterwards a good badge "To-dos reset" shows beside the button for 4 s; an open to-do window shows the fresh list at once.</li>
-        <li><b>Not here</b>: hiding and showing single rows, adding your own and the counts stay in the to-do window. "+1?" from boss kills (built later, off by default) would get its switch here. No switch to stop filling from the game: typing over a value covers a wrong one, and the next login fixes it.</li>
+        <li><b>Restore default to-dos</b>: on every character, every built-in to-do you hid comes back (Duty Commands too, which start hidden). Only to-dos are listed: the resources have no hide control any more, and a resource hidden before 2026-10-08 shows in the Resources window again without counting here. Your own to-dos, every count and every amount stay. The description says how many are hidden now ("3 hidden, on 2 characters."); with none hidden it says "Nothing is hidden." and the button is disabled. No dialog; after a click a good badge "3 to-dos back" shows beside the button for 4 s.</li>
+        <li><b>Reset to-dos completely…</b>: opens the dialog with Cancel focused, so Enter or Esc changes nothing. "Reset to-dos", on every character: your own to-dos are removed, every hidden to-do comes back, every count you typed and every amount typed in the Resources window is emptied ("—"); values from the game stay (they are the game's, and come back at each login anyway). The reset hour and the membership stay. Afterwards a good badge "To-dos reset" shows beside the button for 4 s; open to-do and Resources windows show the fresh values at once.</li>
+        <li><b>Not here</b>: hiding and showing single rows, adding your own and the counts stay in the to-do window; amounts are typed in the Resources window. "+1?" from boss kills (built later, off by default) would get its switch here. No switch to stop filling from the game: typing over a value covers a wrong one, and the next login fixes it.</li>
       </ul>
       <h2>Overlay › Window</h2>
       <ul>
@@ -595,24 +595,24 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
             const restored = st === "restored" || st === "reset";
             const hint =
               st === "hint"
-                ? `<div class="field-msg">${icon("info")}<span>The game shows <b>18 Shugo Festival keys</b> on Mirelle, more than 12. Do you have a membership?</span></div>`
+                ? `<div class="field-msg">${icon("info")}<span>The game shows <b>18 Shugo keys</b> on Mirelle, more than 12. Do you have a membership?</span></div>`
                 : "";
-            const hidden = restored ? "Nothing is hidden." : "6 hidden, on 2 characters.";
-            const restore = (st === "restored" ? C.badge("6 to-dos back", "good", "check") : "") + C.btn("Restore default to-dos", { ic: "reset", kind: restored ? "disabled" : "" });
+            const hidden = restored ? "Nothing is hidden." : "3 hidden, on 2 characters.";
+            const restore = (st === "restored" ? C.badge("3 to-dos back", "good", "check") : "") + C.btn("Restore default to-dos", { ic: "reset", kind: restored ? "disabled" : "" });
             const reset = (st === "reset" ? C.badge("To-dos reset", "good", "check") : "") + C.btn("Reset to-dos completely…", { kind: "danger" });
             return (
-              head("To-dos", "The to-do window, opened from the toolbar. Counts and amounts fill from the game when you log in while Kisk runs.") +
+              head("To-dos", "The to-do window, opened from the toolbar. The reset hour and the membership also set the Resources window's refill times and caps.") +
               group(
                 "Resets",
-                row("Daily reset", "Reported, not confirmed. Check the countdown in game.", hour) +
-                  row("Weekly reset", "This week's to-dos start over on Wednesday, at the daily reset hour.", `<span class="ro">Wednesday 09:00</span>`),
+                row("Daily reset", "Also when the Resources window's daily refills come. Reported, not confirmed: check the countdown in game.", hour) +
+                  row("Weekly reset", "This week's to-dos and the Daily Dungeon's tickets start over on Wednesday, at the daily reset hour.", `<span class="ro">Wednesday 09:00</span>`),
                 true
               ) +
-              group("Recharges", row("Membership", `Higher caps on every character: Odyle Energy 840 instead of 560, Shugo Festival keys 21 instead of 12.${hint}`, C.sw(false))) +
+              group("Resources", row("Membership", `Higher caps in the Resources window, on every character: Odyle Energy 840 instead of 560, Shugo keys 21 instead of 12.${hint}`, C.sw(false))) +
               group(
                 "Default to-dos",
                 row("Hidden to-dos", `${hidden} Restoring the defaults keeps your own to-dos and all progress.`, restore) +
-                  row("Start over", "Removes your own to-dos, brings back every hidden one and empties every count and amount you typed.", reset)
+                  row("Start over", "Removes your own to-dos, brings back every hidden one and empties every count you typed and every amount typed in the Resources window.", reset)
               )
             );
           },
@@ -625,7 +625,7 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
             sub === "clear"
               ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true"><h3>Clear the cache?</h3><p>Settings, shortcuts and window positions go back to their defaults. Fight history, personal bests and recordings are kept.</p><div class="dlg-actions">${C.btn("Cancel")}${C.btn("Clear cache", { kind: "danger" })}</div></div></div>`
               : section === "todos" && sub === "confirm"
-                ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-todos"><h3 id="dlg-todos">Reset the to-dos completely?</h3><p>On every character: your own to-dos (3) are removed, every hidden to-do comes back, and every count and amount you typed is emptied. Values from the game stay.</p><p>The reset hour and the membership stay. This cannot be undone.</p><div class="dlg-actions">${C.btn("Cancel").replace('class="btn', 'class="btn is-focus')}${C.btn("Reset to-dos", { kind: "danger" })}</div></div></div>`
+                ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-todos"><h3 id="dlg-todos">Reset the to-dos completely?</h3><p>On every character: your own to-dos (3) are removed, every hidden to-do comes back, and every count you typed and every amount typed in the Resources window is emptied. Values from the game stay.</p><p>The reset hour and the membership stay. This cannot be undone.</p><div class="dlg-actions">${C.btn("Cancel").replace('class="btn', 'class="btn is-focus')}${C.btn("Reset to-dos", { kind: "danger" })}</div></div></div>`
                 : "";
           // Scrolled to the Window group, the thumb shortened so it stays in the track.
           const thumb = { "overlay:window": 110, "overlay:on": 110 }[state] || { overlay: 150, behaviour: 360, capture: 200, reminders: 272, about: 280 }[section] || 0;
@@ -658,12 +658,12 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
             { id: "reminders:off", title: "Reminders off", sub: "every row under the master switch dims and keeps its own state" },
             { id: "reminders:select", title: "Remind me, open", sub: "1, 2, 3 or 5 min before; 1 by default" },
             { id: "reminders:test", title: "Test reminder shown", sub: "a note for 4 s, since Settings may cover the meter" },
-            { id: "todos", title: "To-dos", sub: "defaults: daily reset 09:00, membership off; six built-in to-dos hidden on two characters; the lead says where the window opens and that it fills from the game" },
+            { id: "todos", title: "To-dos", sub: "defaults: daily reset 09:00, membership off; three built-in to-dos hidden on two characters (to-dos only: resources have no hide control); the lead, the resets and Membership (group \"Resources\") say they also set the Resources window's refill times and caps" },
             { id: "todos:hint", title: "Membership off, the game shows more", sub: "the game shows 18 Shugo keys, more than 12: only a membership allows that, so a quiet line asks. Nothing switches by itself" },
             { id: "todos:hour", title: "Daily reset, open", sub: "every hour, 00:00 to 23:00; opens on the chosen one" },
             { id: "todos:restored", title: "Default to-dos restored", sub: "the hidden ones are back on every character; your own to-dos and all progress kept; the badge fades after 4 s" },
             { id: "todos:confirm", title: "Reset to-dos completely", sub: "the confirm dialog, Cancel focused; the game's values stay" },
-            { id: "todos:reset", title: "After the complete reset", sub: "your own to-dos gone, nothing hidden, every count and amount you typed empty (the game's values stay); the badge fades after 4 s" },
+            { id: "todos:reset", title: "After the complete reset", sub: "your own to-dos gone, nothing hidden, every count you typed and every amount typed in the Resources window empty (the game's values stay); the badge fades after 4 s" },
             { id: "general:lang", title: "General", sub: "language menu open" },
             { id: "about", title: "About", sub: "version, licence, credits, storage" },
             { id: "about:clear", title: "About, clearing the cache", sub: "Kit Dialog" },

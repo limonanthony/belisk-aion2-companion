@@ -5,10 +5,11 @@
 // rows use todos.css; the meter drawn under the toolbar uses meter.css.
 //
 // Everything here is invented: values, times, characters. Caps and refills
-// are the game's ticket table, as in todos.js. Nothing is saved or sent
-// anywhere. To confirm in game (drawn with the build's default, dashed):
-// the Deus Research Base / Shattered Arkanis cap (4), Conquest dungeons as
-// one ticket per dungeon.
+// are the game's ticket table. Nothing is saved or sent
+// anywhere. No rows for Conquest dungeons, Deus Research Base or Shattered
+// Arkanis: on the Global servers only Odyle Energy limits them. No rows for
+// Abandoned Balaur Fortress or Fafnium Laboratory: the Daily Dungeon menu
+// lists only the Unknown Fissure. Both settled in game, 2026-10-08.
 //
 // Icons: Lucide (https://lucide.dev), ISC License; see kit.js.
 (function () {
@@ -42,11 +43,13 @@
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-  // ---- Clock (mocked): Monday 21:48, daily reset 09:00 ----------------------
+  // ---- Clock (mocked): Monday 21:48, daily reset 09:00, weekly Wednesday ----
   const DAY = 1440;
   const DAYS = { en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], fr: ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."] };
   const RESET = 9 * 60;
+  const WEEKLY = 2 * DAY + RESET; // Wednesday at the reset hour
   const NOW = 21 * 60 + 48;
+  const SOON = DAY + 8 * 60 + 12; // Tue 08:12, 48 min before the refills
   const LOGIN = 19 * 60 + 2;
   const pad = (n) => String(n).padStart(2, "0");
   const clock = (t) => `${pad(Math.floor((((t % DAY) + DAY) % DAY) / 60))}:${pad((((t % DAY) + DAY) % DAY) % 60)}`;
@@ -68,58 +71,55 @@
     return t;
   }
 
-  const refill = (r, now, k) => (r.every ? (Math.floor((now - (r.off || 0)) / r.every) + k) * r.every + (r.off || 0) : nextAt(now, r.at) + (k - 1) * DAY);
+  function nextWeekly(now) {
+    let t = Math.floor(now / (7 * DAY)) * 7 * DAY + WEEKLY;
+    if (t <= now) t += 7 * DAY;
+    return t;
+  }
 
-  // ---- Resources: the to-do window's Recharges rows, same order -------------
-  const CONQUEST_DUNGEONS = [
-    ["krao", "Krao Cave"],
-    ["urugugu", "Urugugu Canyon"],
-    ["fire", "Fire Temple"],
-    ["draupnir", "Draupnir"],
-    ["vakron", "Vakron Sky Island"],
-    ["horn", "Ferocious Horn Den"],
-  ];
+  const refill = (r, now, k) =>
+    r.every ? (Math.floor((now - (r.off || 0)) / r.every) + k) * r.every + (r.off || 0) : r.weekly ? nextWeekly(now) + (k - 1) * 7 * DAY : nextAt(now, r.at) + (k - 1) * DAY;
 
+  // A full pool warns only when the refill it loses is near: 1 h before
+  // Odyle's 3-hour refill, 3 h before a daily one, 24 h before a weekly one.
+  const nearOf = (r) => (r.every ? 60 : r.weekly ? DAY : 180);
+
+  // ---- Resources: only here and on the toolbar since 2026-10-08 ("I think we
+  // can remove the recharges from the todos now no ?"); the to-do window has
+  // no Recharges section any more. Shugo keys (the Shugo Festival's): 12 (21
+  // with membership), +3 a day, extra pool up to 30. Shugo keys, Invasion
+  // keys and the Daily Dungeon are shared by the characters of one server.
+  // Daily refills follow the ticket table's daily clock (16:00 KST = the
+  // 09:00 daily reset here). The Daily Dungeon is ticket 101: 14, +14 at the
+  // weekly reset; its menu lists one dungeon, so the row has no dungeon name.
   const RES = [
-    { id: "odyle", name: "Odyle Energy", fr: "Odyle Energy", ic: "zap", cap: 560, mcap: 840, add: 15, every: 180 },
-    { id: "shugo", name: "Shugo Festival keys", fr: "Clés du Shugo Festival", ic: "key", cap: 12, mcap: 21, add: 3, at: RESET, account: true },
+    { id: "odyle", name: "Odyle Energy", fr: "Odyle Energy", ic: "zap", cap: 560, mcap: 840, add: 15, every: 180, step: 10 },
+    { id: "shugo", name: "Shugo keys", fr: "Shugo keys", ic: "key", cap: 12, mcap: 21, add: 3, at: RESET, account: true },
     { id: "invasion", name: "Invasion keys", fr: "Clés de l'Invasion", cap: 7, add: 1, at: RESET, account: true },
     { id: "nightmare", name: "Nightmare", cap: 14, add: 2, at: RESET },
-    { id: "conquest", kind: "group", name: "Conquest dungeons", open: "conquest", items: CONQUEST_DUNGEONS.map(([id, name]) => ({ id: "c-" + id, name, cap: 14, add: 2, at: RESET })) },
-    { id: "deus", name: "Deus Research Base", cap: 4, add: 2, at: RESET, open: "deus" },
-    { id: "arkanis", name: "Shattered Arkanis", cap: 4, add: 2, at: RESET, open: "deus" },
-    { id: "balaur", name: "Abandoned Balaur Fortress", cap: 7, add: 1, at: RESET },
-    { id: "fafnium", name: "Fafnium Laboratory", cap: 7, add: 1, at: RESET },
+    { id: "dungeon", name: "Daily Dungeon", fr: "Donjon quotidien", cap: 14, add: 14, weekly: true, account: true },
   ];
 
-  const leaves = () => RES.flatMap((r) => (r.kind === "group" ? r.items : [r]));
-  const find = (id) => leaves().find((r) => r.id === id);
+  const find = (id) => RES.find((r) => r.id === id);
   const capOf = (r, member) => (member && r.mcap ? r.mcap : r.cap);
 
-  // What the game sent (n = regular pool, x = extra pool). Mirelle, live,
-  // as in todos.js ("From the game, live").
+  // What the game sent (n = regular pool, x = extra pool). Mirelle, live
+  // ("From the game, live"). `null` leaves a row without a game value.
   function snapshot(o = {}) {
     const g = {
       odyle: { n: 245, x: 380 },
       shugo: { n: 7, x: 3 },
       invasion: { n: 2, x: 0 },
       nightmare: { n: 0, x: 3 },
-      deus: { n: 4, x: 0 },
-      arkanis: { n: 4, x: 0 },
-      balaur: { n: 6, x: 0 },
-      fafnium: { n: 6, x: 0 },
+      dungeon: { n: 9, x: 7 },
     };
-    for (const [id] of CONQUEST_DUNGEONS) g["c-" + id] = { n: 12, x: 0 };
-    g["c-fire"].n = 10;
-    g["c-vakron"].n = 13;
     for (const [id, val] of Object.entries(o)) g[id] = val === null ? null : { ...g[id], ...val };
     return g;
   }
 
-  // Nothing else full: the toolbar shows no warning.
-  const CALM = { deus: { n: 2 }, arkanis: { n: 3 } };
-
-  // A resource's state: { src: "game" | "over" | "empty", n, x, cap, full, above, at, next }.
+  // A resource's state: { src: "game" | "over" | "typed" | "empty", n, x, cap, full, warn, above, at, next };
+  // warn: full and the refill it loses is near. Rows hidden earlier in the
+  // to-do window have no hidden state here: every row shows and counts.
   function stateOf(r, v) {
     const cap = capOf(r, v.member);
     const g = v.g[r.id];
@@ -127,21 +127,27 @@
       const n = v.over[r.id];
       return withEstimate(r, { src: "over", n, x: g ? g.x || 0 : 0, cap }, v);
     }
-    if (!g) return { src: "empty", cap };
     // A regular pool above the cap in force can only come from a membership
     // the switch does not know: shown as is, never full, no estimate.
-    if (g.n > cap) return { src: "game", n: g.n, x: g.x || 0, cap, above: true };
-    return withEstimate(r, { src: "game", n: g.n, x: g.x || 0, cap }, v);
+    if (g && g.n > cap) return { src: "game", n: g.n, x: g.x || 0, cap, above: true };
+    if (g) return withEstimate(r, { src: "game", n: g.n, x: g.x || 0, cap }, v);
+    // Before the game fills a row, a typed number is your total: at or above
+    // the cap it counts as full.
+    if (v.amt && v.amt[r.id] != null) return withEstimate(r, { src: "typed", n: v.amt[r.id], x: 0, cap }, v);
+    return { src: "empty", cap };
   }
 
   function withEstimate(r, s, v) {
     const now = v.now == null ? NOW : v.now;
-    if (s.n >= s.cap) return { ...s, full: true, next: refill(r, now, 1) };
+    if (s.n >= s.cap) {
+      const next = refill(r, now, 1);
+      return { ...s, full: true, warn: next - now <= nearOf(r), next };
+    }
     return { ...s, full: false, at: refill(r, now, Math.ceil((s.cap - s.n) / r.add)) };
   }
 
-  const fullOthers = (v) => leaves().filter((r) => r.id !== "odyle" && r.id !== "shugo" && stateOf(r, v).full);
-  const fullAll = (v) => leaves().filter((r) => stateOf(r, v).full);
+  const fullOthers = (v) => RES.filter((r) => r.id !== "odyle" && r.id !== "shugo" && stateOf(r, v).warn);
+  const fullAll = (v) => RES.filter((r) => stateOf(r, v).warn);
 
   function view(o = {}) {
     return { member: true, g: snapshot(), now: NOW, src: "live", lang: "en", ...o };
@@ -169,6 +175,7 @@
       fullIn: "full in",
       fullSpend: "Full, spend by",
       fullWaste: "Full, being wasted",
+      fullRefills: "Full · refills",
       noValues: "No value yet",
       noValuesLine: "Log in while Kisk runs.",
       click: "Click for all resources.",
@@ -194,6 +201,7 @@
       fullIn: "max en",
       fullSpend: "À vider avant",
       fullWaste: "Plein, gaspillé",
+      fullRefills: "Plein · rech.",
       noValues: "Pas encore de valeur",
       noValuesLine: "Connectez-vous pendant que Kisk tourne.",
       click: "Cliquer pour toutes les ressources.",
@@ -224,7 +232,7 @@
     const v = o.v;
     const s = stateOf(r, v);
     const name = (o.lang === "fr" && r.fr) || r.name;
-    const c = ["hb-count", s.full && "is-full", o.lit && o.lit.resources && "is-lit", o.hover === r.id && "is-hover", o.focus === r.id && "is-focus"].filter(Boolean).join(" ");
+    const c = ["hb-count", s.warn && "is-full", o.lit && o.lit.resources && "is-lit", o.hover === r.id && "is-hover", o.focus === r.id && "is-focus"].filter(Boolean).join(" ");
     let fig;
     let tip;
     if (s.src === "empty") {
@@ -233,7 +241,7 @@
     } else {
       fig = `<span class="hb-fig">${s.n}<small>/${s.cap}</small></span>${s.x ? `<span class="hb-x">+${s.x}</span>` : ""}`;
       const lang = o.lang || "en";
-      const when = s.above ? "" : s.full ? (r.every ? L.fullWaste : `${L.fullSpend} ${stamp(s.next, lang)}`) : `${L.fullIn} ${span(s.at - v.now, lang)}`;
+      const when = s.above ? "" : s.warn ? (r.every ? L.fullWaste : `${L.fullSpend} ${stamp(s.next, lang)}`) : s.full ? `${L.fullRefills} ${stamp(s.next, lang)}` : `${L.fullIn} ${span(s.at - v.now, lang)}`;
       const line = `${s.n} ${L.of} ${s.cap}${s.x ? `, +${s.x} ${L.extra}` : ""}${when ? ` · ${when}` : ""}`;
       tip = [name, `${line}. ${L.click}`];
     }
@@ -299,68 +307,79 @@
 
   // ---- Resources window ------------------------------------------------------
   // The to-do window's classes (todos.css): header, character selector,
-  // source line, the Recharges rows, footer.
+  // source line, rows, footer. These rows are drawn here only.
   const CHARS = {
     mirelle: { name: "Mirelle", cls: "ranger", klass: "Ranger", server: "Ossia" },
+    tavrin: { name: "Tavrin", cls: "templar", klass: "Templar", server: "Ossia" },
     sefa: { name: "Sefa", cls: "cleric", klass: "Cleric", server: "Lyss" },
   };
 
-  function nameHtml(r) {
-    const acct = r.account ? `<span class="t-acct">${icon("users")}Account</span>` : "";
+  // "Account" is its Lucide users icon only; the word shows under the pointer.
+  function nameHtml(v, r) {
+    const acct = r.account ? `<span class="t-acct${v.acctHover === r.id ? " is-hover" : ""}" role="img" aria-label="Account" title="Account">${icon("users")}</span>` : "";
     return `<span class="t-name">${esc(r.name)}${acct}</span>`;
   }
 
-  function resRow(v, r, sub) {
+  // An amount you count yourself before the game fills it: one less, the
+  // figure (it reads as a field: a click types), one more; no upper stop.
+  function stepper(r, s, mark) {
+    const step = r.step || 1;
+    const less = step > 1 ? `${step} less` : "One less";
+    const more = step > 1 ? `${step} more` : "One more";
+    const dn = `<button type="button" class="o-btn is-sm t-arrow" aria-label="${less}: ${esc(r.name)}"${s.n <= 0 ? " disabled" : ""}>${icon("chevronDown")}</button>`;
+    const up = `<button type="button" class="o-btn is-sm t-arrow" aria-label="${more}: ${esc(r.name)}">${icon("chevronUp")}</button>`;
+    const fig = `<span class="t-fig is-amt${mark}" role="spinbutton" tabindex="0" aria-label="${esc(r.name)}" aria-valuemin="0" aria-valuenow="${s.n}" aria-valuetext="${s.n} of ${s.cap}">${s.n}<small>/${s.cap}</small></span>`;
+    return `<span class="t-step">${dn}${fig}${up}</span>`;
+  }
+
+  function resRow(v, r) {
     const s = stateOf(r, v);
-    const cls = ["t-row", sub && "is-sub"];
+    const cls = ["t-row"];
     let gut = `<span class="t-gut"></span>`;
     let when = "";
     let right;
-    const hover = v.hover === r.id ? " is-hover" : "";
+    const mark = (v.hover === r.id ? " is-hover" : "") + (v.focus === r.id ? " is-focus" : "");
     if (v.edit === r.id) {
-      right = `<span class="t-field"><span class="val">${esc(v.editVal)}</span><span class="o-caret"></span><span class="t-cap">/${s.cap}</span><button type="button" class="o-btn is-sm t-clear" aria-label="Back to the game's value: ${esc(r.name)}">${icon("close")}</button></span>`;
+      // On a game value the field's × goes back to the game's value; on a
+      // value only you have, it stops tracking.
+      const back = s.src === "game" || s.src === "over" ? `Back to the game's value: ${r.name}` : `Stop tracking ${r.name}`;
+      right = `<span class="t-field"><span class="val">${esc(v.editVal)}</span><span class="o-caret"></span><span class="t-cap">/${s.cap}</span><button type="button" class="o-btn is-sm t-clear" aria-label="${esc(back)}">${icon("close")}</button></span>`;
     } else if (s.src === "empty") {
       cls.push("is-empty");
-      right = `<span class="t-step"><span class="t-gap"></span><span class="t-fig is-amt is-blank${hover}" role="spinbutton" tabindex="0" aria-label="${esc(r.name)}" aria-valuetext="not tracked">&mdash;</span><span class="t-gap"></span></span>`;
+      right = `<span class="t-step"><span class="t-gap"></span><span class="t-fig is-amt is-blank${mark}" role="spinbutton" tabindex="0" aria-label="${esc(r.name)}" aria-valuetext="not tracked">&mdash;</span><span class="t-gap"></span></span>`;
     } else {
       if (s.src === "over") gut = `<span class="t-gut is-typed" title="Typed by you">${icon("pencil")}</span>`;
-      if (s.full) {
+      if (s.warn) {
         cls.push("is-waste");
         gut = `<span class="t-gut is-warn">${icon("alert")}</span>`;
       }
-      const w = s.above ? "" : s.full ? (r.every ? "Full, being wasted" : `Full, spend by ${stamp(s.next)}`) : `Full in ${span(s.at - v.now)}`;
-      when = w ? `<span class="t-when${s.full ? " is-warn" : ""}">${w}</span>` : "";
-      const inner = `${s.n}<small${r.open === "deus" ? ' class="mk-open"' : ""}>/${s.cap}</small>`;
-      const aria = `${r.name}, ${s.n} of ${s.cap}${s.x ? `, ${s.x} extra` : ""}, from the game. Type over it`;
-      right = `<span class="g-step"><span class="t-gap"></span><span class="t-fig g-fig${hover}" role="button" tabindex="0" aria-label="${esc(aria)}">${inner}</span><span class="g-extra">${s.x ? `+${s.x}` : ""}</span></span>`;
+      // Full far from the refill: a quiet "Full · refills …", no warning.
+      const w = s.above ? "" : s.warn ? (r.every ? "Full, being wasted" : `Full, spend by ${stamp(s.next)}`) : s.full ? `Full · refills ${stamp(s.next)}` : `Full in ${span(s.at - v.now)}`;
+      when = w ? `<span class="t-when${s.warn ? " is-warn" : ""}">${w}</span>` : "";
+      if (s.src === "typed") right = stepper(r, s, mark);
+      else {
+        const inner = `${s.n}<small>/${s.cap}</small>`;
+        const aria = `${r.name}, ${s.n} of ${s.cap}${s.x ? `, ${s.x} extra` : ""}, ${s.src === "over" ? "typed by you" : "from the game"}. Type over it`;
+        right = `<span class="g-step"><span class="t-gap"></span><span class="t-fig g-fig${mark}" role="button" tabindex="0" aria-label="${esc(aria)}">${inner}</span><span class="g-extra">${s.x ? `+${s.x}` : ""}</span></span>`;
+      }
     }
-    const tip = v.tip && v.tip.id === r.id ? `<div class="t-tip g-tip" role="tooltip" style="top:24px;right:${v.tip.right || 4}px">${v.tip.text}</div>` : "";
-    return `<div class="${cls.filter(Boolean).join(" ")}">${gut}${nameHtml(r)}${when}${right}${tip}</div>`;
-  }
-
-  // Conquest dungeons, one ticket per dungeon (to confirm in game): a
-  // folding group as in the to-do window.
-  function conquestRow(v, it) {
-    const vals = it.items.map((r) => stateOf(r, v)).filter((s) => s.src !== "empty");
-    const full = it.items.filter((r) => stateOf(r, v).full).length;
-    const lo = vals.length ? Math.min(...vals.map((s) => s.n)) : null;
-    const hi = vals.length ? Math.max(...vals.map((s) => s.n)) : null;
-    const open = v.openConquest;
-    const sum = full
-      ? `<span class="t-sum" style="color:var(--o-warn);font-weight:600">${full} full</span>`
-      : `<span class="t-sum">${lo == null ? "6 dungeons" : `${lo === hi ? lo : `${lo}–${hi}`} of 14 each`}</span>`;
-    const head = `<div class="t-row is-group mk-open"><span class="t-main" role="button" tabindex="0" aria-expanded="${!!open}"><span class="t-gut">${icon(open ? "chevronDown" : "chevronRight")}</span>${nameHtml(it)}${sum}</span></div>`;
-    return open ? head + it.items.map((r) => resRow(v, r, true)).join("") : head;
+    const at = v.tip && v.tip.left != null ? `left:${v.tip.left}px` : `right:${(v.tip && v.tip.right) || 4}px`;
+    const tip = v.tip && v.tip.id === r.id ? `<div class="t-tip g-tip" role="tooltip" style="top:24px;${at}">${v.tip.text}</div>` : "";
+    return `<div class="${cls.filter(Boolean).join(" ")}">${gut}${nameHtml(v, r)}${when}${right}${tip}</div>`;
   }
 
   function sourceLine(v) {
     const dot = '<span class="faint">·</span>';
     let text;
-    if (v.src === "live") text = `From the game, live ${dot} logged in at <b>${clock(LOGIN)}</b>`;
+    if (v.src === "live") text = `From the game, live ${dot} logged in at <b>${clock(v.seen == null ? LOGIN : v.seen)}</b>`;
     else if (v.src === "stale") text = `From the game at login, <b>Sun 22:40</b> ${dot} refills since estimated`;
+    else if (v.src === "shared") text = `<b>${esc(v.who.name)}</b> not seen at login yet ${dot} Account rows from ${esc(v.from)}`;
     else text = `No game values yet. Log in with <b>${esc(v.who.name)}</b> while Kisk runs.`;
     return `<div class="g-src">${icon("gamepad")}<span>${text}</span></div>`;
   }
+
+  // A note under the source line for 4 s ("Filled from the game at login.").
+  const noteHtml = (v) => (v.note ? `<div class="o-note is-good t-note" role="status">${icon("check")}<span>${v.note}</span></div>` : "");
 
   function resources(ctx, o = {}) {
     const v = view({ who: CHARS.mirelle, playing: true, ...o });
@@ -369,9 +388,9 @@
     const head = `<div class="o-head"><span class="o-title">${icon("package")}Resources</span>${chip}<span class="grow"></span><button type="button" class="o-btn" aria-label="Close">${icon("close")}</button></div>`;
     const nm = esc(ctx.opts.mask ? ctx.fmt.mask(v.who.name) : v.who.name);
     const who = `<div class="t-char"><span class="o-input" role="combobox" tabindex="0" aria-expanded="false" aria-label="Character"><img src="${ctx.classIcon(v.who.cls)}" alt=""><span class="nm">${nm}</span><span class="meta">${v.who.klass} · ${v.who.server}</span>${v.playing ? '<span class="t-live">Playing</span>' : '<span class="grow" style="flex:1"></span>'}${icon("chevronDown")}</span></div>`;
-    const rows = RES.map((r) => (r.kind === "group" ? conquestRow(v, r) : resRow(v, r))).join("");
+    const rows = RES.map((r) => resRow(v, r)).join("");
     const foot = `<div class="o-foot t-foot">${icon("clock")}<span>Daily reset <b>${clock(RESET)}</b></span><span class="grow"></span><span class="faint">${v.member ? "Membership caps" : "Caps without membership"}</span></div>`;
-    return `<div class="ov o td rs" role="dialog" aria-label="Resources">${head}${who}${sourceLine(v)}<div class="t-list">${rows}</div>${foot}</div>`;
+    return `<div class="ov o td rs" role="dialog" aria-label="Resources">${head}${who}${sourceLine(v)}${noteHtml(v)}<div class="t-list">${rows}</div>${foot}</div>`;
   }
 
   // ---- The meter, opened from the toolbar --------------------------------------
@@ -469,5 +488,5 @@
     return `<div class="ov rm" role="status"><div class="rm-head">${icon("bell")}<span class="rm-when">In 1 min</span><span class="rm-dot">·</span><span class="rm-at">22:00</span></div><div class="rm-ev"><div class="rm-name">Shugo Festival</div><div class="rm-detail">3 min to join</div></div><div class="rm-left"><i style="width:62%"></i></div></div>`;
   }
 
-  window.Hub = { icon, esc, toolbar, resources, meter, prompt, reminder, view, snapshot, CALM };
+  window.Hub = { icon, esc, toolbar, resources, meter, prompt, reminder, view, snapshot, SOON };
 })();

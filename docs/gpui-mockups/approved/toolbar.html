@@ -25,8 +25,8 @@
       <h1>Toolbar <small>approved 2026-10-08 (the hub)</small></h1>
       <ul class="rationale">
         <li>Kisk is a set of tools over the game, not only a DPS meter. The toolbar is its hub: a small horizontal bar floating over the game. At launch only the toolbar opens; every tool opens and closes from it. Like the reminder card it never takes the keyboard from the game (no-activate, tool window), and it is never click-through: Alt+CapsLock locks the meter only.</li>
-        <li>Left to right: the grip; DPS meter (crossed swords), PvP meter (crosshair), To-dos (checklist), Fight history (crown: crown = history and boss records, skull = deaths), Reminders (bell), Settings (gear); Odyle Energy and Shugo Festival keys; the warning while other resources are full; fold and quit. A lit tool (hot fill and a dot) is open; a click opens or closes it.</li>
-        <li>Decided with the user in the hub round (<a href="../hub/README.md">hub/README.md</a>, the record of how it was chosen). Values are in <a href="tokens.md">tokens.md</a>, "Hub". Values and times are invented; the clock is Monday 21:48. Deus Research Base and Shattered Arkanis are full at 4/4 with the cap of 4, which is <span class="mk-legend">to confirm in game</span>.</li>
+        <li>Left to right: the grip; DPS meter (crossed swords), PvP meter (crosshair), To-dos (checklist), Fight history (crown: crown = history and boss records, skull = deaths), Reminders (bell), Settings (gear); Odyle Energy and Shugo keys; the warning while other resources are full; fold and quit. A lit tool (hot fill and a dot) is open; a click opens or closes it.</li>
+        <li>Decided with the user in the hub round (<a href="../hub/README.md">hub/README.md</a>, the record of how it was chosen). Values are in <a href="tokens.md">tokens.md</a>, "Hub". Values and times are invented; the clock is Monday 21:48. Conquest dungeons, Deus Research Base, Shattered Arkanis, Abandoned Balaur Fortress and Fafnium Laboratory have no count and are never in the warning (settled in game, 2026-10-08: only Odyle Energy limits the first three on the Global servers; the Daily Dungeon menu lists only the Unknown Fissure).</li>
       </ul>
     </header>
 
@@ -36,8 +36,8 @@
       <h2>Behaviour</h2>
       <ul>
         <li><b>Horizontal only</b>, because of the counts. <b>At launch only the toolbar opens</b>; the meter opens from its icon, or at launch with Settings › Overlay › "Open the meter at launch" (off by default). The first time the meter is opened from the toolbar, the <a href="prompt.html">first-open prompt</a> asks about that setting.</li>
-        <li><b>Counts</b>: icons only. Odyle Energy and Shugo Festival keys are always shown as the to-do window draws them: the regular pool against its cap ("245/840"), the extra pool beside it when not zero ("+380"); above the cap is normal. Amber when the regular pool is full and a refill is coming. A click on either opens the <a href="resources.html">Resources window</a>; while it is open the counts read lit, and a click on a count closes it again.</li>
-        <li><b>The warning</b> (Lucide triangle-alert and the number) shows only while other resources are full and a refill is coming. A click opens its dropdown: "Full, a refill is coming", then each one with its figure and refill time right-aligned in columns ("Invasion keys 7/7 · refills 09:00"), a divider, "All resources". A click on a row or on "All resources" opens the Resources window.</li>
+        <li><b>Counts</b>: icons only. Odyle Energy and Shugo keys are always shown as the Resources window draws them: the regular pool against its cap ("245/840"), the extra pool beside it when not zero ("+380"); above the cap is normal. Amber only when the regular pool is full and the refill it would lose is near: within 1 h of Odyle's 3-hour refill, 3 h of a daily one (Shugo keys). Full but further away, the count looks normal and the tooltip says "Full · refills Tue 09:00". A click on either opens the <a href="resources.html">Resources window</a>; while it is open the counts read lit, and a click on a count closes it again. The tooltips name them as the Resources rows do, "Odyle Energy" and "Shugo keys" (2026-10-08: "yeah shugo keys is ok"). Since 2026-10-08 the to-do window has no resources ("I think we can remove the recharges from the todos now no ?"): the toolbar and the Resources window are where they show.</li>
+        <li><b>The warning</b> (Lucide triangle-alert and the number) shows only while other resources are full and their refill is near (3 h for Invasion keys and Nightmare, 24 h for the Daily Dungeon's weekly one). A click opens its dropdown: "Full, a refill is coming", then each one with its figure and refill time right-aligned in columns ("Invasion keys 7/7 · refills 09:00"), a divider, "All resources". A click on a row or on "All resources" opens the Resources window. A resource hidden earlier in the to-do window counts too: nothing hides a resource any more.</li>
         <li><b>Before any game value</b>: a faint dash in place of the figure; the tooltip says "No value yet. Log in while Kisk runs."</li>
         <li><b>Reminders</b>: the bell opens a small dropdown: the next three reminders switched on, "Pause reminders" (the Settings master switch; while paused the bell turns to Lucide bell-off in faint) and "Reminder settings" (Settings › Reminders).</li>
         <li><b>The PvP meter</b> takes Lucide crosshair; the crossed swords are the DPS meter's. The PvP window's header changes to match (<a href="pvp.html">pvp.html</a>).</li>
@@ -45,7 +45,7 @@
         <li><b>Pointer</b>: tools and counts light on pointer enter and go on leave, never on moves inside; tooltips after 500 ms, as the meter's. The meter's tooltip says what closing it means: "Fights are tracked while it is open." (open: "Click to close. Fights stop being tracked.").</li>
         <li><b>What is tracked when</b>: capture always runs. Fights (damage, heals, damage taken, deaths, fight history) are tracked only while the meter is open; resources always stay up to date when the game sends them. The to-dos work without the meter.</li>
         <li><b>Place</b>: the toolbar opens where you left it (top centre the first time), dragged by the grip or any empty part of the bar. Tools keep their own places.</li>
-        <li><b>Fold</b> (« at the end) leaves a small handle: the grip, unfold (») and, when anything is full (Odyle and Shugo keys included), the warning with that number.</li>
+        <li><b>Fold</b> (« at the end) leaves a small handle: the grip, unfold (») and, when anything is full near its refill (Odyle and Shugo keys included), the warning with that number.</li>
         <li><b>Quit</b>: × after fold quits Kisk at once, with the tooltip "Quit Kisk / Closes every tool"; no confirmation. Closing the toolbar ends the process.</li>
         <li><b>Hide everything</b>: Alt+Shift+CapsLock hides the toolbar and every open tool, and shows them again; the <a href="tray.html">tray icon</a>'s "Show toolbar" too. Alt+CapsLock keeps locking the meter.</li>
         <li><b>The reminder card</b> sits above the meter while the meter is open; while it is closed, 6 px under the toolbar, left edges aligned (above it when the toolbar is low on the screen).</li>
@@ -62,10 +62,11 @@
     <script src="hub.js"></script>
     <script>
       (function () {
-        const { toolbar, resources, meter, prompt, reminder, view, snapshot, CALM } = Hub;
+        const { toolbar, resources, meter, prompt, reminder, view, snapshot, SOON } = Hub;
 
-        const calm = () => view({ g: snapshot(CALM) });
-        const warnV = () => view({ g: snapshot({ ...CALM, invasion: { n: 7 }, nightmare: { n: 14 } }) });
+        // Tuesday 08:12: the daily refill is 48 min away, so full Invasion
+        // keys and Nightmare warn.
+        const warnV = () => view({ now: SOON, g: snapshot({ invasion: { n: 7 }, nightmare: { n: 14 } }) });
 
         // ---- "Try it": a working toolbar (nothing is saved) -------------------
         const TRY = { lit: {}, warnOpen: false, folded: false, asked: false, prompt: false, quit: false };
@@ -75,7 +76,7 @@
           const v = warnV();
           const bar = toolbar(ctx, { v, lit: TRY.lit, warnOpen: TRY.warnOpen, folded: TRY.folded, live: true });
           const left = TRY.lit.meter ? `<div class="hb-col">${TRY.prompt ? prompt(ctx) : ""}${meter(ctx, { board: "waiting" })}</div>` : "";
-          const right = TRY.lit.resources ? resources(ctx, { g: v.g }) : "";
+          const right = TRY.lit.resources ? resources(ctx, { now: v.now, g: v.g }) : "";
           const note = TRY.quit ? `<div class="mk-sim" role="status"><b>Page only:</b> Kisk would quit here: every tool closes and the process ends. <button type="button" data-try="undo-quit">Start again</button></div>` : "";
           const below = left || right ? `<div class="hb-row">${left}${right}</div>` : "";
           return `<div class="hb-try hb-col is-wide">${TRY.quit ? "" : bar}${TRY.quit ? "" : below}${note}</div>`;
@@ -124,43 +125,47 @@
           const T = (o) => toolbar(ctx, o);
           switch (state) {
             case "launch":
-              return T({ v: calm() });
+              return T({ v: view() });
             case "hover":
-              return T({ v: calm(), hover: "meter", tip: "meter" });
+              return T({ v: view(), hover: "meter", tip: "meter" });
             case "open":
-              return `<div class="hb-col">${T({ v: calm(), lit: { meter: true, todos: true } })}${meter(ctx, { board: "session" })}</div>`;
+              return `<div class="hb-col">${T({ v: view(), lit: { meter: true, todos: true } })}${meter(ctx, { board: "session" })}</div>`;
             case "countTip":
-              return T({ v: calm(), hover: "odyle", tip: "odyle" });
+              return T({ v: view(), hover: "odyle", tip: "odyle" });
             case "shugoFull":
-              return T({ v: view({ g: snapshot({ ...CALM, shugo: { n: 21, x: 3 } }) }), hover: "shugo", tip: "shugo" });
+              return T({ v: view({ now: SOON, g: snapshot({ shugo: { n: 21, x: 3 } }) }), hover: "shugo", tip: "shugo" });
+            case "shugoFullCalm":
+              return T({ v: view({ g: snapshot({ shugo: { n: 21, x: 3 } }) }), hover: "shugo", tip: "shugo" });
             case "warn":
               return T({ v: warnV(), hover: "warn", tip: "warn" });
             case "warnOpen":
-              return T({ v: warnV(), warnOpen: true, dropHot: "invasion" });
+              // Wednesday 08:12: the weekly reset is 48 min away too, so a full
+              // Daily Dungeon joins the list.
+              return T({ v: view({ now: SOON + 1440, g: snapshot({ invasion: { n: 7 }, nightmare: { n: 14 }, dungeon: { n: 14 } }) }), warnOpen: true, dropHot: "invasion" });
             case "resOpen":
-              return `<div class="hb-col">${T({ v: view(), lit: { resources: true } })}${resources(ctx)}</div>`;
+              return `<div class="hb-col">${T({ v: warnV(), lit: { resources: true } })}${resources(ctx, { now: SOON, g: warnV().g })}</div>`;
             case "empty":
               return T({ v: view({ g: {} }), hover: "shugo", tip: "shugo" });
             case "bell":
-              return T({ v: calm(), lit: { reminders: true }, bellOpen: true });
+              return T({ v: view(), lit: { reminders: true }, bellOpen: true });
             case "paused":
-              return T({ v: calm(), bellOff: true, hover: "reminders", tip: "reminders" });
+              return T({ v: view(), bellOff: true, hover: "reminders", tip: "reminders" });
             case "reminder":
-              return `<div class="hb-col">${T({ v: calm() })}${reminder()}</div>`;
+              return `<div class="hb-col">${T({ v: view() })}${reminder()}</div>`;
             case "quit":
-              return T({ v: calm(), hover: "quit", tip: "quit" });
+              return T({ v: view(), hover: "quit", tip: "quit" });
             case "folded":
-              return T({ v: calm(), folded: true });
+              return T({ v: view(), folded: true });
             case "foldedWarn":
-              return T({ v: view({ g: snapshot({ ...CALM, shugo: { n: 21, x: 3 }, invasion: { n: 7 } }) }), folded: true });
+              return T({ v: view({ now: SOON, g: snapshot({ shugo: { n: 21, x: 3 }, invasion: { n: 7 } }) }), folded: true });
             case "low":
               return `<div style="padding-top:230px">${T({ v: warnV(), warnOpen: true, up: true })}</div>`;
             case "fr":
               return T({ v: warnV(), warnOpen: true, lang: "fr" });
             case "frTip":
-              return T({ v: calm(), lang: "fr", hover: "meter", lit: { meter: true }, tip: "meter" });
+              return T({ v: view(), lang: "fr", hover: "meter", lit: { meter: true }, tip: "meter" });
             case "focus":
-              return T({ v: calm(), focus: "todos" });
+              return T({ v: view(), focus: "todos" });
             case "try":
               return tryHtml(ctx);
           }
@@ -169,21 +174,22 @@
 
         Kit.mount({
           states: [
-            { id: "launch", title: "At launch", sub: "only the toolbar opens; Odyle Energy and Shugo Festival keys always shown: regular pool / cap, the extra pool \"+380\" / \"+3\" beside it" },
+            { id: "launch", title: "At launch", sub: "only the toolbar opens; Odyle Energy and Shugo keys always shown: regular pool / cap, the extra pool \"+380\" / \"+3\" beside it" },
             { id: "hover", title: "Pointer on a tool", sub: "soft fill on enter, gone on leave; the tooltip after 500 ms says what closing the meter means" },
             { id: "open", title: "Meter and To-dos open", sub: "a lit icon (hot fill and a 4 px dot) means that tool is open; a click closes it. The meter is placed where you left it" },
             { id: "countTip", title: "Pointer on Odyle Energy", sub: "the tooltip names it and says when it is full; a click opens the Resources window" },
-            { id: "shugoFull", title: "Shugo keys full, a refill coming", sub: "amber when the regular pool is at its cap and a refill is coming: 21/21; the extra +3 never counts" },
-            { id: "warn", title: "Other resources full", sub: "the warning shows only while other resources are full and will refill soon (Invasion keys 7/7, Nightmare 14/14)" },
-            { id: "warnOpen", title: "The warning's dropdown", sub: "the full ones with figures and refill times right-aligned in columns, then \"All resources\"; a click on any row opens the Resources window" },
-            { id: "resOpen", title: "Resources window open", sub: "the full list for the current character; the counts read lit while it is open. Deus and Arkanis 4/4 are full with the cap of 4 (to confirm in game, dashed), so the warning says 2" },
+            { id: "shugoFull", title: "Shugo keys full, the refill near", sub: "Tuesday 08:12, the daily refill in 48 min (within 3 h): amber at 21/21, the tooltip says \"Full, spend by Tue 09:00\"; the extra +3 never counts" },
+            { id: "shugoFullCalm", title: "Shugo keys full, the refill not near", sub: "Monday 21:48, the daily refill 11 h away: 21/21 looks normal, no amber; the tooltip says \"Full · refills Tue 09:00\"" },
+            { id: "warn", title: "Other resources full", sub: "Tuesday 08:12: the warning shows only while other resources are full and their refill is near (Invasion keys 7/7, Nightmare 14/14, both refilling in 48 min)" },
+            { id: "warnOpen", title: "The warning's dropdown", sub: "Wednesday 08:12, the daily and weekly refills in 48 min: Invasion keys, Nightmare and the Daily Dungeon 14/14, figures and refill times right-aligned in columns, then \"All resources\"; a click on any row opens the Resources window" },
+            { id: "resOpen", title: "Resources window open", sub: "the full list for the current character; the counts read lit while it is open. Invasion keys 7/7 and Nightmare 14/14 are full 48 min before their refill, so the warning says 2" },
             { id: "empty", title: "No game value yet", sub: "before any login is seen: a faint dash, and the tooltip says how to get values" },
             { id: "bell", title: "Reminders: the bell's dropdown", sub: "the next reminders switched on, \"Pause reminders\" and \"Reminder settings\" (Settings, Reminders)" },
             { id: "paused", title: "Reminders paused", sub: "the bell turns to Lucide bell-off in faint while reminders are paused (the Settings master switch)" },
             { id: "reminder", title: "A reminder while the meter is closed", sub: "the reminder card, 6 px under the toolbar, left edges aligned; above the meter while the meter is open" },
             { id: "quit", title: "Pointer on quit", sub: "closing the toolbar quits Kisk: × after fold, no confirmation; the tooltip says it closes every tool" },
             { id: "folded", title: "Folded", sub: "a small handle: grip and unfold" },
-            { id: "foldedWarn", title: "Folded, something full", sub: "the warning counts everything full (here Shugo keys and Invasion keys), so nothing is missed while folded" },
+            { id: "foldedWarn", title: "Folded, something full", sub: "the warning counts everything full near its refill (here Shugo keys and Invasion keys), so nothing is missed while folded" },
             { id: "low", title: "Toolbar low on the screen", sub: "the dropdown opens upward" },
             { id: "fr", title: "In French", sub: "French drawn to check the room (it goes through i18n): \"Pleines, une recharge arrive\", \"Toutes les ressources\" fit" },
             { id: "frTip", title: "In French, meter open", sub: "the tooltip of an open meter: a click closes it and fights stop being tracked" },

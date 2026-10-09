@@ -215,14 +215,89 @@ Mirelle logged in at 19:02; membership on.
 Built with the drawn default and settled later by the user's in-game
 comparison (dashed on the approved pages):
 
-1. Deus Research Base / Shattered Arkanis cap: 4 (the ticket table) or 14
-   (our earlier list). Built: 4.
-2. Which ticket a Conquest entry spends: its dungeon's own (six rows, 14, +2
-   a day) or a shared pool. Built: per-dungeon tickets.
+1. ~~Deus Research Base / Shattered Arkanis cap: 4 (the ticket table) or 14
+   (our earlier list). Built: 4.~~ **Settled in game, 2026-10-08**: no
+   entry limit on the Global servers, only Odyle Energy ("For these it's
+   the same as long as you have odyle"). The rows are dropped from the
+   to-do window, the Resources window and the toolbar's warning.
+2. ~~Which ticket a Conquest entry spends: its dungeon's own (six rows, 14,
+   +2 a day) or a shared pool. Built: per-dungeon tickets.~~ **Settled in
+   game, 2026-10-08**: no entry limit on the Global servers, only Odyle
+   Energy ("I think this is for korea, we can do them as much as we have
+   odyle now"). The "Conquest dungeons" group is dropped from the to-do
+   window, the Resources window and the toolbar's warning; the weekly
+   "Conquest, final boss kills" and Exploration stay.
 3. What the game shows for keys above 21 (premium items). Built: as the
    to-do round's item 8 (a typed number is your total).
-4. Which of tickets 102/103 is Balaur Fortress or Fafnium Laboratory, the
-   exact reset hour, and Ordeal's ticket (matched by name only).
+4. ~~Which of tickets 102/103 is Balaur Fortress or Fafnium Laboratory~~
+   **Settled in game, 2026-10-08**: neither row exists, the Daily Dungeon
+   menu lists only the Unknown Fissure ("I only have 1 dungeon in the daily
+   dungeon menu though"); the two names came from fan sites and were never
+   seen in game. Abandoned Balaur Fortress and Fafnium Laboratory are
+   dropped from the to-do window, the Resources window and the toolbar's
+   warning. Still open: the exact reset hour. ~~Ordeal's ticket (matched
+   by name only)~~: the Ordeal row is removed (item 3 below).
+
+### Decided after approval (2026-10-08)
+
+Built and drawn on the approved pages (`../approved/`); this folder's
+drawings are not changed.
+
+1. **Daily Dungeon as a resource.** The game's Daily Dungeon page shows one
+   dungeon with "Attempt Count 14(+7)/14" (ticket 101). The user: "I think
+   you don't need to put the dungeon name in the todo just put daily
+   dungeon with the tickets and it's ok". It is now a Recharges row "Daily
+   Dungeon" (no "Unknown Fissure" label): tickets left / 14 with "+7"
+   beside it, +14 at the weekly reset on Wednesday, "Account". It is in the
+   Resources window, can be in the toolbar's warning, and left This week.
+2. **Full warns only near the refill.** The user: "if the main tickets are
+   at 14/14 we put a warning but only when it's near the end of the
+   possible usage if possible. Otherwise it's annoying to always have
+   warnings even when not near the end (or near a replenishment for some
+   currencies)". The yellow row, the gutter warning, "N full", the toolbar's
+   amber count and its warning entry appear only when the refill a full
+   pool would lose is within 1 h (Odyle's 3-hour refill), 3 h (daily: Shugo
+   keys, Invasion keys, Nightmare) or 24 h (weekly: Daily Dungeon). Before
+   that a full row looks normal and reads "Full · refills Fri 09:00".
+3. **This week keeps only what the game limits.** The user: "No cap on
+   transcendence or exploration or Conquest. Not sure for: Subjugation,
+   Sanctuary, Ordeal", then, with a screenshot of the game's full menu with
+   no Subjugation, Sanctuary or Ordeal entry, "That's all I have". Removed:
+   Transcendence final boss kills, Conquest final boss kills, Cradle of
+   Nihility, Dying Dramata's Nest, Ordeal, Subjugation, the Sanctuary group
+   (Abyssal Forge, Corroded Facility, Chalice of Muspel) and the
+   Exploration group (ten dungeons). This week keeps Ascension Trial, Duty
+   Commands (counted by hand, hidden at first) and your own to-dos; Today
+   keeps Duty Missions; Recharges is unchanged. No folding group is left.
+4. **Short names on warned rows.** In the 370 px to-do and Resources
+   windows, warned rows read "Shu…" and "Daily D…": the "Account" tag and
+   the status text took the room. Proposed: name the row "Shugo keys", as
+   the toolbar already says, and show "Account" as its person icon only
+   (Lucide `users`), with the word on hover. The user: "yeah shugo keys is
+   ok". The row, the toolbar's count and its tooltip, the Resources window
+   and Settings › To-dos › Membership say "Shugo keys" (in French too, like
+   every row name); the reminder event keeps its name, "Shugo Festival".
+   Shugo keys, Invasion keys and the Daily Dungeon carry the icon alone; the
+   pointer on it lights it and shows the tooltip "Account" (states "Pointer
+   on the Account icon" in `../approved/todos.html` and `resources.html`).
+5. **The recharges leave the to-do window.** Looking at the to-do window's
+   Recharges section, the user: "I think we can remove the recharges from
+   the todos now no ?". This replaces Agreed item 5's "we can still keep
+   them in todo too". Odyle Energy, Shugo keys, Invasion keys, Nightmare and
+   the Daily Dungeon are drawn only in the Resources window, and in the
+   toolbar's counts and warning dropdown, which do not change. The to-do
+   window keeps Today (Duty Missions), This week (Ascension Trial; Duty
+   Commands hidden at first) and your own to-dos; its title and character
+   list count to-dos only, with no "N full". A row hidden earlier in the
+   to-do window always shows in the Resources window (it has no hide
+   control) and counts in the toolbar's warning; Settings › To-dos › Hidden
+   to-dos counts to-dos only. Settings › To-dos keeps the reset hour and the
+   membership and says they also set the Resources window's refill times
+   and caps (group "Recharges" renamed "Resources"); Start over also empties
+   the amounts typed in the Resources window. The states about amounts the
+   to-do window drew (typed by hand, full typed by hand, a new character on
+   a known server, just logged in, focus on a figure, the fresh week) are
+   on `../approved/resources.html` now.
 
 ## Not decided by the mockup
 
