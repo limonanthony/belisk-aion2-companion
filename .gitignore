@@ -12,3 +12,7 @@
 
 # Cargo workspace build output
 /target
+
+# Update signing keys (cargo xtask keygen) never enter the repository
+*.key
+update-signing*

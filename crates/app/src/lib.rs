@@ -1,3 +1,4 @@
+mod app_log;
 mod assets;
 mod bridge;
 #[cfg(feature = "probes")]
@@ -16,8 +17,14 @@ mod capture_settings;
 mod capture_todos;
 #[cfg(feature = "probes")]
 mod capture_toolbar;
+#[cfg(feature = "probes")]
+mod capture_whats_new;
+#[cfg(feature = "probes")]
+mod capture_updates;
+mod changelog;
 mod cli;
 mod clock;
+mod data_folder;
 mod decision_log;
 mod detail;
 #[cfg(feature = "probes")]
@@ -33,6 +40,7 @@ mod i18n;
 mod live_session;
 mod meter;
 mod overlay;
+mod panic_log;
 #[cfg(feature = "probes")]
 mod probe;
 mod pvp;
@@ -44,15 +52,19 @@ mod sample;
 mod secondary;
 mod settings;
 mod single_instance;
+mod stored_file;
 mod style;
 mod todos;
 mod toolbar;
 mod tray;
+mod update;
+mod whats_new;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use meter_core::engine::meter::DpsMeter;
+use meter_core::logger::AppLogger;
 use gpui::{App, AppContext as _};
 
 use cli::Args;
@@ -70,16 +82,25 @@ pub fn run() -> ! {
 }
 
 fn run_app() -> u32 {
-    let args = match Args::parse(std::env::args().skip(1)) {
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = update::apply_if_requested(&argv) {
+        return code;
+    }
+    let args = match Args::parse(argv) {
         Ok(args) => args,
         Err(error) => {
-            eprintln!("{error}\n{}", cli::USAGE);
+            app_log::install(false);
+            app_log::error(format!("{error}\n{}", cli::USAGE));
             return 2;
         }
     };
+    let moved_folders = if args.wants_live() { data_folder::settle() } else { Vec::new() };
+    let logger = app_log::install(args.wants_live());
+    moved_folders.iter().for_each(data_folder::Note::log);
+    panic_log::install();
 
-    // Decided before anything of the meter starts: no window, settings, log
-    // or capture is touched by a launch that only hands over to the running one.
+    // Decided before anything of the meter starts: no window, settings or
+    // capture is touched by a launch that only hands over to the running one.
     let instance = if args.wants_live() {
         match single_instance::claim() {
             Ok(single_instance::Claim::First(running)) => Some(running),
@@ -87,13 +108,13 @@ fn run_app() -> u32 {
                 return match running.ask_to_come_forward() {
                     Ok(()) => 0,
                     Err(error) => {
-                        eprintln!("the meter is already running: {error}");
+                        app_log::error(format!("the meter is already running: {error}"));
                         1
                     }
                 };
             }
             Err(error) => {
-                eprintln!("{error}; a second meter may run beside this one");
+                app_log::warn(format!("{error}; a second meter may run beside this one"));
                 None
             }
         }
@@ -104,8 +125,8 @@ fn run_app() -> u32 {
     gpui_platform::application()
         .with_assets(assets::Assets)
         .run(move |cx| {
-            if let Err(error) = start(args, instance, cx) {
-                eprintln!("{error}");
+            if let Err(error) = start(args, instance, logger, cx) {
+                app_log::error(error);
                 FAILED.store(true, Ordering::SeqCst);
                 cx.quit();
             }
@@ -118,7 +139,7 @@ fn exit_code() -> u32 {
     u32::from(FAILED.load(Ordering::SeqCst))
 }
 
-fn start(args: Args, instance: Option<single_instance::Running>, cx: &mut App) -> Result<(), String> {
+fn start(args: Args, instance: Option<single_instance::Running>, logger: Arc<AppLogger>, cx: &mut App) -> Result<(), String> {
     quit::install_deadline(cx);
     quit::install_exit(cx, exit_code);
     fonts::register(cx)?;
@@ -131,7 +152,7 @@ fn start(args: Args, instance: Option<single_instance::Running>, cx: &mut App) -
 
     let (overlay, placement) = overlay_setup(&args);
     let settings = if args.wants_live() {
-        Settings::load(live_session::data_dir().as_deref())
+        Settings::load(data_folder::data_dir().as_deref())
     } else {
         Settings::in_memory(non_live_settings(overlay, args.replay.is_some(), capture_language(&args)))
     };
@@ -144,13 +165,13 @@ fn start(args: Args, instance: Option<single_instance::Running>, cx: &mut App) -
     let sink = Arc::new(sink);
     let mut unavailable = None;
     let meter: Option<Arc<DpsMeter>> = match &args.replay {
-        Some(recording) => Some(replay::start(sink, recording, args.speed, meter_open)?),
+        Some(recording) => Some(replay::start(sink, recording, args.speed, meter_open, logger)?),
         None if args.wants_live() => {
-            let (meter, started) = live_session::start(sink, &initial, meter_open);
+            let (meter, started) = live_session::start(sink, &initial, meter_open, logger);
             match started {
                 Ok(()) => Some(meter),
                 Err(reason) => {
-                    eprintln!("the meter could not start: {reason}");
+                    app_log::error(format!("the meter could not start: {reason}"));
                     unavailable = Some(reason);
                     None
                 }
@@ -162,6 +183,7 @@ fn start(args: Args, instance: Option<single_instance::Running>, cx: &mut App) -
         cx.on_app_quit(move |_| {
             meter.cancel_packet_replay();
             meter.stop_dps_meter();
+            meter.save_now();
             async {}
         })
         .detach();
@@ -174,6 +196,7 @@ fn start(args: Args, instance: Option<single_instance::Running>, cx: &mut App) -
         reminders::log_to(Arc::clone(meter.logger()), cx);
     }
     todos::install(&settings, args.wants_live(), cx);
+    update::install(&settings, args.wants_live(), meter.clone(), cx);
     cx.on_app_quit({
         let settings = settings.clone();
         move |cx| {
@@ -199,6 +222,7 @@ fn start(args: Args, instance: Option<single_instance::Running>, cx: &mut App) -
     meter::install_window(window, cx);
     secondary::init(&window, &model, placement, cx)?;
     toolbar::install(window, model.clone(), placement, meter_open, cx)?;
+    whats_new::install(&model, cx);
     if let Some(instance) = instance {
         instance.serve(cx).detach();
     }
@@ -228,23 +252,23 @@ fn start(args: Args, instance: Option<single_instance::Running>, cx: &mut App) -
     match shortcuts {
         Ok(registration) => {
             for failure in &registration.failures {
-                eprintln!("{failure}");
+                app_log::warn(failure);
             }
             if registration.has(hotkey::HotkeyAction::ToggleLock) {
                 window
                     .update(cx, |view, _, cx| view.enable_lock_shortcut(cx))
                     .map_err(|error| format!("cannot reach the overlay window: {error:#}"))?;
             } else {
-                eprintln!("the lock button is hidden, since nothing could unlock it");
+                app_log::warn("the lock button is hidden, since nothing could unlock it");
             }
         }
-        Err(error) => eprintln!("{error}; the lock button is hidden, since nothing could unlock it"),
+        Err(error) => app_log::warn(format!("{error}; the lock button is hidden, since nothing could unlock it")),
     }
     if let Err(error) = tray::install(cx, |action, cx| match action {
         tray::TrayAction::ShowToolbar => toolbar::show_toolbar(cx),
         tray::TrayAction::Quit => cx.quit(),
     }) {
-        eprintln!("{error}; the toolbar's × still quits");
+        app_log::warn(format!("{error}; the toolbar's × still quits"));
     }
 
     #[cfg(feature = "probes")]

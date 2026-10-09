@@ -75,6 +75,11 @@ pub enum Icon {
     ChevronsLeft,
     ChevronsRight,
     Settings,
+    ScrollText,
+    Download,
+    RotateCw,
+    RefreshCw,
+    CloudOff,
 }
 
 impl Icon {
@@ -146,6 +151,11 @@ impl Icon {
             Self::ChevronsLeft => "icons/chevrons-left.svg",
             Self::ChevronsRight => "icons/chevrons-right.svg",
             Self::Settings => "icons/settings.svg",
+            Self::ScrollText => "icons/scroll-text.svg",
+            Self::Download => "icons/download.svg",
+            Self::RotateCw => "icons/rotate-cw.svg",
+            Self::RefreshCw => "icons/refresh-cw.svg",
+            Self::CloudOff => "icons/cloud-off.svg",
         }
     }
 }
@@ -226,6 +236,11 @@ static ASSETS: &[(&str, &[u8])] = embedded! {
     "icons/chevrons-left.svg" => "../assets/icons/chevrons-left.svg",
     "icons/chevrons-right.svg" => "../assets/icons/chevrons-right.svg",
     "icons/settings.svg" => "../assets/icons/settings.svg",
+    "icons/scroll-text.svg" => "../assets/icons/scroll-text.svg",
+    "icons/download.svg" => "../assets/icons/download.svg",
+    "icons/rotate-cw.svg" => "../assets/icons/rotate-cw.svg",
+    "icons/refresh-cw.svg" => "../assets/icons/refresh-cw.svg",
+    "icons/cloud-off.svg" => "../assets/icons/cloud-off.svg",
     "class/assassin.png" => "../assets/game/class/assassin.png",
     "class/chanter.png" => "../assets/game/class/chanter.png",
     "class/cleric.png" => "../assets/game/class/cleric.png",
@@ -343,6 +358,11 @@ mod tests {
             Icon::ChevronsLeft,
             Icon::ChevronsRight,
             Icon::Settings,
+            Icon::ScrollText,
+            Icon::Download,
+            Icon::RotateCw,
+            Icon::RefreshCw,
+            Icon::CloudOff,
         ];
         for icon in icons {
             assert!(Assets.load(icon.path()).unwrap().is_some_and(|bytes| !bytes.is_empty()), "{icon:?}");

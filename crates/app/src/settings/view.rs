@@ -14,7 +14,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use meter_core::config::CaptureBackendPriority;
 use meter_core::events::MeterEvent;
@@ -35,23 +35,32 @@ use super::model::{
 use super::runtime::{CaptureCheck, MeterTile, RecordingOrigin, ReplayProgress, RuntimeModel, StorageState};
 use super::widgets::{
     self, alert, backdrop, badge, button, description, dimmed_row, disabled_select, group, group_title, icon, keys,
-    list_row, note, page_head, row, scroll_thumb, segmented, select_menu, select_trigger, side_item, slider, spinner,
-    stacked_row, switch, tile,
+    list_row, note, page_button, page_head, row, scroll_thumb, segmented, select_menu, select_trigger, side_item, slider,
+    spinner, stacked_row, switch, tile,
     ButtonKind, Focus, Handler, Reveal, SliderSpec, Tone, BODY_FONT, CANVAS, DISPLAY_FONT, FAINT, LINE, MUTED,
     OPTION_HEIGHT, POPOVER_BORDER, RAISED, SCRIM, SIDE, TEXT,
 };
 use crate::assets::Icon;
+use crate::changelog::{self, Version};
 use crate::format;
 use crate::i18n::{self, fl, LanguageChoice};
-use crate::meter::{board_width, Layout, LockChanged, MeterModel, MeterView, OverlaySettings, PctMode, PLAYERS_SHOWN_RANGE};
+use crate::meter::{
+    board_width, capture_failure_text, Layout, LockChanged, MeterModel, MeterView, OverlaySettings, PctMode, PLAYERS_SHOWN_RANGE,
+};
 use crate::overlay::Placement;
 use crate::reminders::{self, EventId, Rule, EVENTS, LEAD_MINUTES_OPTIONS};
 use crate::sample;
 use crate::secondary::chrome::Anchor;
 use crate::todos::{self, HiddenSummary};
+use crate::toolbar;
+use crate::update::{self, Updates};
 
 mod capture_check;
+mod changelog_page;
 mod todos_page;
+mod updates_group;
+
+use changelog_page::ChangelogPage;
 
 const WINDOW_SIZE: (f32, f32) = (960., 620.);
 const SIDEBAR_WIDTH: f32 = 208.;
@@ -134,6 +143,13 @@ impl Section {
             Self::About => "nav-about",
         }
     }
+}
+
+/// Where Settings opens from outside: a section, or About's Changelog page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Page {
+    Section(Section),
+    Changelog,
 }
 
 /// The page's dropdowns. One is open at a time, in `select_open`.
@@ -324,7 +340,7 @@ enum TodosDone {
 struct TodosSeen {
     hidden: HiddenSummary,
     own_total: usize,
-    save_error: Option<String>,
+    save_error: Option<crate::stored_file::SaveError>,
     membership_hint: Option<todos::PoolAbovePlainCap>,
 }
 
@@ -333,7 +349,7 @@ impl TodosSeen {
         Self {
             hidden: todos.hidden_summary(),
             own_total: todos.own_total(),
-            save_error: todos.save_error().map(str::to_string),
+            save_error: todos.save_error().cloned(),
             membership_hint: todos.membership_hint(),
         }
     }
@@ -375,7 +391,14 @@ pub struct SettingsView {
     /// changes.
     todos_seen: TodosSeen,
     /// What an action handed to Windows could not do, under its control.
-    action_error: Option<(&'static str, String)>,
+    action_error: Option<(&'static str, files::OpenError)>,
+    /// About's Changelog page, while it is open in place of About.
+    changelog: Option<ChangelogPage>,
+    /// About › Updates reads the updates' state and asks them for its actions.
+    updates: Entity<Updates>,
+    /// While About shows and Check now is still closed: when it opens, and the
+    /// task that redraws About then.
+    check_now_wake: Option<(SystemTime, Task<()>)>,
     figures: FontFeatures,
     _subscriptions: Vec<Subscription>,
 }
@@ -393,6 +416,7 @@ impl SettingsView {
         let preview = cx.new(|cx| MeterView::preview(preview_model.clone(), preview_zoom(), cx));
 
         let locale = i18n::locale(cx);
+        let updates = update::global(cx);
         let mut subscriptions = vec![
             cx.observe(&store, |this, store, cx| {
                 let overlay = preview_settings(store.read(cx).get().overlay.clone());
@@ -422,6 +446,18 @@ impl SettingsView {
                     model.refresh_words();
                     cx.notify();
                 });
+                if let Some(page) = &mut this.changelog {
+                    page.retell(changelog::load(i18n::language()));
+                }
+            }),
+            cx.observe(&updates, |this, _, cx| {
+                if this.section != Section::About {
+                    return;
+                }
+                this.follow_check_now(cx);
+                if this.changelog.is_none() {
+                    cx.notify();
+                }
             }),
         ];
         let (mut locked, mut can_unlock) = (false, false);
@@ -466,15 +502,19 @@ impl SettingsView {
             todos_done: None,
             todos_seen,
             action_error: None,
+            changelog: None,
+            updates,
+            check_now_wake: None,
             figures: FontFeatures(Arc::new(vec![("tnum".into(), 1)])),
             _subscriptions: subscriptions,
         }
     }
 
     pub fn show_section(&mut self, section: Section, cx: &mut Context<Self>) {
-        if self.section == section {
+        if self.section == section && self.changelog.is_none() {
             return;
         }
+        self.changelog = None;
         self.section = section;
         self.select_open = None;
         self.dragging = None;
@@ -483,10 +523,23 @@ impl SettingsView {
         self.todos_done = None;
         self.action_error = None;
         self.scroll.set_offset(point(px(0.), px(0.)));
+        self.check_now_wake = None;
         if section == Section::About {
             self.runtime.update(cx, |runtime, cx| runtime.load_storage(cx));
+            self.follow_check_now(cx);
         }
         cx.notify();
+    }
+
+    /// Opens `page`, as asked from outside the window.
+    pub fn show(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
+        match page {
+            Page::Section(section) => self.show_section(section, cx),
+            Page::Changelog => {
+                self.show_section(Section::About, cx);
+                self.open_changelog(ChangelogPage::new(changelog::load(i18n::language()), Version::current()), window, cx);
+            }
+        }
     }
 
     fn handle(&mut self, key: &str, cx: &mut App) -> FocusHandle {
@@ -799,7 +852,7 @@ impl SettingsView {
 
     /// The result of handing a folder or document to Windows, kept under the
     /// control that asked.
-    fn hand_over(&mut self, control: &'static str, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn hand_over(&mut self, control: &'static str, result: Result<(), files::OpenError>, cx: &mut Context<Self>) {
         self.action_error = result.err().map(|error| (control, error));
         cx.notify();
     }
@@ -808,7 +861,7 @@ impl SettingsView {
         self.action_error
             .as_ref()
             .filter(|(key, _)| *key == control)
-            .map(|(_, error)| note(Icon::TriangleAlert, error.clone(), rgb(widgets::BAD)))
+            .map(|(_, error)| note(Icon::TriangleAlert, error.text(), rgb(widgets::BAD)))
     }
 
     fn overlay_page(&mut self, settings: &AppSettings, window: &Window, cx: &mut Context<Self>) -> Div {
@@ -933,6 +986,15 @@ impl SettingsView {
             window,
             cx,
         );
+        let hide_between_fights = self.switch_row(
+            "hide-between-fights",
+            fl!("settings-overlay-hide-between-fights"),
+            Some(fl!("settings-overlay-hide-between-fights-text", seconds = toolbar::PEEK_SECS)),
+            settings.windows.hide_meter_between_fights,
+            |all, on| all.windows.hide_meter_between_fights = on,
+            window,
+            cx,
+        );
         let lock = self.lock_row(window, cx);
         let show_hide = stacked_row(
             fl!("settings-overlay-show-hide"),
@@ -969,7 +1031,7 @@ impl SettingsView {
             .child(group_title(fl!("settings-overlay-boss-fights"), false))
             .child(fights)
             .child(group_title(fl!("settings-overlay-window"), false))
-            .child(group(vec![open_meter, lock, show_hide, detail]));
+            .child(group(vec![open_meter, hide_between_fights, lock, show_hide, detail]));
         #[cfg(feature = "probes")]
         let rows = rows.relative().child(self.layout_marks.entry("overlay-rows").or_default().marker());
         let preview = self.preview_column(cx);
@@ -985,7 +1047,7 @@ impl SettingsView {
         let on_toggle: Option<Handler<bool>> = self.meter_window.filter(|_| self.can_unlock).map(|meter_window| {
             Rc::new(move |on, _: &mut Window, cx: &mut App| {
                 if let Err(error) = meter_window.update(cx, |view, window, cx| view.set_locked(on, window, cx)) {
-                    eprintln!("cannot reach the overlay to {}: {error:#}", if on { "lock it" } else { "unlock it" });
+                    crate::app_log::warn(format!("cannot reach the overlay to {}: {error:#}", if on { "lock it" } else { "unlock it" }));
                 }
             }) as Handler<bool>
         });
@@ -1045,6 +1107,8 @@ impl SettingsView {
         let count_label = div().flex().items_center().gap(px(6.)).child(fl!("settings-behaviour-count")).child(
             div()
                 .id("count-info")
+                .role(Role::Image)
+                .aria_label(fl!("settings-behaviour-count-tip"))
                 .child(icon(Icon::Info, 14., rgba(FAINT)))
                 .tooltip(widgets::tooltip(fl!("settings-behaviour-count-tip"))),
         );
@@ -1139,7 +1203,7 @@ impl SettingsView {
             ),
             MeterTile::Stopped => tile(Icon::Activity, meter_label, fl!("settings-status-stopped"), None, Tone::Neutral),
             MeterTile::Unavailable(reason) => {
-                tile(Icon::Activity, meter_label, fl!("settings-status-not-running"), Some(reason.clone().into()), Tone::Bad)
+                tile(Icon::Activity, meter_label, fl!("settings-status-not-running"), Some(capture_failure_text(reason).into()), Tone::Bad)
             }
         };
         let game_tile = if status.game_found {
@@ -1245,7 +1309,9 @@ impl SettingsView {
             .flex()
             .flex_col()
             .child(description(fl!("settings-capture-packet-recording-text")))
-            .children(recording_error.map(|error| note(Icon::TriangleAlert, error, rgb(widgets::BAD))))
+            .children(recording_error.map(|error| {
+                note(Icon::TriangleAlert, fl!("settings-capture-recording-failed", error = error), rgb(widgets::BAD))
+            }))
             .into_any_element();
         let recording_group = group(vec![
             self.switch_row(
@@ -1548,6 +1614,7 @@ impl SettingsView {
             .child(header(fl!("common-character"), Some(150.), false))
             .child(header(fl!("settings-bests-best-dps"), Some(100.), true))
             .child(header(fl!("settings-bests-date"), Some(120.), true));
+        let per_second: SharedString = fl!("unit-per-second").into();
         let rows = bests.iter().enumerate().map(|(index, best)| {
             let character = settings.overlay.display_name(&best.character);
             let dps = format::compact(best.dps);
@@ -1578,7 +1645,7 @@ impl SettingsView {
                         .justify_end()
                         .items_baseline()
                         .child(div().font_family(DISPLAY_FONT).text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).child(dps))
-                        .child(div().text_color(rgba(FAINT)).child("/s")),
+                        .child(div().text_color(rgba(FAINT)).child(per_second.clone())),
                 )
                 .child(div().w(px(120.)).flex_none().flex().justify_end().text_color(rgba(MUTED)).child(best.when.clone()))
         });
@@ -1723,7 +1790,7 @@ impl SettingsView {
             .child(group(vec![row(fl!("settings-language"), Some(description(fl!("settings-language-text"))), language)]))
     }
 
-    fn about_page(&mut self, window: &Window, cx: &mut Context<Self>) -> Div {
+    fn about_page(&mut self, settings: &AppSettings, window: &Window, cx: &mut Context<Self>) -> Div {
         let storage = match &self.runtime.read(cx).storage {
             StorageState::NotLoaded | StorageState::Loading => fl!("settings-about-counting"),
             StorageState::Loaded(summary) => fl!(
@@ -1744,7 +1811,7 @@ impl SettingsView {
             .flex()
             .items_center()
             .gap(px(6.))
-            .child("AION 2 DPS Meter")
+            .child(fl!("settings-app-name"))
             .child(
                 div()
                     .font_family(DISPLAY_FONT)
@@ -1794,6 +1861,8 @@ impl SettingsView {
                 ),
             ),
         ]);
+
+        let updates = self.updates_group(settings, window, cx);
 
         let credit = |title: String, tag: Option<String>, text: String| {
             div()
@@ -1873,8 +1942,9 @@ impl SettingsView {
             .flex()
             .flex_col()
             .child(page_head(fl!("settings-section-about"), None))
-            .child(group_title("AION 2 DPS Meter", true))
+            .child(group_title(fl!("settings-app-name"), true))
             .child(meter)
+            .children(updates)
             .child(group_title(fl!("settings-about-credits"), false))
             .child(credits)
             .child(group_title(fl!("settings-about-storage"), false))
@@ -1882,9 +1952,11 @@ impl SettingsView {
     }
 
     fn title_bar(&self) -> Div {
-        let control = |id: &'static str, glyph: Icon, area: WindowControlArea, hover: u32| {
+        let control = |id: &'static str, glyph: Icon, label: String, area: WindowControlArea, hover: u32| {
             div()
                 .id(id)
+                .role(Role::Button)
+                .aria_label(label)
                 .w(px(46.))
                 .h_full()
                 .flex()
@@ -1922,10 +1994,10 @@ impl SettingsView {
                             .bg(rgb(widgets::CREAM))
                             .child(icon(Icon::Gauge, 14., rgb(widgets::INK))),
                     )
-                    .child("AION 2 DPS Meter"),
+                    .child(fl!("settings-app-name")),
             )
-            .child(control("minimise", Icon::Minus, WindowControlArea::Min, widgets::SOFT))
-            .child(control("close", Icon::Close, WindowControlArea::Close, 0xc42b1cff))
+            .child(control("minimise", Icon::Minus, fl!("settings-minimise"), WindowControlArea::Min, widgets::SOFT))
+            .child(control("close", Icon::Close, fl!("common-close"), WindowControlArea::Close, 0xc42b1cff))
     }
 
     fn sidebar(&mut self, window: &Window, cx: &mut Context<Self>) -> Div {
@@ -2006,10 +2078,10 @@ impl SettingsView {
         let store = self.store.read(cx);
         let mut notices = Vec::new();
         if let Some(notice) = store.load_notice() {
-            notices.push(alert(fl!("settings-set-aside"), notice.to_string(), Tone::Warn));
+            notices.push(alert(fl!("settings-set-aside"), notice.text(&fl!("settings-using-defaults")), Tone::Warn));
         }
         if let Some(error) = store.save_error() {
-            notices.push(alert(fl!("settings-not-saved"), error.to_string(), Tone::Bad));
+            notices.push(alert(fl!("settings-not-saved"), error.text(), Tone::Bad));
         }
         notices
     }
@@ -2139,7 +2211,8 @@ impl Render for SettingsView {
             Section::Reminders => self.reminders_page(&settings, window, cx),
             Section::Todos => self.todos_page(&settings, window, cx),
             Section::General => self.general_page(&settings, window, cx),
-            Section::About => self.about_page(window, cx),
+            Section::About if self.changelog.is_some() => self.changelog_page(window, cx),
+            Section::About => self.about_page(&settings, window, cx),
         };
         let sidebar = self.sidebar(window, cx);
         let dialog = self.dialog.map(|dialog| self.dialog_layer(dialog, window, cx));
@@ -2370,14 +2443,26 @@ mod tests {
         view: Entity<SettingsView>,
         store: Entity<Settings>,
         meter: Entity<MeterModel>,
+        /// What About › Updates asked the updates for.
+        update_commands: std::sync::mpsc::Receiver<update::Command>,
         cx: &'a mut VisualTestContext,
     }
 
     /// The real view in GPUI's test platform, on settings in memory (in
     /// English, whatever Windows' language) or in `data_dir`, connected to an
-    /// overlay model as the app connects it.
+    /// overlay model as the app connects it; up to date, checked long ago.
     fn open<'a>(cx: &'a mut TestAppContext, data_dir: Option<&Path>) -> Opened<'a> {
-        let (store, meter, runtime) = cx.update(|cx| {
+        let long_ago = SystemTime::now() - Duration::from_secs(3600);
+        let up_to_date = update::Snapshot {
+            state: update::UpdateState::UpToDate { checked_at: long_ago },
+            last_checked: Some(long_ago),
+            check_again_at: long_ago,
+        };
+        open_with_updates(cx, data_dir, up_to_date)
+    }
+
+    fn open_with_updates<'a>(cx: &'a mut TestAppContext, data_dir: Option<&Path>, updates: update::Snapshot) -> Opened<'a> {
+        let (store, meter, runtime, update_commands) = cx.update(|cx| {
             let store = cx.new(|_| match data_dir {
                 Some(dir) => Settings::load(Some(dir)),
                 None => {
@@ -2389,14 +2474,15 @@ mod tests {
             install(&store, cx);
             reminders::install(&store, false, cx);
             todos::install(&store, false, cx);
+            let update_commands = update::install_recording_fixture(&store, updates, cx);
             let overlay = store.read(cx).get().overlay.clone();
             let meter = cx.new(|_| MeterModel::new(overlay, None));
             connect(&store, &meter, None, cx);
             let runtime = cx.new(|cx| RuntimeModel::new(meter.clone(), cx));
-            (store, meter, runtime)
+            (store, meter, runtime, update_commands)
         });
         let (view, cx) = cx.add_window_view(|window, cx| SettingsView::new(runtime, None, window, cx));
-        Opened { view, store, meter, cx }
+        Opened { view, store, meter, update_commands, cx }
     }
 
     impl Opened<'_> {
@@ -2491,6 +2577,7 @@ mod tests {
             "fight-summary",
             "pace",
             "open-meter",
+            "hide-between-fights",
             "detail-opens",
             "nav-overlay",
         ];
@@ -2505,7 +2592,7 @@ mod tests {
         window.press("shift-tab");
         assert_eq!(window.focused().as_deref(), Some("detail-opens"));
         window.press("shift-tab");
-        assert_eq!(window.focused().as_deref(), Some("open-meter"));
+        assert_eq!(window.focused().as_deref(), Some("hide-between-fights"));
     }
 
     #[gpui::test]
@@ -2890,9 +2977,261 @@ mod tests {
         assert_eq!(header(&mut window).as_deref(), Some("Target 90001"));
     }
 
+    /// Ten versions, from 1.0.0 to 1.6.0, for a build that would be 1.5.1.
+    fn ten_versions() -> (crate::changelog::Changelog, Version) {
+        use crate::changelog::{Changelog, Date, Release, Span};
+
+        let versions = [(1, 6, 0), (1, 5, 1), (1, 5, 0), (1, 4, 0), (1, 3, 1), (1, 3, 0), (1, 2, 0), (1, 1, 0), (1, 0, 1), (1, 0, 0)];
+        let releases = versions
+            .iter()
+            .map(|&(major, minor, patch)| Release {
+                version: Version::new(major, minor, patch),
+                date: Date { year: 2026, month: 10, day: 9 },
+                summary: vec![Span { text: "What changed.".to_string(), bold: false }],
+                bullets: vec![vec![Span { text: "One change.".to_string(), bold: false }]],
+            })
+            .collect();
+        (Changelog { releases }, Version::new(1, 5, 1))
+    }
+
+    impl Opened<'_> {
+        fn changelog(&mut self) -> Option<(Option<Version>, usize, usize)> {
+            let view = self.view.clone();
+            self.cx.update(|_, cx| view.read(cx).changelog_state())
+        }
+
+        fn drawn(&mut self, selector: &'static str) -> bool {
+            self.cx.debug_bounds(selector).is_some()
+        }
+    }
+
+    #[gpui::test]
+    fn about_opens_its_changelog_on_the_newest_version_and_comes_back(cx: &mut TestAppContext) {
+        let mut window = open(cx, None);
+        window.show(Section::About);
+        window.tab_to("open-changelog");
+        window.press("enter");
+
+        let current = Version::current();
+        assert_eq!(window.changelog().map(|(open, _, _)| open), Some(Some(current)), "the newest version open");
+        assert!(window.drawn("changelog-notes"), "its notes under it");
+        assert_eq!(window.focused().as_deref(), Some("changelog-back"));
+
+        window.press("enter");
+        assert_eq!(window.changelog(), None);
+        assert!(window.drawn("open-changelog"), "back on About");
+        assert_eq!(window.focused().as_deref(), Some("open-changelog"));
+    }
+
+    #[gpui::test]
+    fn full_changelog_opens_settings_on_the_changelog_page_and_the_sidebar_leaves_it(cx: &mut TestAppContext) {
+        let mut window = open(cx, None);
+        let view = window.view.clone();
+        window.cx.update(|window, cx| view.update(cx, |view, cx| view.show(Page::Changelog, window, cx)));
+        assert!(window.changelog().is_some());
+        assert!(window.drawn("changelog-back"));
+
+        window.click("nav-about");
+        assert_eq!(window.changelog(), None, "About from the sidebar is About itself");
+        assert!(window.drawn("open-changelog"));
+    }
+
+    #[gpui::test]
+    fn changelog_rows_open_one_at_a_time_and_show_older_adds_five(cx: &mut TestAppContext) {
+        let mut window = open(cx, None);
+        window.show(Section::About);
+        let (changelog, current) = ten_versions();
+        let view = window.view.clone();
+        window.cx.update(|window, cx| {
+            view.update(cx, |view, cx| view.open_changelog(ChangelogPage::new(changelog, current), window, cx))
+        });
+        assert_eq!(window.changelog(), Some((Some(Version::new(1, 5, 1)), 5, 9)), "1.6.0 is newer than this build");
+        assert!(window.drawn("changelog-notes"));
+        assert!(!window.drawn("changelog-1.2.0"), "five versions first");
+
+        window.click("changelog-1.4.0");
+        assert_eq!(window.changelog().and_then(|(open, _, _)| open), Some(Version::new(1, 4, 0)));
+        let (row, notes, next) = (window.bounds("changelog-1.4.0"), window.bounds("changelog-notes"), window.bounds("changelog-1.3.1"));
+        assert!(row.bottom() <= notes.top() && notes.bottom() <= next.top(), "the notes under 1.4.0 only: one open at a time");
+        window.click("changelog-1.4.0");
+        assert_eq!(window.changelog().and_then(|(open, _, _)| open), None, "a second click closes it");
+
+        window.tab_to("changelog-1.5.0");
+        window.press("space");
+        assert_eq!(window.changelog().and_then(|(open, _, _)| open), Some(Version::new(1, 5, 0)), "a row opens from the keyboard");
+
+        window.tab_to("changelog-older");
+        window.press("enter");
+        assert_eq!(window.changelog().map(|(_, shown, total)| (shown, total)), Some((9, 9)));
+        assert!(window.drawn("changelog-1.0.0"));
+        assert!(!window.drawn("changelog-older"), "nothing older left");
+        assert_eq!(window.focused().as_deref(), Some("changelog-1.2.0"), "the keyboard lands on the first version added");
+    }
+
+    fn updates_at(state: update::UpdateState) -> update::Snapshot {
+        let now = SystemTime::now();
+        update::Snapshot { state, last_checked: Some(now - Duration::from_secs(600)), check_again_at: now - Duration::from_secs(1) }
+    }
+
+    fn next_release() -> update::ReleaseInfo {
+        update::ReleaseInfo {
+            version: Version::new(9, 0, 0),
+            size: 4_200_000,
+            notes_url: "https://github.com/o/r/releases/tag/v9.0.0".to_string(),
+            published: None,
+        }
+    }
+
+    impl Opened<'_> {
+        fn show_updates(&mut self, state: update::UpdateState) {
+            let store = self.store.clone();
+            self.cx.update(|_, cx| update::install_fixture(&store, updates_at(state), cx));
+            self.cx.run_until_parked();
+        }
+
+        fn commands(&self) -> Vec<String> {
+            self.update_commands.try_iter().map(|command| format!("{command:?}")).collect()
+        }
+    }
+
+    #[gpui::test]
+    fn about_shows_each_update_state_with_its_own_buttons(cx: &mut TestAppContext) {
+        use update::UpdateState;
+
+        let mut window = open(cx, None);
+        window.show(Section::About);
+        let version = Version::new(9, 0, 0);
+        let controls = [
+            "update-check-now",
+            "release-notes",
+            "update-to",
+            "update-try-again",
+            "update-cancel",
+            "update-restart",
+            "update-progress",
+            "update-message",
+            "auto-download",
+            "updates-off",
+        ];
+        let cases: Vec<(UpdateState, &[&str])> = vec![
+            (UpdateState::UpToDate { checked_at: SystemTime::now() }, &["update-check-now", "auto-download"]),
+            (UpdateState::Checking, &["update-check-now", "auto-download"]),
+            (UpdateState::Available { release: next_release(), last_failure: None }, &["release-notes", "update-to", "auto-download"]),
+            (
+                UpdateState::Available { release: next_release(), last_failure: Some(update::Failure::ChecksumMismatch) },
+                &["release-notes", "update-try-again", "update-message", "auto-download"],
+            ),
+            (
+                UpdateState::Downloading { version, downloaded: 1, total: 2, paused_for_fight: false },
+                &["update-cancel", "update-progress", "auto-download"],
+            ),
+            (
+                UpdateState::Downloading { version, downloaded: 1, total: 2, paused_for_fight: true },
+                &["update-cancel", "update-progress", "auto-download"],
+            ),
+            (UpdateState::Verifying { version }, &["update-progress", "auto-download"]),
+            (UpdateState::Ready { version }, &["update-restart", "auto-download"]),
+            (
+                UpdateState::Failed { failure: update::Failure::Check("odd".to_string()) },
+                &["update-try-again", "update-message", "auto-download"],
+            ),
+            (
+                UpdateState::Unreachable { next_try: SystemTime::now() + Duration::from_secs(3600) },
+                &["update-check-now", "update-message", "auto-download"],
+            ),
+            (
+                UpdateState::RateLimited { until: SystemTime::now() + Duration::from_secs(600) },
+                &["update-check-now", "update-message", "auto-download"],
+            ),
+            (UpdateState::Disabled, &["updates-off"]),
+        ];
+        for (state, expected) in cases {
+            let label = format!("{state:?}");
+            window.show_updates(state);
+            for control in controls {
+                assert_eq!(window.drawn(control), expected.contains(&control), "{control} in {label}");
+            }
+            assert!(window.drawn("open-changelog"), "the Changelog row stays in {label}");
+        }
+    }
+
+    #[gpui::test]
+    fn the_status_buttons_ask_the_updates_for_their_action(cx: &mut TestAppContext) {
+        use update::UpdateState;
+
+        let mut window = open(cx, None);
+        window.show(Section::About);
+
+        window.click("update-check-now");
+        assert_eq!(window.commands(), vec!["CheckNow"]);
+
+        window.show_updates(UpdateState::Available { release: next_release(), last_failure: None });
+        window.click("update-to");
+        assert_eq!(window.commands(), vec!["StartDownload"]);
+
+        window.show_updates(UpdateState::Available { release: next_release(), last_failure: Some(update::Failure::SignatureMismatch) });
+        window.click("update-try-again");
+        assert_eq!(window.commands(), vec!["StartDownload"], "Try again downloads again after a failed download");
+
+        window.show_updates(UpdateState::Downloading { version: Version::new(9, 0, 0), downloaded: 1, total: 2, paused_for_fight: false });
+        window.click("update-cancel");
+        assert_eq!(window.commands(), vec!["Cancel"]);
+
+        window.show_updates(UpdateState::Failed { failure: update::Failure::Check("odd".to_string()) });
+        window.click("update-try-again");
+        assert_eq!(window.commands(), vec!["CheckNow"], "Try again checks again after a failed check");
+
+        window.show_updates(UpdateState::Ready { version: Version::new(9, 0, 0) });
+        assert!(!window.drawn("update-message"));
+        window.click("update-restart");
+        window.cx.run_until_parked();
+        assert!(window.drawn("update-message"), "a restart that cannot start says so under the row, no pop-up");
+    }
+
+    #[gpui::test]
+    fn check_now_is_disabled_until_check_again_at_and_wakes_by_itself(cx: &mut TestAppContext) {
+        let now = SystemTime::now();
+        let just_checked = update::Snapshot {
+            state: update::UpdateState::UpToDate { checked_at: now },
+            last_checked: Some(now),
+            check_again_at: now + Duration::from_secs(60),
+        };
+        let mut window = open_with_updates(cx, None, just_checked);
+        window.show(Section::About);
+
+        window.click("update-check-now");
+        assert!(window.commands().is_empty(), "a click before check_again_at asks nothing");
+
+        window.cx.executor().advance_clock(Duration::from_secs(61));
+        window.cx.run_until_parked();
+        window.click("update-check-now");
+        assert_eq!(window.commands(), vec!["CheckNow"], "the button opened again without anything else happening");
+    }
+
+    #[gpui::test]
+    fn rate_limited_keeps_check_now_disabled_until_github_resets(cx: &mut TestAppContext) {
+        let mut window = open(cx, None);
+        window.show(Section::About);
+        window.show_updates(update::UpdateState::RateLimited { until: SystemTime::now() + Duration::from_secs(600) });
+        window.click("update-check-now");
+        assert!(window.commands().is_empty());
+    }
+
+    #[gpui::test]
+    fn the_automatic_download_switch_writes_its_setting(cx: &mut TestAppContext) {
+        let mut window = open(cx, None);
+        window.show(Section::About);
+        assert!(window.settings().updates.download_automatically, "on by default");
+        window.click("auto-download");
+        assert!(!window.settings().updates.download_automatically);
+        window.tab_to("auto-download");
+        window.press("space");
+        assert!(window.settings().updates.download_automatically, "the keyboard switches it back");
+    }
+
     fn temp_dir(name: &str) -> PathBuf {
         let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_nanos());
-        let dir = std::env::temp_dir().join(format!("aether-settings-view-{name}-{}-{stamp}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("belisk-settings-view-{name}-{}-{stamp}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("a temp folder");
         dir
     }

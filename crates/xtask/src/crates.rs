@@ -20,7 +20,7 @@ pub struct ShippedCrate {
     pub directory: PathBuf,
 }
 
-const APP_PACKAGE: &str = "aion-2-dps-meter";
+const APP_PACKAGE: &str = "belisk";
 
 impl Metadata {
     pub fn read(root: &std::path::Path) -> Result<Self> {

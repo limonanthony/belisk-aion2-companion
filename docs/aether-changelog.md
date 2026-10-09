@@ -1,0 +1,646 @@
+# Aether's changelog (history)
+
+This is the release history of Aether, the project this app started from, kept as it was written. This app's own changelog is `CHANGELOG.md` at the repository root.
+
+Aether's own releases. Versions start at 0.1.0 rather than continuing NOIA2's
+numbering: this fork publishes to its own release channel, and the updater
+compares an installed build against these releases. Upstream's release history
+lives in the [NOIA2 repository](https://github.com/ZDYoung0519/NOIA2).
+
+<!-- The update dialog of 0.1.15 and earlier prints the newest notes verbatim,
+     and some players still update from there: so no hard wraps and no bold in
+     2.0.0 and later. From 2.0.0 on the dialog renders Markdown. -->
+
+## [2.4.0]
+
+Safer next to anti-cheat, and a straight answer about fullscreen games.
+
+- Aether no longer touches a game's process at all. Earlier versions opened every running program when the meter started, the game included, with the right to read its memory, and held on to those handles; they also opened the program in front to read its name. Now the meter looks only at itself, and which program is in front comes from the system's process list, the way Task Manager sees it. Nothing was ever read from or written to a game, but anti-cheat watches for exactly these handles, so they are gone.
+- The WinDivert driver is loaded only if Npcap cannot capture, and unloaded again when Aether is done with it. Before, Aether loaded it on every start just to check it, and it stayed loaded until the PC restarted. A WinDivert that another program loaded is left alone.
+- Pinned windows, chat pop-ups, and the meter now stay above any fullscreen game, PUBG included, not only AION 2. When a game comes to the front, Aether lifts its windows back over it without taking the keyboard.
+- Always on top shows how the game in front runs: Borderless, where everything shows, or Fullscreen, with what to do if nothing appears. True exclusive fullscreen cannot be drawn over by any app, Discord and Steam included, without injecting into the game, which is what gets accounts banned. So Aether points you to borderless instead: in PUBG, Settings › Graphics › Display Mode › Fullscreen (Windowed).
+- It warns when "Disable fullscreen optimizations" is ticked for the game, which forces exclusive fullscreen, and shows whether Windows 11's "Optimizations for windowed games" is on, which makes borderless as smooth as fullscreen, with a button to that settings page.
+- The first time a game runs fullscreen while something of yours is on top, a Windows notification says what to do if it does not show.
+
+## [2.3.0]
+
+Boss fights get their own story: English names, your personal best, a summary when the boss dies, and a one-line capsule mode.
+
+- Monsters and bosses have English names now, about 8,000 of them. The Chinese catalogue is gone, along with every other piece of Chinese data in the app: dungeon names, the Taiwan server names (servers show a short English code now), and the Chinese number format. Damage is always K, M, B.
+- Personal bests: your best DPS against each boss, per character, learnt from every fight saved to History and from the History you already have. During a boss you have beaten before, the overlay shows your pace against it, like ▲ 12% vs PB.
+- Fight summary: when a boss dies, the overlay shows how it went. Your DPS and place, share, damage, crit rate, your three biggest skills, the dungeon, and whether it is a new personal best. Copy puts it on the clipboard for party chat or Discord. It stays for a minute, until you close it, or until the next boss.
+- Capsule mode: the meter shrinks to one line with your DPS, your place, and the fight time, and opens fully while your pointer is on it. Switch it from the overlay's buttons or in Settings, Aion 2, Overlay.
+- A fight still on the meter is saved to History when you stop the meter or quit, instead of being lost.
+- Settings, Aion 2, Meter has a Boss fights section: turn the summary and the pace on or off, and see or reset your personal bests. Deleting History keeps them.
+- The fighter's skills show their English names in the detail window.
+- Lighter: the app no longer loads skill names it does not show, and History opens faster.
+
+## [2.2.0]
+
+Aether is now three things, done well: the DPS meter, Always on top, and live chat. Everything else is gone, and the meter looks and behaves like part of the game.
+
+- New DPS overlay: a rounded glass card with class-coloured bars and no hard lines. The target's name and health sit in the header; the buttons appear only while your pointer is on it.
+- The overlay steps aside between fights. It appears on your first hit, stays for the whole fight, and after 5 minutes without a hit of yours it saves the fight to History, starts clean, and hides again. A long boss fight never resets: any hit keeps it going, and so does your party on your target. Change the time or turn it off in Settings, Aion 2, Meter. The show shortcut (Alt+E) brings the overlay up for a moment at any time.
+- The meter no longer piles up: fights end on their own, so it stays light over a long session instead of needing a manual refresh.
+- Nothing to set up. The region choice is gone, because Aether reads every server on its own. Settings, Aion 2, Connection shows the game connection, your character, and the server as they are detected.
+- On a server it does not recognise yet, Aether records the first two minutes by itself for protocol work, so nothing has to be pressed on launch day. The newest five are kept, on this PC only. Recording, opcode census, and the diagnostics report moved to Connection, Advanced.
+- A cleaner home screen: the Main Character card is gone, and the launcher is one card that says what the meter is doing.
+- Removed: the interactive map, the buff monitor, the event and field boss timers, and the upstream cloud account, whose upload buttons in History could never work. Map tiles downloaded by earlier versions are deleted from your PC on first start.
+- The overlay no longer takes the keyboard from the game when the show shortcut opens it.
+- Updates install into the folder you chose, replace the old files there, and start Aether again, as before.
+
+## [2.1.1]
+
+Fixes for the live chat pop-ups.
+
+- Separate pop-ups now show only their own chat. In 2.1.0 every pop-up also received the other pop-ups' messages, so a YouTube pop-up could fill up with Twitch chat.
+- Chat pop-ups leave the keyboard with your game: clicking one, turning Ghost on or off, or showing them again with Ctrl+Alt+H does not make them the active window.
+- When a moderator bans or times someone out, their messages leave the pop-up too, and a cleared Twitch chat clears it.
+- Busy Twitch chats are lighter: messages reach the pop-up in small batches instead of one at a time.
+- A Twitch channel that does not exist now says so after 15 seconds instead of staying on Connecting.
+- Someone typing RECONNECT in a Twitch chat no longer disconnects it.
+- A YouTube chat no longer stops for good after one odd answer from YouTube; it tries again.
+- After a dropped connection, Twitch reconnects within seconds, however long it had been running.
+
+## [2.1.0]
+
+Live chat grows up: YouTube and Twitch, up to four chats at once, each in its own pop-up or merged into one.
+
+Add chats in Always on top, Live chat: a YouTube live link or @channel, or a Twitch channel link. With two or more, choose Separate (a pop-up for each, placed side by side) or Merged (every chat in one pop-up, with a small YouTube or Twitch mark on each line). Every pop-up gets its own card showing whether its chats are live, with Ghost, size, and free moving.
+
+- Twitch chat, with emotes, mod and VIP tags, and subs and raids highlighted. Read-only, no sign-in.
+- YouTube chat is now read by Aether itself instead of an embedded chat page, which is lighter on your PC. Super Chats and memberships stand out, deleted messages disappear, and each YouTube chat can show every message or only Top chat.
+- New: fade old messages after 15, 30, or 60 seconds, so a quiet chat leaves the screen clear.
+- TikTok links are recognised. TikTok only shows live comments to viewers who are signed in, so Aether offers to open the live as a mini window in your own signed-in browser instead.
+- Your chat position, size, and look from 2.0.0 carry over.
+
+## [2.0.0]
+
+A new look, a proper light theme, and a YouTube live chat overlay. The version jumps to 2.0.0 so it sorts cleanly above 0.1.x everywhere.
+
+New background: an animated HUD, "Dune" by R (credited under Settings, Credits). It is less than half the size of the old video, and its still frame is 32 KB.
+
+Light theme fixed from top to bottom. Pages used to wash out to white with white text on them. Every page, card, button, and dialog now has proper contrast in both themes, and the background turns to ink on paper in light mode.
+
+YouTube live chat overlay (Always on top, Live chat): paste a live link, a Studio link, or a channel @handle, and the chat appears over the game with no background, white outlined text that stays readable on any scene. Choose the text size, avatars, and an optional shadow, turn on Ghost to click through it to the game, and move it anywhere. Read-only: no sign-in needed.
+
+- Ctrl+Alt+G and Ctrl+Alt+H now cover the chat overlay too.
+- Release notes in this dialog are now formatted.
+- New Artwork and data section on the Credits page.
+
+## [0.1.15]
+
+**Pinned windows look like themselves again.** 0.1.14 drew a yellow outline
+around every pinned window, and a blue one in ghost mode. That outline is gone:
+a pinned Chrome or Edge window keeps its normal border, so it sits over the
+game as cleanly as the browser itself. Pinned and ghost state still show on the
+Always on top page.
+
+Any window that 0.1.14 outlined before an unexpected exit gets its normal border
+back the next time Aether starts.
+
+## [0.1.14]
+
+**New tab: Always on top.** It keeps your own Chrome or Edge above the game: a
+guide, a stream, a video. It uses the browser you already have, signed in as you
+already are, with your extensions and YouTube Premium intact. Nothing is
+embedded and there is nothing to log into again.
+
+- **Open mini window** opens YouTube, Twitch, Discord, AION2 Hub, or any address
+  as a compact window in your browser, with no tabs and no address bar. It lands
+  in the corner and at the size you pick. Choose which profile it opens in.
+- **Pin** any Chrome or Edge window that is already open. A window that fills
+  the screen is shrunk into a corner, so it cannot bury the game or this app.
+- Every pinned window gets its own **opacity**, **ghost mode** (clicks pass
+  through to the game), a corner, and a size. A small map shows where it really
+  sits.
+- **Shortcuts:** `Ctrl+Alt+T` pins or unpins the browser window you are in,
+  `Ctrl+Alt+G` toggles ghost mode, and `Ctrl+Alt+H` hides or shows every pinned
+  window. All three can be changed in Settings.
+- On Windows 11 a pinned window's border turns amber, or cyan while it is a
+  ghost.
+
+Clicking a pinned window no longer hides the DPS overlay as if you had left
+the game. Browsers are always started as you, never as Administrator. Every
+pinned window is released when Aether closes or updates, and on the next start
+if Aether ever crashes.
+
+Chrome and Edge are detected wherever they are installed. Brave support will
+follow once it can be tested.
+
+### Fixed
+
+- **One shortcut taken by another program disabled every shortcut after it.**
+  Each one is now registered on its own, and a taken shortcut is marked on the
+  page.
+- **Error messages on the Map page never appeared.** The page had nowhere to
+  show them.
+
+## [0.1.13]
+
+**The equipment row on the Home card was showing broken images and Chinese
+text, and no amount of CSS was going to fix it.** The character API stopped
+returning `icon` and `grade` entirely. Upstream's slot renderer asked for both,
+so every tile rendered an `<img>` with no source and the browser fell back to
+its `alt` — which is the item's Traditional Chinese name. A row of broken images
+bleeding names across the card is what that looked like.
+
+The tiles are now built only from fields the API actually sends: slot, enchant
+level, exceed level, item level, name and stats. Each one carries its slot, its
+`+N`, and a colour taken from item level, with the full name and main stats on
+hover. Upstream's renderer went with it — 489 lines that nothing could reach.
+
+### The overlay
+
+**Bars are coloured by class.** A glance now tells you the composition of the
+group without reading a single name, and your own row is marked with a rim
+rather than a different fill, so it stands out without losing the colour that
+identifies it.
+
+**DPS counts toward its new value instead of snapping to it.** One frame loop
+drives every row and stops the moment they have all settled — a permanently
+running animation on an overlay is exactly the kind of cost that adds up over an
+evening. The column is wide enough that a counting number never shoves its
+neighbours.
+
+**Rows slide when the ranking changes.** They are positioned rather than
+stacked, so a rank change is a transform the compositor animates for free, with
+no layout and no measuring. New players fade in; players who leave stop
+occupying space.
+
+**Numbers are white**, per the reference: DPS, percentage and health all read as
+values now, with combat power kept quieter beside the name where it belongs.
+
+**Target health is shown by default.** It is the context every damage number on
+the overlay is relative to, and it was off. With it showing, the target's name
+lives there — beside the health it describes — instead of in the title slot.
+
+**Team DPS is gone from the status bar.** Solo, it printed the same number as
+the row directly above it; the row says it better.
+
+### The title bar
+
+The wordmark is white. Gold made it the loudest thing on a bar that sits on top
+of a game, competing with the numbers it is meant to introduce.
+
+The five actions are one recessed cluster with hairline dividers rather than
+five loose glyphs floating in the bar, and closing the overlay sits outside it —
+that is not the same kind of thing as toggling one, and it should not be a pixel
+away from Settings.
+
+The "waiting for game data" notice is no longer gold either. It was information,
+and it read as a warning.
+
+### Buttons that could not tell you they had failed
+
+Every action in the title bar caught its own errors and discarded them, so a
+button whose command failed looked exactly like a button that did nothing.
+Failures now say so on the overlay itself and clear on their own.
+
+That was hiding two real bugs, both of the same shape — an undefined identifier
+in a plain `.js` file, thrown at runtime and eaten by a catch:
+
+- **Clicking a second player never switched the detail window.** The meter
+  passed an undeclared `payload` to an `emit` it had never imported. Opening the
+  window worked because it reads the stored selection on startup, which is why
+  this survived; switching never did.
+- **Delete all history deleted the records and then reported failure.** It
+  called `load` from module scope, where the function — declared inside
+  `init()` — is not visible.
+
+`pnpm check:undef` now scans every plain `.js` in `src` for exactly this. The
+overlays are not TypeScript, so nothing else looks at them.
+
+### Not getting heavier
+
+`MAX_ROWS` has been declared since the fork and never applied, so a full raid
+rendered a row per participant and the overlay grew to whatever the party size
+was. It is capped at ten — and your own row is never the one dropped, because an
+overlay that hides you when you are eleventh is answering the wrong question.
+
+The row recycler pushed DOM elements into a pool that pops them expecting
+objects, so the first reuse would have thrown. Reuse only happens when one
+player leaves combat and another joins, which is why it survived this long.
+
+## [0.1.12]
+
+**The Home card now shows who you are playing, immediately.** It built its
+character list purely out of saved combat records, so it stayed blank until a
+fight had been finished and written to history — through an entire session, if
+you were levelling. The meter has known your name, server, class and combat
+power since the first own-player packet; the card reads that instead.
+
+**A Chinese mob name no longer replaces the window title.** Hitting a target
+overwrote "AETHER METER" with the target's name, taken from the bundled
+Traditional Chinese NPC catalogue — which reads as the app having switched
+language rather than as the name of what you are fighting. The target now has a
+slot of its own beside the title, and the title stays put.
+
+**The DPS Log window was showing an empty pane, and it was not broken.** It only
+ever listened for live events, and nearly everything is logged at startup and
+when capture begins — so opening the window afterwards, which is when you would
+open it, showed nothing at all. It now backfills the last 500 lines from disk,
+and its empty state says what empty means. The log file also rolls over at 4 MB
+instead of growing for the life of the install.
+
+**Combat power is shown next to each player's name**, where the game has
+reported it. It has been carried on every player stat since the fork with
+nothing displaying it. It sits with the name rather than among the damage
+numbers, because it says who someone is, not how they are doing.
+
+**CPU and memory now report the whole machine.** Aether's own footprint is a
+fraction of a percent, so its figure never answered the question anyone glancing
+at a status bar mid-fight is actually asking. Memory switches to GB once MB
+stops being readable, and hovering gives used against total.
+
+### Appearance
+
+The overlay background defaulted to 40% black, which reads as a black box laid
+over the game rather than an overlay. It is lighter and cooler now. A background
+that was deliberately changed is left alone — the migration only replaces the
+value where it is still the old default.
+
+The Home screen no longer overlaps itself in a small window. The launcher block
+is positioned over the scrolling area, and the area reserved no room for it, so
+the character card slid underneath the Start button as soon as the window was
+short enough. The card is also capped rather than fixed at 400px.
+
+## [0.1.11]
+
+**The meter was set to ignore everything that is not a boss.** `Boss only` and
+`My training dummy only` both defaulted to on, inherited from upstream, so every
+hit on an ordinary mob was discarded before it reached the meter. Levelling
+showed a permanently empty overlay with nothing on screen to explain it.
+
+Both now default to off, and existing settings are migrated rather than merely
+re-defaulted — a stored value survives a changed default forever otherwise.
+`Hide unknown players` is off too: it was hiding your own row whenever the game
+had not re-sent the player packet since the meter started.
+
+**"What to count" is now two named modes** rather than a switch. As a switch it
+read as a refinement; it decides whether the meter records anything at all.
+
+**And the overlay says when a setting is the reason it is empty.** With Boss only
+on it now reports how many hits were ignored and where to change it. An empty
+meter that explains itself is a setting to fix; an empty meter that says nothing
+reads as a broken app.
+
+**CPU and memory are shown.** The backend has emitted them alongside ping every
+two seconds since the fork; nothing ever displayed them. They report Aether's own
+footprint, which is the number worth knowing when deciding whether to leave it
+running alongside the game.
+
+### Not getting heavier the longer it runs
+
+`dps_stats` — the combat totals, keyed by target — was the one map here that was
+not bounded, and it is deep-cloned five times a second to build the overlay
+snapshot. While the meter only counted bosses that was a handful of entries.
+Counting ordinary mobs, which is now the default, would have added one per kill
+and made every snapshot fractionally more expensive than the last, for the whole
+session. It is now capped at 512 targets, oldest evicted first.
+
+The ping history — a hundred samples serialised into every memory event, twice a
+second, read by nothing — is gone.
+
+### Correction
+
+0.1.10 said the reset bug explained a history record showing damage but "0
+players". That was wrong: `clear()` deliberately preserves the actor name tables,
+so it cannot have caused it. The reset fix stands on its own; that particular
+detail is still unexplained.
+
+## [0.1.10]
+
+**The meter was clearing itself mid-fight.** Identifying the player fired a
+silent reset — intended to start clean when you log in. But the game re-sends
+the own-player packet throughout a session, ten times in one recorded session
+here, and every one of them wiped the accumulated damage. That is why the
+overlay sat at `--` while the fight was plainly happening.
+
+It now resets only when the player actually changes, keyed on the character name
+rather than the actor id: ids are per-session entity handles that change across
+zones — the same character appeared as both `15056` and `5492` in one recording
+— so keying on them would have cleared the meter every time you zoned.
+
+**The same bug emptied the Main Character card.** A reset clears the actor name
+table while damage keeps accumulating against actor ids, so a fight that ended
+in that window was filed as a record with damage but no players. The card builds
+its character list from those records, found no named player in any of them, and
+said "No main character recorded yet". With the resets gone, records keep their
+players and the card has something to read.
+
+Nothing was wrong with capture or parsing. The log from the reported session
+shows the player identified correctly ten times over — name, server, and class —
+and no errors at all.
+
+## [0.1.9]
+
+**Minimising no longer throws the map view away.** Restoring the window brought
+the map back at 1× as though it had reloaded, and the refit was expensive enough
+to feel like a freeze. The fit ran from an effect that depended on the viewport
+size, so *every* resize refit the map — and minimising and restoring is two of
+them. The map now fits once per zone; a resize keeps the view and only stops it
+drifting off screen.
+
+**The map draws even when the window is not painting.** First paint depended
+entirely on a `ResizeObserver` callback, and observer delivery is tied to the
+rendering lifecycle — an occluded or minimised window may not get one for a long
+time, leaving the map blank until it does. The viewport is now measured directly
+as well.
+
+**Markers outside the view are dropped once you zoom in.** Past 1.5× most of a
+zone is off screen, and keeping those elements mounted meant the browser laid
+out, painted and composited content nobody could see — felt as sluggishness
+across the whole window, not just the map. At 12× that is 522 markers instead of
+825, and 2,281 DOM nodes instead of 3,326. The cull keeps a full viewport of
+margin on each side so an ordinary pan moves through markers that are already
+mounted.
+
+**Switching tabs is instant.** The map is a route, so navigating away and back
+remounted it, and every visit re-ran the dataset load — a Tauri call plus four
+dynamic imports — before anything could render. It is resolved once per session
+now.
+
+**Zooming keeps up with the wheel.** Each wheel event read the view from the
+render it was created in, so events arriving faster than React re-renders
+collapsed into a single step. Sixteen events moved the map 1.4× instead of 12×.
+
+Also: the base image is no longer rendered underneath the tile layer once tiles
+cover the zone, and the map's floating labels dropped their backdrop blur, which
+repaints whatever is behind it on every frame that touches the window.
+
+## [0.1.8]
+
+**The map was blurry and slow for the same reason, and it was my optimisation
+that caused it.** The viewer kept a fixed 1000px plane and scaled it up, with
+`will-change: transform` so that panning stayed cheap. A promoted layer is
+rasterised at its *unscaled* size, so at 10× every pixel — the 4096px image, the
+downloaded tiles, every glyph — was being resampled from a 1000px raster. The
+same layer was about 9500px square to composite, which is what made scrolling
+crawl. Downloading full-resolution tiles could not help: they were being thrown
+away before they reached the screen.
+
+The plane is now sized in real pixels and moved with translate only. Panning got
+*faster* (0.013 ms per update, from 0.023) because there is no oversized layer
+to composite, and zooming costs one reflow of 1.5 ms — nine percent of a frame,
+on a gesture that is discrete. The minimap overlay has always worked this way,
+which is why it looked sharp while the main map did not.
+
+The base image also steps aside once tiles cover the zone, rather than being
+decoded and composited underneath them.
+
+**The map starts with the landmarks, not everything.** Waystones, monoliths,
+seals, regions, battlefields, villages and hidden cubes are on; the fifteen
+gathering materials and NPCs are off. That is 825 markers instead of 1,364 on a
+first look. It is an allow-list, so a category added later starts hidden rather
+than quietly crowding the map, and the choice is remembered once you change it.
+Both the map page and the overlay read the same default, so they cannot
+disagree about what a fresh install shows.
+
+**Minimap waypoints are legible.** They were sized for a dense overview and
+disappeared into the terrain; they are larger now, and the glyph fills them.
+
+## [0.1.7]
+
+**Updates no longer fail on the WinDivert driver.** Installing 0.1.6 over 0.1.5
+stopped with *"Error opening file for writing: WinDivert64.sys"*, and clicking
+Ignore left a new executable beside an old driver.
+
+Windows locks the image of a loaded kernel driver, and Aether's own startup
+check is what loads it: probing WinDivert means calling `WinDivertOpen`, which
+starts the service, and closing the handle afterwards does not unload it. So on
+any machine that had run Aether once, the file was locked by the time the next
+update arrived. The installer now stops and deregisters the driver before
+touching files — and does the same on uninstall, which previously left the
+service registered against a path that no longer existed.
+
+**Full-resolution maps.** The bundled images are 4096px and soften past about
+8×. The source's own tiles are 1024px each on grids up to 8×8, which
+reconstructs a zone at its native 8192px — twice the linear resolution, and the
+most detail that exists. All eight zones would be roughly 52 MB, so tiles are
+optional and per zone: the map panel offers to download the zone you are looking
+at, and the viewer layers them over the base once you zoom in far enough to tell
+the difference. The zoom ceiling follows what is actually installed — 12× on the
+base image, 32× with tiles — rather than a fixed number, so it never invites you
+into mush or holds you back from detail you already have.
+
+The minimap overlay does the same, and picks up whatever the map page has
+downloaded.
+
+**Markers are pure glyphs.** The dark disc and coloured ring are gone. The disc
+was carrying legibility over a busy map, so a dark outline that follows the
+glyph does that job instead — the shape stays readable without being boxed in.
+The legend matches.
+
+## [0.1.6]
+
+**An interactive map.** A new tab beside Home, with an always-on-top minimap
+that behaves like the DPS overlay. Eight zones, 4,799 markers, 77 region
+outlines: waystones, seals, hidden cubes, monolith materials, gathering nodes,
+villages and NPCs, filterable by category and searchable by name. Clicking a
+marker marks it found, and that is remembered — the full map and the minimap
+share the same state, so hiding a category in one hides it in the other.
+
+The marker database and map images come from
+[AION2 Hub](https://aion2hub.com/maps). It is their work; if the map is useful
+to you, visit and support them. `public/aion2/maps/SOURCE.md` records exactly
+what was taken and how.
+
+Markers carry a glyph rather than only a colour, because fifteen categories
+separated by hue alone makes a map a memory test. Shape says what kind of thing
+it is — gem, ore, log, leaf, waystone — and colour says which one, with the
+palette arranged so that same-shaped categories land far apart.
+
+Pan and zoom move one transformed plane rather than repositioning every marker,
+which keeps the cost independent of how many are on screen: 0.023 ms per view
+update with 1,364 markers loaded. Markers shrink as the map zooms out, since
+holding them at a constant size turns a busy zone into a solid mass. Zoom stops
+at 12×, where the 4096px images stop being sharp.
+
+### Removed
+
+Four pages nothing could reach: the damage leaderboard, the account screen, and
+the two character-search pages. All needed a backend this build does not have,
+all were still in Chinese, and every audit kept re-reporting them. Deleting them
+freed a further 1.1 MB of data that only they held up. Git keeps them if the
+global service ever turns out to want a leaderboard.
+
+### Also
+
+- The setup guide and the startup gate now point at the same Npcap build.
+
+## [0.1.5]
+
+**WinDivert was never shipped.** `WinDivert64.sys` sat in the repository and was
+copied into the build directory for local runs, but the installer's resource
+list named only `WinDivert.dll` — so every installed copy of Aether had the
+fallback capture backend permanently unavailable, reporting "WinDivert64.sys was
+not found" on a machine where nothing was wrong. The driver is now bundled, and
+the fallback works out of the box.
+
+**The startup screen is a real gate.** It used to run its checks and then let
+you through regardless, which is defensible — capture needs one backend, not
+both — but it said so while showing an amber warning and a Repair button, so a
+healthy machine looked broken. Now the checks are weighed: anything genuinely
+required holds the app closed until it passes, and anything optional is shown in
+plain grey with an "Optional" tag and never blocks. The gate cannot be walked
+around either; the tray icon and a second launch both land on it rather than
+opening the main window behind it.
+
+**Npcap installs from the gate.** When no capture backend is available, one
+button fetches the official Npcap installer, verifies it against a pinned
+SHA-256 before running anything, launches it, and re-checks by itself when it
+closes. Npcap reserves unattended installation for its OEM licence, so its own
+window still appears — the gate says which option to tick.
+
+**Checks test the driver, not the file.** Npcap used to count as present if
+`wpcap.dll` could be loaded, which stays true after its service stops or its
+driver is removed underneath. The check now enumerates adapters, so "available"
+means capture can actually start. Administrator rights are checked too, rather
+than assumed from the manifest.
+
+**Removed the WinDivert download.** Repairing WinDivert used to pull a kernel
+driver from a third-party storage bucket inherited from upstream, over plain
+HTTP semantics with no integrity check, and write it into the install directory.
+Bundling the driver makes that unnecessary and the code is gone.
+
+### Also
+
+- Starting the meter reports *why* it failed instead of "Failed to toggle DPS
+  meter" — the backend already names the backend and the error.
+- A failed meter start no longer leaves an empty overlay pinned over the game.
+- The setup guide points at the same Npcap build the gate installs.
+
+## [0.1.4]
+
+**Window controls are readable now.** Minimise, maximise and close had no
+backdrop of their own and used a muted foreground colour, so they washed out
+against the background image. They now carry the same translucent round backing
+the left-hand actions use — the treatment that already reads well over that
+image — with a slightly larger glyph and a clearer hover.
+
+**Removed the language toggle from the title bar.** It occupied permanent space
+for something changed once, if ever. It still lives in Settings → Appearance,
+so Korean remains reachable.
+
+**The installer no longer offers Simplified Chinese.** That option was inherited
+from upstream and had no place in an English build.
+
+Also removed `main-title-bar-old.tsx`, a superseded copy nothing imported.
+
+### On the taskbar icon
+
+If the taskbar or Start Menu still shows the old mark after updating, the
+executable is fine — Windows caches icons per path and does not re-read them
+when a file is replaced in place, which is exactly what an update does. Clearing
+the icon cache, or signing out and back in, refreshes it.
+
+## [0.1.3]
+
+New application icon, replacing the NOIA2 artwork the fork inherited.
+
+Generated from a 1254×1254 source with transparent corners, so every size Tauri
+ships is derived from one master rather than resized by hand. `icon.ico` carries
+six sizes up to 256×256, which is what Windows needs for the installer, the
+taskbar, and high-DPI displays.
+
+The source image is committed as `app-icon.png`, the name Tauri looks for, so
+regenerating every size is `npx tauri icon` with no arguments.
+
+The AION 2 logo in the title bar is unchanged on purpose: it is the game picker,
+and it identifies which game the meter is reading.
+
+## [0.1.2]
+
+Fixes the updater itself, on both ends.
+
+**"Check for Updates" did nothing.** The button ran its check in one hook
+instance while the dialog that displays a result lived in another. It found the
+update, stored it somewhere nothing rendered, and stopped — a spinner, then
+silence. The dialog now owns that state and the button drives it.
+
+**The update dialog overflowed the window.** It had no height limit, and its body
+was placed inside `DialogDescription`, which renders a paragraph — so block
+content sat inside a `<p>`. Release notes now scroll inside a bounded panel, the
+dialog caps at 85% of window height, and the markup is valid.
+
+Two smaller things found on the way:
+
+- Installing re-ran the update check instead of using the release the user had
+  just been shown. A wasted round trip, and it could have fetched a different
+  release than the one they agreed to.
+- The settings route sat inside the layout that mounts the automatic startup
+  check, so opening About could stack two update dialogs.
+
+Also removed `src/pages/about.tsx`, template scaffolding with no route to it.
+
+## [0.1.1]
+
+The overlay still said "NoiA METER" on screen. Renaming it in the HTML was not
+enough: `overlay/meter/main.js` writes the title again at runtime, so the markup
+change never survived. Fixed at the source.
+
+That miss exposed a wider gap. The overlays are plain `.js`, and the earlier
+translation passes only scanned `.ts`, `.tsx`, `.html` and `.json` — so all five
+overlay scripts were still partly Chinese.
+
+- The copied battle report was written in Chinese and formatted damage on the
+  万/亿 scale regardless of the chosen setting. It is English now, on K/M/B, and
+  credits Aether rather than upstream's Bilibili channel.
+- Buff overlay: class names, slot labels, and every button tooltip.
+- PVP overlay: watch-list tooltips and the unknown-server fallback.
+- The WinDivert repair dialog reported all sixteen of its progress steps in
+  Chinese. Those are the messages shown when capture is broken — exactly when
+  being unable to read them hurts most.
+
+Also fixed two corrupted locale entries: a stale `language.zh` option left over
+from dropping Chinese, and a `PvEAddDamage` stat whose value had a duplicated key
+name and stray Chinese glued onto it.
+
+Known gap: 59 of 7,105 skill names in the English catalogue are still Chinese,
+almost all Fighter skills. They come from upstream's data and need a global
+client to replace properly.
+
+## [0.1.0]
+
+First release of the fork. Everything below is relative to NOIA2 at the point it
+was forked.
+
+**Built for the global servers.** Upstream validated server ids against Taiwan's
+exact catalogue, and that value is used structurally to locate fields inside
+player-info packets. On any other service every candidate was rejected and no
+player was ever named -- an empty meter with no error to go on. Region profiles
+replace that constant, with a permissive structural rule that holds on services
+not catalogued yet.
+
+**Region detection only claims a region on evidence.** Korea is identifiable by
+its server block; Taiwan and global are not yet, so it reports "no fingerprint
+matched" instead of guessing. Settings → Runtime shows the server IPs and ids
+actually observed, which is how an uncatalogued service gets characterised.
+
+**Protocol tooling for launch day.** Packet recording writes a session's raw
+packets to disk and replays them back through the live pipeline, so a session
+captured once can be iterated against offline. An opcode census counts every
+dispatched packet, recognised or not. A diagnostics report turns all of it into
+one pasteable summary.
+
+**English throughout.** Upstream defaulted to Simplified Chinese in three
+separate places and carried roughly 500 hardcoded Chinese strings. Those are
+translated and the Chinese locales removed; English and Korean remain.
+
+**Runs fully offline.** Cloud features are optional and off by default -- the
+meter never depended on them. Pages that need a community backend are hidden
+rather than left to fail: character search needs a Taiwan-only API, and the
+damage leaderboard needs a Supabase project.
+
+**Fixes**
+
+- The app could not start at all in a fresh clone: upstream reads Supabase
+  credentials from a gitignored `.env`, and the resulting `createClient` throw
+  took the whole window down at module load.
+- Number formatting defaulted to the 万/亿 scale in four places the app-level
+  setting did not reach; each overlay carries its own fallback.
+- `pnpm tauri:build` pointed at a config file that has never existed in the
+  repository, so local release builds could not run.
+- An upstream notice telling users to download NoiA 5.0 from its official site
+  opened on every visit to the home screen.

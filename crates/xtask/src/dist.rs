@@ -8,10 +8,10 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::crates::Metadata;
-use crate::{exe_check, notices, Result, WINDOWS_TARGET};
+use crate::{exe_check, notices, update, Result, WINDOWS_TARGET};
 
-const PACKAGE: &str = "aion-2-dps-meter";
-const FOLDER: &str = "aion-2-dps-meter";
+const PACKAGE: &str = "belisk";
+const FOLDER: &str = "belisk";
 
 /// Official WinDivert-2.2.2-A.zip, x64 (see FORK.md, "WinDivert files").
 const WINDIVERT_FILES: [(&str, &str); 2] = [
@@ -26,6 +26,7 @@ pub enum SourceDelivery {
 
 pub struct Options {
     pub allow_dirty: bool,
+    pub allow_development_key: bool,
     pub source: SourceDelivery,
 }
 
@@ -33,6 +34,7 @@ pub fn run(root: &Path, options: &Options) -> Result<()> {
     let metadata = Metadata::read(root)?;
     let version = &metadata.version;
     refuse_dirty_tree(root, options)?;
+    refuse_development_key(root, options)?;
     let windivert = read_verified_windivert(root)?;
 
     let exe_path = metadata
@@ -93,7 +95,51 @@ pub fn run(root: &Path, options: &Options) -> Result<()> {
     }
     zip.finish()?;
 
-    report(&zip_path)
+    let update_archive = write_update_archive(&output_directory, version, &exe, &windivert)?;
+    report(&zip_path)?;
+    report(&update_archive)?;
+    println!("\n{}.sha256 written; sign it with: cargo xtask sign --key <private key> {}", update_archive.display(), update_archive.display());
+    Ok(())
+}
+
+/// The exe's updater never installs with the placeholder key, so a build made with
+/// it cannot update itself; a release needs a key from `cargo xtask keygen`.
+fn refuse_development_key(root: &Path, options: &Options) -> Result<()> {
+    if !update::embedded_key_is_development(root)? {
+        return Ok(());
+    }
+    if options.allow_development_key {
+        eprintln!(
+            "warning: --allow-development-key: crates/app/update-key.pub is still the DEVELOPMENT placeholder, so the exe \
+             built here never installs an update. For local testing only; never use this flag in CI or for a release."
+        );
+        return Ok(());
+    }
+    Err("crates/app/update-key.pub is still the DEVELOPMENT placeholder, so the exe could not install any update. \
+         Make the real key with `cargo xtask keygen --out <path outside the repository>`, copy the .pub file over \
+         crates/app/update-key.pub, commit it, and run dist again (docs/updates.md). \
+         `--allow-development-key` packages anyway, for local testing only; never use it in CI."
+        .into())
+}
+
+/// What the exe needs to run, as flat files, with its SHA-256 beside it; the
+/// signature is made later, with a private key this command never sees.
+fn write_update_archive(output_directory: &Path, version: &str, exe: &[u8], windivert: &[(&'static str, Vec<u8>)]) -> Result<PathBuf> {
+    let name = format!("{PACKAGE}-{version}{}", update::ARCHIVE_SUFFIX);
+    let path = output_directory.join(&name);
+    let mut zip = ZipWriter::new(File::create(&path)?);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    zip.start_file(format!("{PACKAGE}.exe"), options)?;
+    zip.write_all(exe)?;
+    for (file_name, bytes) in windivert {
+        zip.start_file(*file_name, options)?;
+        zip.write_all(bytes)?;
+    }
+    zip.finish()?;
+
+    let checksum_path = PathBuf::from(format!("{}.sha256", path.display()));
+    fs::write(&checksum_path, format!("{}  {name}\n", sha256_hex(&fs::read(&path)?)))?;
+    Ok(path)
 }
 
 fn source_statement(source: &SourceDelivery, version: &str, commit: &str) -> String {
@@ -273,6 +319,8 @@ pub fn crlf(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::{crlf, sha256_hex};
 
     #[test]
@@ -287,6 +335,56 @@ mod tests {
             sha256_hex(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    fn root_with_key_file(name: &str, key_file: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("belisk-xtask-{name}-{}", std::process::id()));
+        fs::create_dir_all(root.join("crates/app")).unwrap();
+        fs::write(root.join("crates/app/update-key.pub"), key_file).unwrap();
+        root
+    }
+
+    fn options(allow_development_key: bool) -> super::Options {
+        super::Options { allow_dirty: false, allow_development_key, source: super::SourceDelivery::Bundled }
+    }
+
+    #[test]
+    fn dist_fails_while_the_update_key_is_the_placeholder_and_says_how_to_fix_it() {
+        let root = root_with_key_file("placeholder-refused", "# DEVELOPMENT KEY\nab\n");
+
+        let error = super::refuse_development_key(&root, &options(false)).unwrap_err().to_string();
+
+        assert!(error.contains("DEVELOPMENT") && error.contains("cargo xtask keygen") && error.contains("--allow-development-key"), "{error}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_explicit_flag_lets_a_local_build_through_and_a_real_key_needs_no_flag() {
+        let placeholder = root_with_key_file("placeholder-allowed", "# DEVELOPMENT KEY\nab\n");
+        let real = root_with_key_file("real-key", "# Ed25519 public key\nab\n");
+
+        assert!(super::refuse_development_key(&placeholder, &options(true)).is_ok());
+        assert!(super::refuse_development_key(&real, &options(false)).is_ok());
+        fs::remove_dir_all(placeholder).unwrap();
+        fs::remove_dir_all(real).unwrap();
+    }
+
+    #[test]
+    fn the_update_archive_holds_the_exe_and_the_driver_files_flat_with_its_sha256_beside_it() {
+        let dir = std::env::temp_dir().join(format!("belisk-xtask-lean-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let windivert = vec![("WinDivert.dll", b"dll".to_vec()), ("WinDivert64.sys", b"sys".to_vec())];
+
+        let path = super::write_update_archive(&dir, "1.2.3", b"exe bytes", &windivert).unwrap();
+
+        assert_eq!(path.file_name().unwrap(), "belisk-1.2.3-windows-x64-update.zip");
+        let mut archive = zip::ZipArchive::new(fs::File::open(&path).unwrap()).unwrap();
+        let mut names: Vec<String> = (0..archive.len()).map(|index| archive.by_index(index).unwrap().name().to_owned()).collect();
+        names.sort();
+        assert_eq!(names, ["WinDivert.dll", "WinDivert64.sys", "belisk.exe"]);
+        let checksum = fs::read_to_string(format!("{}.sha256", path.display())).unwrap();
+        assert_eq!(checksum, format!("{}  belisk-1.2.3-windows-x64-update.zip\n", sha256_hex(&fs::read(&path).unwrap())));
+        fs::remove_dir_all(dir).unwrap();
     }
 }
 
@@ -307,6 +405,6 @@ mod source_statement_tests {
     #[test]
     fn bundled_statement_points_at_the_source_zip() {
         let text = source_statement(&SourceDelivery::Bundled, "2.4.0", "276d5e1");
-        assert!(text.contains("source\\aion-2-dps-meter-2.4.0-source.zip"));
+        assert!(text.contains("source\\belisk-2.4.0-source.zip"));
     }
 }

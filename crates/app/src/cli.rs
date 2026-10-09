@@ -27,13 +27,13 @@ pub enum Probe {
 }
 
 #[cfg(not(feature = "probes"))]
-pub const USAGE: &str = "usage: aion-2-dps-meter [--replay <file.aetherpc> [--speed <factor>] [--exit-after-replay]]";
+pub const USAGE: &str = "usage: belisk [--replay <recording> [--speed <factor>] [--exit-after-replay]]";
 
 #[cfg(feature = "probes")]
-pub const USAGE: &str = "usage: aion-2-dps-meter [--replay <file.aetherpc> [--speed <factor>] [--exit-after-replay]]\n\
-       aion-2-dps-meter --overlay-probe [--replay <file.aetherpc>]\n\
-       aion-2-dps-meter --font-probe [--capture <dir>]\n\
-       aion-2-dps-meter --capture <dir> (--fixtures | --replay <file.aetherpc> [--speed <factor>]) [--language <english|french>]";
+pub const USAGE: &str = "usage: belisk [--replay <recording> [--speed <factor>] [--exit-after-replay]]\n\
+       belisk --overlay-probe [--replay <recording>]\n\
+       belisk --font-probe [--capture <dir>]\n\
+       belisk --capture <dir> (--fixtures | --replay <recording> [--speed <factor>]) [--language <english|french>]";
 
 impl Args {
     /// Without a recording, and not one of the development checks, the app
