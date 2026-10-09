@@ -1,9 +1,10 @@
 ---
 id: TASK-26.2
 title: Remove fork-relative and Tauri-port comments
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:47'
+updated_date: '2026-10-09 17:21'
 labels:
   - maintenance
 dependencies: []
@@ -62,3 +63,9 @@ Source: fork-leftovers inventory of commit 7a48824 (2026-10-08). Line numbers re
 - [ ] #1 The listed upstream and Tauri-port comments are removed or reworded to a current fact with no reference to upstream or Tauri.
 - [ ] #2 No code changes; the workspace builds and the tests pass.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: Built and reviewed; not yet checked by the user. Tauri-port and 'as Aether did' comments rewritten to say what the code does now, or removed; no 'upstream' or 'Tauri' wording is left in the Rust sources.
+<!-- SECTION:NOTES:END -->

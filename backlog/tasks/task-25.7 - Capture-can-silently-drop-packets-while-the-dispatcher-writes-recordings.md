@@ -1,10 +1,10 @@
 ---
 id: TASK-25.7
 title: Capture can silently drop packets while the dispatcher writes recordings
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-08 12:35'
+updated_date: '2026-10-09 16:05'
 labels:
   - bug
 dependencies: []
@@ -52,3 +52,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 If packets are dropped anyway, the number dropped is counted and visible in diagnostics.
 - [ ] #3 Hits are read the same as before in a normal session.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: built and reviewed (agent-tested, not yet tested by the user). The session and rolling recordings are written by their own threads through bounded queues; rotation and pruning of the recordings folder happen there, so the thread that reads the game never waits on the disk. If a recording queue is full, whole packets are left out of the recording (the file stays valid) and counted; packets dropped before the dispatcher reads them are counted too. Both counts go to aether.log at most once every 30 s when something was dropped. The capture queue is now 8,192 packets (was 2,000,000): about 55 s of game traffic at the peak seen in the recordings. A replay of the compared fight recorded all 88,184 packets with none dropped and the same damage.
+<!-- SECTION:NOTES:END -->

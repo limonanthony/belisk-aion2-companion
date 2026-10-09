@@ -1,10 +1,10 @@
 ---
 id: TASK-20.1
 title: Check the ticket list against the game
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 20:31'
-updated_date: '2026-10-08 18:15'
+updated_date: '2026-10-09 09:48'
 labels:
   - feature
 dependencies: []
@@ -37,7 +37,7 @@ Update 2026-10-07: the Shugo Festival key is confirmed in game (the user has 7 k
 
 Remaining checks: Invasion keys, Deus Research Base / Shattered Arkanis (cap 4 vs 14), Abandoned Balaur Fortress / Fafnium Laboratory id order, Odyle Energy, and which tickets a Conquest entry spends.
 
-Findings: the owner's notes file `todo-autofill-findings.md`, with detailed notes next to it (notmeter-consumables.md, abyss-consumables.md, tickets-*.txt). Kept outside the repository on purpose (clean-room study of other meters).
+Findings: the owner's notes file `todo-autofill-findings.md`, with detailed notes next to it (consumables, abyss consumables, ticket lists). Kept outside the repository on purpose.
 
 Update 2026-10-08: the game servers were down, so the in-game comparison could not be done. The user chose to build first and compare the numbers once it works ("do you think it makes sense to implement now anyways and when it works I compare the numbers you found with what I have in game to gain time ?" — agreed).
 
@@ -51,4 +51,6 @@ Expected values for the in-game check if the reset is 09:00: Shugo keys 9, Invas
 Update 2026-10-08: the comparison will be done on the built app when the servers are back.
 
 Update 2026-10-08: in-game check confirmed Invasion keys 3, Nightmare 2, Odyle 90 + 245 extra (3-hour refills) and the 09:00 daily reset. The Daily Dungeon page shows "Attempt Count 14(+7)/14" (ticket 101: regular (+extra) / cap). Conquest, Deus Research Base, Shattered Arkanis, Abandoned Balaur Fortress and Fafnium Laboratory were settled as in TASK-20.3 (no per-dungeon limit on Global; only Odyle and the Daily Dungeon tickets limit entries). Remaining: the Ordeal ticket, known by name only.
+
+2026-10-08: user tested and accepted: "Toolbar hub works great and I haven't seen issues with the resources. So you can move all of these to done if we find issues we'll fix them on the go. I right now see no issues left except the skill. You can start 1."
 <!-- SECTION:NOTES:END -->

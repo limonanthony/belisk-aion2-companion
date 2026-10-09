@@ -1,10 +1,10 @@
 ---
 id: TASK-6
 title: Closing the meter with × leaves it running
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-06 15:07'
-updated_date: '2026-10-06 20:09'
+updated_date: '2026-10-09 09:48'
 labels:
   - bug
 dependencies: []
@@ -51,4 +51,6 @@ Not fixed yet, by the user's choice: "Just do the tickets don't fix yet i'll tes
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-06 agent fix, awaiting user test. The quit path was already fixed in commit d320c26 (quit.rs: TerminateProcess once the quit hooks finish); the report likely came from an older build [inference]. Capture stop is bounded (Npcap 100 ms read timeout, WinDivertShutdown before join). Change: the hung-hook backstop in crates/app/src/quit.rs went from 10 s to 3 s. Independent review accepted the trace from × to process exit. Not observed: a live × press on the real exe (agents never run it). To test: build, run, press ×, check Task Manager — with and without game traffic.
+
+2026-10-08: user tested and accepted: "Toolbar hub works great and I haven't seen issues with the resources. So you can move all of these to done if we find issues we'll fix them on the go. I right now see no issues left except the skill. You can start 1."
 <!-- SECTION:NOTES:END -->

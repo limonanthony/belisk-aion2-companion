@@ -1,10 +1,10 @@
 ---
 id: TASK-25.11
 title: Remove the upstream-merge rule from the docs and code comments
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:38'
-updated_date: '2026-10-08 14:48'
+updated_date: '2026-10-09 17:21'
 labels:
   - documentation
 dependencies: []
@@ -69,3 +69,9 @@ Reading AGENTS.md, docs/GPUI_MIGRATION.md and the core comments finds no request
 - [ ] #2 No code comment justifies a design by keeping the upstream diff small
 - [ ] #3 Credits and the GPL-3.0 licence are unchanged
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: Built and reviewed; not yet checked by the user. The upstream-merge rule and the merge instructions are gone from AGENTS.md and docs/GPUI_MIGRATION.md, and no code comment justifies a design by the upstream diff any more. Whether the region profile stays a global is TASK-25.18.
+<!-- SECTION:NOTES:END -->

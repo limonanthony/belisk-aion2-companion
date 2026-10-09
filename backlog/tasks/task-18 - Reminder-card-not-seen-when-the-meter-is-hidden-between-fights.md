@@ -4,7 +4,7 @@ title: 'Shugo reminder at 20:55 not seen (2026-10-07)'
 status: In Progress
 assignee: []
 created_date: '2026-10-07 19:02'
-updated_date: '2026-10-07 19:23'
+updated_date: '2026-10-09 12:36'
 labels:
   - bug
 dependencies: []
@@ -39,3 +39,9 @@ The Shugo Festival reminder was not seen by the user at 20:55 on 2026-10-07.
 - [ ] #2 Showing the reminder card never takes the keyboard focus from the game.
 - [ ] #3 During play, the user sees the next Shugo Festival reminder.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: the user believes this is fixed (cards were held back during loading screens or boss fights; today's reminder code has no such rule, and the card shows under the toolbar when the meter is closed). Waiting for the user to see a Shugo reminder during play.
+<!-- SECTION:NOTES:END -->

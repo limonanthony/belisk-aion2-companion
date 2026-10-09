@@ -3,10 +3,10 @@ id: TASK-25.6
 title: >-
   The UI thread does core work and disk I/O (history delete, PvP poll, saved
   reports)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-08 12:35'
+updated_date: '2026-10-09 16:05'
 labels:
   - bug
 dependencies: []
@@ -55,3 +55,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #3 Opening a saved fight report does not build the report on the UI thread.
 - [ ] #4 History list, PvP numbers and reports show the same data as before.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: built and reviewed (agent-tested, not yet tested by the user). History delete, delete all and reload already only touch memory since TASK-25.5. The PvP window now reads the meter on a background thread, one read at a time, and ignores a read older than a name change or a clear. A saved fight report is built on a background thread like the live one; the window opens when it is ready.
+<!-- SECTION:NOTES:END -->

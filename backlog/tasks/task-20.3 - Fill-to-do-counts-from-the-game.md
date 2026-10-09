@@ -1,10 +1,10 @@
 ---
 id: TASK-20.3
 title: Fill to-do counts from the game
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 20:31'
-updated_date: '2026-10-09 09:13'
+updated_date: '2026-10-09 09:48'
 labels:
   - feature
 dependencies:
@@ -45,4 +45,6 @@ Update 2026-10-08 (after the user's in-game checks): rows that limit nothing on 
 Built and reviewed, not committed; the release exe is not yet rebuilt.
 
 Update 2026-10-08 (user decision on the recharges in the to-do window): looking at the to-do window's Recharges section, the user said "I think we can remove the recharges from the todos now no ?". This replaces the earlier "we can still keep them in todo too". Odyle Energy, Shugo keys, Invasion keys, Nightmare and the Daily Dungeon now show only in the Resources window (and the toolbar's counts and warning). The to-do window keeps Duty Missions, Ascension Trial, Duty Commands and the player's own to-dos, and counts only those. Also since the last note: the Shugo Festival keys row is renamed "Shugo keys" and the "Account" tag shows as an icon (user: "yeah shugo keys is ok"); weekly rows the game doesn't limit on Global were removed (user: "No cap on transcendence or exploration or Conquest. Not sure for: Subjugation, Sanctuary, Ordeal", with no menu entry for the last three). Built and reviewed, not committed.
+
+2026-10-08: user tested and accepted: "Toolbar hub works great and I haven't seen issues with the resources. So you can move all of these to done if we find issues we'll fix them on the go. I right now see no issues left except the skill. You can start 1."
 <!-- SECTION:NOTES:END -->

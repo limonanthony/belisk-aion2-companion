@@ -1,10 +1,10 @@
 ---
 id: TASK-25.1
 title: 'The overlay stops updating between hits (names, boss HP, buffs)'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-08 12:35'
+updated_date: '2026-10-09 09:48'
 labels:
   - bug
 dependencies: []
@@ -58,3 +58,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 Boss HP and death changes during a pause in damage are shown on the overlay.
 - [ ] #3 A core-side regression test covers a name-only update reaching the app and fails before the fix.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: started at the user's request ('You can start 1'). Main's choice of direction, delegated by the user: send a frame whenever what it shows differs from the last frame sent (names, boss HP, deaths, buffs, damage), not only when total damage changes; identical frames are not resent every 200 ms while idle; remove the unused last_total_damage.
+<!-- SECTION:NOTES:END -->

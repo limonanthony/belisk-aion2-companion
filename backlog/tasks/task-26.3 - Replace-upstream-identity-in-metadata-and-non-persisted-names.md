@@ -1,10 +1,10 @@
 ---
 id: TASK-26.3
 title: Replace upstream identity in metadata and non-persisted names
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:47'
-updated_date: '2026-10-08 15:38'
+updated_date: '2026-10-09 22:19'
 labels:
   - maintenance
 dependencies: []
@@ -75,6 +75,12 @@ Source: fork-leftovers inventory of commit 7a48824 (2026-10-08). Line numbers re
 - [ ] #3 boss_ids.json carries no provenance text; the provenance is in the notices.
 - [ ] #4 Persisted identifiers and product-name strings are unchanged by this ticket.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: package metadata, temp folders, test names, probe strings and log prefixes now say Belisk; credits, licence text and history documents keep the old names on purpose.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

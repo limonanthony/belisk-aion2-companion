@@ -1,10 +1,10 @@
 ---
 id: TASK-28
 title: Update the app from GitHub Releases
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 15:23'
-updated_date: '2026-10-08 15:33'
+updated_date: '2026-10-09 20:59'
 labels:
   - feature
 dependencies: []
@@ -68,6 +68,12 @@ Players learn about new versions inside the app and can update with a click. The
 - TASK-6: closing with × must end the process.
 - TASK-27: README.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: built and reviewed twice for security (not yet tested by the user; no live download possible until the GitHub repository exists). A toolbar icon appears only when an update is available, downloading or ready; Settings › About › Updates shows the status, Check now (once a minute), the automatic download switch (on by default), release notes and errors. Downloads are capped at 1 MB/s and paused during fights. Updates are verified (SHA-256 and an Ed25519 signature) before anything is installed; the restart helper is the installed exe itself, re-verifies and swaps only the exe and the two WinDivert files, with rollback; the running exe is held so it can't be swapped before a restart. Builds without a repository (UPDATE_REPO) or with the development key have updates turned off, and cargo xtask dist refuses the development key. The user still has to generate the real signing key (docs/updates.md).
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

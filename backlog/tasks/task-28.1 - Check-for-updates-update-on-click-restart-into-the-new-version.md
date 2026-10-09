@@ -1,9 +1,10 @@
 ---
 id: TASK-28.1
 title: 'Check for updates, update on click, restart into the new version'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 15:23'
+updated_date: '2026-10-09 20:59'
 labels:
   - feature
 dependencies: []
@@ -109,3 +110,9 @@ Add unit tests for comparing versions and for the swap order (staging and the re
 - [ ] #4 Without network, or when GitHub refuses requests, the app keeps working, shows no error during play, and checks again later without retrying in a loop
 - [ ] #5 All new text exists in English and French
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: built and reviewed; see TASK-28's note.
+<!-- SECTION:NOTES:END -->

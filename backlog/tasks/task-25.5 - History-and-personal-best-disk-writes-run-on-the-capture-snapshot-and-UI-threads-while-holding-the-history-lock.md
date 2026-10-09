@@ -3,10 +3,10 @@ id: TASK-25.5
 title: >-
   History and personal-best disk writes run on the capture, snapshot and UI
   threads while holding the history lock
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-08 12:35'
+updated_date: '2026-10-09 09:48'
 labels:
   - bug
 dependencies: []
@@ -68,3 +68,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #3 A History delete does not block the snapshot thread or the window.
 - [ ] #4 Saved fights and deletes still reach the disk, including on quit.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: started at the user's request ('You can start 1'). Main's choice of direction, delegated by the user: Option A: a dedicated writer thread, as MobCatalog does; the records lock is never held during disk I/O; pending saves are flushed on quit.
+<!-- SECTION:NOTES:END -->

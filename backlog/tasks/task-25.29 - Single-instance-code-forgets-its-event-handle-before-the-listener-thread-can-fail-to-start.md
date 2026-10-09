@@ -3,9 +3,10 @@ id: TASK-25.29
 title: >-
   Single-instance code forgets its event handle before the listener thread can
   fail to start
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:41'
+updated_date: '2026-10-09 14:03'
 labels:
   - bug
 dependencies: []
@@ -50,3 +51,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #1 If the listener thread cannot be started, the event handle is released rather than leaked.
 - [ ] #2 With the thread started normally, a second launch still brings the first instance forward.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: fixed: the event handle is forgotten only after the listener thread has started; if the thread cannot start, it is closed with the lock. Also a second launch (and the tray's Show toolbar) now brings the meter forward too when it is open and on screen. Reviewed, not yet tested by the user.
+<!-- SECTION:NOTES:END -->

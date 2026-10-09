@@ -1,9 +1,10 @@
 ---
 id: TASK-13
 title: Settings window opens behind other windows
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 00:15'
+updated_date: '2026-10-09 09:48'
 labels:
   - bug
 dependencies: []
@@ -41,3 +42,9 @@ Cause: unknown, being investigated.
 - [ ] #2 If the Settings window is already open behind other windows, clicking Settings brings it to the front.
 - [ ] #3 Opening Settings does not make the meter itself take focus from the game when Settings closes.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: user tested and accepted: "Toolbar hub works great and I haven't seen issues with the resources. So you can move all of these to done if we find issues we'll fix them on the go. I right now see no issues left except the skill. You can start 1."
+<!-- SECTION:NOTES:END -->

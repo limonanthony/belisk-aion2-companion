@@ -1,10 +1,10 @@
 ---
 id: TASK-31
 title: Detect a wipe and show the failed attempt
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-08 18:15'
-updated_date: '2026-10-08 19:44'
+updated_date: '2026-10-09 09:48'
 labels:
   - feature
 dependencies: []
@@ -56,4 +56,6 @@ Kills and the existing "Fight ended" outcome behave as before.
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-08: Built and independently reviewed, not committed, awaiting the user's test. The game's data confirms the signal: on the user's recording of 2026-10-08 19:56 Talisra of the Void went from 12.8% straight back to full HP (a wipe); in other recordings Atiel disappeared without dying and came back as a new spawn. Rules: the boss's HP back to full after it dropped below 98% (with an unchanged max HP), or the boss removed without dying; a death in the same moment cancels it. The wipe shows a red 'Wiped · N% left' card with the attempt's stats and report, is saved in History with a red mark and its report, is left out of personal bests, and the next pull starts from zero. In dungeons the boss stays locked across the wipe (a respawned boss takes the lock); in the open world it is released.
+
+2026-10-08: user tested and accepted: "Toolbar hub works great and I haven't seen issues with the resources. So you can move all of these to done if we find issues we'll fix them on the go. I right now see no issues left except the skill. You can start 1."
 <!-- SECTION:NOTES:END -->

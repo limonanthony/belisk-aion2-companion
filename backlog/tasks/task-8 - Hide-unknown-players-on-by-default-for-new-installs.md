@@ -1,9 +1,10 @@
 ---
 id: TASK-8
 title: Hide unknown players on by default for new installs
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-06 20:51'
+updated_date: '2026-10-09 09:48'
 labels:
   - feature
 dependencies: []
@@ -41,3 +42,9 @@ Does not cover:
 - [ ] #2 An existing settings.json keeps its saved value for this switch.
 - [ ] #3 The user's own row stays visible while the game has not named them.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: user tested and accepted: "Toolbar hub works great and I haven't seen issues with the resources. So you can move all of these to done if we find issues we'll fix them on the go. I right now see no issues left except the skill. You can start 1."
+<!-- SECTION:NOTES:END -->

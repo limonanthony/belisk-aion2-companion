@@ -1,10 +1,10 @@
 ---
 id: TASK-23
 title: Rename the product to Kisk
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 11:32'
-updated_date: '2026-10-08 14:50'
+updated_date: '2026-10-09 22:19'
 labels:
   - improvement
 dependencies: []
@@ -41,6 +41,14 @@ Intent: the project gets a new player-facing name, **Kisk**, replacing "AION 2 D
 - Whether and when the internal identifiers and data folder are renamed, and how existing user data migrates.
 - Whether a formal trademark/name clash check is wanted before release.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: user: 'I don't see kisk anywhere though...' with a screenshot of the AION 2 map showing a 'Kibelisk': in AION 2 the respawn obelisk players see is the Kibelisk, so the Kisk reference may not land. The name is open again; the data folder (TASK-26.4) and the recording extension (TASK-26.6) wait for it.
+
+2026-10-09/10 user decisions: the name is **Belisk** (from the Kibelisk players plant to respawn; Kisk dropped because the game shows 'Kibelisk'), so the title above ("Kisk") is superseded; tagline 'Belisk — combat meter and companion for AION 2' (French « Belisk — compteur de combat et compagnon pour AION 2 »); 'Yes, rename the exe and zip'. Built and reviewed (not yet tested by the user): the app, Settings, tray, toolbar and About say Belisk; the exe is belisk.exe and the zips belisk-<version>-windows-x64.zip (+ -update.zip); README and the player README updated. A quick web search found no app named Belisk; no trademark check was done.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

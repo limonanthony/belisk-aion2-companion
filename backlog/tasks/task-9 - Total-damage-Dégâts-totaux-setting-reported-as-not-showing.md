@@ -1,9 +1,10 @@
 ---
 id: TASK-9
 title: Total damage (Dégâts totaux) setting reported as not showing
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-06 22:02'
+updated_date: '2026-10-09 12:36'
 labels:
   - bug
 dependencies: []
@@ -43,3 +44,9 @@ Related: TASK-7 (English and French translations).
 - [ ] #1 With French as the language, the Total damage (Dégâts totaux) setting is shown in Settings and, when on, total damage is shown on the meter.
 - [ ] #2 The same holds in English.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: the setting worked in build 01bc913 too: it adds total damage to the Target board only, and the Session board always shows total damage, but the Settings row did not say so then. Since d110c7b (2026-10-07) the row reads 'On the Target board. The Session board always shows it.' / 'Sur le tableau Cible. Le tableau Session l'affiche toujours.' User: 'It's all good you can put this ticket as done.'
+<!-- SECTION:NOTES:END -->

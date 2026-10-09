@@ -1,10 +1,10 @@
 ---
 id: TASK-28.2
 title: 'Download updates automatically, throttled, then only ask to restart'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 15:23'
-updated_date: '2026-10-08 15:23'
+updated_date: '2026-10-09 20:59'
 labels:
   - feature
 dependencies:
@@ -74,3 +74,9 @@ Step 2 of the update feature: an "auto update" setting. When it is on, the app d
 - [ ] #3 The app never restarts or installs an update without the player's click on Restart
 - [ ] #4 With the setting off, updating works as in step 1
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: built and reviewed; see TASK-28's note.
+<!-- SECTION:NOTES:END -->

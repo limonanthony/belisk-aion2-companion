@@ -1,9 +1,10 @@
 ---
 id: TASK-10
 title: No Shugo Festival reminder reported for the midnight start
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-06 22:02'
+updated_date: '2026-10-09 12:46'
 labels:
   - bug
 dependencies: []
@@ -45,3 +46,11 @@ Related: TASK-1 (Event reminders for recurring timed events, Done).
 - [ ] #1 With the Shugo Festival reminder on, a reminder appears before the Shugo Festival that starts at midnight local time, as it does for other hours.
 - [ ] #2 The midnight start is correct across a day change and on daylight-saving changeover days.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: user: 'For the shugo reminder for the midnight start I need to remember to check correctly I forget everytime (but I believe it's fixed it was when in a loading screen or during a boss fight notifications were not send I believe)'. Today's reminder code has no rule that holds a card back during a loading screen or a fight, and the card now shows under the toolbar when the meter is closed (TASK-24). Waiting for the user to check a midnight Shugo Festival while in game.
+
+2026-10-09: user accepted: "put task-10 in done we'll put it back if it has issues again."
+<!-- SECTION:NOTES:END -->

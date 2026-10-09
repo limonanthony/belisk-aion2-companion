@@ -1,10 +1,10 @@
 ---
 id: TASK-25.4
 title: Personal bests can be corrupted or resurrected
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-08 12:35'
+updated_date: '2026-10-09 09:48'
 labels:
   - bug
 dependencies: []
@@ -58,3 +58,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #3 A write interrupted halfway leaves the previous file intact.
 - [ ] #4 A missing file (a real first run) still builds the bests from history.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: started at the user's request ('You can start 1'). Main's choice of direction, delegated by the user: atomic write as history and mobs do; versioned file that still reads today's unversioned file; an unreadable file is set aside and the meter starts with no bests (not rebuilt from history); a missing file still rebuilds from history; write errors are logged.
+<!-- SECTION:NOTES:END -->

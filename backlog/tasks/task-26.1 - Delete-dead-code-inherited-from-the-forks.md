@@ -1,9 +1,10 @@
 ---
 id: TASK-26.1
 title: Delete dead code inherited from the forks
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:47'
+updated_date: '2026-10-09 17:21'
 labels:
   - maintenance
 dependencies: []
@@ -60,3 +61,9 @@ Source: fork-leftovers inventory of commit 7a48824 (2026-10-08). Line numbers re
 - [ ] #2 The sweep of public functions with no callers (and of scripts/) is done and every function found is deleted or documented as used.
 - [ ] #3 The workspace builds, the tests pass, and a replay gives the same boards as before.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: Built and reviewed; not yet checked by the user. Dead code from the forks removed after checking every crate (app, probes build, packet-explorer, xtask, examples, tests): unused meter methods (check_state, is_auto_recording, delete_history_records, save_diagnostics_report, tcp_reassembly_status, get_last_snapshot), the old startup-gate flags, unused capture-queue and reassembly helpers, commented-out code and file-wide dead-code allowances. The gap-skip diagnostics TASK-19 relies on are kept.
+<!-- SECTION:NOTES:END -->

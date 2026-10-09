@@ -1,10 +1,10 @@
 ---
 id: TASK-27
 title: Say up front that this project is built from Aether and NOIA2
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:47'
-updated_date: '2026-10-08 14:48'
+updated_date: '2026-10-09 17:21'
 labels:
   - documentation
 dependencies: []
@@ -82,3 +82,9 @@ Out of scope:
 - [ ] #3 The Credits section is still present and consistent with the statement; LICENSE is unchanged
 - [ ] #4 The statement would still be correct after the Kisk rename without rewording
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: Built and reviewed; not yet checked by the user. README.md now says near the top that the project was built from Aether (Helveticxa), itself a fork of NOIA2 (zdyoung), with links and thanks; that it started from Aether 2.4.0 (commit d9f1d98, 2026-09-24) and has been modified since (the GPL-3.0 notice of modification); that there is no upstream any more; what came from them. Credits, LICENSE and the zip's notices are unchanged: the licence asks nothing more there. Also fixed: the README said Alt+CapsLock shows or hides the overlay; it now says Alt+CapsLock locks it and Alt+Shift+CapsLock shows or hides the toolbar and open tools.
+<!-- SECTION:NOTES:END -->

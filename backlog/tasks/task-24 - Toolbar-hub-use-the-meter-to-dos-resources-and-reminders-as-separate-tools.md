@@ -1,10 +1,10 @@
 ---
 id: TASK-24
 title: 'Toolbar hub: use the meter, to-dos, resources and reminders as separate tools'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-08 12:33'
-updated_date: '2026-10-08 16:53'
+updated_date: '2026-10-09 09:48'
 labels:
   - feature
 dependencies: []
@@ -74,4 +74,6 @@ Order of building against TASK-20. Main proposed: shared resource values first, 
 
 <!-- SECTION:NOTES:BEGIN -->
 Built 2026-10-08, not committed, awaiting the user's test: the game's ticket values fill the to-do window and the new Resources window; a horizontal toolbar is the hub (meter, PvP, to-dos, History, reminders, Settings; Odyle and Shugo keys counts; ⚠ dropdown of full resources); only the toolbar opens at launch ("Open the meter at launch" in Settings → Overlay, off by default; one-time prompt); the meter's "…" holds only the boss setting; fights are tracked only while the meter is open (closing it mid-fight ends and saves the fight like the idle timeout); tray icon (Show toolbar / Quit); Alt+Shift+CapsLock shows/hides everything; the daily reset now follows the game's 07:00 UTC across summer/winter time unless the player picked another hour. Independent review accepted after fixes. Open data still to confirm in game: Deus/Arkanis cap (built 4), Conquest tickets (built per dungeon), Balaur/Fafnium ids, Ordeal ticket.
+
+2026-10-08: user tested and accepted: "Toolbar hub works great and I haven't seen issues with the resources. So you can move all of these to done if we find issues we'll fix them on the go. I right now see no issues left except the skill. You can start 1."
 <!-- SECTION:NOTES:END -->

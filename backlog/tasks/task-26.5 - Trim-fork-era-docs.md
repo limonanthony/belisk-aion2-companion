@@ -1,10 +1,10 @@
 ---
 id: TASK-26.5
 title: Trim fork-era docs
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:47'
-updated_date: '2026-10-08 12:48'
+updated_date: '2026-10-09 17:21'
 labels:
   - documentation
 dependencies: []
@@ -31,7 +31,7 @@ FORK.md was written to describe the fork's changes against Aether, and AGENTS.md
 |---|---|---|
 | FORK.md Tauri-era sections | `FORK.md` 9-13, 119, 181, 816 | Trim or move to a history document |
 | FORK.md Supabase / cloud text | `FORK.md` 51-54, 98-104 | Remove (this project has no cloud) |
-| A previous maintainer's personal signing-key path (`<user profile>/.aether-release/…`) | `FORK.md` 246-247 | Remove |
+| A previous maintainer's personal signing-key path (a user-profile path under `.aether-release`) | `FORK.md` 246-247 | Remove |
 | AGENTS.md `src-tauri` upstream-merge rule | `AGENTS.md` 91-102 | Rewrite or drop, depending on the upstream-convention decision (TASK-25.11) |
 | README key binding inconsistency: Alt+CapsLock in the README, Alt+E in the CHANGELOG | `README.md`; `CHANGELOG.md` | Check which is current in the code and fix the wrong one (check the code, do not guess) |
 | CHANGELOG entries from the Aether and Chinese-era builds | `CHANGELOG.md` 231-233, 459-464, 585-598, 639-642 | Keep (history); do not rewrite |
@@ -65,3 +65,9 @@ Source: fork-leftovers inventory of commit 7a48824 (2026-10-08). Line numbers re
 - [ ] #3 README and CHANGELOG agree on the key binding, matching the code.
 - [ ] #4 CHANGELOG history and the zh-CN protocol document are unchanged.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: Built and reviewed; not yet checked by the user. FORK.md trimmed: Supabase text, the old signing-key path and updater/versioning sections, the Tauri-era running and quality-gate notes, the upstream merge notes and the background-video section are gone; Always on top, live chat, light theme and the 2.2.0 removals are short history notes. CHANGELOG history and the Chinese protocol notes are kept as they are.
+<!-- SECTION:NOTES:END -->

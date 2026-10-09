@@ -1,10 +1,10 @@
 ---
 id: TASK-20
 title: Fill the to-do counts from the game
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 20:31'
-updated_date: '2026-10-08 11:47'
+updated_date: '2026-10-09 09:48'
 labels:
   - feature
 dependencies: []
@@ -31,7 +31,7 @@ Paused 2026-10-07: the user has other fixes to do first.
 
 ## Findings
 
-The summary is the owner's notes file `todo-autofill-findings.md`, with the detailed notes next to it (notmeter-consumables.md, abyss-consumables.md, tickets-*.txt). They are kept outside the repository on purpose (clean-room study of other meters).
+The summary is the owner's notes file `todo-autofill-findings.md`, with the detailed notes next to it (consumables, abyss consumables, ticket lists). They are kept outside the repository on purpose.
 
 ## Scope
 
@@ -78,4 +78,6 @@ TASK-2 (existing to-do tracker, manual counts), TASK-17 (whole-session recording
 
 <!-- SECTION:NOTES:BEGIN -->
 Resumed 2026-10-08.
+
+2026-10-08: user tested and accepted: "Toolbar hub works great and I haven't seen issues with the resources. So you can move all of these to done if we find issues we'll fix them on the go. I right now see no issues left except the skill. You can start 1."
 <!-- SECTION:NOTES:END -->

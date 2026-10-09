@@ -1,10 +1,10 @@
 ---
 id: TASK-5
 title: The user's own name shown twice on the scoreboard
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-06 14:49'
-updated_date: '2026-10-06 20:09'
+updated_date: '2026-10-09 09:48'
 labels:
   - bug
 dependencies: []
@@ -54,4 +54,6 @@ Evidence to gather: aether.log `[meter] identity:` lines with Settings → Captu
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-06 agent fix, awaiting user test. Cause: the session board keyed rows by actor id, and the player gets a new actor id in every zone; the earlier id kept its damage and name, giving a second row with the same name and class. Fix (crates/core/src/engine/session.rs): rows of every id the meter established as the local player during the session are folded into one row; name alone never merges, so a namesake from another server keeps its own row. The session skill detail for that row adds up to the board figure. Summon rules unchanged. Independent review accepted after one correction round. Not observed: a live session board after real zone changes. The unnamed "ID:<n>" rows were not investigated. Other players may still show one row per zone they were seen in [inference, not tested].
+
+2026-10-08: user tested and accepted: "Toolbar hub works great and I haven't seen issues with the resources. So you can move all of these to done if we find issues we'll fix them on the go. I right now see no issues left except the skill. You can start 1."
 <!-- SECTION:NOTES:END -->

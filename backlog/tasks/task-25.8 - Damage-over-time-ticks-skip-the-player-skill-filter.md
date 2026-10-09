@@ -1,9 +1,10 @@
 ---
 id: TASK-25.8
 title: Damage-over-time ticks skip the player-skill filter
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
+updated_date: '2026-10-09 14:03'
 labels:
   - bug
 dependencies: []
@@ -49,3 +50,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 Damage ticks from player skills are still counted with the same totals as before.
 - [ ] #3 Heal ticks and damage taken from monster ticks are unchanged.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: still real at the start of today (a monster's damage-over-time tick on a player was also counted as damage dealt by the monster). Fixed: one reader for these ticks and one rule deciding monster vs player for both damage dealt and damage taken; Thamon absorption excluded in both fields; heal ticks unchanged. Check on 36 recordings: the new reader accepts the same 21,203 ticks as the old one. Reviewed, not yet tested by the user.
+<!-- SECTION:NOTES:END -->

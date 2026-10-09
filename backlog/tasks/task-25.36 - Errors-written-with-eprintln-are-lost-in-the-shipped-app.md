@@ -1,9 +1,10 @@
 ---
 id: TASK-25.36
 title: Errors written with eprintln! are lost in the shipped app
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 15:38'
+updated_date: '2026-10-09 16:05'
 labels:
   - bug
 dependencies: []
@@ -69,3 +70,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers and counts
 - [ ] #2 No eprintln! remains in shipped (non-test, non-probes) code
 - [ ] #3 No log write is added per packet on the capture thread
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: built and reviewed (agent-tested, not yet tested by the user). The 49 messages the shipped app wrote to a console it doesn't have now go to aether.log (errors and warnings: failed loads and saves with the file and reason, windows that could not open, startup, quit, shortcuts, tray, capture device). Pure narration was moved to debug or removed. Nothing is written per packet. Replays and screenshot captures log to a temporary file instead of aether.log.
+<!-- SECTION:NOTES:END -->

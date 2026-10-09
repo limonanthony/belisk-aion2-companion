@@ -3,10 +3,10 @@ id: TASK-29
 title: >-
   Show the changelog in the app (what's new after an update, full history in
   Settings)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 15:30'
-updated_date: '2026-10-08 15:33'
+updated_date: '2026-10-09 20:59'
 labels:
   - feature
 dependencies: []
@@ -95,6 +95,12 @@ Players see what changed, in their language, inside the app: right after an upda
 - [ ] #4 cargo test fails when the English and French changelogs list different versions or bullet counts, or use syntax outside the supported subset
 - [ ] #5 The notice never opens a window or takes focus during a fight
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: user approved the update/changelog mockups ('Approve all') and the open-question answers ('All OK'): no switch to turn update checks off, no beta channel, players from an older build see 1.0.0's notes once, Aether's old history moved out of CHANGELOG.md (now docs/aether-changelog.md), ed25519 signing, hourly checks continue while an update waits. Built and reviewed (not yet tested by the user): version 1.0.0; CHANGELOG.md and CHANGELOG.fr.md with a 1.0.0 entry (please read both); What's new opens once after an update under the toolbar (never on a fresh install, never during a fight); Settings › About › Changelog with five versions then Show older. Not built: reopening the tools that were open before a restart (approved item 8) needs a decision on remembering open windows.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

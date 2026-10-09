@@ -21,9 +21,9 @@ The dimensional rifts (Dimensional Invasion, the ones that require a key like th
 
 ## Findings
 
-Every public source (game schedule tables read from the client) says the invasion starts every hour at :30, as one of three invasions at a random field spot in Verteron or Altgard. The user's recordings can neither confirm nor rule out skipped hours: the game only tells a player about an invasion they are near. The Shugo Festival, checked the same way, was there every time.
+Every public source (published game schedule tables) says the invasion starts every hour at :30, as one of three invasions at a random field spot in Verteron or Altgard. The user's recordings can neither confirm nor rule out skipped hours: the game only tells a player about an invasion they are near. The Shugo Festival, checked the same way, was there every time.
 
-Findings file: the owner's notes file `invasion-schedule.md`
+Findings file: the owner's notes file `invasion-schedule.md`, kept outside the repository.
 
 ## Possible explanations (unconfirmed)
 

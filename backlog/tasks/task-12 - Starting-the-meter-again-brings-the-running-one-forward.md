@@ -1,9 +1,10 @@
 ---
 id: TASK-12
 title: Starting the meter again brings the running one forward
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-06 23:07'
+updated_date: '2026-10-09 12:46'
 labels:
   - feature
 dependencies: []
@@ -38,3 +39,9 @@ Related: TASK-10 (No Shugo Festival reminder reported for the midnight start), t
 - [ ] #3 Launching the meter after the previous one has closed (including after a crash) starts normally.
 - [ ] #4 Screenshot capture and replay runs start and work while a meter is running, and do not bring it forward.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09: user: "Task-12 was probably when the agent was doing test it ran it and I was seeing double notifications (i believe only the dps-meter at the time was hidden but notifications weren't) I believe it was fixed too." The app has a single-instance guard for live runs (crates/app/src/single_instance.rs, lib.rs): a second launch asks the running app to show its toolbar and ends; captures, replays and probes are not guarded.
+<!-- SECTION:NOTES:END -->

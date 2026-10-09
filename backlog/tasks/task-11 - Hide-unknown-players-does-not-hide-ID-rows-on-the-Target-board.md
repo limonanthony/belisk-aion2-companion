@@ -1,9 +1,10 @@
 ---
 id: TASK-11
 title: Hide unknown players does not hide ID rows on the Target board
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-06 22:36'
+updated_date: '2026-10-09 09:48'
 labels:
   - bug
 dependencies: []
@@ -45,3 +46,9 @@ Related: TASK-8 (Hide unknown players on by default for new installs).
 - [ ] #2 The user's own row stays visible while the game has not named them.
 - [ ] #3 Every other place that lists players by name (Session board, PvP, fight summary, detail, history) follows the switch the same way, or this task notes why a place is exempt.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: user tested and accepted: "Toolbar hub works great and I haven't seen issues with the resources. So you can move all of these to done if we find issues we'll fix them on the go. I right now see no issues left except the skill. You can start 1."
+<!-- SECTION:NOTES:END -->

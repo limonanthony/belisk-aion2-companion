@@ -1,9 +1,10 @@
 ---
 id: TASK-26.6
 title: Rename the recording format to .kiskrec and keep reading .aetherpc
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 14:50'
+updated_date: '2026-10-09 22:19'
 labels:
   - improvement
 dependencies: []
@@ -77,3 +78,9 @@ Give packet recordings the product's own name, and keep every `.aetherpc` file t
 - [ ] #3 Recording lists, packet-explorer name lookup and rolling pruning include both .kiskrec and .aetherpc files
 - [ ] #4 A test decoding a fixed AETHERPC v1 file fails if old recordings stop being readable
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09 user decision: the extension is .belisk (supersedes .kiskrec). Built and reviewed: new recordings are .belisk with a new 8-byte header mark; .aetherpc recordings stay readable everywhere (replay, packet-explorer, the Settings list, pruning).
+<!-- SECTION:NOTES:END -->

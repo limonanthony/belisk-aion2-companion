@@ -1,10 +1,10 @@
 ---
 id: TASK-25.3
 title: Fight history can be wiped when the history file cannot be read
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-08 12:35'
+updated_date: '2026-10-09 09:48'
 labels:
   - bug
 dependencies: []
@@ -55,3 +55,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 A failed serialisation never changes the history file on disk.
 - [ ] #3 A readable history file loads exactly as before.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: started at the user's request ('You can start 1'). Main's choice of direction, delegated by the user: set an unreadable history file aside under a *.bad-<seconds> name and start empty; never write when serialising fails.
+<!-- SECTION:NOTES:END -->
