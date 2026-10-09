@@ -4,7 +4,7 @@ title: Check the ticket list against the game
 status: In Progress
 assignee: []
 created_date: '2026-10-07 20:31'
-updated_date: '2026-10-08 16:53'
+updated_date: '2026-10-08 18:15'
 labels:
   - feature
 dependencies: []
@@ -49,4 +49,6 @@ New evidence from the 2026-10-07 22:40 – 2026-10-08 02:21 recordings:
 Expected values for the in-game check if the reset is 09:00: Shugo keys 9, Invasion keys 3, Balaur/Fafnium 7/7, Deus/Arkanis 4/4, Nightmare 2, Odyle 60 + 245 extra.
 
 Update 2026-10-08: the comparison will be done on the built app when the servers are back.
+
+Update 2026-10-08: in-game check confirmed Invasion keys 3, Nightmare 2, Odyle 90 + 245 extra (3-hour refills) and the 09:00 daily reset. The Daily Dungeon page shows "Attempt Count 14(+7)/14" (ticket 101: regular (+extra) / cap). Conquest, Deus Research Base, Shattered Arkanis, Abandoned Balaur Fortress and Fafnium Laboratory were settled as in TASK-20.3 (no per-dungeon limit on Global; only Odyle and the Daily Dungeon tickets limit entries). Remaining: the Ordeal ticket, known by name only.
 <!-- SECTION:NOTES:END -->
