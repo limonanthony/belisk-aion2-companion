@@ -1,7 +1,9 @@
 /// The key a skill-name table knows a skill under: the exact id first, then the
 /// forms the backend normalises skill ids to. A damage-over-time id is its skill
 /// id followed by two digits, so it is last tried with them cut off: that is how
-/// a nine-digit id such as 160467011 reaches the seven-digit key 1604670.
+/// a nine-digit id such as 160467011 reaches the seven-digit key 1604670. A
+/// consumable buff (scroll, potion; 20 to 29 million) is the item skill's
+/// seven-digit key plus one digit, tried with that digit cut off.
 /// `is_named` says whether the table has a key; when none matches, the first
 /// eight digits are returned.
 pub fn resolve_skill_key(code: u32, is_named: impl Fn(&str) -> bool) -> String {
@@ -19,6 +21,9 @@ pub fn resolve_skill_key(code: u32, is_named: impl Fn(&str) -> bool) -> String {
     }
     if raw.len() > 8 {
         candidates.push((code / 100).to_string());
+    }
+    if (20_000_000..30_000_000).contains(&code) {
+        candidates.push((code / 10).to_string());
     }
     candidates
         .into_iter()
@@ -48,6 +53,18 @@ mod tests {
     fn the_exact_id_and_the_earlier_forms_win_over_the_cut_off_form() {
         assert_eq!(key(160_467_011, &["160467011", "1604670"]), "160467011");
         assert_eq!(key(120_001_611, &["12000100", "1200016"]), "12000100");
+    }
+
+    #[test]
+    fn a_consumable_buff_id_is_its_seven_digit_skill_and_one_digit() {
+        assert_eq!(key(22_101_051, &["2210105"]), "2210105");
+        assert_eq!(key(20_111_011, &["2011101"]), "2011101");
+    }
+
+    #[test]
+    fn the_consumable_form_only_applies_to_the_consumable_buff_range() {
+        assert_eq!(key(16_300_010, &["1630001"]), "16300010");
+        assert_eq!(key(22_101_051, &["22101051", "2210105"]), "22101051");
     }
 
     #[test]
