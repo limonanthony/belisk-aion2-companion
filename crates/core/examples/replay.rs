@@ -2,7 +2,7 @@
 //! summary of the final snapshot. No capture driver is loaded and no elevation
 //! is needed.
 //!
-//!     cargo run --example replay -- <recording.aetherpc> [--names] [--tickets] [--fights on|off|from-identity|from-tickets]
+//!     cargo run --example replay -- <recording.aetherpc> [--names] [--tickets] [--fights on|off|from-identity|from-tickets] [--speed N]
 //!
 //! Other players' names are only printed with `--names`. `--tickets` lists the
 //! ticket events the core emitted, with the capture time as Unix seconds.
@@ -10,6 +10,10 @@
 //! closed; `--fights from-identity` turns it on when the game first names the
 //! player's character, and `--fights from-tickets` at the first ticket event,
 //! as if the meter were opened then.
+//! `--speed N` replays at N times the recorded pace, which the boss wipes need:
+//! the meter closes a wiped attempt on its snapshot tick (200 ms), so an
+//! unpaced replay would close every wipe at the end. The boss wipes the meter
+//! closed and the history it saved are listed at the end.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -44,6 +48,7 @@ enum FightMode {
 struct CollectingSink {
     counts: Mutex<BTreeMap<&'static str, usize>>,
     tickets: Mutex<Vec<TicketReport>>,
+    wipes: Mutex<Vec<String>>,
     outcome: Mutex<Sender<ReplayOutcome>>,
     meter: OnceLock<Arc<DpsMeter>>,
     fights: FightMode,
@@ -64,11 +69,24 @@ impl EventSink for CollectingSink {
             MeterEvent::PacketReplayFinished(_) => "packet-replay-finished",
             MeterEvent::PacketReplayFailed(_) => "packet-replay-failed",
             MeterEvent::DpsIdleHidden(_) => "dps-idle-hidden",
+            MeterEvent::BossWiped(_) => "boss-wiped",
         };
         *self.counts.lock().unwrap().entry(name).or_default() += 1;
 
         if let MeterEvent::Tickets(report) = &event {
             self.tickets.lock().unwrap().push(report.clone());
+        }
+        if let MeterEvent::BossWiped(wiped) = &event {
+            let target = wiped.snapshot.combat_infos.target_infos.get(&wiped.target_id);
+            self.wipes.lock().unwrap().push(format!(
+                "target {} {} hp {:?}/{:?} players {} record {:?}",
+                wiped.target_id,
+                target.and_then(|target| target.target_name.as_deref()).unwrap_or("(unnamed)"),
+                target.and_then(|target| target.current_hp),
+                target.and_then(|target| target.max_hp),
+                wiped.snapshot.by_target_player_stats.get(&wiped.target_id).map_or(0, |players| players.len()),
+                wiped.record_id
+            ));
         }
         let opens_the_meter = match &event {
             MeterEvent::MainActorDetected(payload) => {
@@ -96,11 +114,19 @@ fn main() -> ExitCode {
     let mut show_names = false;
     let mut show_tickets = false;
     let mut fights = FightMode::On;
+    let mut speed = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--names" => show_names = true,
             "--tickets" => show_tickets = true,
+            "--speed" => match args.next().and_then(|value| value.parse::<f64>().ok()) {
+                Some(value) if value > 0.0 => speed = Some(value),
+                _ => {
+                    eprintln!("--speed takes a positive number");
+                    return ExitCode::FAILURE;
+                }
+            },
             "--fights" => {
                 fights = match args.next().as_deref() {
                     Some("on") => FightMode::On,
@@ -121,11 +147,11 @@ fn main() -> ExitCode {
         }
     }
     let Some(path) = path else {
-        eprintln!("usage: replay <recording.aetherpc> [--names] [--tickets] [--fights on|off|from-identity|from-tickets]");
+        eprintln!("usage: replay <recording.aetherpc> [--names] [--tickets] [--fights on|off|from-identity|from-tickets] [--speed N]");
         return ExitCode::FAILURE;
     };
 
-    match run(path, show_names, show_tickets, fights) {
+    match run(path, show_names, show_tickets, fights, speed) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("replay failed: {error}");
@@ -134,11 +160,12 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(path: String, show_names: bool, show_tickets: bool, fights: FightMode) -> Result<(), String> {
+fn run(path: String, show_names: bool, show_tickets: bool, fights: FightMode, speed: Option<f64>) -> Result<(), String> {
     let (outcome_tx, outcome_rx) = mpsc::channel();
     let sink = Arc::new(CollectingSink {
         counts: Mutex::new(BTreeMap::new()),
         tickets: Mutex::new(Vec::new()),
+        wipes: Mutex::new(Vec::new()),
         outcome: Mutex::new(outcome_tx),
         meter: OnceLock::new(),
         fights,
@@ -157,7 +184,10 @@ fn run(path: String, show_names: bool, show_tickets: bool, fights: FightMode) ->
     meter.apply_config(config);
 
     meter.start_for_replay()?;
-    meter.replay_packet_recording(path.clone())?;
+    match speed {
+        Some(speed) => meter.replay_packet_recording_paced(path.clone(), speed)?,
+        None => meter.replay_packet_recording(path.clone())?,
+    }
 
     let packets = match outcome_rx
         .recv_timeout(REPLAY_TIMEOUT)
@@ -177,7 +207,7 @@ fn run(path: String, show_names: bool, show_tickets: bool, fights: FightMode) ->
             if show_tickets {
                 print_tickets(&sink.tickets.lock().unwrap(), show_names);
             }
-            print_events(&sink);
+            print_events(&sink, &meter);
             return Ok(());
         }
         None => return Err("the recording produced no combat data".to_string()),
@@ -272,7 +302,7 @@ fn run(path: String, show_names: bool, show_tickets: bool, fights: FightMode) ->
         print_tickets(&sink.tickets.lock().unwrap(), show_names);
     }
 
-    print_events(&sink);
+    print_events(&sink, &meter);
     Ok(())
 }
 
@@ -283,10 +313,29 @@ fn print_own_character(meter: &DpsMeter) {
     }
 }
 
-fn print_events(sink: &CollectingSink) {
+fn print_events(sink: &CollectingSink, meter: &DpsMeter) {
     println!("events emitted:");
     for (name, count) in sink.counts.lock().unwrap().iter() {
         println!("  {name}: {count}");
+    }
+    let wipes = sink.wipes.lock().unwrap();
+    println!("boss wipes closed: {}", wipes.len());
+    for wipe in wipes.iter() {
+        println!("  {wipe}");
+    }
+    println!("history records:");
+    for record in meter.get_history() {
+        let target = record.target_info.as_ref();
+        println!(
+            "  {} {} wiped: {} hp {:?}/{:?} damage {} players {}",
+            record.id,
+            target.and_then(|target| target.target_name.as_deref()).unwrap_or("(unnamed)"),
+            record.wiped,
+            target.and_then(|target| target.current_hp),
+            target.and_then(|target| target.max_hp),
+            record.total_damage,
+            record.player_stats.len()
+        );
     }
 }
 

@@ -5,12 +5,12 @@ use gpui::{point, AppContext as _, Entity, KeyDownEvent, KeyUpEvent, Keystroke, 
 use meter_core::history::HistoryRecord;
 use meter_core::models::combat::{CombatInfos, PlayerOverviewStat, SkillStats, TargetInfo};
 use meter_core::report::events::HealKind;
-use meter_core::report::fight_report::FightReport;
+use meter_core::report::fight_report::{FightOutcome, FightReport};
 use meter_core::report::ledger::{
     FightLedger, FightWindow, HealSkill, KillerKind, LedgerDeath, LedgerKiller, LedgerLastHit, LedgerPlayer, TakenSkill,
 };
 
-use super::data::Column;
+use super::data::{Column, ReportData};
 use super::view::{Pointed, Tab};
 use super::{ReportModel, ReportView};
 use crate::meter::{MeterModel, OverlaySettings};
@@ -128,12 +128,27 @@ fn record(with_ledger: bool) -> HistoryRecord {
         ]),
         use_buffs_by_target: HashMap::new(),
         ledger: with_ledger.then_some(ledger),
+        wiped: false,
         created_at: 1_100_000,
     }
 }
 
 fn report(with_ledger: bool) -> Arc<FightReport> {
     Arc::new(FightReport::from_record(&record(with_ledger)).expect("a boss fight"))
+}
+
+#[test]
+fn a_wiped_attempts_report_carries_the_health_the_boss_had_left() {
+    let mut wiped = record(true);
+    wiped.wiped = true;
+    if let Some(target) = wiped.target_info.as_mut() {
+        target.current_hp = Some(300);
+    }
+    let report = FightReport::from_record(&wiped).expect("a boss fight");
+
+    let data = ReportData::build(&report, &OverlaySettings::default(), false);
+
+    assert_eq!(data.outcome, FightOutcome::Wiped { hp_left: 300, max_hp: 1_000 });
 }
 
 struct Opened<'a> {

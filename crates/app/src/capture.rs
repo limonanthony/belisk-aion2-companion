@@ -102,6 +102,8 @@ enum Scene {
     /// The kill before the game has named you: the summary is the party's.
     FinalParty,
     Provisional,
+    /// The boss's health went back to full with it at 12.8%.
+    Wiped,
 }
 
 struct Fixture {
@@ -218,6 +220,8 @@ async fn capture_fixtures(
         Fixture { best: Some(45_440.0), report_hover: true, ..fixture("summary-final-hover", Scene::Final) },
         fixture("summary-party", Scene::FinalParty),
         Fixture { best: Some(45_440.0), locked: true, ..fixture("summary-locked", Scene::Final) },
+        Fixture { best: behind, ..fixture("summary-wiped", Scene::Wiped) },
+        Fixture { best: behind, locked: true, ..fixture("summary-wiped-locked", Scene::Wiped) },
     ];
 
     for fixture in &fixtures {
@@ -565,9 +569,16 @@ fn show_fixture(
                     vec![(unnamed(sample::boss_fight(247.0, 40)), now), (unnamed(sample::boss_fight(248.0, 0)), now)]
                 }
                 Scene::Provisional => vec![(sample::boss_fight(177.0, 183), quiet)],
+                Scene::Wiped => vec![(sample::boss_fight(177.0, 128), now)],
             };
             for (snapshot, at) in snapshots {
                 model.apply(MeterEvent::DpsSnapshot(snapshot), at);
+            }
+            if matches!(fixture.scene, Scene::Wiped) {
+                let snapshot = sample::boss_fight(177.0, 128);
+                let report = meter_core::report::fight_report::FightReport::from_snapshot(&snapshot, sample::BOSS_ID, None);
+                let wipe = meter_core::events::WipedAttempt { target_id: sample::BOSS_ID, snapshot, record_id: None, report };
+                model.apply(MeterEvent::BossWiped(wipe), now);
             }
             if let Some(side) = fixture.pin {
                 model.select_board(side);

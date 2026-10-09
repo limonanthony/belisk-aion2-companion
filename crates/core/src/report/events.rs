@@ -40,6 +40,8 @@ pub struct IncomingHit {
     pub victim_id: u32,
     pub source_id: u32,
     pub source_mob_code: Option<u32>,
+    /// The mob code of the monster at the top of the source's owner chain, when it has one.
+    pub owner_mob_code: Option<u32>,
     pub skill_code: u32,
     pub amount: u64,
 }
@@ -63,12 +65,16 @@ pub struct Killer {
     pub name: Option<String>,
     /// Set when the killer is a monster.
     pub mob_code: Option<u32>,
+    /// The mob code of the monster that owns a killer that is its summoned object.
+    pub owner_mob_code: Option<u32>,
 }
 
 /// The hit taken before a death.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LastHit {
+    pub source_id: u32,
     pub source_mob_code: Option<u32>,
+    pub owner_mob_code: Option<u32>,
     pub skill_code: u32,
     pub amount: u64,
 }
@@ -88,6 +94,32 @@ pub struct CombatEvents {
     pub hits: Vec<IncomingHit>,
     pub heals: Vec<Heal>,
     pub deaths: Vec<Death>,
+}
+
+impl CombatEvents {
+    /// A monster's summoned objects (projectiles, zones, copies of the boss)
+    /// land hits under their own mob codes. Credit them to the monster that
+    /// owns them, unless the party fought the entity itself: that is a real
+    /// add and stays its own source. `fought` says whether players damaged an
+    /// entity.
+    pub(crate) fn credit_unfought_sources_to_their_owners(&mut self, fought: impl Fn(u32) -> bool) {
+        let credited = |entity_id: u32, own: Option<u32>, owner: Option<u32>| match owner {
+            Some(owner) if !fought(entity_id) => Some(owner),
+            _ => own,
+        };
+        for hit in &mut self.hits {
+            hit.source_mob_code = credited(hit.source_id, hit.source_mob_code, hit.owner_mob_code);
+        }
+        for death in &mut self.deaths {
+            let killer = &mut death.killer;
+            if killer.name.is_none() {
+                killer.mob_code = credited(killer.id, killer.mob_code, killer.owner_mob_code);
+            }
+            if let Some(last_hit) = &mut death.last_hit {
+                last_hit.source_mob_code = credited(last_hit.source_id, last_hit.source_mob_code, last_hit.owner_mob_code);
+            }
+        }
+    }
 }
 
 /// What happened around the fights that damage dealt does not say. Bounded:
@@ -130,7 +162,9 @@ impl CombatEventLog {
             .take_while(|hit| hit.at >= at - LAST_HIT_WINDOW_SECS)
             .find(|hit| hit.victim_id == victim_id && hit.at <= at)
             .map(|hit| LastHit {
+                source_id: hit.source_id,
                 source_mob_code: hit.source_mob_code,
+                owner_mob_code: hit.owner_mob_code,
                 skill_code: hit.skill_code,
                 amount: hit.amount,
             });
@@ -186,6 +220,7 @@ mod tests {
             victim_id,
             source_id: 900,
             source_mob_code: Some(2_300_810),
+            owner_mob_code: None,
             skill_code: 1_607_630,
             amount,
         }
@@ -196,6 +231,7 @@ mod tests {
             id: 0,
             name: None,
             mob_code: None,
+            owner_mob_code: None,
         }
     }
 
@@ -212,11 +248,82 @@ mod tests {
         assert_eq!(
             death.last_hit,
             Some(LastHit {
+                source_id: 900,
                 source_mob_code: Some(2_300_810),
+                owner_mob_code: None,
                 skill_code: 1_607_630,
                 amount: 900
             })
         );
+    }
+
+    const TALISRA: u32 = 2_350_709;
+    const TALISRA_ENTITY: u32 = 18_376;
+    const OBJECT_CODE: u32 = 2_920_564;
+    const OBJECT_ENTITY: u32 = 20_890;
+    const ADD_CODE: u32 = 2_920_540;
+    const ADD_ENTITY: u32 = 21_001;
+
+    fn hit_by(source_id: u32, source_mob_code: u32, owner_mob_code: Option<u32>) -> IncomingHit {
+        IncomingHit { source_id, source_mob_code: Some(source_mob_code), owner_mob_code, ..hit(10.0, PLAYER, 500) }
+    }
+
+    fn events_with(hits: Vec<IncomingHit>, deaths: Vec<Death>) -> CombatEvents {
+        CombatEvents { hits, deaths, ..CombatEvents::default() }
+    }
+
+    #[test]
+    fn an_object_nobody_fought_is_credited_to_the_monster_that_owns_it() {
+        let mut events = events_with(vec![hit_by(OBJECT_ENTITY, OBJECT_CODE, Some(TALISRA))], Vec::new());
+
+        events.credit_unfought_sources_to_their_owners(|_| false);
+
+        assert_eq!(events.hits[0].source_mob_code, Some(TALISRA));
+    }
+
+    #[test]
+    fn an_add_the_party_fought_stays_its_own_source() {
+        let mut events = events_with(vec![hit_by(ADD_ENTITY, ADD_CODE, Some(TALISRA))], Vec::new());
+
+        events.credit_unfought_sources_to_their_owners(|entity_id| entity_id == ADD_ENTITY);
+
+        assert_eq!(events.hits[0].source_mob_code, Some(ADD_CODE));
+    }
+
+    #[test]
+    fn a_monster_nobody_owns_keeps_its_code() {
+        let mut events = events_with(vec![hit_by(TALISRA_ENTITY, TALISRA, None)], Vec::new());
+
+        events.credit_unfought_sources_to_their_owners(|_| false);
+
+        assert_eq!(events.hits[0].source_mob_code, Some(TALISRA));
+    }
+
+    #[test]
+    fn a_death_by_an_owned_object_names_the_owner_as_killer_and_last_hit() {
+        let mut log = CombatEventLog::default();
+        log.record_hit(hit_by(OBJECT_ENTITY, OBJECT_CODE, Some(TALISRA)));
+        let killer = Killer { id: OBJECT_ENTITY, name: None, mob_code: Some(OBJECT_CODE), owner_mob_code: Some(TALISRA) };
+        log.record_death(11.0, PLAYER, 1_801_777, killer);
+        let mut events = log.between(0.0, 20.0);
+
+        events.credit_unfought_sources_to_their_owners(|_| false);
+
+        let death = &events.deaths[0];
+        assert_eq!(death.killer.mob_code, Some(TALISRA));
+        assert_eq!(death.last_hit.as_ref().unwrap().source_mob_code, Some(TALISRA));
+    }
+
+    #[test]
+    fn a_player_killer_is_never_credited_to_a_monster() {
+        let mut log = CombatEventLog::default();
+        let killer = Killer { id: 5, name: Some("Veyra".to_string()), mob_code: None, owner_mob_code: Some(TALISRA) };
+        log.record_death(11.0, PLAYER, 0, killer);
+        let mut events = log.between(0.0, 20.0);
+
+        events.credit_unfought_sources_to_their_owners(|_| false);
+
+        assert_eq!(events.deaths[0].killer.mob_code, None);
     }
 
     #[test]

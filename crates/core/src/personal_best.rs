@@ -137,7 +137,7 @@ impl PersonalBestStore {
 /// long enough to mean something.
 fn candidate(record: &HistoryRecord) -> Option<PersonalBest> {
     let target = record.target_info.as_ref()?;
-    if !target.is_boss {
+    if record.wiped || !target.is_boss {
         return None;
     }
     let mob_code = target.target_mob_code?;
@@ -232,6 +232,7 @@ mod tests {
             player_stats,
             use_buffs_by_target: HashMap::new(),
             ledger: None,
+            wiped: false,
             created_at: 1,
         }
     }
@@ -253,6 +254,15 @@ mod tests {
         let store = PersonalBestStore::new();
         assert!(!store.record(&[record("Kestrel", 7, false, 8_000.0, 60.0)]));
         assert!(!store.record(&[record("Kestrel", 7, true, 90_000.0, 4.0)]));
+        assert!(store.get("Kestrel", 7).is_none());
+    }
+
+    #[test]
+    fn a_wiped_attempt_never_counts() {
+        let store = PersonalBestStore::new();
+        let wiped = HistoryRecord { wiped: true, ..record("Kestrel", 7, true, 90_000.0, 60.0) };
+
+        assert!(!store.record(&[wiped]));
         assert!(store.get("Kestrel", 7).is_none());
     }
 }

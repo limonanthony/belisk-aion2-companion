@@ -369,6 +369,7 @@ mod tests {
             victim_id,
             source_id: 900,
             source_mob_code: Some(BOSS_CODE),
+            owner_mob_code: None,
             skill_code,
             amount,
         }
@@ -408,6 +409,7 @@ mod tests {
             id: 900,
             name: None,
             mob_code: Some(BOSS_CODE),
+            owner_mob_code: None,
         }
     }
 
@@ -559,7 +561,9 @@ mod tests {
                 TANK,
                 monster_killer(),
                 Some(LastHit {
+                    source_id: 900,
                     source_mob_code: Some(BOSS_CODE),
+                    owner_mob_code: None,
                     skill_code: 1_607_630,
                     amount: 52_300,
                 }),
@@ -596,11 +600,13 @@ mod tests {
             id: 5,
             name: Some("Veyra".to_string()),
             mob_code: None,
+            owner_mob_code: None,
         };
         let unknown = Killer {
             id: 0,
             name: None,
             mob_code: None,
+            owner_mob_code: None,
         };
 
         let ledger = Fixture::new().ledger(

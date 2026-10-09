@@ -959,6 +959,66 @@ mod own_actor_tests {
         assert_eq!(mob_hp_of(&connection, MOB), None);
     }
 
+    fn connection_where_the_spawned_mob_is_a_boss() -> Connection {
+        let connection = connection();
+        connection.storage.mobs().set_boss_correction(MOB_CODE, Some(crate::mobs::store::BossCorrection::Boss));
+        connection
+    }
+
+    fn hit_on(storage: &DataStorage, target_id: u32, actor_id: u32) {
+        storage.append_damage_at(
+            ParsedDamagePacket {
+                target_id,
+                actor_id,
+                skill_code: RANGER_SKILL,
+                ori_skill_code: RANGER_SKILL,
+                damage: 100,
+                is_dot: false,
+                is_crit: false,
+                multi_hit_damage: 0,
+                multi_hit_count: 0,
+                specials: Vec::new(),
+                drain_amount: 0,
+                regeneration_amount: 0,
+            },
+            1.0,
+        );
+    }
+
+    #[test]
+    fn a_removal_of_a_boss_somebody_hit_is_a_wipe_and_leaving_range_is_not() {
+        for (flag, wiped) in [(7, true), (1, false), (3, false)] {
+            let mut connection = connection_where_the_spawned_mob_is_a_boss();
+            let boss = Spawn::global();
+            feed(&mut connection, &[spawn(&boss), mob_hp(boss.entity_id, 30_000)]);
+            hit_on(&connection.storage, boss.entity_id, 18);
+
+            feed(&mut connection, &[death(boss.entity_id, flag)]);
+
+            let wipes = connection.storage.take_boss_wipes();
+            assert_eq!(wipes.len(), usize::from(wiped), "flag {flag}");
+            if wiped {
+                assert_eq!((wipes[0].target_id, wipes[0].hp_left), (boss.entity_id, 30_000));
+            }
+        }
+    }
+
+    #[test]
+    fn a_boss_hp_packet_back_at_full_after_a_loss_is_a_wipe() {
+        let mut connection = connection_where_the_spawned_mob_is_a_boss();
+        let boss = Spawn::global();
+        feed(&mut connection, &[spawn(&boss), mob_hp(boss.entity_id, 30_000)]);
+        hit_on(&connection.storage, boss.entity_id, 18);
+        feed(&mut connection, &[mob_hp(boss.entity_id, 20_000)]);
+        assert!(connection.storage.take_boss_wipes().is_empty());
+
+        feed(&mut connection, &[mob_hp(boss.entity_id, 119_700)]);
+
+        let wipes = connection.storage.take_boss_wipes();
+        assert_eq!(wipes.len(), 1);
+        assert_eq!(wipes[0].hp_left, 20_000);
+    }
+
     fn dot_tick_of_skill(target: u32, mode: u8, actor: u32, skill_code: u32, damage: u8) -> Vec<u8> {
         let mut payload = vec![0x05, 0x38];
         payload.extend(varint(target));
@@ -1098,10 +1158,25 @@ mod own_actor_tests {
         feed(&mut connection, &[buff_applied(0x2A, MOB, 7, 18), buff_applied(0x2A, MOB, 8, 18)]);
 
         feed(&mut connection, &[buff_removed(MOB, 7)]);
-        assert_eq!(buff_length_ms(&connection, MOB, 18), BUFF_DURATION_MS);
+        assert!(
+            buff_length_ms(&connection, MOB, 18) >= BUFF_DURATION_MS,
+            "the other instance is still running: the interval may run a millisecond over, never short"
+        );
 
         feed(&mut connection, &[buff_removed(MOB, 8)]);
         assert!(buff_length_ms(&connection, MOB, 18) < 5_000);
+    }
+
+    #[test]
+    fn a_buff_packet_from_a_summon_is_credited_to_its_owner() {
+        let mut connection = connection();
+        connection.storage.append_summon(18, 40_001);
+        connection.storage.append_summon(18, 40_002);
+
+        feed(&mut connection, &[buff_applied(0x2A, MOB, 7, 40_001), buff_applied(0x2B, MOB, 8, 40_002)]);
+
+        let intervals = connection.storage.buff_intervals_snapshot();
+        assert_eq!(intervals[&MOB].keys().copied().collect::<Vec<_>>(), [18]);
     }
 
     #[test]

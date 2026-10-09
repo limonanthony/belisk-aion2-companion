@@ -176,6 +176,8 @@ impl StreamProcessor {
         };
         if record.died() {
             self.data_storage.mark_mob_dead(record.entity_id);
+        } else if record.removed() {
+            self.data_storage.mark_mob_removed(record.entity_id);
         }
         true
     }

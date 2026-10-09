@@ -21,6 +21,9 @@ pub enum FightOutcome {
     Defeated,
     /// The boss lived. The fight may resume.
     Ended,
+    /// The boss lived and the attempt was lost: its health went back to full,
+    /// or it left the field. `hp_left` is the lowest the boss got.
+    Wiped { hp_left: u32, max_hp: u32 },
 }
 
 /// How often each kind of hit landed, as counts. A rate is a count over `hits`.
@@ -103,6 +106,9 @@ pub struct TakenReport {
     pub largest: u64,
     pub amount: u64,
 }
+
+/// The `caster_id` of a buff whose casters the report does not know.
+pub const UNKNOWN_CASTER_ID: u32 = 0;
 
 /// A buff on a player or on the boss.
 #[derive(Debug, Clone, PartialEq)]
@@ -216,6 +222,7 @@ struct Parts<'a> {
     buff_summaries: &'a HashMap<u32, Vec<BuffSummary>>,
     ledger: Option<&'a FightLedger>,
     saved_at_ms: u64,
+    wiped: bool,
 }
 
 impl FightReport {
@@ -233,6 +240,7 @@ impl FightReport {
             buff_summaries: &record.use_buffs_by_target,
             ledger: record.ledger.as_ref(),
             saved_at_ms: record.created_at,
+            wiped: record.wiped,
         }))
     }
 
@@ -263,6 +271,7 @@ impl FightReport {
             buff_summaries: &snapshot.use_buffs_by_target,
             ledger,
             saved_at_ms: now_ms(),
+            wiped: false,
         }))
     }
 
@@ -292,6 +301,7 @@ impl FightReport {
             buff_summaries,
             ledger,
             saved_at_ms,
+            wiped,
         } = *parts;
         let window = FightWindow::of(target);
         let duration_secs = window.map_or(0.0, |window| window.duration_secs());
@@ -405,7 +415,7 @@ impl FightReport {
             target_id: target.id,
             mob_code: target.target_mob_code,
             boss_name: target.target_name.clone().filter(|name| !name.is_empty()),
-            outcome: outcome_of(target),
+            outcome: outcome_of(target, wiped),
             ended_at_ms,
             duration_secs,
             totals,
@@ -416,7 +426,13 @@ impl FightReport {
     }
 }
 
-fn outcome_of(target: &TargetInfo) -> FightOutcome {
+fn outcome_of(target: &TargetInfo, wiped: bool) -> FightOutcome {
+    if wiped {
+        return FightOutcome::Wiped {
+            hp_left: target.current_hp.unwrap_or(0),
+            max_hp: target.max_hp.unwrap_or(0),
+        };
+    }
     let killed = target.current_hp == Some(0) && target.max_hp.is_some_and(|max| max > 0);
     if killed {
         FightOutcome::Defeated
@@ -572,7 +588,10 @@ fn spec_slots(actor: Option<&ActorInfo>, skill_code: u32) -> [bool; 5] {
 }
 
 /// The buffs on `target_id`: with their uptime from the ledger, or, for a fight
-/// saved without one, only which buffs were seen.
+/// saved without one, only which buffs were seen. Casters the report does not
+/// know (summons the meter could not tie to an owner, mobs, strangers, and the
+/// one row per summon that fights saved before owner resolution hold) are one
+/// `UNKNOWN_CASTER_ID` row per buff, with the longest uptime among them.
 fn buff_reports(
     ledger: Option<&FightLedger>,
     buff_summaries: &HashMap<u32, Vec<BuffSummary>>,
@@ -580,9 +599,42 @@ fn buff_reports(
     duration_secs: f64,
     caster: &dyn Fn(u32) -> Option<(String, String)>,
 ) -> Vec<BuffReport> {
-    let report = |skill_code: u32, caster_id: u32, uptime_ms: Option<u64>| {
+    let seen: Vec<(u32, u32, Option<u64>)> = match ledger {
+        Some(ledger) => ledger
+            .buffs
+            .iter()
+            .filter(|buff| buff.target_id == target_id)
+            .map(|buff| (buff.skill_code, buff.caster_id, Some(buff.uptime_ms)))
+            .collect(),
+        None => buff_summaries
+            .get(&target_id)
+            .into_iter()
+            .flatten()
+            .map(|buff| (buff.skill_code, buff.actor_id, None))
+            .collect(),
+    };
+
+    let mut rows: Vec<(u32, u32, Option<u64>, Option<(String, String)>)> = Vec::with_capacity(seen.len());
+    let mut row_of: HashMap<(u32, u32), usize> = HashMap::new();
+    for (skill_code, caster_id, uptime_ms) in seen {
         let identity = caster(caster_id);
-        BuffReport {
+        let caster_id = if identity.is_some() { caster_id } else { UNKNOWN_CASTER_ID };
+        match row_of.get(&(skill_code, caster_id)) {
+            Some(&index) => rows[index].2 = rows[index].2.max(uptime_ms),
+            None => {
+                row_of.insert((skill_code, caster_id), rows.len());
+                rows.push((skill_code, caster_id, uptime_ms, identity));
+            }
+        }
+    }
+    if ledger.is_some() {
+        rows.sort_by_key(|&(skill_code, caster_id, uptime_ms, _)| {
+            (std::cmp::Reverse(uptime_ms), skill_code, caster_id)
+        });
+    }
+
+    rows.into_iter()
+        .map(|(skill_code, caster_id, uptime_ms, identity)| BuffReport {
             skill_code,
             caster_id,
             caster_name: identity.as_ref().map(|(name, _)| name.clone()),
@@ -591,22 +643,8 @@ fn buff_reports(
             share: uptime_ms.and_then(|ms| {
                 (duration_secs > 0.0).then(|| (ms as f64 / 1000.0 / duration_secs).clamp(0.0, 1.0))
             }),
-        }
-    };
-    match ledger {
-        Some(ledger) => ledger
-            .buffs
-            .iter()
-            .filter(|buff| buff.target_id == target_id)
-            .map(|buff| report(buff.skill_code, buff.caster_id, Some(buff.uptime_ms)))
-            .collect(),
-        None => buff_summaries
-            .get(&target_id)
-            .into_iter()
-            .flatten()
-            .map(|buff| report(buff.skill_code, buff.actor_id, None))
-            .collect(),
-    }
+        })
+        .collect()
 }
 
 fn now_ms() -> u64 {
@@ -850,6 +888,60 @@ mod tests {
     }
 
     #[test]
+    fn the_casters_the_report_does_not_know_are_one_row_per_buff() {
+        let mut record = record_with_the_ledger();
+        let ledger = record.ledger.as_mut().unwrap();
+        for (summon, uptime_ms) in [(40_001, 4_000), (40_002, 6_000), (40_003, 2_000)] {
+            ledger.buffs.push(BuffUptime {
+                target_id: YSMERA,
+                caster_id: summon,
+                skill_code: 118_000_071,
+                uptime_ms,
+            });
+        }
+        ledger.buffs.push(BuffUptime {
+            target_id: YSMERA,
+            caster_id: 40_001,
+            skill_code: 174_100_111,
+            uptime_ms: 3_000,
+        });
+
+        let report = FightReport::from_record(&record).unwrap();
+
+        let rows: Vec<(u32, u32, Option<u64>)> = report
+            .player(YSMERA)
+            .unwrap()
+            .buffs
+            .iter()
+            .map(|buff| (buff.skill_code, buff.caster_id, buff.uptime_ms))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (18_000_000, SAEBRIN, Some(30_000)),
+                (118_000_071, UNKNOWN_CASTER_ID, Some(6_000)),
+                (174_100_111, UNKNOWN_CASTER_ID, Some(3_000)),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_buff_a_known_caster_and_a_stranger_cast_keeps_both_rows() {
+        let mut record = record_with_the_ledger();
+        record.ledger.as_mut().unwrap().buffs.push(BuffUptime {
+            target_id: YSMERA,
+            caster_id: 40_001,
+            skill_code: 18_000_000,
+            uptime_ms: 5_000,
+        });
+
+        let report = FightReport::from_record(&record).unwrap();
+
+        let casters: Vec<u32> = report.player(YSMERA).unwrap().buffs.iter().map(|buff| buff.caster_id).collect();
+        assert_eq!(casters, [SAEBRIN, UNKNOWN_CASTER_ID]);
+    }
+
+    #[test]
     fn a_fight_that_is_not_a_bosss_has_no_report() {
         let mut record = record_with_the_ledger();
         record.target_info.as_mut().unwrap().is_boss = false;
@@ -865,6 +957,22 @@ mod tests {
         assert_eq!(
             FightReport::from_record(&record).unwrap().outcome,
             FightOutcome::Ended
+        );
+    }
+
+    #[test]
+    fn a_wiped_attempt_is_a_wipe_with_the_health_the_boss_had_left() {
+        let mut record = record_with_the_ledger();
+        record.wiped = true;
+        {
+            let target = record.target_info.as_mut().unwrap();
+            target.current_hp = Some(300);
+            target.max_hp = Some(1_000);
+        }
+
+        assert_eq!(
+            FightReport::from_record(&record).unwrap().outcome,
+            FightOutcome::Wiped { hp_left: 300, max_hp: 1_000 }
         );
     }
 

@@ -622,7 +622,14 @@ impl MeterView {
                     cx.notify();
                 }
             }))
-            .on_click(cx.listener(move |_, _, _, cx| cx.emit(ReportRequest::OnMeter { target_id })))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let model = this.model.read(cx);
+                let wiped = model.wiped_report().filter(|_| model.summary().is_some_and(|summary| summary.kind == SummaryKind::Wiped));
+                cx.emit(match wiped {
+                    Some(report) => ReportRequest::Held(report),
+                    None => ReportRequest::OnMeter { target_id },
+                })
+            }))
     }
 
     /// Session or Target: header, (gauge), rows, the not-identified line, the
@@ -988,11 +995,16 @@ impl MeterView {
     }
 
     fn summary_card(&self, model: &MeterModel, summary: &FightSummary, s: Scale, cx: &Context<Self>) -> Div {
-        let fin = summary.kind == SummaryKind::Final;
-        let (chip_fill, chip_text, chip_icon, outcome) = if fin {
-            (CHIP_GOOD, GOOD, Icon::Check, fl!("meter-summary-defeated"))
-        } else {
-            (CHIP_WARN, WARN, Icon::Hourglass, fl!("meter-summary-ended"))
+        let gauge_shown = summary.kind == SummaryKind::Provisional;
+        let (chip_fill, chip_text, chip_icon, outcome) = match summary.kind {
+            SummaryKind::Final => (CHIP_GOOD, GOOD, Icon::Check, fl!("meter-summary-defeated")),
+            SummaryKind::Provisional => (CHIP_WARN, WARN, Icon::Hourglass, fl!("meter-summary-ended")),
+            SummaryKind::Wiped => (CHIP_BAD, BAD, Icon::CircleX, fl!("meter-summary-wiped")),
+        };
+        let note = match summary.kind {
+            SummaryKind::Final => None,
+            SummaryKind::Provisional => Some(fl!("meter-summary-may-resume")),
+            SummaryKind::Wiped => summary.hp_left.as_ref().map(|hp| fl!("meter-summary-hp-left", hp = hp.to_string())),
         };
         let chip = div()
             .flex_none()
@@ -1009,13 +1021,13 @@ impl MeterView {
             .font_weight(FontWeight::SEMIBOLD)
             .child(icon(chip_icon, 13., rgb(chip_text), s))
             .child(outcome)
-            .when(!fin, |chip| {
+            .when_some(note, |chip, note| {
                 chip.child(
                     div()
                         .text_color(rgba(MUTED))
                         .text_size(s.px(11.))
                         .font_weight(FontWeight::MEDIUM)
-                        .child(fl!("meter-summary-may-resume")),
+                        .child(note),
                 )
             })
             .with_animation("outcome", Animation::new(CHIP_FADE), |chip, t| chip.opacity(t));
@@ -1131,7 +1143,7 @@ impl MeterView {
             }));
 
         let body = div()
-            .pt(s.px(if fin { 7. } else { 4. }))
+            .pt(s.px(if gauge_shown { 4. } else { 7. }))
             .px(s.px(4.))
             .pb(s.px(2.))
             .flex()
@@ -1169,7 +1181,7 @@ impl MeterView {
 
         card(model.settings.background_alpha, CARD_WIDTH, s)
             .child(head)
-            .when(!fin, |card| {
+            .when(gauge_shown, |card| {
                 let gauge = summary.boss_hp.as_ref();
                 card.child(gauge_bar(gauge, gauge.map_or(0.0, |gauge| gauge.fraction), s))
             })
@@ -1765,8 +1777,8 @@ mod tests {
     use std::rc::Rc;
 
     use gpui::{AppContext as _, Modifiers, TestAppContext, VisualTestContext};
-    use meter_core::events::MeterEvent;
-    use meter_core::models::combat::CombatSnapshot;
+    use meter_core::events::{MeterEvent, WipedAttempt};
+    use meter_core::report::fight_report::FightReport;
 
     use super::*;
     use crate::sample;
@@ -1774,37 +1786,42 @@ mod tests {
     struct Card<'a> {
         view: Entity<MeterView>,
         requested: Rc<RefCell<Vec<u32>>>,
+        held: Rc<RefCell<Vec<Arc<FightReport>>>>,
         cx: &'a mut VisualTestContext,
     }
 
-    /// The meter after `snapshots`, a moment later, with what its report
-    /// button asks for.
-    fn card(cx: &mut TestAppContext, snapshots: Vec<(CombatSnapshot, Instant)>) -> Card<'_> {
+    /// The meter after `events`, a moment later, with what its report button
+    /// asks for.
+    fn card(cx: &mut TestAppContext, events: Vec<(MeterEvent, Instant)>) -> Card<'_> {
         let model = cx.new(|_| {
             let mut model = MeterModel::new(OverlaySettings::default(), None);
-            for (snapshot, at) in snapshots {
-                model.apply(MeterEvent::DpsSnapshot(snapshot), at);
+            for (event, at) in events {
+                model.apply(event, at);
             }
             model.advance(Instant::now());
             model
         });
         let (view, cx) = cx.add_window_view(|_, cx| MeterView::new(model, cx));
         let requested = Rc::new(RefCell::new(Vec::new()));
-        let log = requested.clone();
+        let held = Rc::new(RefCell::new(Vec::new()));
+        let (on_meter, held_log) = (requested.clone(), held.clone());
         cx.update(|_, cx| {
-            cx.subscribe(&view, move |_, request: &ReportRequest, _| {
-                if let ReportRequest::OnMeter { target_id } = request {
-                    log.borrow_mut().push(*target_id);
-                }
+            cx.subscribe(&view, move |_, request: &ReportRequest, _| match request {
+                ReportRequest::OnMeter { target_id } => on_meter.borrow_mut().push(*target_id),
+                ReportRequest::Held(report) => held_log.borrow_mut().push(report.clone()),
+                ReportRequest::Saved(_) => {}
             })
             .detach()
         });
-        Card { view, requested, cx }
+        Card { view, requested, held, cx }
     }
 
-    fn killed() -> Vec<(CombatSnapshot, Instant)> {
+    fn killed() -> Vec<(MeterEvent, Instant)> {
         let now = Instant::now();
-        vec![(sample::boss_fight(247.0, 40), now), (sample::boss_fight(248.0, 0), now)]
+        vec![
+            (MeterEvent::DpsSnapshot(sample::boss_fight(247.0, 40)), now),
+            (MeterEvent::DpsSnapshot(sample::boss_fight(248.0, 0)), now),
+        ]
     }
 
     #[gpui::test]
@@ -1820,7 +1837,7 @@ mod tests {
     #[gpui::test]
     fn the_fight_ended_card_offers_the_report_too(cx: &mut TestAppContext) {
         let quiet = Instant::now() - Duration::from_secs(125);
-        let card = card(cx, vec![(sample::boss_fight(177.0, 183), quiet)]);
+        let card = card(cx, vec![(MeterEvent::DpsSnapshot(sample::boss_fight(177.0, 183)), quiet)]);
         let kind = card.cx.update(|_, cx| card.view.read(cx).model.read(cx).summary().map(|summary| summary.kind));
         assert_eq!(kind, Some(SummaryKind::Provisional));
 
@@ -1828,6 +1845,30 @@ mod tests {
         card.cx.simulate_click(button.center(), Modifiers::none());
 
         assert_eq!(*card.requested.borrow(), vec![sample::BOSS_ID]);
+    }
+
+    #[gpui::test]
+    fn the_wiped_cards_button_opens_the_report_of_that_attempt(cx: &mut TestAppContext) {
+        let now = Instant::now();
+        let snapshot = sample::boss_fight(177.0, 128);
+        let report = FightReport::from_snapshot(&snapshot, sample::BOSS_ID, None);
+        let wipe = WipedAttempt { target_id: sample::BOSS_ID, snapshot: snapshot.clone(), record_id: None, report };
+        let card = card(cx, vec![(MeterEvent::DpsSnapshot(snapshot), now), (MeterEvent::BossWiped(wipe), now)]);
+        let (kind, hp_left, held_by_model) = card.cx.update(|_, cx| {
+            let model = card.view.read(cx).model.read(cx);
+            let summary = model.summary();
+            (summary.map(|summary| summary.kind), summary.and_then(|summary| summary.hp_left.clone()), model.wiped_report())
+        });
+        assert_eq!(kind, Some(SummaryKind::Wiped));
+        assert_eq!(hp_left.as_deref(), Some("12.8%"));
+
+        let button = card.cx.debug_bounds("open-report").expect("the button on the wiped card");
+        card.cx.simulate_click(button.center(), Modifiers::none());
+
+        let held = card.held.borrow();
+        let held_by_model = held_by_model.expect("the wiped attempt's report");
+        assert!(held.len() == 1 && Arc::ptr_eq(&held[0], &held_by_model), "the attempt's own report, not the boss on the meter");
+        assert!(card.requested.borrow().is_empty());
     }
 
     #[gpui::test]

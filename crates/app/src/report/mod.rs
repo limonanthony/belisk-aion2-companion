@@ -27,4 +27,7 @@ pub enum ReportRequest {
     /// else its newest saved record.
     OnMeter { target_id: u32 },
     Saved(Arc<HistoryRecord>),
+    /// A report already built, such as a wiped attempt's: the boss entity may
+    /// have been pulled again since.
+    Held(Arc<meter_core::report::fight_report::FightReport>),
 }

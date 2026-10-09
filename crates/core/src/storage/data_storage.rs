@@ -18,6 +18,7 @@ use crate::models::packet::ParsedDamagePacket;
 use crate::mobs::catalog::MobCatalog;
 use crate::report::events::{CombatEventLog, CombatEvents, Heal, HealKind, IncomingHit, Killer};
 use crate::report::ledger::{fight_party, BuffIntervals};
+use crate::storage::boss_wipe::{BossWipe, WipeWatch};
 use crate::storage::loaders::load_healing_skill_codes;
 use crate::tickets::TicketBinder;
 
@@ -189,6 +190,11 @@ struct DataStorageInner {
     /// that names only the instance can end the right interval.
     buff_instances: BoundedMap<(u32, u32), BuffInstance>,
     summon_owner_map: BoundedMap<u32, u32>,
+    /// Monsters players damaged. Told apart from a monster's summoned
+    /// objects, which nobody fights, by whether the entity ever got a hit.
+    /// Kept even when the Boss only filter drops the damage, and after the
+    /// target's damage totals are forgotten.
+    entities_hit_by_players: HashSet<u32>,
     start_time: Option<f64>,
     /// Last time the player running Aether was in the fight: hit something,
     /// was hit, or their target took damage from the party. `None` until the
@@ -218,6 +224,8 @@ struct DataStorageInner {
     pvp_dead_players: HashSet<PvpPlayerKey>,
     /// Hits taken, heals and deaths, for the report of a boss fight.
     combat_events: CombatEventLog,
+    /// Bosses whose attempt ended without a kill, until the meter closes them.
+    wipes: WipeWatch,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -247,6 +255,7 @@ impl Default for DataStorageInner {
             use_buffs_by_target: BoundedMap::new(BUFF_TARGET_CAPACITY),
             buff_instances: BoundedMap::new(BUFF_INSTANCE_CAPACITY),
             summon_owner_map: BoundedMap::new(SUMMON_METADATA_CAPACITY),
+            entities_hit_by_players: HashSet::new(),
             start_time: None,
             activity_at: None,
             start_time_by_target: HashMap::new(),
@@ -266,6 +275,7 @@ impl Default for DataStorageInner {
             pvp_combat_stats: HashMap::new(),
             pvp_dead_players: HashSet::new(),
             combat_events: CombatEventLog::default(),
+            wipes: WipeWatch::default(),
         }
     }
 }
@@ -302,10 +312,10 @@ pub struct MainActorDetectedPayload {
     pub sid: Option<String>,
 }
 
-/// Boss adds are summons owned by the boss, so their hits are damage taken.
-/// Only a summon whose owner chain ends at a player is that player's pet.
-fn is_summon_of_a_player(inner: &DataStorageInner, source_id: u32) -> bool {
-    const OWNER_CHAIN_DEPTH: usize = 4;
+const OWNER_CHAIN_DEPTH: usize = 4;
+
+/// Follows a summon up its owners; an id that is not a summon is its own end.
+fn owner_chain_end(inner: &DataStorageInner, source_id: u32) -> u32 {
     let mut current = source_id;
     for _ in 0..OWNER_CHAIN_DEPTH {
         match inner.summon_owner_map.get(&current) {
@@ -313,9 +323,26 @@ fn is_summon_of_a_player(inner: &DataStorageInner, source_id: u32) -> bool {
             None => break,
         }
     }
-    current != source_id
-        && inner.actor_id_name_map.contains_key(&current)
-        && !inner.mob_id_code_map.contains_key(&current)
+    current
+}
+
+/// Boss adds are summons owned by the boss, so their hits are damage taken.
+/// Only a summon whose owner chain ends at a player is that player's pet.
+fn is_summon_of_a_player(inner: &DataStorageInner, source_id: u32) -> bool {
+    let owner_id = owner_chain_end(inner, source_id);
+    owner_id != source_id
+        && inner.actor_id_name_map.contains_key(&owner_id)
+        && !inner.mob_id_code_map.contains_key(&owner_id)
+}
+
+/// The mob code of the monster that owns `source_id`, at the top of its owner
+/// chain. `None` for an entity nobody owns or whose top owner is not a mob.
+fn owned_by_mob_code(inner: &DataStorageInner, source_id: u32) -> Option<u32> {
+    let top_owner = owner_chain_end(inner, source_id);
+    if top_owner == source_id {
+        return None;
+    }
+    inner.mob_id_code_map.get(&top_owner).copied()
 }
 
 impl DataStorage {
@@ -440,7 +467,7 @@ impl DataStorage {
         &self,
         target_id: u32,
         instance_id: u32,
-        actor_id: u32,
+        caster_id: u32,
         skill_code: u32,
         _server_start_ms: u64,
         duration_ms: u64,
@@ -450,8 +477,9 @@ impl DataStorage {
 
         // Buff intervals feed the detail window's coverage timeline. The live
         // buff overlay that also listened here was removed in 2.2.0.
-        {
+        let actor_id = {
             let mut inner = self.inner.write().unwrap();
+            let actor_id = owner_chain_end(&inner, caster_id);
             let skill_intervals = inner
                 .use_buffs_by_target
                 .get_mut_or_insert_with(target_id, HashMap::new)
@@ -484,7 +512,8 @@ impl DataStorage {
             inner
                 .buff_instances
                 .insert((target_id, instance_id), BuffInstance { actor_id, skill_code });
-        }
+            actor_id
+        };
 
         BuffSummary {
             target_id,
@@ -567,6 +596,13 @@ impl DataStorage {
         }
         if actor_id == 0 {
             return;
+        }
+
+        if packet.target_id != actor_id && inner.mob_id_code_map.contains_key(&packet.target_id) && !inner.mob_id_code_map.contains_key(&actor_id) {
+            if inner.entities_hit_by_players.len() >= MOB_METADATA_CAPACITY {
+                inner.entities_hit_by_players.clear();
+            }
+            inner.entities_hit_by_players.insert(packet.target_id);
         }
 
         let target_mob_code = inner.mob_id_code_map.get(&packet.target_id).copied();
@@ -755,7 +791,8 @@ impl DataStorage {
             return;
         }
         let source_mob_code = inner.mob_id_code_map.get(&source_id).copied();
-        inner.combat_events.record_hit(IncomingHit { at, victim_id, source_id, source_mob_code, skill_code, amount });
+        let owner_mob_code = owned_by_mob_code(&inner, source_id);
+        inner.combat_events.record_hit(IncomingHit { at, victim_id, source_id, source_mob_code, owner_mob_code, skill_code, amount });
     }
 
     /// A tick of a heal over time.
@@ -801,7 +838,12 @@ impl DataStorage {
         } else {
             None
         };
-        let killer = Killer { id: killer_id, name: Some(killer_name.to_string()).filter(|name| !name.is_empty()), mob_code };
+        let killer = Killer {
+            id: killer_id,
+            name: Some(killer_name.to_string()).filter(|name| !name.is_empty()),
+            mob_code,
+            owner_mob_code: owned_by_mob_code(&inner, killer_id),
+        };
         inner.combat_events.record_death(at, victim_id, skill_code, killer);
     }
 
@@ -821,7 +863,8 @@ impl DataStorage {
         (from, to): (f64, f64),
     ) -> FightLedgerInputs {
         let inner = self.inner.read().unwrap();
-        let events = inner.combat_events.between(from, to);
+        let mut events = inner.combat_events.between(from, to);
+        events.credit_unfought_sources_to_their_owners(|entity_id| inner.entities_hit_by_players.contains(&entity_id));
         let buff_intervals = fight_party(damage_dealers, &events.heals)
             .into_iter()
             .chain([target_id])
@@ -890,15 +933,31 @@ impl DataStorage {
         //     return;
         // }
         let mut inner = self.inner.write().unwrap();
-        inner.mob_id_code_map.insert(target_id, mob_code);
+        if inner.mob_id_code_map.insert(target_id, mob_code) != Some(mob_code) {
+            inner.entities_hit_by_players.remove(&target_id);
+        }
     }
 
     /// The game reported the mob dead. Its HP goes to zero, the same state an
     /// HP packet of zero leaves, so every consumer of that state sees the
     /// kill. A mob whose HP was never recorded has nothing to zero.
     pub fn mark_mob_dead(&self, target_id: u32) {
-        if let Some(hp) = self.inner.write().unwrap().mob_id_hp_map.get_mut(&target_id) {
+        let mut inner = self.inner.write().unwrap();
+        if let Some(hp) = inner.mob_id_hp_map.get_mut(&target_id) {
             hp.0 = 0;
+        }
+        inner.wipes.forget(target_id);
+    }
+
+    /// The game removed the mob from the field without killing it. A boss
+    /// somebody has hit that goes alive is a wiped attempt.
+    pub fn mark_mob_removed(&self, target_id: u32) {
+        let mut inner = self.inner.write().unwrap();
+        if !self.could_be_wiped(&inner, target_id) {
+            return;
+        }
+        if let Some(&(current, max)) = inner.mob_id_hp_map.get(&target_id) {
+            inner.wipes.note_left_the_field(target_id, current, max);
         }
     }
 
@@ -917,6 +976,50 @@ impl DataStorage {
             entry.1 = max_hp;
         }
         entry.1 = entry.1.max(entry.0);
+        let (current, max) = *entry;
+
+        if current_hp.is_some() && self.could_be_wiped(&inner, target_id) {
+            inner.wipes.note_health(target_id, current, max);
+        }
+    }
+
+    /// Whether `target_id` is a boss of its own (not a summon) that somebody
+    /// has hit while fights are tracked: the only kind of target that can be
+    /// wiped on.
+    fn could_be_wiped(&self, inner: &DataStorageInner, target_id: u32) -> bool {
+        self.fight_tracking()
+            && inner.dps_stats.contains_key(&target_id)
+            && !inner.summon_owner_map.contains_key(&target_id)
+            && inner
+                .mob_id_code_map
+                .get(&target_id)
+                .is_some_and(|&mob_code| self.mobs.is_boss(mob_code))
+    }
+
+    pub fn has_boss_wipes(&self) -> bool {
+        self.inner.read().unwrap().wipes.has_pending()
+    }
+
+    pub fn take_boss_wipes(&self) -> Vec<BossWipe> {
+        self.inner.write().unwrap().wipes.take_pending()
+    }
+
+    /// Drops what the meter counted against `target_id`, so the next pull on
+    /// it starts from zero. The boss's own buffs go with it; what the party
+    /// took, healed and lost is read by time and stays.
+    pub fn forget_target(&self, target_id: u32) {
+        let mut inner = self.inner.write().unwrap();
+        inner.dps_stats.remove(&target_id);
+        inner.start_time_by_target.remove(&target_id);
+        inner.last_time_by_target.remove(&target_id);
+        inner.use_buffs_by_target.remove(&target_id);
+        inner.wipes.forget(target_id);
+        if inner.last_target == Some(target_id) {
+            inner.last_target = None;
+        }
+        if inner.last_target_by_main_actor == Some(target_id) {
+            inner.last_target_by_main_actor = None;
+        }
     }
 
     pub fn set_player_hp(&self, actor_id: u32, current_hp: Option<u32>, max_hp: Option<u32>) {
@@ -1893,6 +1996,124 @@ mod combat_event_tests {
         }
     }
 
+    const SPIRIT: u32 = 46_731;
+    const SPIRIT_OF_SPIRIT: u32 = 46_732;
+    const BUFF: u32 = 118_000_071;
+
+    fn buffed_by(storage: &DataStorage, instance: u32, caster: u32) {
+        storage.save_buff(PLAYER, instance, caster, BUFF, 0, 4_000);
+    }
+
+    #[test]
+    fn a_buff_a_summon_casts_is_the_owners_buff() {
+        let storage = storage();
+        storage.append_summon(PLAYER, SPIRIT);
+
+        buffed_by(&storage, 1, PLAYER);
+        buffed_by(&storage, 2, SPIRIT);
+
+        let by_caster = &storage.buff_intervals_snapshot()[&PLAYER];
+        assert_eq!(by_caster.keys().copied().collect::<Vec<_>>(), [PLAYER]);
+        assert_eq!(by_caster[&PLAYER][&BUFF].len(), 1, "both casts are one buff: their intervals merge");
+    }
+
+    #[test]
+    fn a_buff_follows_the_owner_chain_of_a_summon_of_a_summon() {
+        let storage = storage();
+        storage.append_summon(PLAYER, SPIRIT);
+        storage.append_summon(SPIRIT, SPIRIT_OF_SPIRIT);
+
+        buffed_by(&storage, 1, SPIRIT_OF_SPIRIT);
+
+        let by_caster = &storage.buff_intervals_snapshot()[&PLAYER];
+        assert_eq!(by_caster.keys().copied().collect::<Vec<_>>(), [PLAYER]);
+    }
+
+    #[test]
+    fn removing_the_buff_a_summon_cast_ends_the_owners_interval() {
+        let storage = storage();
+        storage.append_summon(PLAYER, SPIRIT);
+        buffed_by(&storage, 1, SPIRIT);
+
+        storage.end_buff(PLAYER, 1);
+
+        let intervals = storage.buff_intervals_snapshot();
+        let interval = &intervals[&PLAYER][&PLAYER][&BUFF][0];
+        assert!(interval.end_ms - interval.start_ms < 1_000);
+    }
+
+    #[test]
+    fn a_caster_that_is_not_a_summon_keeps_its_own_id() {
+        let storage = storage();
+
+        buffed_by(&storage, 1, HEALER);
+
+        assert!(storage.buff_intervals_snapshot()[&PLAYER].contains_key(&HEALER));
+    }
+
+    const OBJECT: u32 = 902;
+    const OBJECT_CODE: u32 = 2_920_564;
+    const ADD_CODE: u32 = 2_920_174;
+
+    fn storage_with_a_boss_that_owns_an_object_and_an_add() -> DataStorage {
+        let storage = storage();
+        storage.append_mob(OBJECT, OBJECT_CODE);
+        storage.append_summon(BOSS, OBJECT);
+        storage.append_summon(BOSS, ADD);
+        storage
+    }
+
+    fn sources_of_the_hits_taken(storage: &DataStorage) -> Vec<Option<u32>> {
+        let inputs = storage.fight_ledger_inputs(BOSS, &[PLAYER], (0.0, 20.0));
+        inputs.events.hits.iter().map(|hit| hit.source_mob_code).collect()
+    }
+
+    #[test]
+    fn what_a_boss_summoned_object_hits_is_credited_to_the_boss_in_the_ledger_inputs() {
+        let storage = storage_with_a_boss_that_owns_an_object_and_an_add();
+
+        storage.record_incoming_hit_at(PLAYER, OBJECT, MONSTER_SKILL, 900, 10.0);
+        storage.record_incoming_hit_at(PLAYER, BOSS, MONSTER_SKILL, 100, 11.0);
+
+        assert_eq!(sources_of_the_hits_taken(&storage), [Some(BOSS_CODE), Some(BOSS_CODE)]);
+    }
+
+    #[test]
+    fn an_add_the_party_fights_stays_its_own_source_even_with_the_boss_only_filter_on() {
+        let storage = storage_with_a_boss_that_owns_an_object_and_an_add();
+        storage.config.write().unwrap().boss_only = true;
+
+        storage.record_incoming_hit_at(PLAYER, ADD, MONSTER_SKILL, 900, 9.0);
+        storage.append_damage_at(hit(PLAYER, ADD, 11_000_001, 50), 9.5);
+        storage.record_incoming_hit_at(PLAYER, OBJECT, MONSTER_SKILL, 700, 10.0);
+
+        assert!(storage.get_dps_stats_snapshot().is_empty(), "the filter dropped the damage to the add");
+        assert_eq!(sources_of_the_hits_taken(&storage), [Some(ADD_CODE), Some(BOSS_CODE)]);
+    }
+
+    #[test]
+    fn a_death_by_a_boss_summoned_object_is_a_death_by_the_boss() {
+        let storage = storage_with_a_boss_that_owns_an_object_and_an_add();
+
+        storage.record_incoming_hit_at(PLAYER, OBJECT, MONSTER_SKILL, 900, 10.0);
+        storage.record_player_death_at(PLAYER, MONSTER_SKILL, OBJECT, "", OBJECT_CODE, 10.5);
+
+        let death = &storage.fight_ledger_inputs(BOSS, &[PLAYER], (0.0, 20.0)).events.deaths[0];
+        assert_eq!(death.killer.mob_code, Some(BOSS_CODE));
+        assert_eq!(death.last_hit.as_ref().unwrap().source_mob_code, Some(BOSS_CODE));
+    }
+
+    #[test]
+    fn an_entity_id_the_game_reuses_for_another_monster_forgets_that_it_was_fought() {
+        let storage = storage_with_a_boss_that_owns_an_object_and_an_add();
+        storage.append_damage_at(hit(PLAYER, OBJECT, 11_000_001, 50), 9.0);
+
+        storage.append_mob(OBJECT, OBJECT_CODE + 1);
+        storage.record_incoming_hit_at(PLAYER, OBJECT, MONSTER_SKILL, 900, 10.0);
+
+        assert_eq!(sources_of_the_hits_taken(&storage), [Some(BOSS_CODE)]);
+    }
+
     #[test]
     fn a_monsters_hit_on_a_player_is_damage_taken_that_moves_no_target_and_no_stats() {
         let storage = storage();
@@ -2083,6 +2304,7 @@ mod fight_tracking_tests {
     use crate::identity::KnownCharacter;
     use crate::mobs::catalog::MobCatalog;
     use crate::models::packet::ParsedDamagePacket;
+    use crate::storage::boss_wipe::{BossWipe, WipeCause};
 
     struct Silent;
     impl EventSink for Silent {
@@ -2194,5 +2416,113 @@ mod fight_tracking_tests {
         assert_eq!(storage.main_actor_name().as_deref(), Some("Me"));
         assert!(!storage.wants_damage_packets());
         assert!(storage.get_dps_stats_snapshot().is_empty());
+    }
+
+    fn boss_with_a_hit_on_it() -> DataStorage {
+        let storage = storage();
+        storage.set_fight_tracking(true);
+        storage.append_mob(MOB, MOB_CODE);
+        storage.set_mob_hp(MOB, Some(1_000), Some(1_000));
+        storage.append_damage_at(hit(PLAYER, MOB), 10.0);
+        storage
+    }
+
+    fn wipe(hp_left: u64, cause: WipeCause) -> BossWipe {
+        BossWipe { target_id: MOB, hp_left, max_hp: 1_000, cause }
+    }
+
+    #[test]
+    fn a_boss_whose_health_goes_back_to_full_after_a_loss_is_a_wipe_for_the_meter_to_close() {
+        let storage = boss_with_a_hit_on_it();
+        storage.set_mob_hp(MOB, Some(400), None);
+        assert!(!storage.has_boss_wipes());
+
+        storage.set_mob_hp(MOB, Some(1_000), None);
+
+        assert!(storage.has_boss_wipes());
+        assert_eq!(storage.take_boss_wipes(), vec![wipe(400, WipeCause::HealthRestored)]);
+        assert!(!storage.has_boss_wipes());
+    }
+
+    #[test]
+    fn a_boss_that_heals_part_of_the_way_back_is_not_a_wipe() {
+        let storage = boss_with_a_hit_on_it();
+
+        for current in [800, 500, 700, 840] {
+            storage.set_mob_hp(MOB, Some(current), None);
+        }
+
+        assert!(storage.take_boss_wipes().is_empty());
+    }
+
+    #[test]
+    fn a_boss_that_leaves_the_field_alive_is_a_wipe_and_one_that_died_is_not() {
+        let storage = boss_with_a_hit_on_it();
+        storage.set_mob_hp(MOB, Some(400), None);
+        storage.mark_mob_removed(MOB);
+        assert_eq!(storage.take_boss_wipes(), vec![wipe(400, WipeCause::LeftTheField)]);
+
+        let killed = boss_with_a_hit_on_it();
+        killed.set_mob_hp(MOB, Some(0), None);
+        killed.mark_mob_dead(MOB);
+        killed.mark_mob_removed(MOB);
+        assert!(killed.take_boss_wipes().is_empty());
+    }
+
+    #[test]
+    fn a_boss_nobody_has_hit_is_not_wiped_on() {
+        let storage = storage();
+        storage.set_fight_tracking(true);
+        storage.append_mob(MOB, MOB_CODE);
+        storage.set_mob_hp(MOB, Some(1_000), Some(1_000));
+
+        storage.set_mob_hp(MOB, Some(400), None);
+        storage.set_mob_hp(MOB, Some(1_000), None);
+        storage.mark_mob_removed(MOB);
+
+        assert!(storage.take_boss_wipes().is_empty());
+    }
+
+    #[test]
+    fn nothing_is_wiped_while_tracking_is_off() {
+        let storage = boss_with_a_hit_on_it();
+        storage.set_fight_tracking(false);
+
+        storage.set_mob_hp(MOB, Some(400), None);
+        storage.set_mob_hp(MOB, Some(1_000), None);
+        storage.mark_mob_removed(MOB);
+
+        assert!(storage.take_boss_wipes().is_empty());
+    }
+
+    #[test]
+    fn a_boss_add_that_goes_away_alive_is_not_a_wipe() {
+        const ADD: u32 = 901;
+        let storage = boss_with_a_hit_on_it();
+        storage.append_mob(ADD, MOB_CODE);
+        storage.append_summon(MOB, ADD);
+        storage.set_mob_hp(ADD, Some(1_000), Some(1_000));
+        storage.append_damage_at(hit(PLAYER, ADD), 11.0);
+
+        storage.set_mob_hp(ADD, Some(300), None);
+        storage.mark_mob_removed(ADD);
+
+        assert!(storage.take_boss_wipes().is_empty());
+    }
+
+    #[test]
+    fn forgetting_a_target_takes_its_counts_off_and_the_next_pull_starts_from_zero() {
+        let storage = boss_with_a_hit_on_it();
+        assert_eq!(storage.last_target(), Some(MOB));
+
+        storage.forget_target(MOB);
+        assert!(storage.get_dps_stats_snapshot().is_empty());
+        assert!(storage.start_time_by_target_snapshot().is_empty());
+        assert!(storage.last_time_by_target_snapshot().is_empty());
+        assert_eq!(storage.last_target(), None);
+
+        storage.append_damage_at(hit(PLAYER, MOB), 30.0);
+        let counts: u32 = storage.get_dps_stats_snapshot()[&MOB][&PLAYER].values().map(|skill| skill.counts).sum();
+        assert_eq!(counts, 1);
     }
 }

@@ -115,6 +115,7 @@ mod tests {
             player_stats: HashMap::new(),
             use_buffs_by_target: HashMap::new(),
             ledger: None,
+            wiped: false,
             created_at: 0,
         }
     }

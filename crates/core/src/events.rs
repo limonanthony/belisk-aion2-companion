@@ -2,13 +2,32 @@ use crate::models::combat::CombatSnapshot;
 use crate::models::diagnostics::MemorySnapshot;
 use crate::identity::{IdentityDecision, KnownCharacter};
 use crate::tickets::TicketReport;
+use crate::report::fight_report::FightReport;
 use crate::storage::data_storage::MainActorDetectedPayload;
+
+/// A boss attempt that ended without a kill: its health went back to full or
+/// it left the field alive. The attempt is off the meter by the time this is
+/// sent.
+#[derive(Debug, Clone)]
+pub struct WipedAttempt {
+    pub target_id: u32,
+    /// The meter as it stood at the wipe, with the boss's health set to the
+    /// lowest it got in the attempt.
+    pub snapshot: CombatSnapshot,
+    /// The history record of the attempt; `None` when it held too little
+    /// damage to be kept.
+    pub record_id: Option<String>,
+    /// The fight report of the attempt, as the saved record would give it.
+    pub report: Option<FightReport>,
+}
 
 #[derive(Debug, Clone)]
 pub enum MeterEvent {
     DpsSnapshot(CombatSnapshot),
     DpsMemory(MemorySnapshot),
     DpsMeterStatus(bool),
+    /// You wiped on a boss. The next snapshot no longer holds the attempt.
+    BossWiped(WipedAttempt),
     HistoryUpdated,
     PersonalBestsUpdated,
     MainActorDetected(MainActorDetectedPayload),

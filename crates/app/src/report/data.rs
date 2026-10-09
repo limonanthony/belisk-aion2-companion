@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use meter_core::report::fight_report::{
-    BuffReport, DeathReport, FightOutcome, FightReport, HitTypes, PlayerReport, SkillReport,
+    BuffReport, DeathReport, FightOutcome, FightReport, HitTypes, PlayerReport, SkillReport, UNKNOWN_CASTER_ID,
 };
 use meter_core::report::ledger::KillerKind;
 
@@ -298,6 +298,7 @@ impl BuffLine {
             caster: match (caster, buff.caster_name.as_deref()) {
                 (Some(player), _) => names.of(player),
                 (None, Some(name)) if !name.trim().is_empty() => names.settings.display_name(name),
+                (None, _) if buff.caster_id == UNKNOWN_CASTER_ID => fl!("report-unknown"),
                 (None, _) => format::unnamed_player(buff.caster_id, false),
             },
             caster_class,

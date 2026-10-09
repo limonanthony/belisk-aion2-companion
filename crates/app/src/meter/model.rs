@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use meter_core::engine::meter::DpsMeter;
-use meter_core::events::MeterEvent;
+use meter_core::events::{MeterEvent, WipedAttempt};
 use meter_core::identity::IdentityDecision;
 use meter_core::mobs::catalog::MobCatalog;
 use meter_core::mobs::store::BossCorrection;
@@ -14,7 +14,7 @@ use gpui::{Context, SharedString, Task};
 
 use super::board::{Board, BoardChoice};
 use crate::decision_log::DecisionLog;
-use super::fight::{FightTracker, TargetFacts};
+use super::fight::{FightTracker, SummaryKind, TargetFacts};
 use super::focus::{BossFocus, Change, Involvement, Release, Released, SWITCH_AFTER};
 use crate::format;
 use crate::game_data::PlayerClass;
@@ -136,6 +136,10 @@ pub struct MeterModel {
     snapshot_id: u64,
     live: Option<LiveBoard>,
     summary: Option<FightSummary>,
+    /// The meter as it stood at the wipe the summary is about: the live
+    /// snapshot no longer holds that attempt.
+    wiped: Option<CombatSnapshot>,
+    wiped_report: Option<Arc<meter_core::report::fight_report::FightReport>>,
     tracker: FightTracker,
     choice: BoardChoice,
     /// Each player's shade of their class colour, kept until a reset.
@@ -174,6 +178,8 @@ impl MeterModel {
             snapshot_id: 0,
             live: None,
             summary: None,
+            wiped: None,
+            wiped_report: None,
             system: SystemLine::default(),
             best: None,
             replay: ReplayState::NotStarted,
@@ -307,6 +313,12 @@ impl MeterModel {
         self.summary.as_ref()
     }
 
+    /// The report of the wiped attempt whose summary is up, so its button
+    /// opens that attempt and not the next pull on a reused boss.
+    pub fn wiped_report(&self) -> Option<Arc<meter_core::report::fight_report::FightReport>> {
+        self.wiped_report.clone()
+    }
+
     pub fn system(&self) -> &SystemLine {
         &self.system
     }
@@ -383,6 +395,7 @@ impl MeterModel {
                 self.replay = ReplayState::Failed(error);
                 false
             }
+            MeterEvent::BossWiped(wiped) => self.accept_wipe(wiped, now),
             MeterEvent::MainActorDetected(actor) => self.accept_main_actor(actor),
             MeterEvent::OwnIdentity(decision) => {
                 self.decisions.event("identity", || describe_identity(&decision));
@@ -451,6 +464,8 @@ impl MeterModel {
     pub fn dismiss_summary(&mut self, cx: &mut Context<Self>) {
         if self.tracker.dismiss() {
             self.summary = None;
+            self.wiped = None;
+            self.wiped_report = None;
             cx.notify();
         }
         self.arm_deadline(cx);
@@ -461,6 +476,10 @@ impl MeterModel {
     pub fn reset(&mut self) {
         self.choice.reset();
         self.shades.clear();
+        self.tracker.dismiss();
+        self.summary = None;
+        self.wiped = None;
+        self.wiped_report = None;
         let change = self.focus.release_all(Release::Reset);
         self.apply_focus_change(change);
         self.note_board();
@@ -599,10 +618,13 @@ impl MeterModel {
             return false;
         }
         if emptied {
-            self.choice.reset();
             self.shades.clear();
-            let change = self.focus.release_all(Release::Reset);
-            self.apply_focus_change(change);
+            // A dungeon boss held after a wipe stays locked until it is killed.
+            if self.focus.held_for_mob().is_none() {
+                self.choice.reset();
+                let change = self.focus.release_all(Release::Reset);
+                self.apply_focus_change(change);
+            }
         }
         self.snapshot = Some(snapshot);
         self.snapshot_id = SNAPSHOT_IDS.fetch_add(1, Ordering::Relaxed) + 1;
@@ -644,6 +666,19 @@ impl MeterModel {
             now,
         );
         self.apply_focus_change(change);
+        if let Some(mob_code) = self.focus.held_for_mob() {
+            let snapshot = self.snapshot.as_ref()?;
+            let respawned = bosses.iter().copied().find_map(|id| {
+                let target = live::target_info(snapshot, id)?;
+                let facts = facts_of(snapshot, id).filter(|facts| !facts.killed())?;
+                (target.target_mob_code == Some(mob_code)).then_some(())?;
+                Some((facts, involvement_of(snapshot, id)?))
+            });
+            if let Some((facts, why)) = respawned {
+                let relock = self.focus.relock(&facts, why, now);
+                self.apply_focus_change(relock);
+            }
+        }
         let snapshot = self.snapshot.as_ref()?;
         let died = change
             .released
@@ -770,8 +805,53 @@ impl MeterModel {
         });
     }
 
+    /// Your attempt on a boss ended with the boss alive. Its summary goes up
+    /// from the snapshot the core sent with it, since the live snapshot has
+    /// already lost the attempt, and the next pull on the boss is a new fight.
+    fn accept_wipe(&mut self, wiped: WipedAttempt, now: Instant) -> bool {
+        let WipedAttempt { target_id, mut snapshot, report, .. } = wiped;
+        if !live::is_identified(&snapshot) {
+            if let Some(actor) = &self.main_actor {
+                snapshot.combat_infos.main_actor_id = Some(actor.actor_id);
+                snapshot.combat_infos.main_actor_name = Some(actor.actor_name.clone());
+            }
+        }
+        let Some(facts) = facts_of(&snapshot, target_id) else {
+            return false;
+        };
+        if involvement_of(&snapshot, target_id).is_none() {
+            return false;
+        }
+        self.decisions.event("wipe", || {
+            let info = live::target_info(&snapshot, target_id);
+            let name = info.map_or_else(|| format!("target {target_id}"), live::target_name);
+            let left = info.and_then(live::boss_hp).map_or_else(|| "unknown health".to_string(), |gauge| gauge.label.to_string());
+            format!("{name:?} (target {target_id}) was wiped with {left} left; its attempt is off the meter")
+        });
+        let in_a_dungeon = live::target_info(&snapshot, target_id)
+            .and_then(|target| target.target_mob_code)
+            .filter(|&mob_code| crate::game_data::dungeon_of(mob_code).is_some());
+        let change = self.focus.wiped(target_id, in_a_dungeon, now);
+        self.apply_focus_change(change);
+        self.tracker.wiped(facts, now);
+        if self.tracker.shown().is_some_and(|shown| shown.kind == SummaryKind::Wiped && shown.target_id == target_id) {
+            self.wiped = Some(snapshot);
+            self.wiped_report = report.map(Arc::new);
+        }
+        self.rebuild_live();
+        self.rebuild_summary();
+        true
+    }
+
     fn rebuild_summary(&mut self) {
-        let (Some(shown), Some(snapshot)) = (self.tracker.shown(), &self.snapshot) else {
+        let Some(shown) = self.tracker.shown() else {
+            self.summary = None;
+            self.wiped = None;
+            self.wiped_report = None;
+            return;
+        };
+        let snapshot = if shown.kind == SummaryKind::Wiped { &self.wiped } else { &self.snapshot };
+        let Some(snapshot) = snapshot else {
             self.summary = None;
             return;
         };
@@ -1110,6 +1190,118 @@ mod tests {
         assert_eq!(summary.kind, SummaryKind::Final);
         assert_eq!(summary.rank.as_deref(), Some("2/2"));
         assert!(model.report().unwrap().starts_with("Boss · defeated in 0:31"));
+    }
+
+    fn wipe_of(snapshot: CombatSnapshot) -> MeterEvent {
+        let report = meter_core::report::fight_report::FightReport::from_snapshot(&snapshot, 7, None);
+        MeterEvent::BossWiped(WipedAttempt { target_id: 7, snapshot, record_id: None, report })
+    }
+
+    fn emptied() -> CombatSnapshot {
+        let mut empty = snapshot(500, Some(9), 30.0);
+        empty.total_damage = 0;
+        empty.last_target_info = None;
+        empty.last_target_all_players_overview_stats.clear();
+        empty.by_target_player_stats.clear();
+        empty.combat_infos.target_infos.clear();
+        empty.combat_infos.last_target = None;
+        empty.combat_infos.last_target_by_main_actor = None;
+        empty
+    }
+
+    #[test]
+    fn a_wipe_puts_up_the_wiped_summary_with_the_health_left_and_it_outlives_the_attempt_leaving_the_meter() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let now = Instant::now();
+        model.apply(MeterEvent::DpsSnapshot(snapshot(300, Some(9), 90.0)), now);
+
+        assert!(model.apply(wipe_of(snapshot(300, Some(9), 90.0)), now));
+        model.apply(MeterEvent::DpsSnapshot(emptied()), now);
+
+        let summary = model.summary().expect("the wipe's summary");
+        assert_eq!(summary.kind, SummaryKind::Wiped);
+        assert_eq!(summary.hp_left.as_deref(), Some("30.0%"));
+        assert_eq!(summary.rank.as_deref(), Some("2/2"));
+        assert!(summary.best.is_none(), "a wipe is no personal best");
+        assert!(model.report().unwrap().starts_with("Boss · wiped, boss at 30.0% after 1:30"));
+        assert!(model.wiped_report().is_some(), "the card's button opens this attempt's report");
+    }
+
+    #[test]
+    fn the_next_pull_takes_the_wipe_down_and_engages_the_boss_again() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let now = Instant::now();
+        model.apply(MeterEvent::DpsSnapshot(snapshot(300, Some(9), 90.0)), now);
+        assert_eq!(model.focused_boss(), Some(7));
+        model.apply(wipe_of(snapshot(300, Some(9), 90.0)), now);
+        assert_eq!(model.focused_boss(), None);
+
+        model.apply(MeterEvent::DpsSnapshot(snapshot(1_000, Some(9), 3.0)), now);
+
+        assert!(model.summary().is_none());
+        assert_eq!(model.focused_boss(), Some(7), "the boss is alive and the new attempt counts from zero");
+    }
+
+    const DUNGEON_BOSS_CODE: u32 = 2_300_243;
+
+    #[test]
+    fn in_a_dungeon_the_lock_stays_on_the_boss_after_a_wipe_and_the_next_pull_counts_from_zero() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let now = Instant::now();
+        model.apply(MeterEvent::DpsSnapshot(snapshot(300, Some(DUNGEON_BOSS_CODE), 90.0)), now);
+        model.apply(wipe_of(snapshot(300, Some(DUNGEON_BOSS_CODE), 90.0)), now);
+        model.apply(MeterEvent::DpsSnapshot(emptied()), now);
+
+        assert_eq!(model.focused_boss(), Some(7));
+        assert_eq!(model.summary().map(|summary| summary.kind), Some(SummaryKind::Wiped));
+
+        model.apply(MeterEvent::DpsSnapshot(snapshot(1_000, Some(DUNGEON_BOSS_CODE), 3.0)), now);
+        assert_eq!(model.focused_boss(), Some(7));
+        assert!(model.summary().is_none());
+    }
+
+    #[test]
+    fn in_a_dungeon_the_respawned_boss_takes_the_lock_after_a_despawn_wipe() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let now = Instant::now();
+        model.apply(MeterEvent::DpsSnapshot(snapshot(300, Some(DUNGEON_BOSS_CODE), 90.0)), now);
+        model.apply(wipe_of(snapshot(300, Some(DUNGEON_BOSS_CODE), 90.0)), now);
+        model.apply(MeterEvent::DpsSnapshot(emptied()), now);
+
+        let mut respawn = snapshot(1_000, Some(DUNGEON_BOSS_CODE), 3.0);
+        respawn.by_target_player_stats.clear();
+        respawn.combat_infos.target_infos.clear();
+        if let Some(target) = respawn.last_target_info.as_mut() {
+            target.id = 8;
+        }
+        respawn.combat_infos.last_target = Some(8);
+        respawn.combat_infos.last_target_by_main_actor = Some(8);
+        model.apply(MeterEvent::DpsSnapshot(indexed(respawn)), now);
+
+        assert_eq!(model.focused_boss(), Some(8));
+    }
+
+    #[test]
+    fn in_the_open_world_a_wipe_lets_the_boss_go() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let now = Instant::now();
+        model.apply(MeterEvent::DpsSnapshot(snapshot(300, Some(9), 90.0)), now);
+        model.apply(wipe_of(snapshot(300, Some(9), 90.0)), now);
+        model.apply(MeterEvent::DpsSnapshot(emptied()), now);
+
+        assert_eq!(model.focused_boss(), None);
+    }
+
+    #[test]
+    fn a_wipe_of_a_boss_you_did_not_hit_puts_up_nothing() {
+        let mut model = MeterModel::new(OverlaySettings::default(), None);
+        let mut strangers = snapshot(300, Some(9), 90.0);
+        strangers.combat_infos.main_actor_id = Some(99);
+        strangers.combat_infos.main_actor_name = Some("Nobody".to_string());
+
+        assert!(!model.apply(wipe_of(strangers), Instant::now()));
+
+        assert!(model.summary().is_none());
     }
 
     #[test]

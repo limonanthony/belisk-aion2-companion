@@ -30,9 +30,10 @@ use crate::models::combat::{CombatSnapshot, PvpCombatStatsRow, PvpWatchInfoRespo
 use crate::models::diagnostics::{DpsMeterState, MemorySnapshot};
 use crate::models::session::SessionSummary;
 use crate::mobs::catalog::{MobCatalog, MobStorage};
-use crate::report::fight_report::FightReport;
+use crate::report::fight_report::{FightOutcome, FightReport};
+use crate::storage::boss_wipe::BossWipe;
 use crate::storage::data_storage::DataStorage;
-use crate::events::{EventSink, MeterEvent};
+use crate::events::{EventSink, MeterEvent, WipedAttempt};
 use crate::logger::AppLogger;
 
 const STALE_ASSEMBLER_IDLE_SECS: u64 = 30;
@@ -149,6 +150,104 @@ impl FightCloser {
             self.clear_runtime_state_nopacket();
             self.emit_empty_snap();
         }
+    }
+
+    /// Closes every boss attempt the game ended without a kill. Cheap when
+    /// there is none.
+    fn end_wiped_attempts(&self) {
+        if !self.data_storage.has_boss_wipes() {
+            return;
+        }
+        for wipe in self.data_storage.take_boss_wipes() {
+            self.end_wiped_attempt(wipe);
+        }
+    }
+
+    /// A wiped attempt is saved to history and sent to the host with the
+    /// health the boss had left, then taken off the meter so the next pull on
+    /// the boss counts from zero. It counts for no personal best. An attempt
+    /// you did not hit the boss in is only taken off.
+    fn end_wiped_attempt(&self, wipe: BossWipe) {
+        let Some(mut snapshot) = self.snapshot(0) else {
+            self.data_storage.forget_target(wipe.target_id);
+            return;
+        };
+        if !self.you_hit(&snapshot, wipe.target_id) {
+            self.data_storage.forget_target(wipe.target_id);
+            return;
+        }
+        let hp_left = u32::try_from(wipe.hp_left).unwrap_or(u32::MAX);
+        for target in snapshot
+            .combat_infos
+            .target_infos
+            .values_mut()
+            .chain(snapshot.last_target_info.as_mut())
+            .filter(|target| target.id == wipe.target_id)
+        {
+            target.current_hp = Some(hp_left);
+        }
+        if let Some(target) = snapshot.combat_infos.target_infos.get(&wipe.target_id) {
+            self.data_storage
+                .mobs()
+                .record_fight(&HashMap::from([(wipe.target_id, target.clone())]));
+        }
+        self.logger.info(format!(
+            "boss wipe: target {} left at {}/{} ({:?}), attempt saved and taken off the meter",
+            wipe.target_id, wipe.hp_left, wipe.max_hp, wipe.cause
+        ));
+
+        let dealers: Vec<u32> = snapshot
+            .by_target_player_stats
+            .get(&wipe.target_id)
+            .map(|players| players.keys().copied().collect())
+            .unwrap_or_default();
+        let ledger = snapshot
+            .combat_infos
+            .target_infos
+            .get(&wipe.target_id)
+            .and_then(|target| self.calculator.fight_ledger(target, &dealers));
+        let report = FightReport::from_snapshot(&snapshot, wipe.target_id, ledger.as_ref());
+        let record = self.history.save_wiped(snapshot.clone(), wipe.target_id, |target, dealers| {
+            self.calculator.fight_ledger(target, dealers)
+        });
+        if record.is_some() {
+            self.events.emit(MeterEvent::HistoryUpdated);
+        }
+        self.data_storage.forget_target(wipe.target_id);
+        *self.last_emitted_total_damage.lock().unwrap() = None;
+        self.events.emit(MeterEvent::BossWiped(WipedAttempt {
+            target_id: wipe.target_id,
+            snapshot,
+            report: report.map(|mut report| {
+                report.outcome = FightOutcome::Wiped { hp_left, max_hp: u32::try_from(wipe.max_hp).unwrap_or(u32::MAX) };
+                report
+            }),
+            record_id: record.map(|record| record.id),
+        }));
+        match self.snapshot(0).filter(|snapshot| snapshot.total_damage > 0) {
+            Some(rest) => {
+                *self.last_emitted_total_damage.lock().unwrap() = Some(rest.total_damage);
+                self.events.emit(MeterEvent::DpsSnapshot(rest));
+            }
+            None => self.emit_empty_snap(),
+        }
+    }
+
+    /// Whether the local player hit `target_id`. Before the game has named the
+    /// player nobody can be ruled out.
+    fn you_hit(&self, snapshot: &CombatSnapshot, target_id: u32) -> bool {
+        let Some(main_actor_id) = self.data_storage.main_actor_id() else {
+            return true;
+        };
+        let Some(dealers) = snapshot.by_target_player_stats.get(&target_id) else {
+            return false;
+        };
+        dealers.contains_key(&main_actor_id)
+            || self
+                .data_storage
+                .own_actor_ids()
+                .iter()
+                .any(|actor_id| dealers.contains_key(actor_id))
     }
 
     fn reset(&self, emit_empty: bool) {
@@ -709,6 +808,8 @@ impl DpsMeter {
                 let idle_reset_secs = cfg.idle_reset_secs;
                 drop(cfg);
 
+                fight.end_wiped_attempts();
+
                 // A fight nobody has touched for the idle timeout is over.
                 // Measured from your own last hit, so other people fighting
                 // nearby cannot keep an old fight on screen forever.
@@ -1207,7 +1308,7 @@ mod tests {
         }
     }
 
-    fn meter_with(events: Arc<Recording>) -> DpsMeter {
+    fn meter_with(events: Arc<impl EventSink + 'static>) -> DpsMeter {
         let log = std::env::temp_dir().join(format!("meter-core-tracking-{}.log", std::process::id()));
         let logger = Arc::new(AppLogger::new(log, Box::new(|_| {})));
         DpsMeter::new(events, logger, None)
@@ -1265,5 +1366,139 @@ mod tests {
 
         let snapshot = meter.get_dps_snapshot(0).expect("a fight is on the meter");
         assert_eq!(snapshot.total_damage, 5_000_000);
+    }
+
+    const BOSS: u32 = 900;
+    const BOSS_CODE: u32 = 2_340_601;
+    const ME: u32 = 7;
+
+    struct Wipes(Mutex<Vec<WipedAttempt>>, Mutex<Vec<String>>);
+
+    impl EventSink for Wipes {
+        fn emit(&self, event: MeterEvent) {
+            match event {
+                MeterEvent::BossWiped(wiped) => {
+                    self.1.lock().unwrap().push("wiped".to_string());
+                    self.0.lock().unwrap().push(wiped);
+                }
+                MeterEvent::DpsSnapshot(snapshot) => self.1.lock().unwrap().push(format!("snapshot {}", snapshot.total_damage)),
+                _ => {}
+            }
+        }
+    }
+
+    fn meter_on_a_boss_you_hit() -> (DpsMeter, Arc<Wipes>) {
+        let wipes = Arc::new(Wipes(Mutex::new(Vec::new()), Mutex::new(Vec::new())));
+        let meter = meter_with(Arc::clone(&wipes));
+        meter.set_fight_tracking(true);
+        meter.data_storage.set_main_actor(ME, "Me");
+        meter.data_storage.append_mob(BOSS, BOSS_CODE);
+        meter.data_storage.set_mob_hp(BOSS, Some(1_000), Some(1_000));
+        meter.data_storage.append_damage(big_hit(ME, BOSS));
+        (meter, wipes)
+    }
+
+    fn total_damage_on_the_meter(meter: &DpsMeter) -> u64 {
+        meter.get_dps_snapshot(0).map_or(0, |snapshot| snapshot.total_damage)
+    }
+
+    #[test]
+    fn a_boss_back_at_full_health_is_saved_as_a_wipe_with_its_health_left_and_the_next_pull_starts_over() {
+        let (meter, wipes) = meter_on_a_boss_you_hit();
+        meter.data_storage.set_mob_hp(BOSS, Some(400), None);
+        meter.data_storage.set_mob_hp(BOSS, Some(1_000), None);
+
+        meter.fight.end_wiped_attempts();
+
+        let history = meter.get_history();
+        assert_eq!(history.len(), 1);
+        assert!(history[0].wiped);
+        let target = history[0].target_info.as_ref().unwrap();
+        assert_eq!((target.current_hp, target.max_hp), (Some(400), Some(1_000)));
+        assert!(history[0].ledger.is_some(), "the fight report is kept");
+        assert!(meter.personal_bests().is_empty(), "a wipe is no personal best");
+
+        let wiped = wipes.0.lock().unwrap();
+        assert_eq!(wiped.len(), 1);
+        assert_eq!(wiped[0].target_id, BOSS);
+        assert_eq!(wiped[0].record_id.as_deref(), Some(history[0].id.as_str()));
+        let shown = wiped[0].snapshot.combat_infos.target_infos.get(&BOSS).unwrap();
+        assert_eq!(shown.current_hp, Some(400));
+        let report = wiped[0].report.as_ref().expect("the wiped attempt's report travels with the event");
+        assert_eq!(report.outcome, FightOutcome::Wiped { hp_left: 400, max_hp: 1_000 });
+        assert_eq!(report.totals.damage, 5_000_000);
+
+        assert_eq!(total_damage_on_the_meter(&meter), 0, "the failed attempt is off the meter");
+        meter.data_storage.append_damage(big_hit(ME, BOSS));
+        assert_eq!(total_damage_on_the_meter(&meter), 5_000_000);
+    }
+
+    #[test]
+    fn a_wipe_is_followed_by_an_empty_snapshot_so_the_failed_attempt_leaves_the_board() {
+        let (meter, wipes) = meter_on_a_boss_you_hit();
+        meter.data_storage.set_mob_hp(BOSS, Some(400), None);
+        meter.data_storage.set_mob_hp(BOSS, Some(1_000), None);
+
+        meter.fight.end_wiped_attempts();
+
+        assert_eq!(*wipes.1.lock().unwrap(), vec!["wiped".to_string(), "snapshot 0".to_string()]);
+    }
+
+    #[test]
+    fn a_boss_that_leaves_the_field_alive_is_saved_as_a_wipe() {
+        let (meter, wipes) = meter_on_a_boss_you_hit();
+        meter.data_storage.set_mob_hp(BOSS, Some(300), None);
+        meter.data_storage.mark_mob_removed(BOSS);
+
+        meter.fight.end_wiped_attempts();
+
+        let history = meter.get_history();
+        assert_eq!(history.len(), 1);
+        assert!(history[0].wiped);
+        assert_eq!(history[0].target_info.as_ref().unwrap().current_hp, Some(300));
+        assert_eq!(wipes.0.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_boss_healing_part_of_the_way_back_is_not_a_wipe() {
+        let (meter, wipes) = meter_on_a_boss_you_hit();
+        for current in [500, 700, 840] {
+            meter.data_storage.set_mob_hp(BOSS, Some(current), None);
+        }
+
+        meter.fight.end_wiped_attempts();
+
+        assert!(meter.get_history().is_empty());
+        assert!(wipes.0.lock().unwrap().is_empty());
+        assert_eq!(total_damage_on_the_meter(&meter), 5_000_000);
+    }
+
+    #[test]
+    fn a_kill_is_not_a_wipe() {
+        let (meter, wipes) = meter_on_a_boss_you_hit();
+        meter.data_storage.set_mob_hp(BOSS, Some(0), None);
+        meter.data_storage.mark_mob_dead(BOSS);
+        meter.data_storage.mark_mob_removed(BOSS);
+
+        meter.fight.end_wiped_attempts();
+
+        assert!(meter.get_history().is_empty());
+        assert!(wipes.0.lock().unwrap().is_empty());
+        assert_eq!(total_damage_on_the_meter(&meter), 5_000_000);
+    }
+
+    #[test]
+    fn a_wipe_of_a_boss_you_never_hit_is_taken_off_without_a_record() {
+        let (meter, wipes) = meter_on_a_boss_you_hit();
+        meter.data_storage.forget_target(BOSS);
+        meter.data_storage.append_damage(big_hit(ME + 1, BOSS));
+        meter.data_storage.set_mob_hp(BOSS, Some(400), None);
+        meter.data_storage.set_mob_hp(BOSS, Some(1_000), None);
+
+        meter.fight.end_wiped_attempts();
+
+        assert!(meter.get_history().is_empty());
+        assert!(wipes.0.lock().unwrap().is_empty());
+        assert_eq!(total_damage_on_the_meter(&meter), 0);
     }
 }

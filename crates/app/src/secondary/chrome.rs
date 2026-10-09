@@ -238,12 +238,14 @@ pub fn text_button(
 pub enum Tone {
     Good,
     Warn,
+    Bad,
 }
 
 pub fn chip(glyph: Option<Icon>, label: impl Into<SharedString>, tone: Tone, s: Scale) -> Div {
     let (fill, colour) = match tone {
         Tone::Good => (CHIP_GOOD, GOOD),
         Tone::Warn => (CHIP_WARN, WARN),
+        Tone::Bad => (DANGER_FILL, BAD),
     };
     div()
         .flex_none()
@@ -259,6 +261,10 @@ pub fn chip(glyph: Option<Icon>, label: impl Into<SharedString>, tone: Tone, s: 
         .font_weight(FontWeight::SEMIBOLD)
         .children(glyph.map(|glyph| icon(glyph, 12., rgb(colour), s)))
         .child(label.into())
+}
+
+pub fn chip_note(text: impl Into<SharedString>, s: Scale) -> Div {
+    div().text_size(s.px(11.)).font_weight(FontWeight::MEDIUM).text_color(rgba(MUTED)).child(text.into())
 }
 
 /// A section label row: 24 px, 6 px above.

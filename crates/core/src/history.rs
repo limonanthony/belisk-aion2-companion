@@ -35,6 +35,12 @@ pub struct HistoryRecord {
     /// saved before the meter kept it, and in every fight that is not a boss's.
     #[serde(default)]
     pub ledger: Option<FightLedger>,
+    /// A boss attempt that ended with the boss alive and the party gone: its
+    /// health went back to full, or it left the field. `target_info.current_hp`
+    /// holds the health it had left. Records saved before wipes were kept
+    /// read `false`.
+    #[serde(default)]
+    pub wiped: bool,
     pub created_at: u64,
 }
 
@@ -114,15 +120,30 @@ impl HistoryStore {
         snapshot: CombatSnapshot,
         ledger_of: impl Fn(&TargetInfo, &[u32]) -> Option<FightLedger>,
     ) -> Vec<HistoryRecord> {
-        let records = Self::extract_records(snapshot, ledger_of);
+        let records = Self::extract_records(snapshot, None, false, ledger_of);
         if !records.is_empty() {
             self.push(records.clone());
         }
         records
     }
 
+    /// Persist the attempt on `target_id` alone, as a wipe. `None` when it
+    /// holds too little damage to keep.
+    pub fn save_wiped(
+        &self,
+        snapshot: CombatSnapshot,
+        target_id: u32,
+        ledger_of: impl Fn(&TargetInfo, &[u32]) -> Option<FightLedger>,
+    ) -> Option<HistoryRecord> {
+        let record = Self::extract_records(snapshot, Some(target_id), true, ledger_of).pop()?;
+        self.push(vec![record.clone()]);
+        Some(record)
+    }
+
     fn extract_records(
         snapshot: CombatSnapshot,
+        only_target: Option<u32>,
+        wiped: bool,
         ledger_of: impl Fn(&TargetInfo, &[u32]) -> Option<FightLedger>,
     ) -> Vec<HistoryRecord> {
         let now_ms = std::time::SystemTime::now()
@@ -136,7 +157,7 @@ impl HistoryStore {
             .filter_map(|(target_id, player_stats)| {
                 let total_damage: u64 = player_stats.values().map(|s| s.total_damage).sum();
 
-                if total_damage <= HISTORY_THRESHOLD {
+                if only_target.is_some_and(|only| only != target_id) || total_damage <= HISTORY_THRESHOLD {
                     return None;
                 }
 
@@ -187,6 +208,7 @@ impl HistoryStore {
                     player_skill_stats: skill_stats,
                     use_buffs_by_target,
                     ledger,
+                    wiped,
                     created_at: now_ms,
                 })
             })

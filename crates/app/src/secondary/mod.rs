@@ -227,6 +227,7 @@ pub fn open_report(meter_model: &Entity<MeterModel>, request: &ReportRequest, cx
             Some(report) => show_report(meter_model, Arc::new(report), cx),
             None => eprintln!("record {} is not a boss fight's, so it has no fight report", record.id),
         },
+        ReportRequest::Held(report) => show_report(meter_model, report.clone(), cx),
         ReportRequest::OnMeter { target_id } => {
             let target_id = *target_id;
             let Some(meter) = meter_model.read(cx).meter().cloned() else {
@@ -313,8 +314,8 @@ pub fn open_todos(meter_model: &Entity<MeterModel>, cx: &mut App) {
     open_todo_view(WindowKind::Todos, Contents::Todos, Side::Right, meter_model, cx);
 }
 
-/// The Resources window: the to-do window's Recharges rows in a window of
-/// their own, opened below the meter so both can be open side by side.
+/// The Resources window: every resource the to-dos track, opened below the
+/// meter so it and the to-do window can be open side by side.
 pub fn open_resources(meter_model: &Entity<MeterModel>, cx: &mut App) {
     open_todo_view(WindowKind::Resources, Contents::Resources, Side::Below, meter_model, cx);
 }

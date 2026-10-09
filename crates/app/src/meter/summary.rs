@@ -32,6 +32,9 @@ pub struct FightSummary {
     pub place: Option<SharedString>,
     /// Boss health while the fight may still resume.
     pub boss_hp: Option<Gauge>,
+    /// What a wipe left of the boss, "12.8%" (shown whatever the boss health
+    /// switch says).
+    pub hp_left: Option<SharedString>,
     /// Whether the figures are yours. When the meter does not know which row
     /// is you, or you did no damage to this boss, the card is about the
     /// party and nobody else is presented as you.
@@ -110,7 +113,7 @@ impl FightSummary {
             let (skills, crit) = top_skills(snapshot, target, player);
             let character = snapshot.combat_infos.main_actor_name.as_deref().unwrap_or_default();
             let best = match target.target_mob_code {
-                Some(mob) if settings.show_personal_best => {
+                Some(mob) if settings.show_personal_best && kind != SummaryKind::Wiped => {
                     Some(best_line(personal_best(character, mob), player.dps))
                 }
                 _ => None,
@@ -118,11 +121,14 @@ impl FightSummary {
             (index, player, skills, crit, best)
         });
 
+        let boss_hp = live::boss_hp(target);
+        let hp_left = boss_hp.as_ref().map(|gauge| format::percent(f64::from(gauge.fraction)));
         let share = mine.as_ref().map(|(_, player, ..)| format::percent(player.damage_contribution));
         let report = copy_text(&CopyFacts {
             boss: &boss,
             place: place.as_deref(),
             kind,
+            hp_left: hp_left.as_deref(),
             secs,
             you: mine.as_ref().zip(share.as_deref()).map(|((index, player, _, crit, best), share)| YouFacts {
                 player,
@@ -155,7 +161,8 @@ impl FightSummary {
             elapsed: format::duration(secs).into(),
             boss: settings.display_name(&boss).into(),
             place: place.map(SharedString::from),
-            boss_hp: live::boss_hp(target).filter(|_| settings.show_boss_hp),
+            hp_left: hp_left.filter(|_| kind == SummaryKind::Wiped).map(SharedString::from),
+            boss_hp: boss_hp.filter(|_| settings.show_boss_hp),
             personal: mine.is_some(),
             subject,
             dps: match &mine {
@@ -230,6 +237,8 @@ struct CopyFacts<'a> {
     boss: &'a str,
     place: Option<&'a str>,
     kind: SummaryKind,
+    /// What a wiped boss had left.
+    hp_left: Option<&'a str>,
     secs: f64,
     /// You, when the summary is about you.
     you: Option<YouFacts<'a>>,
@@ -254,6 +263,13 @@ fn copy_text(facts: &CopyFacts) -> String {
     let mut lines = vec![match facts.kind {
         SummaryKind::Final => fl!("meter-copy-defeated", boss = facts.boss, place = place, duration = duration),
         SummaryKind::Provisional => fl!("meter-copy-ended", boss = facts.boss, place = place, duration = duration),
+        SummaryKind::Wiped => fl!(
+            "meter-copy-wiped",
+            boss = facts.boss,
+            place = place,
+            hp = facts.hp_left.unwrap_or("?"),
+            duration = duration
+        ),
     }];
 
     match &facts.you {

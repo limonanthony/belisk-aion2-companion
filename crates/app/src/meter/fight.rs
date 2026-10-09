@@ -5,6 +5,9 @@
 //! the boss may only be between phases: if the fight resumes the summary comes
 //! down and the fight can be summarised again, and a kill that follows gets
 //! its own final summary.
+//!
+//! A wipe (the boss alive, its attempt lost) is final too: it replaces what is
+//! up, and the next pull on the same boss is a new fight.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -17,6 +20,9 @@ const REMEMBERED_TARGETS: usize = 50;
 pub enum SummaryKind {
     Final,
     Provisional,
+    /// The boss lived and the attempt is over: its health went back to full
+    /// or it left the field.
+    Wiped,
 }
 
 /// What the tracker needs to know about the current target.
@@ -89,14 +95,17 @@ impl FightTracker {
     pub fn observe(&mut self, target: Option<TargetFacts>, now: Instant) -> bool {
         let before = self.key();
         let Some(target) = target else {
-            self.shown = None;
+            if self.shown.is_some_and(|shown| shown.kind != SummaryKind::Wiped) {
+                self.shown = None;
+            }
             return before != self.key();
         };
 
         if let Some(shown) = self.shown {
             let same = target.id == shown.target_id;
-            let resumed =
-                same && target.alive() && target.duration_secs > shown.duration_secs + 1.0;
+            let resumed = same
+                && target.alive()
+                && (shown.kind == SummaryKind::Wiped || target.duration_secs > shown.duration_secs + 1.0);
             if resumed {
                 self.quiet.forget(target.id);
                 self.shown = None;
@@ -130,6 +139,16 @@ impl FightTracker {
         before != self.key()
     }
 
+    /// The attempt on the boss was wiped. Its summary takes the place of
+    /// whatever is up. Returns whether the summary that is up changed.
+    pub fn wiped(&mut self, target: TargetFacts, now: Instant) -> bool {
+        let before = self.key();
+        if self.enabled {
+            self.try_show(target, SummaryKind::Wiped, now);
+        }
+        before != self.key()
+    }
+
     pub fn dismiss(&mut self) -> bool {
         self.shown.take().is_some()
     }
@@ -149,10 +168,11 @@ impl FightTracker {
         match kind {
             SummaryKind::Final => self.defeated.remember(target.id),
             SummaryKind::Provisional => self.quiet.remember(target.id),
+            SummaryKind::Wiped => self.quiet.forget(target.id),
         }
-        // The most recent kill is the one to show: a boss dying while the
-        // summary of an earlier kill is up takes its place.
-        if kind == SummaryKind::Final || self.shown.is_none() {
+        // The most recent kill or wipe is the one to show: a boss dying while
+        // the summary of an earlier kill is up takes its place.
+        if kind != SummaryKind::Provisional || self.shown.is_none() {
             self.shown = Some(ShownSummary {
                 target_id: target.id,
                 kind,
@@ -321,6 +341,50 @@ mod tests {
         assert!(tracker.advance(now + SHOWN_FOR));
         assert_eq!(kind(&tracker), None);
         assert_eq!(tracker.next_deadline(), None);
+    }
+
+    #[test]
+    fn a_wipe_stays_up_until_the_boss_is_pulled_again_or_the_minute_ends() {
+        let now = Instant::now();
+        let mut tracker = FightTracker::new(true);
+        assert!(tracker.wiped(boss(7, 300, 90.0).unwrap(), now));
+        assert_eq!(kind(&tracker), Some(SummaryKind::Wiped));
+        assert_eq!(tracker.next_deadline(), Some(now + SHOWN_FOR));
+
+        assert!(!tracker.observe(None, now));
+        let mob = TargetFacts { is_boss: false, ..boss(8, 300, 5.0).unwrap() };
+        assert!(!tracker.observe(Some(mob), now));
+        assert_eq!(kind(&tracker), Some(SummaryKind::Wiped));
+
+        assert!(tracker.observe(boss(7, 1_000, 2.0), now), "the new pull is shorter than the lost one");
+        assert_eq!(kind(&tracker), None);
+    }
+
+    #[test]
+    fn a_wipe_replaces_the_summary_that_is_up_and_the_new_attempt_can_go_quiet_again() {
+        let now = Instant::now();
+        let mut tracker = FightTracker::new(true);
+        tracker.quiet(boss(7, 400, 40.0).unwrap(), now);
+        assert_eq!(kind(&tracker), Some(SummaryKind::Provisional));
+
+        assert!(tracker.wiped(boss(7, 400, 40.0).unwrap(), now));
+        assert_eq!(kind(&tracker), Some(SummaryKind::Wiped));
+
+        tracker.dismiss();
+        tracker.quiet(boss(7, 600, 30.0).unwrap(), now + Duration::from_secs(200));
+        assert_eq!(kind(&tracker), Some(SummaryKind::Provisional));
+    }
+
+    #[test]
+    fn a_wipe_of_a_short_fight_or_with_summaries_off_shows_nothing() {
+        let now = Instant::now();
+        let mut tracker = FightTracker::new(true);
+        assert!(!tracker.wiped(boss(7, 400, 9.0).unwrap(), now));
+        assert_eq!(kind(&tracker), None);
+
+        let mut off = FightTracker::new(false);
+        assert!(!off.wiped(boss(7, 400, 90.0).unwrap(), now));
+        assert_eq!(kind(&off), None);
     }
 
     #[test]

@@ -21,7 +21,7 @@ use crate::i18n::fl;
 use crate::meter::{MeterModel, OverlaySettings};
 use crate::report::ReportRequest;
 use crate::overlay::WindowDrag;
-use crate::secondary::chrome::{self, Anchor, ButtonKind, Look, Scale, FAINT, MUTED, SOFT, TEXT};
+use crate::secondary::chrome::{self, Anchor, ButtonKind, Look, Scale, Tone, FAINT, MUTED, SOFT, TEXT};
 use crate::secondary;
 use crate::style::{class_fill, track};
 
@@ -427,6 +427,13 @@ impl HistoryView {
         } else {
             div().flex_none().size(s.px(20.)).into_any_element()
         };
+        let hp_left = row.hp_left.map(|hp| format::percent(f64::from(hp)));
+        let wiped = row.wiped.then(|| {
+            let selector = format!("wiped-{}", row.id);
+            chrome::chip(Some(Icon::CircleX), fl!("meter-summary-wiped"), Tone::Bad, s)
+                .debug_selector(move || selector.clone())
+                .children(hp_left.clone().map(|hp| chrome::chip_note(hp, s)))
+        });
         let top = div()
             .h(s.px(24.))
             .pl(s.px(10.))
@@ -435,7 +442,16 @@ impl HistoryView {
             .items_center()
             .gap(s.px(6.))
             .child(crown)
-            .child(div().flex_1().min_w_0().truncate().font_weight(FontWeight::SEMIBOLD).child(row.target.clone()))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .items_center()
+                    .gap(s.px(6.))
+                    .child(div().min_w_0().truncate().font_weight(FontWeight::SEMIBOLD).child(row.target.clone()))
+                    .children(wiped),
+            )
             .child(div().flex_none().text_size(s.px(11.5)).text_color(rgba(MUTED)).child(row.when.clone()))
             .child(report)
             .child(delete);
@@ -475,7 +491,12 @@ impl HistoryView {
             }));
         let players = open.then(|| self.players(row, settings, s, cx));
         let tip = (self.report_hover.as_deref() == Some(row.id.as_str())).then(|| report_tip(s));
-        let name = if row.is_boss { fl!("history-boss-record", name = row.target.clone()) } else { row.target.clone() };
+        let name = match (row.is_boss, row.wiped, hp_left) {
+            (_, true, Some(hp)) => fl!("history-wiped-record-hp", name = row.target.clone(), hp = hp),
+            (_, true, None) => fl!("history-wiped-record", name = row.target.clone()),
+            (true, false, _) => fl!("history-boss-record", name = row.target.clone()),
+            (false, false, _) => row.target.clone(),
+        };
         div()
             .id(SharedString::from(format!("record-{}", row.id)))
             .role(Role::Button)
@@ -757,17 +778,30 @@ mod tests {
             player_stats: HashMap::from([(1, stat)]),
             use_buffs_by_target: HashMap::new(),
             ledger: None,
+            wiped: false,
             created_at,
         }
     }
 
-    /// The window on a boss record and a mob record, with the records its
-    /// report buttons ask for.
+    fn wiped(mut record: HistoryRecord, hp: u32) -> HistoryRecord {
+        record.wiped = true;
+        if let Some(target) = record.target_info.as_mut() {
+            target.current_hp = Some(hp);
+        }
+        record
+    }
+
+    /// The window on a boss record, a mob record and a wiped attempt, with
+    /// the records its report buttons ask for.
     fn open(cx: &mut TestAppContext) -> (&mut VisualTestContext, Rc<RefCell<Vec<String>>>) {
         let meter_model = cx.new(|_| MeterModel::new(OverlaySettings::default(), None));
         let history = cx.new(|cx| HistoryModel::new(None, &meter_model, cx));
         history.update(cx, |history, _| {
-            history.load(vec![record("boss", "Veilwarden Orsikh", true, 2), record("mob", "Thornback Boar", false, 1)])
+            history.load(vec![
+                record("boss", "Veilwarden Orsikh", true, 2),
+                record("mob", "Thornback Boar", false, 1),
+                wiped(record("wipe", "Veilwarden Orsikh", true, 0), 30),
+            ])
         });
         let (view, cx) = cx.add_window_view(|window, cx| HistoryView::new(history, meter_model, window, cx));
         let asked = Rc::new(RefCell::new(Vec::new()));
@@ -807,5 +841,17 @@ mod tests {
         }
 
         assert_eq!(*asked.borrow(), vec!["boss".to_string()]);
+    }
+
+    #[gpui::test]
+    fn a_wiped_attempt_is_marked_and_keeps_its_report(cx: &mut TestAppContext) {
+        let (cx, asked) = open(cx);
+        assert!(cx.debug_bounds("wiped-boss").is_none(), "a kill carries no wipe mark");
+        assert!(cx.debug_bounds("wiped-wipe").is_some());
+
+        let button = cx.debug_bounds("report-wipe").expect("the wiped record's button");
+        cx.simulate_click(button.center(), Modifiers::none());
+
+        assert_eq!(*asked.borrow(), vec!["wipe".to_string()]);
     }
 }

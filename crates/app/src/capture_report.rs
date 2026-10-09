@@ -9,7 +9,7 @@ use std::sync::Arc;
 use gpui::{AsyncApp, Entity};
 
 use crate::capture_secondary::{close, pause, report_window, shoot_window, show_scene, window_handle};
-use crate::fixtures::{self, ReportDeaths, ReportFight, ReportFixture};
+use crate::fixtures::{self, ReportDeaths, ReportEnd, ReportFight, ReportFixture};
 use crate::meter::{MeterModel, MeterView, OverlaySettings};
 use crate::report::{Column, ReportModel, ReportRequest, ReportView, Tab};
 use crate::sample;
@@ -75,8 +75,9 @@ pub async fn from_fixtures(meter: gpui::WindowHandle<MeterView>, model: &Entity<
         shot("report-08-many", tassin),
         Shot { sort: Column::Taken, scrolled_rows: 6, ..shot("report-09-taken-empty", tassin) },
         Shot { show_server: true, ..shot("report-10-long", superbia) },
-        shot("report-11-ended", ReportFixture { ended: true, deaths: ReportDeaths::Nobody, ..basilus }),
+        shot("report-11-ended", ReportFixture { end: ReportEnd::Ended, deaths: ReportDeaths::Nobody, ..basilus }),
         shot("report-12-old", old),
+        shot("report-14-wiped", ReportFixture { end: ReportEnd::Wiped, deaths: ReportDeaths::Several, ..basilus }),
         Shot { player: Some(MIRELLE), ..shot("player-01-damage", basilus) },
         Shot { player: Some(MIRELLE), open_skill: Some(SNIPE), ..shot("player-02-open", basilus) },
         Shot { player: Some(MIRELLE), pointer: Some(Pointed::Skill(GALE_ARROW)), ..shot("player-03-hover", basilus) },
@@ -162,5 +163,39 @@ async fn summary_button(meter: gpui::WindowHandle<MeterView>, model: &Entity<Met
         return Err("the summary card's report button opened no report".to_string());
     }
     shoot_window(WindowKind::Report, dir, "report-13-from-summary", cx).await?;
+    close(WindowKind::Report, cx).await?;
+    wiped_summary_button(meter, model, dir, cx).await
+}
+
+/// The wiped card's button opens the attempt's own report, held by the meter.
+async fn wiped_summary_button(meter: gpui::WindowHandle<MeterView>, model: &Entity<MeterModel>, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
+    use meter_core::events::{MeterEvent, WipedAttempt};
+    use meter_core::report::fight_report::{FightOutcome, FightReport};
+
+    let snapshot = sample::boss_fight(177.0, 128);
+    show_scene(model, snapshot.clone(), cx);
+    let report = FightReport::from_snapshot(&snapshot, sample::BOSS_ID, None).map(|mut report| {
+        report.outcome = FightOutcome::Wiped { hp_left: 128, max_hp: 1_000 };
+        report
+    });
+    let held = cx.update(|cx| {
+        model.update(cx, |model, cx| {
+            let wipe = WipedAttempt { target_id: sample::BOSS_ID, snapshot, record_id: None, report };
+            model.apply(MeterEvent::BossWiped(wipe), std::time::Instant::now());
+            cx.notify();
+            model.wiped_report()
+        })
+    });
+    let held = held.ok_or("no held report after the wipe")?;
+    meter
+        .update(cx, |_, _, cx| cx.emit(ReportRequest::Held(held)))
+        .map_err(|error| format!("overlay window gone: {error:#}"))?;
+    pause(cx, crate::capture_secondary::TICK).await;
+    let opened = cx.update(|cx| secondary::window_of(WindowKind::Report, cx).is_some());
+    println!("entry point: the wiped card's report button: Report window open {opened}");
+    if !opened {
+        return Err("the wiped card's report button opened no report".to_string());
+    }
+    shoot_window(WindowKind::Report, dir, "report-15-from-wiped-summary", cx).await?;
     close(WindowKind::Report, cx).await
 }

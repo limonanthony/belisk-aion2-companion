@@ -35,6 +35,10 @@ pub struct RecordRow {
     pub duration_secs: f64,
     /// A boss fight: it has a fight report.
     pub is_boss: bool,
+    /// The attempt was lost with the boss alive; no kill, no personal best.
+    pub wiped: bool,
+    /// For a wipe, the boss's health left as a share of its maximum, 0–1.
+    pub hp_left: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -262,8 +266,16 @@ impl RecordRow {
             damage: record.total_damage,
             duration_secs: duration_secs(record),
             is_boss: record.target_info.as_ref().is_some_and(|target| target.is_boss),
+            wiped: record.wiped,
+            hp_left: record.wiped.then(|| hp_left(record)).flatten(),
         }
     }
+}
+
+fn hp_left(record: &HistoryRecord) -> Option<f32> {
+    let target = record.target_info.as_ref()?;
+    let max = target.max_hp.filter(|&max| max > 0)?;
+    Some((target.current_hp.unwrap_or(0) as f32 / max as f32).clamp(0.0, 1.0))
 }
 
 fn duration_secs(record: &HistoryRecord) -> f64 {
@@ -334,6 +346,7 @@ mod tests {
             player_stats: players.iter().map(|&(id, name, damage)| (id, player(id, name, damage))).collect(),
             use_buffs_by_target: HashMap::new(),
             ledger: None,
+            wiped: false,
             created_at: at,
         }
     }
@@ -481,6 +494,27 @@ mod tests {
         assert_eq!(players.iter().map(|player| player.name.as_str()).collect::<Vec<_>>(), vec!["Mirelle", "You"]);
         assert!(players[1].you && !players[1].named);
         assert_eq!(list.visible()[0].main_player.as_deref(), Some("You"));
+    }
+
+    #[test]
+    fn a_wiped_record_says_so_and_carries_the_health_its_boss_had_left() {
+        let mut wiped = record("wipe", 5, "Orsikh", Some("Mirelle"), &[(1, "Mirelle", 500)]);
+        wiped.wiped = true;
+        if let Some(target) = wiped.target_info.as_mut() {
+            target.current_hp = Some(300);
+            target.max_hp = Some(1_000);
+        }
+        let mut list = list();
+        let mut records: Vec<HistoryRecord> = ["old", "new", "mid"].iter().filter_map(|id| list.record(id).map(|record| (**record).clone())).collect();
+        records.push(wiped);
+        list.set_records(records);
+
+        let rows = list.visible();
+        let row = |id: &str| rows.iter().find(|row| row.id == id).copied().unwrap();
+        assert!(row("wipe").wiped);
+        assert_eq!(row("wipe").hp_left, Some(0.3));
+        assert!(!row("new").wiped);
+        assert_eq!(row("new").hp_left, None);
     }
 
     #[test]

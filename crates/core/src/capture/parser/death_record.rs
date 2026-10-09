@@ -3,6 +3,7 @@ use crate::capture::parser::wire_cursor::Cursor;
 const OPCODE: [u8; 2] = [0x42, 0x36];
 
 const FLAG_DIED: u32 = 3;
+const FLAG_REMOVED: u32 = 7;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct DeathRecord {
@@ -15,6 +16,12 @@ impl DeathRecord {
     /// that is not a kill.
     pub(crate) fn died(&self) -> bool {
         self.flag == FLAG_DIED
+    }
+
+    /// The entity is gone and did not die. Flag 1 is not this: a boss that
+    /// left range with flag 1 reported its health again minutes later.
+    pub(crate) fn removed(&self) -> bool {
+        self.flag == FLAG_REMOVED
     }
 }
 
@@ -59,6 +66,15 @@ mod tests {
             let record = read_death_record(&death_frame(&ENTITY, flag)).unwrap();
 
             assert!(!record.died(), "flag {flag}");
+        }
+    }
+
+    #[test]
+    fn only_flag_seven_is_a_removal() {
+        for (flag, removed) in [(1, false), (3, false), (7, true)] {
+            let record = read_death_record(&death_frame(&ENTITY, flag)).unwrap();
+
+            assert_eq!(record.removed(), removed, "flag {flag}");
         }
     }
 

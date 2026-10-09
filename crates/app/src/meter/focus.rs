@@ -45,6 +45,7 @@ pub enum Release {
     NotYourFight,
     ZoneChange,
     Reset,
+    Wiped,
 }
 
 impl Release {
@@ -58,6 +59,7 @@ impl Release {
             Self::NotYourFight => "not your fight: you neither hit it nor were hit by it",
             Self::ZoneChange => "the local player's actor id changed (zone change)",
             Self::Reset => "the meter was reset",
+            Self::Wiped => "the attempt was wiped: the next pull on it is a new fight",
         }
     }
 }
@@ -114,6 +116,9 @@ struct Focused {
     duration_secs: f64,
     last_hit_at: Instant,
     engaged_at: Instant,
+    /// A wipe left the lock on this boss of the dungeon, which is not on the
+    /// meter until it is hit again; the mob code tells its respawn.
+    held_for_mob: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -156,11 +161,13 @@ impl BossFocus {
         if let Some(focused) = &mut self.focused {
             let id = focused.id;
             let release = match facts_of(id) {
+                None if focused.held_for_mob.is_some() => None,
                 None => Some(Release::Gone),
                 Some(facts) if !facts.is_boss => Some(Release::NoLongerBoss),
                 Some(facts) if facts.killed() => Some(Release::Died),
                 Some(_) if involvement_of(id).is_none() => Some(Release::NotYourFight),
                 Some(facts) => {
+                    focused.held_for_mob = None;
                     if facts.duration_secs > focused.duration_secs + NEW_HIT_SECS {
                         focused.duration_secs = facts.duration_secs;
                         focused.last_hit_at = now;
@@ -249,14 +256,52 @@ impl BossFocus {
         change
     }
 
+    /// The attempt on `id` was wiped. The next pull on it is a new fight, so
+    /// nothing about this one is remembered. In a dungeon (`hold_for_mob`, the
+    /// boss's mob code) the lock stays on the boss, as it does until a kill;
+    /// otherwise it is let go.
+    pub fn wiped(&mut self, id: u32, hold_for_mob: Option<u32>, now: Instant) -> Change {
+        let mut change = Change::default();
+        self.finished.retain(|finished| finished.id != id);
+        if let Some(focused) = self.focused.as_mut().filter(|focused| focused.id == id) {
+            if hold_for_mob.is_some() {
+                focused.held_for_mob = hold_for_mob;
+                focused.duration_secs = 0.0;
+                focused.last_hit_at = now;
+            } else {
+                let duration_secs = focused.duration_secs;
+                self.release(Release::Wiped, duration_secs, &mut change);
+            }
+        }
+        change
+    }
+
+    /// The mob code of the boss the lock is held for after a wipe, until it
+    /// is on the meter again.
+    pub fn held_for_mob(&self) -> Option<u32> {
+        self.focused.and_then(|focused| focused.held_for_mob)
+    }
+
+    /// The boss of a wiped dungeon attempt came back as a new entity: the
+    /// lock moves to it.
+    pub fn relock(&mut self, facts: &TargetFacts, why: Involvement, now: Instant) -> Change {
+        let mut change = Change::default();
+        if let Some(focused) = self.focused {
+            self.release(Release::Wiped, focused.duration_secs, &mut change);
+        }
+        self.engage(facts, why, now, &mut change);
+        change
+    }
+
 
     fn release(&mut self, reason: Release, duration_secs: f64, change: &mut Change) {
         let Some(focused) = self.focused.take() else {
             return;
         };
-        // Not remembered: it was never the player's fight, or the player only
-        // walked away from it, and either may become their fight again.
-        if !matches!(reason, Release::NotYourFight | Release::MovedToAnotherBoss) {
+        // Not remembered: it was never the player's fight, the player only
+        // walked away from it, or its attempt was wiped; any of them may
+        // become their fight again.
+        if !matches!(reason, Release::NotYourFight | Release::MovedToAnotherBoss | Release::Wiped) {
             self.finished.retain(|finished| finished.id != focused.id);
             self.finished.push_back(Finished {
                 id: focused.id,
@@ -276,6 +321,7 @@ impl BossFocus {
             duration_secs: facts.duration_secs,
             last_hit_at: now,
             engaged_at: now,
+            held_for_mob: None,
         });
         self.pending_switch = None;
         change.engaged = Some(facts.id);
@@ -650,6 +696,44 @@ mod tests {
         let change = world.observe(&mut focus, TRASH, at(start, 5));
 
         assert_eq!(change.released, Some(Released { id: BOSS, reason: Release::Gone }));
+    }
+
+    #[test]
+    fn a_wiped_boss_is_released_and_its_next_pull_is_a_new_fight_even_when_shorter() {
+        let start = Instant::now();
+        let (mut focus, mut world) = engaged_on_boss(start);
+        world.set(BOSS, true, 900, 120.0);
+        world.observe(&mut focus, BOSS, at(start, 1));
+
+        let change = focus.wiped(BOSS, None, at(start, 2));
+        assert_eq!(change.released, Some(Released { id: BOSS, reason: Release::Wiped }));
+        assert_eq!(focus.focused(), None);
+
+        world.set(BOSS, true, 900, 4.0);
+        assert_eq!(world.observe(&mut focus, BOSS, at(start, 30)).engaged, Some(BOSS));
+    }
+
+    #[test]
+    fn in_a_dungeon_a_wipe_keeps_the_lock_through_trash_and_a_respawned_boss_takes_it() {
+        let start = Instant::now();
+        let (mut focus, mut world) = engaged_on_boss(start);
+
+        let change = focus.wiped(BOSS, Some(2_300_243), at(start, 2));
+        assert!(change.released.is_none());
+        assert_eq!(focus.focused(), Some(BOSS));
+        world.facts.remove(&BOSS);
+        world.set(TRASH, false, 100, 8.0);
+        let change = world.observe(&mut focus, TRASH, at(start, 5));
+        assert!(!change.any(), "trash between attempts does not take the lock");
+        assert_eq!(focus.focused(), Some(BOSS));
+        assert_eq!(focus.held_for_mob(), Some(2_300_243));
+
+        world.set(OTHER_BOSS, true, 1_000, 2.0);
+        let facts = world.facts[&OTHER_BOSS];
+        let change = focus.relock(&facts, Involvement::YouHitIt, at(start, 40));
+        assert_eq!(change.engaged, Some(OTHER_BOSS));
+        assert_eq!(focus.focused(), Some(OTHER_BOSS));
+        assert_eq!(focus.held_for_mob(), None);
     }
 
     #[test]

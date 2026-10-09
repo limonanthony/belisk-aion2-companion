@@ -1009,13 +1009,13 @@ fn bar_length(value: f64, top: f64) -> f32 {
 fn outcome_chip(outcome: FightOutcome, s: Scale) -> Div {
     match outcome {
         FightOutcome::Defeated => chrome::chip(Some(Icon::Check), fl!("meter-summary-defeated"), Tone::Good, s),
-        FightOutcome::Ended => chrome::chip(Some(Icon::Hourglass), fl!("meter-summary-ended"), Tone::Warn, s).child(
-            div()
-                .text_size(s.px(11.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(rgba(MUTED))
-                .child(fl!("meter-summary-may-resume")),
-        ),
+        FightOutcome::Ended => chrome::chip(Some(Icon::Hourglass), fl!("meter-summary-ended"), Tone::Warn, s)
+            .child(chrome::chip_note(fl!("meter-summary-may-resume"), s)),
+        FightOutcome::Wiped { hp_left, max_hp } => {
+            let left = (max_hp > 0).then(|| format::percent(f64::from(hp_left) / f64::from(max_hp)));
+            chrome::chip(Some(Icon::CircleX), fl!("meter-summary-wiped"), Tone::Bad, s)
+                .children(left.map(|hp| chrome::chip_note(fl!("meter-summary-hp-left", hp = hp), s)))
+        }
     }
 }
 

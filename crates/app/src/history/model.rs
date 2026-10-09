@@ -185,6 +185,7 @@ mod tests {
             player_stats: HashMap::from([(1, stat(1, "Mirelle", 500)), (2, stat(2, "", 300))]),
             use_buffs_by_target: HashMap::new(),
             ledger: None,
+            wiped: false,
             created_at: 1,
         }
     }

@@ -1,3 +1,4 @@
+pub mod boss_hp;
 pub mod diff;
 pub mod dump;
 pub mod events;
@@ -35,6 +36,7 @@ commands:
   events    opcodes near, and rare away from, noted moments                      --notes notes.txt [--before 5] [--after 30] [--ratio 5]
   periodic  opcodes repeating on a fixed interval or at round wall-clock times   [--min 3] [--merge 2] [--tol 10] [--all]
   unnamed-skills  skill ids the app shows as 'Skill <id>': hits, damage, class   [--json]
+  boss-hp   each boss entity's HP (appears, falls, back at full, dead) and the wipes the core would close
   parity    the shipped StreamProcessor against this tool's framing
 
 common options:
@@ -66,6 +68,9 @@ pub fn run(args: &Args) -> Result<(), String> {
             }
             if command == "unnamed-skills" {
                 return unnamed_skills::run(&files, args);
+            }
+            if command == "boss-hp" {
+                return boss_hp::run(&files, args);
             }
             let capture = capture::load(&files)?;
             match command {
