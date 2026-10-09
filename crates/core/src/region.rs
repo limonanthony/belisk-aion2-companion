@@ -6,20 +6,19 @@
 //! by a hardcoded address -- but the *parsers* are not, because a server id is
 //! used structurally to locate fields inside player-info packets.
 //!
-//! Upstream hardcoded Taiwan's exact server list (`1001..=1021`, `2001..=2021`).
-//! On any other service that check rejects every candidate offset,
-//! `find_server_id` returns `None`, and no player is ever named -- a silent,
-//! total failure rather than an error. This module replaces that constant with
-//! per-region profiles and a structural fallback that holds on services we have
+//! Taiwan's server list is exactly `1001..=1021`, `2001..=2021`. Checking a
+//! candidate offset against that list alone rejects every candidate on any other
+//! service, `find_server_id` returns `None`, and no player is ever named -- a
+//! silent, total failure rather than an error. So the profiles here carry
+//! per-region rules plus a structural fallback that holds on services we have
 //! not seen yet.
 //!
 //! It also records what we actually observe (server ids, server IPs).
 //! Fingerprints for Korea and global are thin today; these observations are what
 //! will fill them in from a real capture.
 //!
-//! The runtime lives in a process-global on purpose: it is one app-wide setting
-//! plus an observation log, and threading it through every parser would enlarge
-//! the diff against an upstream that is still actively developed.
+//! The runtime lives in a process-global: it is one app-wide setting plus an
+//! observation log, read from parsers that have no handle to pass it.
 
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
@@ -152,7 +151,7 @@ fn resolve(runtime: &RegionRuntime) -> RegionId {
     }
 }
 
-/// Region-aware replacement for upstream's hardcoded Taiwan check.
+/// Whether `server_id` fits the layout of the effective region profile.
 pub fn accepts_server_id(server_id: u32) -> bool {
     effective().accepts_server_id(server_id)
 }
@@ -170,13 +169,6 @@ pub fn observe_server_ip(ip: [u8; 4]) {
         if runtime.server_ips.len() < 32 {
             runtime.server_ips.insert(ip);
         }
-    }
-}
-
-pub fn reset_observations() {
-    if let Ok(mut runtime) = RUNTIME.write() {
-        runtime.server_ids.clear();
-        runtime.server_ips.clear();
     }
 }
 
@@ -243,7 +235,7 @@ mod tests {
     #[test]
     fn auto_accepts_ids_outside_taiwans_catalogue() {
         // The regression this module exists to prevent: a server id outside
-        // Taiwan's list, which upstream silently rejected -- leaving every
+        // Taiwan's list, which a Taiwan-only check rejects -- leaving every
         // player on that service unnamed.
         assert!(!RegionId::Tw.accepts_server_id(1042));
         assert!(RegionId::Auto.accepts_server_id(1042));

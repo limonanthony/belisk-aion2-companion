@@ -18,7 +18,7 @@ use crate::fonts::OVERLAY_FAMILY;
 const SHEET_WIDTH: f32 = 760.0;
 const SHEET_HEIGHT: f32 = 640.0;
 
-const SAMPLE: &str = "Aether 0123456789 1,234,567 DPS";
+const SAMPLE: &str = "Belisk 0123456789 1,234,567 DPS";
 const DIGITS_ONES: &str = "1111111111";
 const DIGITS_ZEROS: &str = "0000000000";
 const MEASURE_SIZE: f32 = 20.0;
@@ -45,7 +45,7 @@ fn specimens() -> Vec<Specimen> {
     let regular = FontWeight::NORMAL;
     let semibold = FontWeight::SEMIBOLD;
     vec![
-        specimen("control: family that does not exist", "Aether Not A Font", regular, false),
+        specimen("control: family that does not exist", "Belisk Not A Font", regular, false),
         specimen("Bahnschrift 400", "Bahnschrift", regular, false),
         specimen("Bahnschrift 600", "Bahnschrift", semibold, false),
         specimen("Bahnschrift SemiCondensed 400", "Bahnschrift SemiCondensed", regular, false),

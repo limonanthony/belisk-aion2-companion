@@ -954,3 +954,14 @@ pub fn ticket_login(
         content: meter_core::tickets::TicketContent::Snapshot(records),
     }
 }
+
+/// The changelog the What's new and Changelog captures draw: the approved
+/// mockup's ten invented versions, 1.0.0 to 1.6.0 (updates.js), in the
+/// subset the app's parser reads.
+pub fn changelog(language: crate::i18n::Language) -> crate::changelog::Changelog {
+    let source = match language {
+        crate::i18n::Language::English => include_str!("fixtures/changelog.en.md"),
+        crate::i18n::Language::French => include_str!("fixtures/changelog.fr.md"),
+    };
+    crate::changelog::Changelog::parse(source).expect("the invented changelog is in the subset")
+}

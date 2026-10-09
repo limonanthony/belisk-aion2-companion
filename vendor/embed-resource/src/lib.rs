@@ -425,7 +425,7 @@ pub fn compile<T: AsRef<Path>,
                P: Into<ParameterBundle<Ms, Mi, Is, Ii>>>(
     resource_file: T, parameters: P)
     -> CompilationResult {
-    // Aether: GPUI's build script embeds its own manifest (asInvoker) into every
+    // Belisk: GPUI's build script embeds its own manifest (asInvoker) into every
     // binary that links it, which collides with ours. Skip that one.
     if env::var("CARGO_PKG_NAME").as_deref() == Ok("gpui-pre") {
         return CompilationResult::Ok;

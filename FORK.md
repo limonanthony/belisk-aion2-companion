@@ -1,15 +1,15 @@
 # Fork notes
 
-This is a personal fork of [NOIA2](https://github.com/ZDYoung0519/NOIA2) by zdyoung,
-tracked as the git remote `upstream`.
+This file records how the code inherited from NOIA2 by zdyoung (through Aether by
+Helveticxa) was changed, and why. Both are only the baseline; nothing is merged
+from them.
 
-Licensed **GPL-3.0-only**, same as upstream. Any distributed build must ship its
+Licensed **GPL-3.0-only**, like both. Any distributed build must ship its
 source under the same terms.
 
-> **History notice.** The Tauri + React app described in most sections below was
-> removed on 2026-10-04; see [Cutover](#cutover-tauri-removed) at the end.
-> Sections about Tauri, the frontend, overlays in HTML, the updater, the
-> installer, Always on top, chat pop-ups, the light theme and pnpm are history.
+> **History notice.** The Tauri + React app was removed on 2026-10-04; tag
+> `tauri-final` is its last commit and git keeps everything it did. Its sections
+> here are cut down to short notes; see [Cutover](#cutover-tauri-removed) at the end.
 > The capture, parsing, engine and anti-cheat sections still describe the core.
 
 
@@ -35,28 +35,21 @@ Opcodes are also identical across the Korean and Taiwanese clients -- verified b
 comparing all three open implementations -- which is good evidence they will hold
 on global too. Still to be confirmed against a real global capture.
 
-## Changes against upstream
+## Changes to the inherited code
 
-### The startup gate, and the driver upstream forgot to ship
+### WinDivert files, and the startup gate
 
-`src-tauri/resources/windivert/` holds both `WinDivert.dll` and
-`WinDivert64.sys`, and `scripts/copy-windivert-runtime.ps1` copies both into
-`src-tauri/target/<profile>/` before a dev run — so WinDivert works for whoever
-is building it. But `tauri.conf.json` listed only the DLL under `bundle.resources`,
-and that list is what the NSIS installer ships. Every *installed* copy therefore
-had no driver file at all, and reported `WinDivert64.sys was not found` forever.
-
-The service registration proves it: on a machine that had run 0.1.4, the
-`WinDivert` kernel service existed and pointed at
-`\??\C:\Program Files\Aether\WinDivert64.sys`, a path with no file behind it.
-Upstream papered over this at runtime instead — `repair_windivert_runtime`
-downloaded the `.sys` from a Supabase bucket and wrote it into the install
-directory, with no integrity check. That command is gone; the driver is bundled.
+The original installer listed only `WinDivert.dll` as a resource, so every
+installed copy had no driver file and reported `WinDivert64.sys was not found`
+forever. The code worked around it by downloading the `.sys` from a cloud
+bucket with no integrity check. That download is gone: the driver is bundled
+beside the DLL (`crates/app/windivert/`, copied beside the exe by `build.rs` and
+shipped in the zip).
 
 For the record, the vendored binaries are **byte-identical** to the official
 `WinDivert-2.2.2-A.zip` from `basil00/WinDivert` (sha256
 `8da085…ddc2` for the driver). The Chinese company on the driver's Authenticode
-signature is upstream WinDivert's own signer, not something this fork's ancestor
+signature is WinDivert's own signer, not something the inherited code
 introduced.
 
 The native build delay-loads `WinDivert.dll`, so the exe starts and captures with
@@ -70,10 +63,10 @@ The full hashes, which `cargo xtask dist` checks before packaging:
 |`WinDivert64.sys`|`8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2`|
 
 The licence text (LGPL-3.0 or GPL-2.0, your choice) is `crates/app/windivert/LICENSE`,
-from the same upstream release.
+from the same release.
 
-`crates/core/src/preflight.rs` replaces `check_capture_runtime_status`
-with a weighed report:
+`crates/core/src/preflight.rs` weighs the capture runtime instead of passing or
+failing it:
 
 - **Required vs optional is computed, not fixed.** Capture needs one backend, so
   Npcap is only required while WinDivert cannot stand in for it. An unavailable
@@ -82,61 +75,10 @@ with a weighed report:
   perfectly healthy machine look broken.
 - **The Npcap probe enumerates adapters** rather than loading `wpcap.dll`, which
   keeps succeeding after the driver service stops.
-- **The gate is authoritative.** `enter_app` re-runs the checks in Rust and
-  refuses if anything required fails, and `preflight::passed()` gates
-  `show_main_window`, so the tray icon and a second launch cannot open the app
-  behind a gate that is still holding.
-- **`install_npcap`** fetches the pinned installer, verifies its SHA-256 before
-  executing anything, and re-checks when it exits. Npcap reserves silent
-  installation for its OEM licence, so its own window still appears.
-
-### Cloud features made optional
-
-*Superseded in 2.2.0: the cloud code is removed entirely. See "Removed in
-2.2.0" below. Kept for the history of why it never worked here.*
-
-Upstream reads `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` from a gitignored
-`.env`, so a fresh clone has neither. `createClient(undefined, undefined)` throws
-`supabaseUrl is required.` at module load, and because `main-title-bar.tsx`
-imports `AuthModal` eagerly, that took down the whole app at startup.
-
-`src/lib/supabase.ts` now exports:
-
-- `isCloudEnabled` -- whether both env vars are present
-- `supabase: SupabaseClient | null` -- constructed only when they are
-- `requireSupabase()` -- throws a readable error, for handlers that already catch
-
-Reactive code (`use-user`, the deep-link handler) degrades quietly to a
-logged-out state; imperative handlers surface the error through their existing
-error paths; the account button is hidden when cloud is off.
-
-The meter itself never depended on any of this. Nothing is uploaded anywhere by
-default.
-
-Note: upstream's premium flag only drives cosmetics -- an avatar glow and a badge.
-No meter functionality is gated behind it.
-
-## Running (Tauri era, history)
-
-Packet capture needs Npcap (or the WinDivert fallback) **and Administrator
-rights**. The Tauri app baked `requireAdministrator` into the Windows manifest
-in `src-tauri/build.rs` and was started with `pnpm tauri:dev` from an elevated
-terminal. Current commands are in [AGENTS.md](./AGENTS.md); the GPUI exe embeds
-the same manifest from `crates/app/windows/`.
-
-## Staying current with upstream
-
-```
-git fetch upstream
-git merge upstream/main
-```
-
-Changes here are deliberately kept to small, anchored edits so these merges stay
-cheap.
 
 ### Region profiles (Taiwan / Korea / global)
 
-Upstream hardcoded Taiwan's server catalogue inside the player-name parser:
+The inherited code hardcoded Taiwan's server catalogue inside the player-name parser:
 
 ```rust
 fn is_available_server_id(server_id: u32) -> bool {
@@ -177,120 +119,6 @@ The profiles stay in `region.rs` because detection still names Korea.
 
 Server names now fall back to `Server <id>` instead of a hardcoded
 `"未知服务器"`, so non-Taiwan players stay distinguishable.
-
-## Upstream quality gates (Tauri era, history)
-
-Before the cutover the gates were `pnpm build` and `cd src-tauri && cargo test
---lib`; `pnpm check` failed on a clean upstream checkout and `pnpm format` was
-never to be run. None of that exists any more. The gate today is
-`cargo test --workspace`, described in [AGENTS.md](./AGENTS.md).
-
-## Gotcha: moving the repository folder
-
-Cargo and Tauri bake absolute paths into `src-tauri/target/`. After renaming or
-moving the project directory, the next build fails with something like:
-
-```
-failed to read file '\?\...\<old-folder>\src-tauri\target\debug\build\
-tauri-<hash>\out\permissions\app\autogenerated\commands\app_hide.toml'
-```
-
-That is stale build cache pointing at the old path, not a broken checkout. Fix:
-
-```
-cd src-tauri && cargo clean
-```
-
-The frontend is unaffected -- `pnpm build` keeps working across a move.
-
-## Removed upstream leftovers
-
-Four files committed to upstream by accident, none referenced by the build:
-
-- `1.txt` — a raw packet hex dump from a live Taiwanese session. It contains
-  other players' in-game nicknames, so it is not something to republish here.
-- `gh-proxy.sh`, `proxy.sh` — local proxy wrappers for the maintainer's machine.
-- `down_zed_remote.py` — a Zed remote-server installer, unrelated to this app.
-
-## Versioning and releases
-
-The version was reset to **0.1.0**. Upstream sits at 4.1.0, but that number
-belongs to NOIA2's release channel; this fork publishes to its own, and the
-updater compares an installed build against *these* releases. Carrying 4.1.0
-forward would mean the first tag actually shipped here reads as a downgrade and
-never offers itself.
-
-0.1.0 rather than 1.0.0 is deliberate: nothing has been verified against a real
-global session yet. 1.0.0 is worth saving for the build that demonstrably works
-on the global servers.
-
-### The updater points at this repository by construction
-
-`.github/workflows/release.yml` derives the manifest URL from
-`${{ github.repository }}`, so it resolves to whichever repo the workflow runs
-in. Nothing points at upstream.
-
-Upstream routed the primary endpoint through `gh-proxy.com`, a Chinese GitHub
-mirror that exists to work around slow access there. That is an unnecessary third
-party in this project's update path, so it was removed along with the two
-workflow steps and the script that produced its manifest. GitHub is now the only
-endpoint.
-
-### Signing keys
-
-A keypair was generated on 2026-09-08. The **public** key and the endpoint are
-committed in `src-tauri/tauri.conf.json`, because both are public values and
-baking them in means a local build behaves exactly like a CI build -- and it
-drops one secret the workflow would otherwise need.
-
-The private key and its password live outside this repository, at
-`<user profile>/.aether-release/`, with a README explaining what goes where.
-They are deliberately not in the project vault either: a signing key is the only
-thing proving an update genuinely came from this project, and a vault that gains
-a Git remote later would carry it in history.
-
-The workflow needs two repository secrets, under Settings → Secrets and variables
-→ Actions:
-
-- `TAURI_SIGNING_PRIVATE_KEY`
-- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
-
-`GITHUB_TOKEN` is automatic. The `VITE_SUPABASE_*` secrets can stay unset; the
-build simply ships with cloud features off.
-
-### A broken build script, fixed
-
-Upstream's `tauri:build` pointed at `src-tauri/tauri.bundle.conf.json` -- a file
-that has never existed in the repository, verified with `git log --all`. Local
-release builds could not run at all. It now matches what CI does:
-`tauri build --bundles nsis,updater`, so a local build produces the same
-artifacts the updater expects.
-
-## Background
-
-The home-screen background is a looping 1080p video
-(`public/aion2/bg-dune.mp4`) drawn over a still
-(`public/aion2/background-dune.webp`) that the other pages use on their own.
-
-Since 2.0.0 it is **Dune** by [R](https://vimeo.com/theraa), credited in the README
-and on the in-app Credits page. It replaced the flower video. The file names
-changed with it, so a webview cache can never serve the old clip after an
-update.
-
-- The video is re-encoded from the 60 fps original to 30 fps H.264 at CRF 27
-  (`-tune animation`, faststart, no audio track): 3.8 MB to 1.7 MB. At full
-  resolution, thin line work on black is indistinguishable from the source, and
-  decoding costs half as much per second.
-- The still is the frame at 2.45 s, taken from the source, not the re-encode,
-  and stored as lossless WebP: 32 KB against the 143 KB of the one it replaced.
-  It is also the video's `poster`, so there is no black flash before playback.
-- In the light theme both are inverted with `filter: invert(1)` (the
-  `bg-artwork` class): white line work on black becomes ink on paper, drawn by
-  the compositor at no extra cost.
-
-Playback pauses whenever nobody can see it. Upstream already paused on window
-blur; that now also honours the Page Visibility API, which covers states the
-window API alone does not report.
 
 ## Protocol tooling
 
@@ -388,19 +216,9 @@ one evening) and was taken for the game, filling a 512 MB file in 20 minutes.
    fingerprint.
 5. From then on, replay the recording instead of playing.
 
-### Diagnostics report
-
-Settings → Aion 2 → Connection → Advanced → **Copy report** turns a session into a plain-text summary:
-version, region profile, the server IPs and ids observed, and the full opcode
-tally. A copy is always written to `recordings/diagnostics-*.txt` as well, since
-the clipboard can fail quietly and launch day happens once.
-
-It exists so a session can be handed over by pasting rather than described screen
-by screen.
-
 ## The meter between fights (2.2.0)
 
-Upstream never ended a fight. Totals piled up target after target until
+The inherited meter never ended a fight. Totals piled up target after target until
 someone pressed Reset, and the whole pile was cloned and sent to the overlay on
 every snapshot. The overlay also sat on screen whether or not anything was
 happening.
@@ -417,29 +235,50 @@ The snapshot loop then does two things each tick:
   activity, the fight is saved to History and the meter starts clean
   (`end_idle_fight`). A meter holding only strangers' fights is cleared
   without a record, measured from its start time, so it cannot grow unseen.
-- **Visibility.** With `hide_when_idle` on, the overlay is hidden while there
-  is no activity since the last reset, unless a *peek* is running: 8 s after
-  Start, 4 s after Reset, and 15 s from the show shortcut when the overlay is
-  only idle-hidden.
+- **Visibility.** With `hide_when_idle` on, the loop says
+  `MeterEvent::DpsIdleHidden(true)` while there is no activity since the last
+  reset and no *peek* is running, and `DpsIdleHidden(false)` at the first
+  activity or when a peek starts. The core peeks 4 s after Reset; the host asks
+  for others with `DpsMeter::peek_overlay(secs)`. `hide_when_idle` is off by
+  default since 2026-10-09 (Aether had it on).
 
-Hiding goes through `aion2_focus`, which already owned the overlay's
-visibility, as one more reason next to the manual hotkey and the game's focus
-(`Aion2FocusState::wanted_visibility`, tested). The poller skips its work while
-no overlay is open.
+**In the GPUI app** (TASK-25.2), Settings › Overlay › Window › "Hide between
+fights" (`windows.hideMeterBetweenFights`, off by default; a `settings.json`
+without the key reads as off) sets `hide_when_idle` on the running core at
+once. The event goes through `bridge.rs` to `MeterModel` on the UI thread; the
+hub (`toolbar/mod.rs`) observes the model and hides the meter's window
+(`SW_HIDE`) or shows it without activating it (`SW_SHOWNOACTIVATE`, then
+raised in the topmost band without activation), so the game keeps the focus.
 
-**Never do window calls on the snapshot thread.** Getters such as
-`is_visible` wait on the event loop, and the event loop joins the snapshot
-thread in `stop_dps_meter` -- a sync command, so on the main thread. That is a
-deadlock waiting for the wrong moment. `set_dps_idle_hidden_for_app` posts the
-window work with `run_on_main_thread` instead.
+- The window stays up while a fight summary (kill or wipe) is showing,
+  and while the first-open prompt, which sits on it, waits for an answer.
+- Opening the meter, from the toolbar or at launch, peeks 10 s. Clicking the
+  toolbar's meter icon while the meter steps aside peeks 10 s instead of
+  closing it; otherwise the icon opens and closes the meter as before.
+- A meter that steps aside is still open: fights are tracked, the lock
+  shortcut works on it, and Alt+Shift+CapsLock showing everything again leaves
+  it aside unless a peek or a summary applies.
+- A reminder card goes under the toolbar while the meter steps aside, as while
+  it is closed, so notifications are never hidden with it. The other windows
+  are unaffected.
+- The pointer, the "…" menu and an unlocked meter do not keep it up.
 
-The overlay is built `focusable(false)`: the show shortcut can create it while
-you are in the game, and a new window takes the keyboard by default.
+The earlier Tauri overlay hid through a window call on the snapshot thread, which
+deadlocked against `stop_dps_meter` joining that thread. The rule stays: no
+window call on the snapshot thread; the core only emits the event, and
+`bridge.rs` hands it to the UI thread.
+
+**Off the UI thread** (TASK-25.6). The PvP window reads the meter's watch list
+and kill stats on the background executor, one read at a time with the ticks
+skipped meanwhile, and drops answers that predate a name change or a clear.
+Saved and live fight reports are built on the background executor, and the
+report window opens when the report is ready. History delete and reload stay
+memory-only on the UI thread: the core writes the file on its own thread.
 
 ## Boss fights (2.3.0)
 
 **English names.** `crates/core/data/npc_names_en.json` (mob code -> name, about
-8,000) replaces upstream's Traditional Chinese catalogue, in the backend and in
+8,000) replaces the inherited Traditional Chinese catalogue, in the backend and in
 History alike. It is built by `scripts/build-npc-names.mjs` from
 Kuroukihime/AIon2-Dps-Meter's `mobs.json` (GPL-3.0), with NOIA2's partial
 English names as a fallback; placeholder names ("None") are dropped. A target
@@ -459,10 +298,10 @@ force, English where an id has no French name, and follows the language switch
 live. A record stores a mob code with its English name, so old history shows
 French too. `scripts/build-fr-names.mjs` builds both files, per id: QuestLog.gg
 by id (its public API, fetched in batches into a cache outside the repository),
-then NotMeter's game catalogue by id (names extracted from the Global Steam
-client, kept outside the repository and read only for ids we already have), then
+then an optional community name list by id (free online sources, kept outside
+the repository and read only for ids we already have), then
 QuestLog's French for another of our ids with the same English name, then
-NotMeter's French for the same English name, else none. "(DNT)" is ignored when
+the community list's French for the same English name, else none. "(DNT)" is ignored when
 names are compared, and the "???" both sources hold for untranslated text is
 not a name. Names are (c) NCSOFT. Today: mobs 7,885 / 0 / 24 / 0 with 82 left
 English, skills 305 / 6,285 / 15 / 325 with 175 left English (layer order as
@@ -471,7 +310,7 @@ above). The packet explorer still reads English only.
 Dungeon names and difficulties in `dungeons.json` have French too (QuestLog's
 `database.getDungeon`; `game_data::dungeon_of` follows the language, English per
 field where one is missing). Four empty English dungeon names were filled from
-QuestLog, and four that came from upstream's translations (Phantoms Hall, Fallen
+QuestLog, and four that came from the inherited translations (Phantoms Hall, Fallen
 Guardian's City, Abyssal Rock Grotto, Reforged Abyss) now use the Global client's
 names (Hall of Illusion, Citadel of the Fallen Daeva, Abyssal Horn Den, Abyssal
 Forge: Ludra).
@@ -483,6 +322,26 @@ saves, and are seeded from the history on disk on first run. A fight counts
 when the target is a boss and it lasted at least 15 seconds; shorter kills
 produce DPS figures no real fight reaches. The meter now saves the fight on
 `stop_dps_meter` too, which used to throw it away.
+
+**Saving history and personal bests** (`crates/core/src/background_save.rs`).
+Neither store writes on the thread that changed it: a save or a delete changes
+the records in memory, which is what every reader sees, and sets a flag; a
+writer thread per file copies the records under the lock, releases it, then
+serialises, compresses and writes (atomically, `*.tmp` then rename). A failed
+write is logged and retried; `DpsMeter::save_now` writes what is still pending
+on the calling thread and runs on `stop_dps_meter`, on quit and on drop. A
+`combat_history.bin` or `personal_bests.json` that cannot be read (bad magic,
+version, checksum, compression or JSON) is renamed `<name>.bad-<seconds>` and
+the store starts empty; it is never overwritten, and the bests are not rebuilt
+from the history. Only a missing bests file (a first run) is built from the
+history. `personal_bests.json` is `{"version": 1, "bests": [...]}`; the bare
+list older builds wrote still loads.
+
+**Overlay frames** go out when their content differs from the last frame sent
+(`CombatSnapshot::shows_the_same_as`), not only when the total damage changes:
+a name, a boss's health, a buff starting or ending all count. The frame's
+clock (`time_now`) and a buff's `coverage`, which follow the wall clock, do
+not count, so an idle overlay is sent nothing.
 
 **The overlay** asks for the best once per boss and character
 (`get_personal_best`), shows the pace in the footer after 10 seconds of a boss
@@ -515,11 +374,9 @@ the player. All three are gone.
   memory and CPU only. **Never use `System::new_all()` or refresh all
   processes with `sysinfo`.**
 - **`OpenProcess` on the foreground window's process**, to learn its name, in
-  `aion2_focus`, `game_display`, and `on_top`. The foreground window is
-  usually the game. `plugins/process_names.rs` answers from a Toolhelp
-  process snapshot instead (the kernel's process list, no handle), cached
-  for five seconds. The one remaining `OpenProcess` is on Explorer, to launch
-  browsers unelevated.
+  the Tauri-era window plugins (`aion2_focus`, `game_display`, `on_top`, gone
+  with the cutover). They answered from a Toolhelp process snapshot instead
+  (the kernel's process list, no handle).
 - **Loading the WinDivert driver just to ask.** The startup gate, the Connection
   status, and `check_state` each opened WinDivert, which installs and starts
   its kernel service and leaves it loaded until reboot. Some anti-cheats treat
@@ -545,273 +402,32 @@ adapter to probe first, the loopback adapter when the remote is 127.0.0.1
 when a connection appears. It is only a hint: detection still waits for the
 game's own bytes.
 
-## Always on top
+## Removed with the Tauri app (history)
 
-A page of its own (`/aion2/on-top`) that keeps the player's **own** Chrome or
-Edge above the game: a guide, a stream, a video. Backend in
-`src-tauri/src/plugins/on_top/`, page in
-`src/games/aion2/pages/always-on-top.tsx`.
+Always on top (pinning the player's own browser above the game), the YouTube and
+Twitch live chat pop-ups, the light theme and the background video went with the
+Tauri app; `tauri-final` has them. One lesson still holds: windows over a
+borderless or optimized-fullscreen game show because DWM composes them, but true
+exclusive fullscreen bypasses DWM and nothing another process draws can appear
+there short of injecting into the game, which anti-cheat bans. The GPUI app only
+raises its own windows above a borderless game, never the game's.
 
-### Why it drives the real browser instead of embedding one
+## Repository cleanup (history)
 
-A webview would have its own cookie jar, so every site means signing in again.
-Google refuses sign-in inside embedded webviews outright, and Chrome's cookies
-are bound to Chrome itself, so they cannot be carried over either. The only way
-to keep someone's accounts, extensions, and YouTube Premium is to use the browser
-they already run, so this feature never opens a browser of its own. It does two
-things:
+The fork inherited scaffolding and dead weight that was removed along the way:
+unreferenced JSON dumps at the repository root, a Path of Exile 2 scaffold, the
+Tauri starter's demo page, template tutorials and vendored agent documentation.
+In 2.2.0 it was narrowed to the DPS meter, Always on top and live chat: the
+interactive map, the Main Character card, the buff monitor, the event and field
+boss timers and the cloud account with its upload buttons were removed. Buff
+*intervals* are still recorded for the detail window's coverage timeline, and
+the `01,91` opcode stays in `KNOWN_PACKET_HEADERS`, so the stall resync and the
+census treat it as before.
 
-- **Pins windows that are already open.** `SetWindowPos(HWND_TOPMOST)` from
-  outside the process, the same mechanism PowerToys' Always On Top uses.
-- **Opens compact app windows**: `chrome.exe --app=<url> --profile-directory=<dir>`.
-  The browser that is already running takes the request and opens the window in
-  that profile, signed in. It gets no tab strip and no address bar.
-
-Detection is automatic for any install. It checks the registry's App Paths
-(per user, per machine, and the 32-bit view) and then the standard install
-locations. Profiles, names, and account pictures come from the browser's
-`Local State`, which is only ever read. An unknown profile directory is never
-passed on, because the browser would quietly create a new empty profile.
-
-### Rules that keep other people's windows safe
-
-- **The browser is launched as the desktop user, never elevated.** Aether runs
-  as Administrator, and a child process inherits that token. An elevated browser
-  is a security problem, and it also breaks every later normal launch, because
-  those try to hand their URL to the elevated instance and UIPI refuses. When
-  elevated, the process is created with Explorer as its parent through
-  `PROC_THREAD_ATTRIBUTE_PARENT_PROCESS`, which makes it inherit Explorer's
-  ordinary token. If that fails, the launch is refused rather than falling back
-  to an elevated start.
-- **Nothing blocks on the browser.** Placement uses `SWP_ASYNCWINDOWPOS` and
-  `ShowWindowAsync`, and a window that `IsHungAppWindow` reports as hung is not
-  restyled. Nothing activates either: pinning never takes focus from the game.
-- **Everything is undone.** The window's own z-order and layering are recorded
-  at pin time and restored on unpin, on exit (`RunEvent::Exit`), and before an
-  update installs. A crash or a kill from Task Manager skips all of those, so
-  the pinned set is also written to `on-top-session.json` in app data, and the
-  next start restores whatever is still open. The pid check guards against a
-  reused window handle.
-- **A watcher runs only while something is pinned.** Every 750 ms it drops
-  windows that closed, notices a hidden window the player restored by hand, and
-  puts back a topmost flag or layering the browser dropped. It stops as soon as
-  nothing is pinned.
-
-Opacity and ghost mode rely on `WS_EX_LAYERED` (plus `WS_EX_TRANSPARENT` for
-click-through). Before building on it, this was checked against Chrome 153 and
-Edge 153 playing hardware-decoded H.264. The video kept playing and composited
-correctly at 55%.
-
-The browser's own window border is left alone. 0.1.14 coloured it amber
-(pinned) or cyan (ghost) through `DWMWA_BORDER_COLOR`, and players found it
-distracting on top of the browser. From 0.1.15 the state shows only inside
-Aether. The one remaining call resets the border to the system default during
-crash recovery, for windows 0.1.14 coloured before an abrupt exit.
-
-### Game integration
-
-`aion2_focus` hides the DPS overlays when the foreground window is not
-`Aion2.exe`, so clicking a pinned video to pause it used to hide the meter. It
-now asks `on_top::is_managed()` and treats a pinned window as part of the game
-session.
-
-Three global shortcuts, all configurable in Settings: `Ctrl+Alt+T` pins the
-browser window the player is in (browsers only, never a game or system window),
-`Ctrl+Alt+G` toggles ghost mode, and `Ctrl+Alt+H` hides or shows every pinned
-window. A ghost window cannot be clicked, so its shortcut is the way back.
-
-Shortcut registration used to stop at the first failure, which left every
-shortcut after it dead. One combination held by another program no longer costs
-the others. The failures are reported, and the page marks them.
-
-### Over fullscreen games (2.4.0)
-
-`plugins/game_display.rs` looks at the window in front on every foreground
-change and on a 1.5 s tick while anything of ours is on screen, for any game,
-not only AION 2. A window covering its monitor is **Borderless** without a
-frame, or **Fullscreen** when `SHQueryUserNotificationState` reports
-`QUNS_RUNNING_D3D_FULL_SCREEN`.
-
-- Borderless and fullscreen-with-optimizations are composed by DWM, so topmost
-  windows show. A game can sit in the topmost band itself and rise over ours
-  when activated, so `on_top::raise_all_over` re-asserts `HWND_TOPMOST`
-  with `SWP_NOACTIVATE` on each of our windows that is below it. Only our
-  windows and pinned browsers are moved; the game's is never touched.
-- True exclusive fullscreen bypasses DWM. Nothing another process draws can
-  appear, Discord's, Steam's, and NVIDIA's overlays included, short of
-  injecting into the game, which is exactly what anti-cheat bans. Windows
-  cannot tell exclusive from optimized fullscreen, so Aether keeps raising and
-  explains once, per game per run, in a Windows notification.
-- The page reads, never writes, two settings: the exe's Compatibility flag
-  `DISABLEDXMAXIMIZEDWINDOWEDMODE` (matched by exe name, since the full path
-  would mean opening the game's process) and Windows 11's
-  `SwapEffectUpgradeEnable` ("Optimizations for windowed games"), with a
-  button to `ms-settings:display-advancedgraphics`.
-
-### Live chat pop-ups (YouTube and Twitch)
-
-The page's second mode shows live chats on their own, over the game, with no
-background: the look stream overlays use. A pinned browser cannot do this. A
-browser page's background cannot be made see-through while its text stays
-solid, and lowering a window's opacity fades the words with everything else.
-
-Up to four chats, from YouTube and Twitch, each in its own pop-up or all merged
-into one. 2.0.0 restyled YouTube's popout chat page inside the pop-up. That
-could not merge two platforms into one list, and ran a whole web application
-per pop-up. So since 2.1.0 Aether reads the chats itself (`on_top/chat/`) and
-draws them in its own page (`overlay/chat/`):
-
-- **Connectors**, one per chat, run as tasks in the backend and are shared by
-  every pop-up showing that chat. The hub starts one when a pop-up needs it and
-  stops it when none does, and keeps each chat's last 60 messages so a new or
-  changed pop-up does not start empty.
-  - **YouTube** (`youtube.rs`) uses the same requests as youtube.com's own chat
-    frame, with no sign-in: the `live_chat` page gives the API key, client
-    version, and the "Live chat" or "Top chat" continuation, and
-    `youtubei/v1/live_chat/get_live_chat` returns messages and the next
-    continuation, polled every 1.5 to 2.5 seconds. Paid messages and stickers,
-    memberships, and removals are handled.
-  - **Twitch** (`twitch.rs`) uses anonymous chat: IRC over TLS to
-    `irc.chat.twitch.tv:6697` as `justinfan<n>`, read-only by construction. It
-    uses rustls with its own root store, not the system's. Emotes come from the
-    message tags, and subs and raids become highlighted lines. Lines are
-    handed on in batches of up to 150 ms, so a busy channel redraws a pop-up a
-    few times a second rather than per message. Commands are read from the
-    command field: "RECONNECT" typed into chat is a PRIVMSG.
-  - Bans and timeouts (Twitch `CLEARCHAT`, YouTube
-    `removeChatItemByAuthorAction`) take the author's messages off the
-    pop-ups and out of the backlog; a cleared Twitch chat clears them.
-  - Both reconnect with a backoff (3, 8, 20, 45 s) and report a state
-    (connecting, live, ended, error) that the page and the pop-up show.
-- **Pop-ups** are transparent, undecorated windows labelled `aion2-chat-<n>`.
-  Ids are never reused, so a new pop-up cannot collide with one still being torn
-  down. Messages reach a pop-up as `chat-events` addressed to its label; style
-  and chat changes as `chat-config`. **The page must listen on its own
-  window** (`getCurrentWebviewWindow().listen`). A global `listen` is
-  registered for target `Any`, and Tauri hands an `Any` listener every event
-  whatever it was addressed to: in 2.1.0 each separate pop-up drew the other
-  pop-ups' chats. The page also drops batches for chats it does not show.
-- **Pop-ups never take the keyboard.** They are built unfocusable
-  (`WS_EX_NOACTIVATE`); moving mode makes them focusable for as long as it
-  lasts. Ghost and hide go through Win32 (`win32::set_click_through`,
-  `set_shown` with `SW_SHOWNOACTIVATE`), not tao: tao re-shows a visible
-  window with `SW_SHOW` on every style change it makes. tao's flags are
-  brought back in line when moving mode starts and ends. A style change waits
-  on the window's thread, so none of these is made with the hub locked.
-- **`chat_apply`** takes the whole layout at once. A pop-up already showing
-  exactly the requested chats keeps them. The others are reused in order and
-  keep their place on screen, and extra pop-ups close. So closing one pop-up
-  and applying again does not shuffle chats between windows
-  (`match_overlays`, tested).
-- **Input** is parsed in Rust (`source.rs`): watch, live, Studio, youtu.be, and
-  embed links, a bare video id, a channel (`@handle`, `/channel/`, `/c/`), and
-  twitch.tv links including popout and embed paths. A YouTube channel resolves
-  to its current stream through the canonical link of `/<channel>/live`.
-- **TikTok is recognised and refused.** It has no public chat API, its web
-  requests are signed, and live comments are hidden from viewers who are not
-  signed in: checked on streams with 900 and 1,700 viewers. The page explains
-  this and offers the TikTok live as a pinned mini window instead, in the
-  player's own signed-in browser.
-
-Placement: pop-ups go side by side before they stack (`cornerSequence`),
-because two large chats in one column overlap on a 1080p screen. Moving one
-into another's corner swaps them. A pop-up moved by hand remembers its
-rectangle, and a saved rectangle that is no longer on any monitor falls back to
-the corner.
-
-Safety of what is drawn: every piece of chat text goes in through
-`textContent`. Every image (avatars, badges, emotes) must be https on the
-platforms' own hosts (`message::safe_image`) and loads with `no-referrer`. Ghost
-is `set_ignore_cursor_events`, and the ghost and hide shortcuts cover the
-pop-ups along with pinned windows. The pop-ups are excluded from the
-window-state plugin, which would otherwise restore a title bar left on mid-move.
-
-2.1.1 was checked with two real pop-ups (a non-elevated example build): a
-YouTube and a Twitch pop-up held 81 and 100 messages, each from its own chat
-only; ghost, hide, and show left both windows inactive; merging reused the first
-pop-up and closed the second.
-
-Checked against real streams through the hub, with no window: one YouTube and
-one Twitch chat gave 79 and 32 messages in 14 seconds, merged by time, and every
-connector stopped once the pop-ups were gone. The page and the pop-up renderer
-were checked in a browser with the backend mocked: separate and merged layouts,
-swapping corners, an unknown Twitch channel, a TikTok link, and both themes.
-
-## Light theme
-
-Upstream's pages and most of Aether's are written white-on-dark glass:
-`text-white/60`, `bg-white/6`, `bg-black/45`, some three hundred of them. In
-the light theme that put white text on a white wash. Rewriting three hundred
-class names across upstream files would make every merge painful, so
-`src/index.css` instead redefines `--color-white` and `--color-black` under
-`.light`. Tailwind compiles every one of those utilities through the variables,
-so each becomes its dark-on-light twin in one place. The pastel accents
-(cyan-300, amber-200, ...) were picked for dark glass; under `.light` they map
-to deep shades of the same hue.
-
-The exceptions are literal: text that must stay white on a coloured fill (a red
-button, a profile colour) uses `text-[#fff]`, and white primary buttons take
-`text-black`, which the swap turns white on an ink button.
-
-Also fixed: `dark:` variants followed the operating system rather than the
-theme the app chose, because Tailwind v4 defaults to the media query. A
-`@custom-variant` ties them to the `.dark` class.
-
-## Repository cleanup
-
-The fork inherited a fair amount of scaffolding and dead weight. Removed:
-
-- **~1.7 MB of unreferenced JSON at the repository root** (`mobs.json`,
-  `npc_names.json`, `npc_data.json`, `abnormal_ids_full.json`). The copies the
-  build actually uses live under `src/games/aion2/data/` and `crates/core/data/`.
-- **`.agents/skills/`** and `skills-lock.json` — vendored third-party agent
-  documentation for shadcn and Tauri, unrelated to this project.
-- **Path of Exile 2 scaffolding.** `POE2_GAME` was never in `ALL_GAMES`, its
-  routes were unreachable, and the background assets it referenced did not exist.
-- **The Tauri starter's demo page** (`src/pages/home.tsx`, reachable only through
-  the dead POE2 route), its logo assets, and the `greet` command that served it.
-- **Template tutorials** `docs/I18N.md`, `docs/AUTO_UPDATE.md`, and
-  `docs/GLOBAL_SHORTCUT.md`, along with their Chinese translations. They describe
-  the scaffold, not this app; auto-update is documented above instead.
-- **Nested `CLAUDE.md` files and `AGENTS.md`**, which repeated the same
-  inaccurate template description in three more places.
-
-`docs/AION2_PACKET_PROTOCOL_ANALYSIS.zh-CN.md` is kept. It is upstream's protocol
-analysis and real domain knowledge, in Chinese and not yet translated.
-
-### Removed in 2.2.0
-
-Aether was narrowed to three features: the DPS meter, Always on top, and live
-chat. Git keeps everything below; none of it shipped anything the user wanted.
-
-- **Interactive map** (page, minimap overlay, `aion2_map*` plugins, the 8 zone
-  images, the import script, the asset protocol it needed). Tiles downloaded
-  into `%APPDATA%/<app>/maps` are deleted on the next start
-  (`remove_retired_app_data` in `lib.rs`), because an update never runs the
-  old uninstaller.
-- **Main Character card** and what only it used: the Fengwo lookup, the generic
-  `http_request` proxy command (any webview could make arbitrary requests
-  through it), the gear-slot component, and `get_main_character`.
-- **Buff monitor** overlay and settings, its two per-buff events, and
-  `buff_templates.json`. Buff *intervals* are still recorded: the detail
-  window's coverage timeline reads them.
-- **Event and field boss timers**, including the `01,91` parser. The opcode
-  stays in `KNOWN_PACKET_HEADERS`, so the stall resync and the census treat it
-  as before.
-- **Upstream cloud**: Supabase, the account modal, the deep-link sign-in, and
-  History's upload buttons (which could never succeed without upstream's
-  private backend, and ran on every open). The `aether://` scheme earlier
-  installers registered is removed by `NSIS_HOOK_POSTINSTALL`.
-- The dialog and fs plugins (nothing called them), `plugin-process` (the
-  updater never returns on Windows), the game picker over the logo (one game,
-  and its menu could stick open), the outdated usage guide, upstream
-  screenshots, and 200+ translation keys nothing referenced.
-
-Fixed along the way: `index.html` pointed its favicon at `/vite.svg`, a file that
-is not in `public/`.
-
-The application icons under `src-tauri/icons/` remain upstream's NOIA2 artwork.
-That is a deliberate choice, not an oversight.
+`docs/AION2_PACKET_PROTOCOL_ANALYSIS.zh-CN.md` is kept: the protocol analysis
+inherited from NOIA2, real domain knowledge, in Chinese and not yet translated.
+The application icon (`crates/app/windows/icon.ico`, moved from
+`src-tauri/icons/`) is NOIA2's artwork; that is a deliberate choice.
 
 ## Cutover (Tauri removed)
 
@@ -826,7 +442,9 @@ workspace file, `app-icon.png`, `.vscode/extensions.json`, the Tauri release
 workflow, `scripts/copy-windivert-runtime.ps1` and `scripts/release-version.mjs`.
 The updater, installer, tray, Always on top, chat pop-ups, light theme, Korean
 UI and history screens went with it; the GPUI plan in `docs/GPUI_MIGRATION.md`
-says which return and when.
+says which return and when. The updater is back as `crates/app/src/update/`
+(`docs/updates.md`): GitHub Releases, an Ed25519-signed archive, a swap done by
+the installed exe after a restart.
 
 Moved (with history): the game data the UI compiles in
 (`servers.json`, `dungeons.json`, the English skill names) to
@@ -835,11 +453,6 @@ power icon to `crates/app/assets/game/`; `WinDivert.dll` and `WinDivert64.sys`
 (byte-identical) to `crates/app/windivert/`, which `crates/app/build.rs` copies
 beside the exe; `icon.ico` to `crates/app/windows/`, embedded as the exe icon
 by the `.rc` files.
-
-Merging `upstream/main` from here: changes to the deleted paths are resolved by
-keeping them deleted. Core changes land in `crates/core` following the
-phase 1 renames (`src-tauri/src/dps_meter/**` to `crates/aether-core/src/**`, then to `crates/core/src/**`;
-`src-tauri/data/*.json` to `crates/core/data/`), so upstream's `src-tauri/src/dps_meter/**` now maps to `crates/core/src/**`.
 
 ## Own summons and own rows (TASK-3, TASK-5)
 
@@ -861,7 +474,7 @@ A damage-over-time hit carries its skill id followed by two digits (ten-digit ex
 
 ### Thamon's absorption recovery is not player damage
 
-In Thamon (Tamon trial, mob 2300811) the boss's absorption buffs recover health in periodic ticks that the game credits to players, under the effects `160466011` and `160467011` (seven-digit skills `1604660` and `1604670`, the "Attack" that `resolve_skill_key` names, plus two digits). The 2026-10-07 18:15 record has `160467011` as 1,516,948 of one player's 3,319,419 damage (148 hits, 1,724 to 95,764 each, no crit, back or double flags). Across the saved history, every Thamon record carries them, 15,898,260 damage in 2,099 hits for `160467011` and 4,497,840 in 537 for `160466011`, and no other boss does. Notmeter's notes describe the reference meter suppressing the same ticks.
+In Thamon (Tamon trial, mob 2300811) the boss's absorption buffs recover health in periodic ticks that the game credits to players, under the effects `160466011` and `160467011` (seven-digit skills `1604660` and `1604670`, the "Attack" that `resolve_skill_key` names, plus two digits). The 2026-10-07 18:15 record has `160467011` as 1,516,948 of one player's 3,319,419 damage (148 hits, 1,724 to 95,764 each, no crit, back or double flags). Across the saved history, every Thamon record carries them, 15,898,260 damage in 2,099 hits for `160467011` and 4,497,840 in 537 for `160466011`, and no other boss does. Another public meter is known to suppress the same ticks.
 
 `damage.rs` drops a nine-digit code whose `/100` is `1604660` or `1604670` (`is_thamon_absorption_recovery`) on every path: `04 38` hits, `05 38` damage ticks and the `05 38` heal and damage-taken ledger records. It is deliberately not a rule for all nine-digit codes: the history holds legitimate ones (Theostones, Damage Reflection), so the match is the two evidenced skills. The reference meter also matches the tick's effect instance against an active absorption buff on the target; this meter does not track that, so a player's own use of the same two effect ids would be dropped too (none was seen). No recording covers Thamon, so which of the two paths (`04 38` or `05 38`) carries the ticks is unconfirmed; both are covered. Buff codes `16046600`, `16046601`, `16046700` and `16046701` as damage were never seen and are not matched.
 
@@ -871,14 +484,14 @@ Consumable buffs (scrolls, potions) are ids from 20 to 29 million: the item skil
 
 ## Reading the game's packets (TASK-14)
 
-Upstream read most packets by guessing: fixed skips, byte markers and value
-ranges. A clean-room study of how two other meters read the same traffic
+The inherited parsers read most packets by guessing: fixed skips, byte markers and value
+ranges. A study of how two other public meters read the same traffic
 (notes kept outside the repository; none of their code was copied) gave the
 real layouts, and each change below was checked by replaying the recordings
 before and after.
 
 - **Framing.** A frame is `[varint L][opcode 2][body]`, `L + varintLen - 4`
-  bytes long. Upstream used `L - 3` with a `+1` for bundles, right only when the
+  bytes long. The inherited code used `L - 3` with a `+1` for bundles, right only when the
   length fits one byte: frames of 128 bytes or more ended one byte early and the
   next one was read from the wrong place (half of the long frames in some
   recordings, and one flow lost 561 frames).
@@ -894,7 +507,7 @@ before and after.
   makes the killer the owner.
 - **HP `00 8D`** (`parser/hp_record.rs`): a mask, small `{kind, i32}` and big
   `{kind, i64}` stats; kind 0 is current HP, kind 7 max HP. HP is 64-bit in
-  storage (upstream dropped anything above 1e9); the app's HP fields stay u32
+  storage (the inherited code dropped anything above 1e9); the app's HP fields stay u32
   and saturate.
 - **Death `42 36`** (`parser/death_record.rs`): flag 3 sets a known monster's HP
   to 0, the same state an HP packet of 0 leaves, so existing kill detection
@@ -970,3 +583,62 @@ builds the report; the report window is TASK-15.3 and 15.4.
   types as counts, the skills, buffs, heals and damage taken.
 - **Summoned objects are their owner (2026-10-08)**: a boss spawns many entities (projectiles, zones, copies of itself with its HP, e.g. Talisra of the Void's 2920519, 2920520, 2920521, 2920563, 2920564, 2920936) whose spawn record names the boss as owner. Their hits used to show as separate "Mob <code>" sources and as the killer of a death. A hit and a killer now also carry `owner_mob_code`, the mob code at the top of the owner chain (`owned_by_mob_code`, four steps), and `CombatEvents::credit_unfought_sources_to_their_owners` (run in `DataStorage::fight_ledger_inputs`) swaps the source for it, unless players ever damaged the entity itself: that is a real add (Atiel's clones, Nathara's adds, the boss's own phases) and stays its own source. "Damaged by players" is `entities_hit_by_players`, filled in `append_damage_at` before the Boss only filter (so the filter cannot turn a real add into an object), forgotten when the game reuses the entity id for another mob. Not covered: an object owned by a real add that is owned by a boss credits the boss, not the add. Fights already saved keep their old rows.
 - **Buffs follow the owner chain too (2026-10-08)**: `save_buff` credits a buff to the top of the caster's owner chain, as damage is. An Elementalist's spirits (hundreds of entities per fight, one per summon) used to be one buff row each; 219 of them became one row. In the report, casters it does not know (`UNKNOWN_CASTER_ID`, 0) are one row per buff with the longest uptime among them, which also folds the split rows of reports saved before.
+- **One buff per name and caster (2026-10-09)**: several skill ids can show one name (Spirit's Descent 167300011 and 167300012, Elemental Fusion 163000002 and 163000003, Element Unification 167800011 and the pulses 167800021 to 167800025, whose key 16780000 differs from 16780001). `engine/buff_groups.rs` joins a caster's ids on one target by their English name (`skill_names::english_name`, from the bundled `skill_names_en.json`, which the app now reads through the core too) and takes the union of their intervals, in the fight ledger and in the live buff summaries; the id with the most uptime stays as the representative. Fights saved before keep their per-id rows, and the app merges rows with one name, icon and caster by the longest uptime (a lower bound: the saved ledger holds no intervals).
+
+## Matching the game's Combat Analysis (2026-10-09)
+
+Compared on one fight (Fafnir's Poison Blood, entity 43152, Elementalist Ysmera: the game lists 655 hits, 46% critical, 2,282,703 damage), three rules now follow the game:
+
+- **Spirit specials keep their own skill id.** `normalize_skill_id` (`parser/damage.rs`) cuts the last four digits of an 8-digit skill, which merged the Elementalist spirits' specials `16001104`, `16001108`, `16001116` and `16001117` into one "Skill 16000000" row; ids `16001000..=16001999` are now kept as they are, like `30000000..=30999999`. The bundled English and French names already hold them. Other merged buckets (`16150000`: Jointstrike: Corrode with the spirits' Break and Rage Burst) are left as they are until the game's rows are seen.
+- **A damage-over-time tick adds damage, not a hit.** A `05 38` tick of mode `0x0A` with a ten-digit effect id (`1614000011`) is added to the row of the skill that applied it (`skill_stats_code` in `storage/data_storage.rs`: the effect id divided by 100, then the usual normalisation, so it is the key a direct hit of that skill gets). It adds its damage and nothing else: no hit, no critical/back/front/perfect/double/multi-hit count, no minimum or maximum. Totals do not change; every rate (fight report, Combat Analysis window, boards, summary) is over direct hits, as in the game (Jointstrike: Curse = 13 hits, 106,148 with 65 ticks). A skill that only ticked has a row with damage and 0 hits (rates read "--"). Other ticks (nine-digit effects) keep their own rows, also without hits. Saved records keep what they stored.
+- **A record aimed at the attacker's own side is not damage.** The Elementalist's spirit skill `16990004` is sent with the spirit as attacker and target, about 100 ms after its spawn, and counted as 21.5M of damage on one session. In `append_damage_at` a record whose target ends at the same owner chain as the attacker (itself, its owner, an own summon, a sibling summon) is dropped before any damage accounting, the fight window and the last target; the drain and regeneration amounts it carries still go to healing as before. Whether `16990004` is a heal (the game's Total Heal looks made of it) is not decided.
+- **A damage-over-time tick has one reader and one owner (2026-10-09, TASK-25.8)**: `parse_dot_packet` reads each `05 38` frame once, through `read_periodic_record`, and the tick's skill field decides whose it is, for damage dealt and damage taken alike (`damage_tick_source` in `parser/damage.rs`). A tick of a player's skill is damage dealt by its actor, as before; a tick of a monster's skill (for example `1217330` on players) is damage taken by the target and no longer also damage dealt by the monster's actor id, which had given monsters rows on the Session board. A Thamon absorption recovery, named by the skill or by the effect id (214 ticks in `session-1791396464753` carry it only in the effect), is neither. Heal ticks are unchanged. The old hand-written second read accepted exactly the same 21,203 real mode `0x0A` ticks as the record reader in the 28 recordings that hold any, none more and none fewer, so no tick is lost; the compared fight stays 2,282,703 damage.
+
+## Why capture could not start, as data (2026-10-09, TASK-25.26)
+
+`DpsMeter::start_dps_meter` returns `CaptureStartError::NoBackend` (which driver the priority tried first, and Npcap's and WinDivert's own errors as they reported them) instead of an English sentence, so the app writes the waiting card and the Settings capture tile in the language in force; its `Display` is the old sentence, for the log. `start_for_replay` opens no driver and no longer returns a `Result`.
+
+## Recordings off the dispatcher, and counted drops (2026-10-09, TASK-25.7)
+
+The dispatcher used to write the session recording and the rolling recording itself, before it reassembled the stream, and the rolling recorder rotated files and pruned the recordings folder (up to 2 GiB of listing and deleting) on the same thread. A slow disk stalled it, the capture queue filled, and `try_send` dropped game packets without a sign.
+
+- **A writer thread per recording** (`capture/recording_queue.rs`): the dispatcher calls `RecordingQueue::offer`, which asks the sink whether it wants the packet (an atomic flag for `PacketRecorder`; the game-traffic filter for `RollingRecorder`, memory only, in a lock of its own), copies it into a bounded queue of 8,192 packets and returns. The writer thread calls the existing `PacketRecorder::record`, rotates the rolling file and prunes the folder; none of it is on the dispatcher. A full queue drops the packet being offered, whole, and counts it, so a file is always a valid `.aetherpc` (format unchanged). Stopping and quitting wait for the queues to reach their files (`RecordingQueue::flush(deadline)`), then flush the buffered writer. The quit path (`stop_dps_meter` and `DpsMeter::save_now`, which the app's quit hook calls; the hook has 3 s before `quit.rs` ends the process) writes history, personal bests and mobs first, then waits for both recordings under one 1.5 s deadline; a flush that gives up marks the writer stalled until it next completes a write, so the second call costs nothing and the sink is not flushed while the writer holds it. A manual or automatic recording stopped on its own waits up to 5 s.
+- **Sizes.** Measured on the recordings: game traffic peaks at 148 packets/s (largest game payload 8.8 KB, average 55 to 800 bytes), the worst older burst of unfiltered TCP is 3,900 packets/s with payloads up to 64 KB. Both queues hold 8,192 packets: 55 s of game traffic or 2 s of that burst, 6.5 MB at the 800-byte average, 72 MB if every packet were the largest game payload. The capture queue was 2,000,000 packets (gigabytes). Replay's back-pressure limit is half the new capacity (4,096).
+- **Counters** (`capture/drop_report.rs`): `Channel::rejected_when_full` counts the packets a capturer's `try_send` could not queue (both Npcap and WinDivert); `RecordingQueue::dropped` counts the recording drops. `DpsMeter::packet_drops()` returns both totals (`PacketDrops`). The memory snapshot loop writes one line to aether.log at most every 30 s when something new was dropped, and stopping the meter writes the last one: `packets dropped: <n> before the dispatcher read them (queue full), <m> left out of recordings (queue full); totals <N> and <M>`. A drop before the dispatcher is missing from the game stream and can break reassembly; a recording drop leaves the meter's numbers alone.
+- Not done: Npcap still forwards every TCP packet, not only candidate game flows; the stream buffer (TASK-25.9) is separate.
+
+## Where diagnostics go (2026-10-09, TASK-25.36)
+
+The shipped exe has no console (`windows_subsystem = "windows"` without the
+`probes` feature), so `eprintln!` reached nobody. Every failure the app used to
+print goes to `aether.log` instead, the file the core already writes to:
+
+- `crates/app/src/app_log.rs` holds the one `AppLogger` of the run. `run`
+  installs it before anything else (`%LOCALAPPDATA%/<app>/logs/aether.log` for a
+  live run, the temp folder's `aether/gpui-app.log` for replays and captures,
+  which never touch the player's log) and hands the same logger to the meter, so
+  the app's lines and the core's interleave in one file. `app_log::error` and
+  `app_log::warn` are free functions the windows call; a `probes` build also
+  echoes them to its console. Before `install`, and in unit tests, a line is dropped.
+- Levels: a file that could not be read, set aside or saved (history, personal
+  bests, settings, to-dos), a window that could not be opened, the meter or the
+  single-instance listener failing to start: `ERROR`. A window that could not be
+  placed, fitted or locked, a shortcut, the tray or the reminder sound that is
+  unavailable, a click that found no fight report: `WARN`. The core's capture
+  thread failing to open a device: `ERROR`. `[dps_meter] save: ...` was deleted
+  (the reset line already says it); "main actor detected" is `DEBUG`.
+- Nothing on the capture, parser or snapshot threads writes per packet or per
+  tick. A failed history or bests save repeats every 5 s at most (the writer
+  thread's retry delay).
+- `eprintln!` stays only where a console exists: tests, `crates/xtask`,
+  `crates/packet-explorer`, `crates/core/examples/replay.rs` and the `probes`
+  modules (`capture*.rs`, `font_probe.rs`, `probe.rs`, `fixtures.rs`).
+
+## Version and changelog (TASK-29)
+
+- The version restarts at 1.0.0 (`meter-core` and the app). The inherited 2.4.0
+  stays as the fork point named in the README.
+- Aether's release history left `CHANGELOG.md` for `docs/aether-changelog.md`,
+  unedited but for a heading and one line saying what it is. `CHANGELOG.md` and
+  `CHANGELOG.fr.md` now hold this app's own changelog, read by the app
+  (`crates/app/src/changelog/`).

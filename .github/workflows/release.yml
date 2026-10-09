@@ -1,0 +1,201 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build, test and sign
+    runs-on: windows-latest
+    timeout-minutes: 120
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+      version: ${{ steps.plan.outputs.version }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    steps:
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Decide whether this push is a release
+        id: plan
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+
+          version=$(sed -n '/^version *=/{s/^[^"]*"\([^"]*\)".*/\1/p;q}' <(tr -d '\r' < crates/app/Cargo.toml))
+          [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || fail "Cannot read a version like 1.2.3 or 1.2.3-beta.1 from crates/app/Cargo.toml (got '$version')."
+
+          prerelease=false
+          [[ $version == *-* ]] && prerelease=true
+
+          publish=false
+          if [[ $GITHUB_REF != refs/heads/main ]]; then
+            echo "::notice::$GITHUB_REF is not main: build and test only, nothing is published."
+          elif [[ -n $(git ls-remote --tags origin "refs/tags/v$version") ]]; then
+            echo "::notice::Tag v$version already exists: build and test only, nothing is published. Bump the version in crates/app/Cargo.toml to release."
+          else
+            publish=true
+            echo "::notice::Tag v$version does not exist yet: this push releases $version."
+          fi
+
+          {
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check the changelogs and write the release notes
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+
+          section_of() {
+            awk '
+              /^## / { if (seen) exit; seen = 1; next }
+              seen && NF { while (blank > 0) { print ""; blank-- } started = 1; print; next }
+              seen && started { blank++ }
+            ' <<<"$1"
+          }
+
+          notes=target/release-assets/notes.md
+
+          append_section() {
+            local file=$1 text heading section
+            text=$(tr -d '\r' < "$file")
+            if grep -qi '^## \[unreleased\]' <<<"$text"; then
+              fail "$file still has an [Unreleased] section: rename it to the version being released."
+            fi
+            heading=$(grep -m1 '^## ' <<<"$text" || true)
+            [[ $heading == "## [$VERSION] - "* ]] \
+              || fail "The top section of $file must be '## [$VERSION] - <date>' (it is '$heading')."
+            section=$(section_of "$text")
+            [[ -n $section ]] || fail "The $VERSION section of $file is empty."
+            printf '%s\n' "$section" >> "$notes"
+          }
+
+          mkdir -p target/release-assets
+          printf '## English\n\n' > "$notes"
+          append_section CHANGELOG.md
+          printf '\n## Français\n\n' >> "$notes"
+          append_section CHANGELOG.fr.md
+          cat "$notes"
+
+      - name: Test the workspace
+        run: cargo test --workspace --locked
+
+      - name: Build and package the release
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          UPDATE_REPO: ${{ github.repository }}
+        run: cargo xtask dist
+
+      - name: Write the signing key to a temporary file
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.BELISK_UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z ${UPDATE_SIGNING_KEY:-} ]]; then
+            echo "::error::The repository secret BELISK_UPDATE_SIGNING_KEY is not set, so the update archive cannot be signed and nothing is published. See docs/releasing.md."
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$UPDATE_SIGNING_KEY" > "$RUNNER_TEMP/belisk-update-signing.key"
+
+      - name: Sign the update archive
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: cargo xtask sign --key "$RUNNER_TEMP/belisk-update-signing.key" "target/dist/belisk-$VERSION-windows-x64-update.zip"
+
+      - name: Remove the signing key
+        if: always() && steps.plan.outputs.publish == 'true'
+        run: rm -f "$RUNNER_TEMP/belisk-update-signing.key"
+
+      - name: Gather the release assets
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          for asset in \
+            "belisk-$VERSION-windows-x64.zip" \
+            "belisk-$VERSION-windows-x64-update.zip" \
+            "belisk-$VERSION-windows-x64-update.zip.sha256" \
+            "belisk-$VERSION-windows-x64-update.zip.sig"; do
+            cp "target/dist/$asset" target/release-assets/
+          done
+          ls -l target/release-assets
+
+      - name: Hand the assets to the publish job
+        if: steps.plan.outputs.publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: target/release-assets
+          if-no-files-found: error
+
+  publish:
+    name: Publish the GitHub release
+    needs: build
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download the assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          options=()
+          if [[ $PRERELEASE == true ]]; then
+            options+=(--prerelease)
+          fi
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Belisk $VERSION" \
+            --notes-file release-assets/notes.md \
+            --draft \
+            "${options[@]}" \
+            "release-assets/belisk-$VERSION-windows-x64.zip" \
+            "release-assets/belisk-$VERSION-windows-x64-update.zip" \
+            "release-assets/belisk-$VERSION-windows-x64-update.zip.sha256" \
+            "release-assets/belisk-$VERSION-windows-x64-update.zip.sig"
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false

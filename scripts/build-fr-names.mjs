@@ -2,20 +2,20 @@
 //   crates/core/data/npc_names_fr.json              (mob code -> French name)
 //   crates/app/assets/game/data/skill_names_fr.json (skill id  -> French name)
 //
-//   node scripts/build-fr-names.mjs <questlog-cache.json> [notmeter-names-en-fr.json]
+//   node scripts/build-fr-names.mjs <questlog-cache.json> [extra-names-en-fr.json]
 //
 // Only ids already in npc_names_en.json / skill_names_en.json get a French
 // name, and only when one is found; the app falls back to English for the rest.
 // Per id, the first layer that answers wins:
 //   1. QuestLog.gg by id (https://questlog.gg/aion-2/api/trpc, language "fr").
-//   2. NotMeter's game catalogue by id.
+//   2. The optional community name list by id.
 //   3. QuestLog's French for another of our ids with the same English name.
-//   4. NotMeter's French for the same English name.
+//   4. The community list's French for the same English name.
 // "(DNT)" is stripped from English names before names are compared; layers 3 and
 // 4 apply only when every candidate agrees on one French name.
 //
 // The QuestLog cache ({ "npc": { id: fr | null }, "skill": { ... } }) is read,
-// topped up from the API for ids it lacks, and written back. The NotMeter file
+// topped up from the API for ids it lacks, and written back. The community list
 // ({ "skills": { id: { en, fr } }, "mobs": { ... } }) is optional and stays
 // outside the repository; without it only the QuestLog layers apply.
 //
@@ -23,9 +23,9 @@
 // per line, CRLF. French is kept exactly as received.
 import fs from "node:fs";
 
-const [cachePath, notmeterPath] = process.argv.slice(2);
+const [cachePath, extraNamesPath] = process.argv.slice(2);
 if (!cachePath) {
-  console.error("usage: node scripts/build-fr-names.mjs <questlog-cache.json> [notmeter-names-en-fr.json]");
+  console.error("usage: node scripts/build-fr-names.mjs <questlog-cache.json> [extra-names-en-fr.json]");
   process.exit(1);
 }
 
@@ -38,21 +38,21 @@ const kinds = [
   {
     key: "npc",
     proc: "database.getNpc",
-    notmeter: "mobs",
+    extraKey: "mobs",
     english: new URL("../crates/core/data/npc_names_en.json", import.meta.url),
     french: new URL("../crates/core/data/npc_names_fr.json", import.meta.url),
   },
   {
     key: "skill",
     proc: "database.getSkill",
-    notmeter: "skills",
+    extraKey: "skills",
     english: new URL("../crates/app/assets/game/data/skill_names_en.json", import.meta.url),
     french: new URL("../crates/app/assets/game/data/skill_names_fr.json", import.meta.url),
   },
 ];
 
 const cache = fs.existsSync(cachePath) ? JSON.parse(fs.readFileSync(cachePath, "utf8")) : {};
-const notmeter = notmeterPath ? JSON.parse(fs.readFileSync(notmeterPath, "utf8")) : {};
+const extraNames = extraNamesPath ? JSON.parse(fs.readFileSync(extraNamesPath, "utf8")) : {};
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -117,25 +117,25 @@ function build(kind) {
   const english = JSON.parse(fs.readFileSync(kind.english, "utf8"));
   const ids = Object.keys(english).filter((id) => /^\d+$/.test(id));
   const questlog = cache[kind.key];
-  const reference = notmeter[kind.notmeter] ?? {};
+  const reference = extraNames[kind.extraKey] ?? {};
 
   const questlogByName = frenchByName(
     ids.filter((id) => usable(questlog[id])).map((id) => [english[id], questlog[id]]),
   );
-  const notmeterByName = frenchByName(
+  const extraByName = frenchByName(
     Object.values(reference)
       .filter((entry) => usable(entry?.en) && usable(entry?.fr))
       .map((entry) => [entry.en, entry.fr]),
   );
 
-  const counts = { questlogId: 0, notmeterId: 0, questlogName: 0, notmeterName: 0, none: 0 };
+  const counts = { questlogId: 0, extraId: 0, questlogName: 0, extraName: 0, none: 0 };
   const names = [];
   for (const id of ids) {
     let name;
     if ((name = usable(questlog[id]))) counts.questlogId++;
-    else if ((name = usable(reference[id]?.fr))) counts.notmeterId++;
+    else if ((name = usable(reference[id]?.fr))) counts.extraId++;
     else if ((name = questlogByName.get(matchKey(english[id])) ?? null)) counts.questlogName++;
-    else if ((name = notmeterByName.get(matchKey(english[id])) ?? null)) counts.notmeterName++;
+    else if ((name = extraByName.get(matchKey(english[id])) ?? null)) counts.extraName++;
     else {
       counts.none++;
       continue;
@@ -147,8 +147,8 @@ function build(kind) {
   const body = names.map(([id, name]) => `  ${JSON.stringify(id)}: ${JSON.stringify(name)}`);
   fs.writeFileSync(kind.french, `{\n${body.join(",\n")}\n}\n`.replace(/\n/g, "\r\n"));
   console.log(
-    `${kind.key}: ${ids.length} ids -> QuestLog id ${counts.questlogId}, NotMeter id ${counts.notmeterId}, ` +
-      `QuestLog name ${counts.questlogName}, NotMeter name ${counts.notmeterName}, none ${counts.none}; ` +
+    `${kind.key}: ${ids.length} ids -> QuestLog id ${counts.questlogId}, extra list id ${counts.extraId}, ` +
+      `QuestLog name ${counts.questlogName}, extra list name ${counts.extraName}, none ${counts.none}; ` +
       `wrote ${names.length} to ${kind.french.pathname}`,
   );
 }

@@ -1,39 +1,21 @@
-//! The startup gate: everything that must be true before Aether can measure.
+//! The startup gate: everything that must be true before Belisk can measure.
 //!
 //! Two ideas drive this module.
 //!
-//! First, a backend that *exists* is not a backend that *works*. Upstream
-//! decided Npcap was present by loading `wpcap.dll`, which keeps succeeding
-//! after the driver service is stopped or the adapter list goes empty -- the
-//! splash would wave the user into an app that can never see a packet. Here the
-//! probe talks to the driver.
+//! First, a backend that *exists* is not a backend that *works*. Loading
+//! `wpcap.dll` keeps succeeding after the driver service is stopped or the
+//! adapter list goes empty -- a check that stopped there would report capture
+//! as ready when it can never see a packet. Here the probe talks to the driver.
 //!
 //! Second, not every failure deserves to stop anyone. Capture needs *one*
 //! backend, not both, so WinDivert missing while Npcap works is a footnote, not
 //! an alarm. [`Weight`] carries that distinction to the UI so the gate holds for
 //! real problems and stays quiet about the rest.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use serde::Serialize;
 
 use crate::capture::capturer;
 use crate::capture::windivert_capturer;
-
-/// Set once the gate has opened, and never cleared.
-///
-/// A gate that only the splash screen honours is not a gate: the tray icon and
-/// a second launch both surface the main window on their own. Everything that
-/// can put the main window on screen consults this instead.
-static PASSED: AtomicBool = AtomicBool::new(false);
-
-pub fn passed() -> bool {
-    PASSED.load(Ordering::Relaxed)
-}
-
-pub fn mark_passed() {
-    PASSED.store(true, Ordering::Relaxed);
-}
 
 /// Which check a row reports on. The frontend keys its icons and fix buttons
 /// off this rather than off the label, so labels stay free to be reworded.
@@ -193,7 +175,7 @@ fn assemble(
         ok: windivert_ok,
         // Always optional: it exists to cover Npcap, never to become a
         // requirement of its own. When both are down, Npcap carries the
-        // blocking weight, because Npcap is the one Aether can install.
+        // blocking weight, because Npcap is the one Belisk can install.
         weight: Weight::Optional,
         fix: files_missing.then_some(Fix::PlaceWinDivertFiles),
     };
@@ -211,7 +193,7 @@ fn assemble(
 /// The distinction matters because this check can lock the user out: there is
 /// no fix button for it, only Quit. A failed API call is this code's problem,
 /// not the machine's, and the manifest already makes Windows refuse to launch
-/// Aether unelevated -- so an unanswerable query is treated as elevated. Only a
+/// Belisk unelevated -- so an unanswerable query is treated as elevated. Only a
 /// query that succeeds and says "no" holds the gate closed.
 #[cfg(windows)]
 fn query_elevated() -> Option<bool> {
@@ -323,7 +305,7 @@ mod tests {
         assert_eq!(
             report.checks[1].fix,
             Some(Fix::InstallNpcap),
-            "the blocking row must offer the one fix Aether can perform"
+            "the blocking row must offer the one fix Belisk can perform"
         );
     }
 
