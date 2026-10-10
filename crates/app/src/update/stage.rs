@@ -207,7 +207,9 @@ pub mod tests {
 
     impl TempDir {
         pub fn new(name: &str) -> Self {
-            let path = std::env::temp_dir().join(format!("belisk-update-{name}-{}", std::process::id()));
+            static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!("belisk-update-{name}-{}-{serial}", std::process::id()));
             let _ = fs::remove_dir_all(&path);
             fs::create_dir_all(&path).unwrap();
             Self(path)
