@@ -120,6 +120,17 @@ mod tests {
         launch.opened.borrow().iter().flat_map(|shown| shown.releases.iter().map(|release| release.version.to_string())).collect()
     }
 
+    /// Every version the bundled changelog lists with notes, newest first:
+    /// what a player coming from before all of them is shown.
+    fn every_version_with_notes() -> Vec<String> {
+        crate::changelog::load(Language::English)
+            .releases
+            .iter()
+            .filter(|release| !release.bullets.is_empty())
+            .map(|release| release.version.to_string())
+            .collect()
+    }
+
     #[gpui::test]
     fn a_version_jump_opens_the_new_versions_notes_once(cx: &mut TestAppContext) {
         let dir = TestDir::with_settings("jump", Some("0.9.0"));
@@ -128,14 +139,18 @@ mod tests {
         let shown = launch.opened.borrow()[0].clone();
         assert_eq!(shown.since, Some(Version::new(0, 9, 0)));
         assert_eq!(shown.current, Version::current());
-        assert_eq!(opened_versions(&launch), [Version::current().to_string()]);
+        let versions = opened_versions(&launch);
+        assert_eq!(versions.first(), Some(&Version::current().to_string()), "newest first, up to this build");
+        assert_eq!(versions, every_version_with_notes(), "every version since 0.9.0");
     }
 
     #[gpui::test]
     fn a_settings_file_from_before_the_reset_sees_the_first_notes(cx: &mut TestAppContext) {
         let dir = TestDir::with_settings("pre-reset", None);
         let launch = launch(Some(&dir), false, cx);
-        assert_eq!(opened_versions(&launch), ["1.0.0"]);
+        let versions = opened_versions(&launch);
+        assert_eq!(versions.last().map(String::as_str), Some("1.0.0"), "the notes go back to the reset version");
+        assert_eq!(versions, every_version_with_notes());
         assert_eq!(launch.opened.borrow()[0].since, None);
     }
 
