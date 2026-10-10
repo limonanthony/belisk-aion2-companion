@@ -533,7 +533,7 @@ dependencies = [
 
 [[package]]
 name = "belisk"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "ed25519-dalek",
  "embed-resource",
@@ -3517,7 +3517,7 @@ dependencies = [
 
 [[package]]
 name = "meter-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "crc32fast",
  "libloading",

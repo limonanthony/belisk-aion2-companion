@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1] - 2026-10-10
+
+A fix for the update check.
+
+- **Updates**: the app can now check for new versions and download them. In 1.0.0 the check stopped at its first request, so 1.0.0 cannot update itself: download this version by hand once, and the next ones arrive on their own.
+- If an update check ever fails, **Settings › About** says so and the app tries again an hour later.
+
 ## [1.0.0] - 2026-10-10
 
 Belisk is a combat meter and companion for AION 2 on the global servers: a live DPS meter with the tools around it, all opened from one small toolbar.

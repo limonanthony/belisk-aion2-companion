@@ -1,5 +1,12 @@
 # Journal des modifications
 
+## [1.0.1] - 2026-10-10
+
+Une correction de la vérification des mises à jour.
+
+- **Mises à jour** : l'application peut désormais chercher les nouvelles versions et les télécharger. En 1.0.0, la vérification s'arrêtait dès sa première requête, donc la 1.0.0 ne peut pas se mettre à jour seule : téléchargez cette version à la main une fois, et les suivantes arriveront d'elles-mêmes.
+- Si une vérification échoue, **Paramètres › À propos** l'indique et l'application réessaie une heure plus tard.
+
 ## [1.0.0] - 2026-10-10
 
 Belisk est un compteur de combat et un compagnon pour AION 2 sur les serveurs globaux : un compteur DPS en direct avec les outils qui l'entourent, tous ouverts depuis une petite barre d'outils.
