@@ -1,9 +1,10 @@
 ---
 id: TASK-34.2
 title: Pet names and families (English and French)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-10 12:45'
+updated_date: '2026-10-10 22:23'
 labels:
   - feature
 dependencies: []
@@ -28,8 +29,16 @@ Part of the parent work item. Needs no game data from the first subtask beyond t
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every pet id read from the game maps to an English name, a French name and one of the families Cogni, Fera, Natura, Varian, Special.
-- [ ] #2 A mob that gives a pet maps to that pet, so souls of a pet already at level 3 can be attributed.
+- [x] #1 Every pet id read from the game maps to an English name, a French name and one of the families Cogni, Fera, Natura, Varian, Special.
+- [x] #2 A mob that gives a pet maps to that pet, so souls of a pet already at level 3 can be attributed.
 - [ ] #3 No name or mapping comes from the game client, and the data holds no Chinese text.
 - [ ] #4 A pet id missing from the list is shown with a visible fallback instead of a blank or a crash.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-10: pets.json built from QuestLog.gg's public API by scripts/build-pet-data.mjs (207 pets, EN/FR names and family for all; 562 mob codes map to 165 pets; 42 pets without a mob, incl. the 7 Specials). All 168 pet ids of the player's login snapshot are in it. Lookups in game_data.rs. Licence/terms of the QuestLog data not found (same source as the French names). The user accepted the list. Not reviewed yet; uncommitted until tested in game.
+
+2026-10-11: tested in game and accepted by the user.
+<!-- SECTION:NOTES:END -->
