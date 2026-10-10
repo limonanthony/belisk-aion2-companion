@@ -1,5 +1,14 @@
 # Belisk
 
+<p align="center">
+  <a href="https://github.com/limonanthony/belisk-aion2-companion/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/limonanthony/belisk-aion2-companion/actions/workflows/ci.yml/badge.svg?branch=dev"></a>
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-native-orange?logo=rust&logoColor=white">
+  <a href="https://github.com/zed-industries/zed/tree/main/crates/gpui"><img alt="UI: GPUI" src="https://img.shields.io/badge/UI-GPUI-blue"></a>
+  <img alt="Windows 10 and 11, x64" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078D4?logo=windows&logoColor=white">
+  <img alt="AION 2, Global servers" src="https://img.shields.io/badge/AION%202-Global%20servers-8A2BE2">
+  <a href="./LICENSE"><img alt="License: GPL-3.0-only" src="https://img.shields.io/badge/License-GPL--3.0--only-blue"></a>
+</p>
+
 Belisk — combat meter and companion for AION 2, built for the global servers: a
 small native overlay that shows who is dealing damage, live, and summarises boss
 fights, with to-dos, resource counts and event reminders beside it.
@@ -16,6 +25,27 @@ them. Like both, it is
 > [!IMPORTANT]
 > **Pre-release.** Nothing here has been confirmed against a long global
 > session yet. Expect rough edges.
+
+## Screenshots
+
+Sample data: every name in these is invented.
+
+<table>
+  <tr>
+    <td valign="top"><img src="docs/images/meter-target.png" width="310" alt="The meter's Target board on a boss, eight players ranked by damage"><br>The Target board follows a boss until it dies: its HP, everyone's damage, and your pace against your personal best.</td>
+    <td valign="top"><img src="docs/images/boss-summary.png" width="310" alt="The boss kill summary card"><br>The kill summary: your DPS and place, top skills, and a new personal best.</td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/fight-report.png" width="520" alt="The fight report table"><br>The fight report: damage, DPS, healing, damage taken and deaths for each player. Click a name for their skills and buffs.</td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/toolbar-reminder.png" width="515" alt="The toolbar with resource counts, and a reminder card below it"><br>The toolbar keeps Odyle Energy and Shugo keys in view; reminders drop in below it before events start.</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="docs/images/resources.png" width="370" alt="The Resources window"><br>Resources, read from the game: what is full and about to go to waste.</td>
+    <td valign="top"><img src="docs/images/todos.png" width="370" alt="The To-dos window"><br>To-dos for the day and the week, filled in from the game.</td>
+  </tr>
+</table>
 
 ## What it is
 
@@ -73,9 +103,8 @@ keeps its files in `%APPDATA%\Belisk` and `%LOCALAPPDATA%\Belisk\logs`; builds
 before the rename used `com.helveticxa.aether` there, and the first launch moves
 that folder over by itself.
 [AGENTS.md](./AGENTS.md) has the layout and the gotchas;
-[docs/GPUI_MIGRATION.md](./docs/GPUI_MIGRATION.md) the plan and status;
-[FORK.md](./FORK.md) is the history of how this project differs from the Aether
-fork it started from.
+[docs/technical-notes.md](./docs/technical-notes.md) explains how capture, parsing,
+recording, saving, the overlay windows, distribution and the app's settings work.
 
 ## Credits
 
