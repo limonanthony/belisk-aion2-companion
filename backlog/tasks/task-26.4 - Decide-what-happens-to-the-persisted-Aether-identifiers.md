@@ -1,10 +1,10 @@
 ---
 id: TASK-26.4
 title: Decide what happens to the persisted Aether identifiers
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-08 12:47'
-updated_date: '2026-10-09 22:19'
+updated_date: '2026-10-10 02:28'
 labels:
   - research
 dependencies: []
@@ -65,6 +65,8 @@ Source: fork-leftovers inventory of commit 7a48824 (2026-10-08). Line numbers re
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-09 user decision: 'Move to a Belisk folder automatically'. Built and reviewed twice (not yet tested by the user): on the first launch of Belisk, %APPDATA%\com.helveticxa.aether moves to %APPDATA%\Belisk and the logs to %LOCALAPPDATA%\Belisk\logs (belisk.log). If the move fails (e.g. the old meter still running) that run keeps the old folder and retries next launch. If both folders hold files, the Belisk one is used and the old one is left untouched (a warning in the log). Settings keys and the history format are unchanged.
+
+2026-10-10: the first launch of the release moved the data and logs to the Belisk folders (seen in belisk.log); the user confirmed it works.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

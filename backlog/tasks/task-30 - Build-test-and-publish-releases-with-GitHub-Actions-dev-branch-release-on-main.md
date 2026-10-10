@@ -3,10 +3,10 @@ id: TASK-30
 title: >-
   Build, test and publish releases with GitHub Actions (dev branch, release on
   main)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-08 15:33'
-updated_date: '2026-10-09 22:19'
+updated_date: '2026-10-10 02:28'
 labels:
   - feature
 dependencies: []
@@ -116,4 +116,6 @@ Once the code is on GitHub, CI on GitHub runners builds and tests every change o
 2026-10-09: user decisions: the version resets to 1.0.0 (done in the code); the GitHub repository does not exist yet (CI will set UPDATE_REPO from it). Branch note: work is on the local branch phase-4-settings; there is no dev branch yet.
 
 2026-10-10: the user created the public GitHub repository https://github.com/limonanthony/belisk-aion2-companion (empty, default branch 'master'). Nothing has been pushed; pushing needs the user's explicit approval. A pre-publication check of the full git history found no secrets or private keys, no recordings or logs; items for the user to decide are listed in the conversation (personal paths in a few backlog/docs files, the owner's character name in fixtures, the wording about where French names come from, Aether's old tags).
+
+2026-10-10: CI and the release workflow published v1.0.0 and v1.0.1 from main, signed with the repository secret; the test step stopped one broken attempt before anything was published. User: 'All good it works'.
 <!-- SECTION:NOTES:END -->

@@ -4,7 +4,7 @@ title: 'Check for updates, update on click, restart into the new version'
 status: In Progress
 assignee: []
 created_date: '2026-10-08 15:23'
-updated_date: '2026-10-09 20:59'
+updated_date: '2026-10-10 02:28'
 labels:
   - feature
 dependencies: []
@@ -115,4 +115,6 @@ Add unit tests for comparing versions and for the swap order (staging and the re
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-09: built and reviewed; see TASK-28's note.
+
+2026-10-10: see TASK-28: v1.0.1 fixes the v1.0.0 update-check crash; the real update test (1.0.1 → 1.0.2) remains.
 <!-- SECTION:NOTES:END -->

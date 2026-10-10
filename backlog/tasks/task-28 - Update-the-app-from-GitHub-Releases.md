@@ -4,7 +4,7 @@ title: Update the app from GitHub Releases
 status: In Progress
 assignee: []
 created_date: '2026-10-08 15:23'
-updated_date: '2026-10-09 20:59'
+updated_date: '2026-10-10 02:28'
 labels:
   - feature
 dependencies: []
@@ -73,6 +73,8 @@ Players learn about new versions inside the app and can update with a click. The
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-09: built and reviewed twice for security (not yet tested by the user; no live download possible until the GitHub repository exists). A toolbar icon appears only when an update is available, downloading or ready; Settings › About › Updates shows the status, Check now (once a minute), the automatic download switch (on by default), release notes and errors. Downloads are capped at 1 MB/s and paused during fights. Updates are verified (SHA-256 and an Ed25519 signature) before anything is installed; the restart helper is the installed exe itself, re-verifies and swaps only the exe and the two WinDivert files, with rollback; the running exe is held so it can't be swapped before a restart. Builds without a repository (UPDATE_REPO) or with the development key have updates turned off, and cargo xtask dist refuses the development key. The user still has to generate the real signing key (docs/updates.md).
+
+2026-10-10: v1.0.0's update check crashed at its first HTTPS request (ureq built without its native-tls connector); fixed in v1.0.1 (plus: a crash in the check now shows as a failure and retries hourly). User installed 1.0.1 by hand: About says up to date. Remaining: the real update test, 1.0.1 → 1.0.2 (download, verify, restart into 1.0.2).
 <!-- SECTION:NOTES:END -->
 
 ## Comments
