@@ -9,6 +9,7 @@ use crate::config::SharedDpsMeterConfig;
 use crate::capture::census;
 use crate::storage::data_storage::DataStorage;
 use crate::logger::AppLogger;
+use crate::pet_sources::SoulSourceTracker;
 
 const KNOWN_PACKET_HEADERS: &[(u8, u8)] = &[
     (0x33, 0x36),
@@ -17,6 +18,13 @@ const KNOWN_PACKET_HEADERS: &[(u8, u8)] = &[
     (0x41, 0x36),
     (0x0B, 0x61),
     (0x0C, 0x61),
+    (0x00, 0x90),
+    (0x09, 0x90),
+    (0x0D, 0x90),
+    (0x11, 0x90),
+    (0x1E, 0x56),
+    (0x21, 0x56),
+    (0x95, 0x56),
     (0x04, 0x38),
     (0x05, 0x38),
     (0x2A, 0x38),
@@ -142,6 +150,7 @@ pub struct StreamProcessor {
     combat_damage_enabled: bool,
     pub(super) own_actor: OwnActor,
     pub(super) captured_at: f64,
+    pub(super) soul_sources: SoulSourceTracker,
 }
 
 impl StreamProcessor {
@@ -166,6 +175,7 @@ impl StreamProcessor {
             combat_damage_enabled: false,
             own_actor: OwnActor::Unsettled,
             captured_at: 0.0,
+            soul_sources: SoulSourceTracker::default(),
         }
     }
 
@@ -190,6 +200,7 @@ impl StreamProcessor {
             combat_damage_enabled: false,
             own_actor: OwnActor::Unsettled,
             captured_at: 0.0,
+            soul_sources: SoulSourceTracker::default(),
         }
     }
 
@@ -478,6 +489,16 @@ impl StreamProcessor {
                 (0x42, 0x36) => self.parse_death_packet(payload, is_compressed_bundle),
                 (0x0B, 0x61) => self.parse_ticket_snapshot_packet(payload, is_compressed_bundle),
                 (0x0C, 0x61) => self.parse_ticket_update_packet(payload, is_compressed_bundle),
+                (0x00, 0x90) => self.parse_pet_snapshot_packet(payload, is_compressed_bundle),
+                (0x09, 0x90) => self.parse_pet_unlock_packet(payload, is_compressed_bundle),
+                (0x0D, 0x90) => self.parse_pet_soul_gains_packet(payload, is_compressed_bundle),
+                (0x11, 0x90) => self.parse_pet_counter_gains_packet(payload, is_compressed_bundle),
+                (0x1E, 0x56) => self.parse_loot_spawn_packet(payload, is_compressed_bundle),
+                (0x21, 0x56) => self.parse_loot_pickup_packet(payload, is_compressed_bundle),
+                (0x95, 0x56) => {
+                    self.soul_sources.purchased(self.captured_at);
+                    true
+                }
                 (0x00, 0x8D) => self.parse_remain_hp_packet(payload, is_compressed_bundle),
                 _ => false,
             },
@@ -516,6 +537,14 @@ mod own_actor_tests {
     use crate::identity::{IdentityDecision, KnownCharacter};
     use crate::capture::parser::ticket_record::tests::{record, snapshot, update};
     use crate::capture::parser::ticket_record::TicketReason;
+    use crate::capture::parser::pet_record::tests::{
+        counter_gains as pet_counter_gains, snapshot as pet_snapshot, soul_gains as pet_soul_gains,
+        unlock as pet_unlock,
+    };
+    use crate::capture::parser::loot_record::tests::{PICKUP_OF_PET_SOUL, SPAWN_OF_PET_SOUL};
+    use crate::capture::parser::pet_record::{CounterGain, PetLevel, PetUnlock, SoulGain};
+    use crate::pet_sources::SoulSource;
+    use crate::pets::{PetContent, PetReport};
     use crate::tickets::{TicketContent, TicketReport};
     use crate::logger::AppLogger;
     use crate::mobs::catalog::MobCatalog;
@@ -1492,6 +1521,152 @@ mod own_actor_tests {
         assert!(!connection.processor.parse_packet(&frame(&update_like), false));
 
         assert!(ticket_reports(&connection).is_empty());
+    }
+
+    fn pet_reports(connection: &Connection) -> Vec<PetReport> {
+        connection
+            .events
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|event| match event {
+                MeterEvent::Pets(report) => Some(report.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn pet_messages_reach_the_app_with_the_character_and_capture_time_while_the_meter_is_closed() {
+        let mut connection = connection();
+        connection.storage.set_fight_tracking(false);
+        assert!(!connection.storage.fight_tracking());
+        connection.processor.set_captured_at(100.0);
+        feed(&mut connection, &[named_by_the_game(BEFORE_ZONE_CHANGE, NAME, None)]);
+        feed(&mut connection, &[frame(&pet_snapshot(&[(1086, 2)], &[(1086, 27)], &[(1, 222)]))]);
+        connection.processor.set_captured_at(114.5);
+        feed(&mut connection, &[frame(&pet_soul_gains(&[(1086, 1)]))]);
+        feed(&mut connection, &[frame(&pet_unlock(1134, 3, 6, 10_850))]);
+        feed(&mut connection, &[frame(&pet_counter_gains(&[(4, 1)]))]);
+
+        let reports = pet_reports(&connection);
+        assert_eq!(reports.len(), 4);
+        assert!(reports.iter().all(|report| (report.character.name.as_str(), report.character.server_id) == (NAME, 1302)));
+        assert_eq!(reports[0].captured_at, 100.0);
+        let PetContent::Snapshot(collection) = &reports[0].content else { panic!("snapshot first") };
+        assert_eq!(collection.levels, vec![PetLevel { pet_id: 1086, level: 2 }]);
+        assert_eq!(reports[1].captured_at, 114.5);
+        assert_eq!(
+            reports[1].content,
+            PetContent::SoulGains { gains: vec![SoulGain { pet_id: 1086, amount: 1 }], source: SoulSource::Other }
+        );
+        assert_eq!(reports[2].content, PetContent::Unlock(PetUnlock { pet_id: 1134 }));
+        assert_eq!(
+            reports[3].content,
+            PetContent::CounterGains { gains: vec![CounterGain { kind: 4, amount: 1 }], looted_mobs: Vec::new() }
+        );
+    }
+
+    const FUNGEN_DROPPER_ENTITY: u32 = 48_710;
+    const FUNGEN_MOB: u32 = 2_100_456;
+    const PURCHASE_MESSAGE: [u8; 9] = [0x95, 0x56, 0x00, 0x00, 0x65, 0xef, 0xb1, 0x01, 0x00];
+
+    fn feed_at(connection: &mut Connection, captured_at: f64, payload: &[u8]) {
+        connection.processor.set_captured_at(captured_at);
+        feed(connection, &[frame(payload)]);
+    }
+
+    fn connection_with_the_player_named() -> Connection {
+        let mut connection = connection();
+        connection.processor.set_captured_at(100.0);
+        feed(&mut connection, &[named_by_the_game(BEFORE_ZONE_CHANGE, NAME, None)]);
+        connection
+    }
+
+    fn soul_gain_sources(connection: &Connection) -> Vec<SoulSource> {
+        pet_reports(connection)
+            .into_iter()
+            .filter_map(|report| match report.content {
+                PetContent::SoulGains { source, .. } => Some(source),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_soul_gain_a_tick_after_the_players_pickup_is_loot() {
+        let mut connection = connection_with_the_player_named();
+        feed_at(&mut connection, 114.148, &SPAWN_OF_PET_SOUL);
+        feed_at(&mut connection, 114.507, &PICKUP_OF_PET_SOUL);
+        feed_at(&mut connection, 114.555, &pet_soul_gains(&[(1086, 1)]));
+
+        assert_eq!(soul_gain_sources(&connection), vec![SoulSource::Loot]);
+    }
+
+    #[test]
+    fn a_soul_gain_with_the_purchase_message_before_it_is_a_black_market_buy() {
+        let mut connection = connection_with_the_player_named();
+        feed_at(&mut connection, 112.852, &PURCHASE_MESSAGE);
+        feed_at(&mut connection, 112.902, &pet_soul_gains(&[(1182, 5)]));
+
+        assert_eq!(soul_gain_sources(&connection), vec![SoulSource::BlackMarket]);
+    }
+
+    #[test]
+    fn a_soul_gain_with_no_pickup_or_purchase_before_it_is_other() {
+        let mut connection = connection_with_the_player_named();
+        feed_at(&mut connection, 104.846, &pet_soul_gains(&[(1091, 1)]));
+        feed_at(&mut connection, 114.507, &PICKUP_OF_PET_SOUL);
+        feed_at(&mut connection, 120.0, &pet_soul_gains(&[(1091, 1)]));
+
+        assert_eq!(soul_gain_sources(&connection), vec![SoulSource::Other, SoulSource::Other]);
+    }
+
+    #[test]
+    fn a_counter_gain_after_a_pickup_names_the_mob_the_loot_dropped_from() {
+        let mut connection = connection_with_the_player_named();
+        connection.storage.append_mob(FUNGEN_DROPPER_ENTITY, FUNGEN_MOB);
+        feed_at(&mut connection, 124.252, &SPAWN_OF_PET_SOUL);
+        feed_at(&mut connection, 124.554, &PICKUP_OF_PET_SOUL);
+        feed_at(&mut connection, 124.609, &pet_counter_gains(&[(1, 1)]));
+        feed_at(&mut connection, 130.0, &pet_counter_gains(&[(1, 1)]));
+
+        let counter_gains: Vec<_> = pet_reports(&connection)
+            .into_iter()
+            .filter_map(|report| match report.content {
+                PetContent::CounterGains { looted_mobs, .. } => Some(looted_mobs),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(counter_gains, vec![vec![FUNGEN_MOB], Vec::<u32>::new()]);
+    }
+
+    #[test]
+    fn a_counter_gain_after_loot_of_an_entity_the_world_never_spawned_names_no_mob() {
+        let mut connection = connection_with_the_player_named();
+        feed_at(&mut connection, 124.252, &SPAWN_OF_PET_SOUL);
+        feed_at(&mut connection, 124.554, &PICKUP_OF_PET_SOUL);
+        feed_at(&mut connection, 124.609, &pet_counter_gains(&[(1, 1)]));
+
+        let PetContent::CounterGains { looted_mobs, .. } = &pet_reports(&connection)[0].content else {
+            panic!("counter gain")
+        };
+        assert!(looted_mobs.is_empty());
+    }
+
+    #[test]
+    fn a_look_alike_frame_under_a_pet_opcode_emits_nothing() {
+        let mut connection = connection();
+        connection.processor.set_captured_at(100.0);
+        feed(&mut connection, &[named_by_the_game(BEFORE_ZONE_CHANGE, NAME, None)]);
+
+        assert!(!connection.processor.parse_packet(&frame(&[0x0D, 0x90, 0x02, 1, 2, 3, 4, 5, 6, 7, 8]), false));
+        assert!(!connection.processor.parse_packet(&frame(&[0x11, 0x90, 0x01, 4, 1, 0, 0, 0, 0x07]), false));
+        assert!(!connection.processor.parse_packet(&frame(&[0x00, 0x90, 0, 0, 0, 0, 0xFF]), false));
+        assert!(!connection.processor.parse_packet(&frame(&[0x09, 0x90, 0x7C, 0x5A, 0x31, 0x04, 0x5D, 0xA1, 0x15, 0x06]), false));
+
+        assert!(pet_reports(&connection).is_empty());
     }
 
     fn named_on_a_first_connection(connection: &mut Connection, known: Vec<KnownCharacter>) {

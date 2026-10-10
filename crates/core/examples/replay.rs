@@ -2,10 +2,12 @@
 //! summary of the final snapshot. No capture driver is loaded and no elevation
 //! is needed.
 //!
-//!     cargo run --example replay -- <recording> [--names] [--tickets] [--fights on|off|from-identity|from-tickets] [--speed N] [--data-dir <dir> [--delete-first-record] [--record]]
+//!     cargo run --example replay -- <recording> [--names] [--tickets] [--pets] [--fights on|off|from-identity|from-tickets] [--speed N] [--data-dir <dir> [--delete-first-record] [--record]]
 //!
 //! Other players' names are only printed with `--names`. `--tickets` lists the
 //! ticket events the core emitted, with the capture time as Unix seconds.
+//! `--pets` lists the pet events (collection snapshot, soul gains with their
+//! source, counter gains with the mobs and pets whose loot was just picked up).
 //! `--fights off` replays with fight tracking off, as with the DPS meter
 //! closed; `--fights from-identity` turns it on when the game first names the
 //! player's character, and `--fights from-tickets` at the first ticket event,
@@ -33,6 +35,7 @@ use std::time::{Duration, Instant};
 use meter_core::capture::recorder::replay_recording;
 use meter_core::engine::meter::DpsMeter;
 use meter_core::events::{EventSink, MeterEvent};
+use meter_core::pets::{PetContent, PetReport};
 use meter_core::tickets::{TicketContent, TicketReport};
 use meter_core::logger::AppLogger;
 
@@ -57,6 +60,7 @@ enum FightMode {
 struct CollectingSink {
     counts: Mutex<BTreeMap<&'static str, usize>>,
     tickets: Mutex<Vec<TicketReport>>,
+    pets: Mutex<Vec<PetReport>>,
     wipes: Mutex<Vec<String>>,
     outcome: Mutex<Sender<ReplayOutcome>>,
     meter: OnceLock<Arc<DpsMeter>>,
@@ -77,6 +81,7 @@ impl EventSink for CollectingSink {
             MeterEvent::CharacterSeen(_) => "character-seen",
             MeterEvent::OwnIdentity(_) => "own-identity",
             MeterEvent::Tickets(_) => "tickets",
+            MeterEvent::Pets(_) => "pets",
             MeterEvent::PacketReplayFinished(_) => "packet-replay-finished",
             MeterEvent::PacketReplayFailed(_) => "packet-replay-failed",
             MeterEvent::DpsIdleHidden(_) => "dps-idle-hidden",
@@ -98,6 +103,9 @@ impl EventSink for CollectingSink {
 
         if let MeterEvent::Tickets(report) = &event {
             self.tickets.lock().unwrap().push(report.clone());
+        }
+        if let MeterEvent::Pets(report) = &event {
+            self.pets.lock().unwrap().push(report.clone());
         }
         if let MeterEvent::BossWiped(wiped) = &event {
             let target = wiped.snapshot.combat_infos.target_infos.get(&wiped.target_id);
@@ -136,6 +144,7 @@ fn main() -> ExitCode {
     let mut path = None;
     let mut show_names = false;
     let mut show_tickets = false;
+    let mut show_pets = false;
     let mut fights = FightMode::On;
     let mut speed = None;
     let mut data_dir = None;
@@ -146,6 +155,7 @@ fn main() -> ExitCode {
         match arg.as_str() {
             "--names" => show_names = true,
             "--tickets" => show_tickets = true,
+            "--pets" => show_pets = true,
             "--speed" => match args.next().and_then(|value| value.parse::<f64>().ok()) {
                 Some(value) if value > 0.0 => speed = Some(value),
                 _ => {
@@ -182,7 +192,7 @@ fn main() -> ExitCode {
         }
     }
     let Some(path) = path else {
-        eprintln!("usage: replay <recording> [--names] [--tickets] [--fights on|off|from-identity|from-tickets] [--speed N] [--data-dir <dir> [--delete-first-record] [--record]]");
+        eprintln!("usage: replay <recording> [--names] [--tickets] [--pets] [--fights on|off|from-identity|from-tickets] [--speed N] [--data-dir <dir> [--delete-first-record] [--record]]");
         return ExitCode::FAILURE;
     };
     if (delete_first_record || record) && data_dir.is_none() {
@@ -190,7 +200,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    match run(path, show_names, show_tickets, fights, speed, data_dir, delete_first_record, record) {
+    match run(path, show_names, show_tickets, show_pets, fights, speed, data_dir, delete_first_record, record) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("replay failed: {error}");
@@ -203,6 +213,7 @@ fn run(
     path: String,
     show_names: bool,
     show_tickets: bool,
+    show_pets: bool,
     fights: FightMode,
     speed: Option<f64>,
     data_dir: Option<PathBuf>,
@@ -213,6 +224,7 @@ fn run(
     let sink = Arc::new(CollectingSink {
         counts: Mutex::new(BTreeMap::new()),
         tickets: Mutex::new(Vec::new()),
+        pets: Mutex::new(Vec::new()),
         wipes: Mutex::new(Vec::new()),
         outcome: Mutex::new(outcome_tx),
         meter: OnceLock::new(),
@@ -258,6 +270,9 @@ fn run(
             print_own_character(&meter);
             if show_tickets {
                 print_tickets(&sink.tickets.lock().unwrap(), show_names);
+            }
+            if show_pets {
+                print_pets(&sink.pets.lock().unwrap(), show_names);
             }
             print_events(&sink, &meter);
             return Ok(());
@@ -352,6 +367,9 @@ fn run(
 
     if show_tickets {
         print_tickets(&sink.tickets.lock().unwrap(), show_names);
+    }
+    if show_pets {
+        print_pets(&sink.pets.lock().unwrap(), show_names);
     }
 
     print_events(&sink, &meter);
@@ -463,6 +481,52 @@ fn print_tickets(reports: &[TicketReport], show_names: bool) {
                 "  {:.3} change for {who}: {} count {} charge {} remaining {:?} {reason:?} delta {delta:?}",
                 report.captured_at, record.id, record.count, record.charge, record.remaining_ms
             ),
+        }
+    }
+}
+
+/// The app's pet catalogue, read here only to name the pet a looted mob gives.
+fn pet_of_mob(mob_code: u32) -> Option<u32> {
+    let catalogue: serde_json::Value =
+        serde_json::from_str(include_str!("../../app/assets/game/data/pets.json")).expect("pets.json is valid");
+    catalogue.as_object()?.iter().find_map(|(pet_id, pet)| {
+        let drops_it = pet["mobs"].as_array()?.iter().any(|mob| mob.as_u64() == Some(u64::from(mob_code)));
+        if drops_it { pet_id.parse().ok() } else { None }
+    })
+}
+
+fn print_pets(reports: &[PetReport], show_names: bool) {
+    println!("pet events: {}", reports.len());
+    for report in reports {
+        let character = &report.character;
+        let name = if show_names { character.name.clone() } else { format!("##({})", character.name.chars().count()) };
+        let who = format!("{name} server {}", character.server_id);
+        let at = report.captured_at;
+        match &report.content {
+            PetContent::Snapshot(snapshot) => {
+                println!(
+                    "  {at:.3} snapshot for {who}: {} levelled pets, {} progress entries, counters {:?}",
+                    snapshot.levels.len(),
+                    snapshot.progress.len(),
+                    snapshot.counters.iter().map(|counter| (counter.kind, counter.value)).collect::<Vec<_>>()
+                );
+            }
+            PetContent::SoulGains { gains, source } => {
+                let gains: Vec<_> = gains.iter().map(|gain| format!("pet {} +{}", gain.pet_id, gain.amount)).collect();
+                println!("  {at:.3} soul gains for {who} [{source:?}]: {}", gains.join(", "));
+            }
+            PetContent::Unlock(unlock) => println!("  {at:.3} unlock for {who}: pet {}", unlock.pet_id),
+            PetContent::CounterGains { gains, looted_mobs } => {
+                let gains: Vec<_> = gains.iter().map(|gain| format!("kind {} +{}", gain.kind, gain.amount)).collect();
+                let mobs: Vec<_> = looted_mobs
+                    .iter()
+                    .map(|mob| match pet_of_mob(*mob) {
+                        Some(pet_id) => format!("mob {mob} (pet {pet_id})"),
+                        None => format!("mob {mob} (no pet)"),
+                    })
+                    .collect();
+                println!("  {at:.3} counter gains for {who}: {}; looted {}", gains.join(", "), mobs.join(", "));
+            }
         }
     }
 }

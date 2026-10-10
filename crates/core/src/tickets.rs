@@ -3,22 +3,10 @@
 //! through untouched: caps, owners and refill rules are the app's data.
 
 use crate::capture::parser::ticket_record::{TicketReason, TicketRecord};
+use crate::character_binding::{CharacterBinder, CharacterReport};
 use crate::identity::KnownCharacter;
 
-/// The game names the character about 4 s after the snapshot that belongs to
-/// it; this bounds how long a message waits for that name.
-const IDENTITY_AFTER_MESSAGE_SECS: f64 = 15.0;
-/// A name this close before a snapshot is the one the snapshot belongs to.
-const IDENTITY_BEFORE_SNAPSHOT_SECS: f64 = 2.0;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TicketReport {
-    pub character: KnownCharacter,
-    /// When the packet was captured, in seconds since the Unix epoch. A replay
-    /// carries the recording's time.
-    pub captured_at: f64,
-    pub content: TicketContent,
-}
+pub type TicketReport = CharacterReport<TicketContent>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TicketContent {
@@ -28,65 +16,29 @@ pub enum TicketContent {
     Change { record: TicketRecord, reason: TicketReason, delta: Option<u32> },
 }
 
-struct NamedCharacter {
-    character: KnownCharacter,
-    seen_at: f64,
-}
-
-struct Waiting {
-    captured_at: f64,
-    content: TicketContent,
-}
-
-/// Ties ticket messages to the local player's character. A snapshot belongs to
-/// the name that arrives up to 15 s after it or up to 2 s before it; a change
-/// belongs to the character named now. Anything that cannot be tied yet waits
-/// for the next name, and is dropped once 15 s old or when a new snapshot
-/// shows the player entered another world.
+/// Ties ticket messages to the local player's character (see
+/// `CharacterBinder`) and drops the game's test tickets.
 #[derive(Default)]
 pub struct TicketBinder {
-    named: Option<NamedCharacter>,
-    waiting: Vec<Waiting>,
+    binder: CharacterBinder<TicketContent>,
 }
 
 impl TicketBinder {
     pub fn reset(&mut self) {
-        *self = Self::default();
+        self.binder.reset();
     }
 
     pub fn character_named(&mut self, character: KnownCharacter, captured_at: f64) -> Vec<TicketReport> {
-        let waiting = std::mem::take(&mut self.waiting);
-        let reports = waiting
-            .into_iter()
-            .filter(|message| captured_at - message.captured_at <= IDENTITY_AFTER_MESSAGE_SECS)
-            .map(|message| TicketReport {
-                character: character.clone(),
-                captured_at: message.captured_at,
-                content: message.content,
-            })
-            .collect();
-        self.named = Some(NamedCharacter { character, seen_at: captured_at });
-        reports
+        self.binder.character_named(character, captured_at)
+    }
+
+    pub fn assume_character(&mut self, character: KnownCharacter) {
+        self.binder.assume_character(character);
     }
 
     pub fn snapshot(&mut self, records: Vec<TicketRecord>, captured_at: f64) -> Option<TicketReport> {
         let records = records.into_iter().filter(|record| !record.is_test_ticket()).collect();
-        let content = TicketContent::Snapshot(records);
-        self.waiting.clear();
-        let named_just_before = self.named.take().filter(|named| {
-            (0.0..=IDENTITY_BEFORE_SNAPSHOT_SECS).contains(&(captured_at - named.seen_at))
-        });
-        match named_just_before {
-            Some(named) => {
-                let report = TicketReport { character: named.character.clone(), captured_at, content };
-                self.named = Some(named);
-                Some(report)
-            }
-            None => {
-                self.waiting.push(Waiting { captured_at, content });
-                None
-            }
-        }
+        self.binder.snapshot(TicketContent::Snapshot(records), captured_at)
     }
 
     pub fn change(
@@ -99,15 +51,7 @@ impl TicketBinder {
         if record.is_test_ticket() {
             return None;
         }
-        let content = TicketContent::Change { record, reason, delta };
-        match &self.named {
-            Some(named) => Some(TicketReport { character: named.character.clone(), captured_at, content }),
-            None => {
-                self.waiting.retain(|message| captured_at - message.captured_at <= IDENTITY_AFTER_MESSAGE_SECS);
-                self.waiting.push(Waiting { captured_at, content });
-                None
-            }
-        }
+        self.binder.change(TicketContent::Change { record, reason, delta }, captured_at)
     }
 }
 

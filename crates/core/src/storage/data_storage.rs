@@ -22,6 +22,7 @@ use crate::report::ledger::{fight_party, BuffIntervals};
 use crate::storage::boss_wipe::{BossWipe, WipeWatch};
 use crate::storage::loaders::load_healing_skill_codes;
 use crate::tickets::TicketBinder;
+use crate::pets::{PetBinder, PetContent};
 
 pub(crate) struct FightLedgerInputs {
     pub events: CombatEvents,
@@ -294,6 +295,8 @@ pub struct DataStorage {
     /// Ties the game's ticket messages to the character named as the player.
     /// Kept apart from `inner`: a reset must not forget who the player is.
     tickets: Mutex<TicketBinder>,
+    /// Ties the game's pet messages to the character named as the player.
+    pets: Mutex<PetBinder>,
     /// Whether fights are being counted: damage, heals, damage taken, deaths
     /// and buff uptime. Off until the host turns it on, so a meter that starts
     /// with its window closed never counts a fight. Kept apart from `inner`:
@@ -428,6 +431,7 @@ impl DataStorage {
             main_actor_callback: Mutex::new(None),
             known_characters: RwLock::new(Vec::new()),
             tickets: Mutex::new(TicketBinder::default()),
+            pets: Mutex::new(PetBinder::default()),
             fight_tracking: AtomicBool::new(false),
         }
     }
@@ -1250,6 +1254,18 @@ impl DataStorage {
         }
         match remembered {
             Some(character) => {
+                let unambiguous = self
+                    .known_characters
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .filter(|known| known.class == character.class)
+                    .count()
+                    == 1;
+                if unambiguous {
+                    self.tickets.lock().unwrap().assume_character(character.clone());
+                    self.pets.lock().unwrap().assume_character(character.clone());
+                }
                 self.events.emit(MeterEvent::MainActorDetected(MainActorDetectedPayload {
                     actor_id,
                     actor_name: character.name.clone(),
@@ -1285,12 +1301,16 @@ impl DataStorage {
     }
 
     /// Tells the app the game named the player's character, so it can be
-    /// remembered, and releases the ticket messages that waited for the name.
+    /// remembered, and releases the ticket and pet messages that waited for the name.
     pub fn character_seen(&self, character: KnownCharacter, captured_at: f64) {
         let reports = self.tickets.lock().unwrap().character_named(character.clone(), captured_at);
+        let pet_reports = self.pets.lock().unwrap().character_named(character.clone(), captured_at);
         self.events.emit(MeterEvent::CharacterSeen(character));
         for report in reports {
             self.events.emit(MeterEvent::Tickets(report));
+        }
+        for report in pet_reports {
+            self.events.emit(MeterEvent::Pets(report));
         }
     }
 
@@ -1308,10 +1328,25 @@ impl DataStorage {
         }
     }
 
-    /// Forgets the character the tickets were tied to; a recording starts from
-    /// its own times.
+    pub fn pets_snapshot(&self, snapshot: PetContent, captured_at: f64) {
+        let report = self.pets.lock().unwrap().snapshot(snapshot, captured_at);
+        if let Some(report) = report {
+            self.events.emit(MeterEvent::Pets(report));
+        }
+    }
+
+    pub fn pets_changed(&self, change: PetContent, captured_at: f64) {
+        let report = self.pets.lock().unwrap().change(change, captured_at);
+        if let Some(report) = report {
+            self.events.emit(MeterEvent::Pets(report));
+        }
+    }
+
+    /// Forgets the character the tickets and pet messages were tied to; a
+    /// recording starts from its own times.
     pub fn reset_ticket_binding(&self) {
         self.tickets.lock().unwrap().reset();
+        self.pets.lock().unwrap().reset();
     }
 
     pub fn get_dps_stats_snapshot(&self) -> HashMap<u32, HashMap<u32, HashMap<u32, SkillStats>>> {
@@ -2606,5 +2641,136 @@ mod fight_tracking_tests {
         storage.append_damage_at(hit(PLAYER, MOB), 30.0);
         let counts: u32 = storage.get_dps_stats_snapshot()[&MOB][&PLAYER].values().map(|skill| skill.counts).sum();
         assert_eq!(counts, 1);
+    }
+}
+
+#[cfg(test)]
+mod pets_before_the_game_names_the_player_tests {
+    use std::sync::{Arc, Mutex, RwLock};
+
+    use super::DataStorage;
+    use crate::capture::parser::pet_record::SoulGain;
+    use crate::config::DpsMeterConfig;
+    use crate::events::{EventSink, MeterEvent};
+    use crate::identity::KnownCharacter;
+    use crate::mobs::catalog::MobCatalog;
+    use crate::pet_sources::SoulSource;
+    use crate::pets::{PetContent, PetReport};
+
+    #[derive(Default)]
+    struct Collected(Mutex<Vec<MeterEvent>>);
+    impl EventSink for Collected {
+        fn emit(&self, event: MeterEvent) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    const PLAYER: u32 = 10_246;
+
+    fn soul_gain() -> PetContent {
+        PetContent::SoulGains { gains: vec![SoulGain { pet_id: 1086, amount: 1 }], source: SoulSource::Loot }
+    }
+
+    fn setup() -> (DataStorage, Arc<Collected>) {
+        let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
+        let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
+        let events = Arc::new(Collected::default());
+        let storage = DataStorage::new(events.clone(), config, mobs);
+        storage.set_known_characters(vec![KnownCharacter {
+            name: "Aelene".to_string(),
+            server_id: 1302,
+            class: "ELEMENTALIST".to_string(),
+            key: None,
+        }]);
+        (storage, events)
+    }
+
+    fn pet_reports(events: &Collected) -> Vec<PetReport> {
+        events
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|event| match event {
+                MeterEvent::Pets(report) => Some(report.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_soul_gain_is_tied_to_the_remembered_character_when_the_meter_started_after_login() {
+        let (storage, events) = setup();
+        storage.bind_own_actor(PLAYER);
+        storage.set_actor_class(PLAYER, "ELEMENTALIST");
+        storage.resolve_own_name();
+
+        storage.pets_changed(soul_gain(), 100.0);
+
+        let reports = pet_reports(&events);
+        assert_eq!(reports.len(), 1);
+        assert_eq!((reports[0].character.name.as_str(), reports[0].character.server_id), ("Aelene", 1302));
+    }
+
+    fn gain_after_identifying_with(remembered: Vec<(&str, u32)>) -> Vec<PetReport> {
+        let (storage, events) = setup();
+        storage.set_known_characters(
+            remembered
+                .into_iter()
+                .map(|(name, server_id)| KnownCharacter {
+                    name: name.to_string(),
+                    server_id,
+                    class: "ELEMENTALIST".to_string(),
+                    key: None,
+                })
+                .collect(),
+        );
+        storage.bind_own_actor(PLAYER);
+        storage.set_actor_class(PLAYER, "ELEMENTALIST");
+        storage.resolve_own_name();
+        storage.pets_changed(soul_gain(), 100.0);
+        pet_reports(&events)
+    }
+
+    #[test]
+    fn two_remembered_characters_of_the_class_leave_the_gain_waiting() {
+        assert!(gain_after_identifying_with(vec![("Aelene", 1302), ("Brisa", 1302)]).is_empty());
+    }
+
+    #[test]
+    fn the_same_name_on_two_servers_leaves_the_gain_waiting() {
+        assert!(gain_after_identifying_with(vec![("Aelene", 1302), ("Aelene", 1001)]).is_empty());
+    }
+
+    #[test]
+    fn one_remembered_character_of_the_class_is_assumed() {
+        assert_eq!(gain_after_identifying_with(vec![("Aelene", 1302)]).len(), 1);
+    }
+
+    #[test]
+    fn without_a_remembered_character_a_soul_gain_waits_for_the_game_to_name_one() {
+        let (storage, events) = setup();
+        storage.set_known_characters(Vec::new());
+        storage.bind_own_actor(PLAYER);
+        storage.set_actor_class(PLAYER, "ELEMENTALIST");
+        storage.resolve_own_name();
+
+        storage.pets_changed(soul_gain(), 100.0);
+
+        assert!(pet_reports(&events).is_empty());
+    }
+
+    #[test]
+    fn the_games_own_name_replaces_the_remembered_one() {
+        let (storage, events) = setup();
+        storage.bind_own_actor(PLAYER);
+        storage.set_actor_class(PLAYER, "ELEMENTALIST");
+        storage.resolve_own_name();
+        let named = KnownCharacter { name: "Other".to_string(), server_id: 1001, class: "CLERIC".to_string(), key: None };
+
+        storage.character_seen(named, 101.0);
+        storage.pets_changed(soul_gain(), 102.0);
+
+        assert_eq!(pet_reports(&events)[0].character.name, "Other");
     }
 }

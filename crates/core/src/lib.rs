@@ -1,5 +1,6 @@
 pub mod background_save;
 pub mod capture;
+pub mod character_binding;
 pub mod config;
 pub mod engine;
 pub mod events;
@@ -8,6 +9,8 @@ pub mod identity;
 pub mod logger;
 pub mod mobs;
 pub mod models;
+pub mod pets;
+pub mod pet_sources;
 pub mod personal_best;
 pub mod preflight;
 pub mod region;
