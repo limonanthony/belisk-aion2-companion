@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use gpui::{
-    div, prelude::*, px, rgb, rgba, Animation, AnimationExt as _, AnyElement, App, Context, Entity, EventEmitter,
-    FocusHandle, FontWeight, IntoElement, KeyDownEvent, Render, Role, ScrollHandle, SharedString, Subscription, Task,
-    Window,
+    div, list, prelude::*, px, rgb, rgba, Animation, AnimationExt as _, AnyElement, App, Context, Entity, EventEmitter,
+    FocusHandle, FontWeight, IntoElement, KeyDownEvent, Pixels, Render, Role, ScrollHandle, SharedString, Subscription,
+    Task, Window,
 };
 
 use super::list::{unknown_player, FilterOption, PlayerLine, RecordRow};
@@ -21,7 +21,7 @@ use crate::i18n::fl;
 use crate::meter::{MeterModel, OverlaySettings};
 use crate::report::ReportRequest;
 use crate::overlay::WindowDrag;
-use crate::secondary::chrome::{self, Anchor, ButtonKind, Look, Scale, Tone, FAINT, MUTED, SOFT, TEXT};
+use crate::secondary::chrome::{self, Anchor, ButtonKind, Look, Rows, Scale, Tone, FAINT, MUTED, SOFT, TEXT};
 use crate::secondary;
 use crate::style::{class_fill, track};
 
@@ -54,6 +54,13 @@ enum Confirm {
     All,
 }
 
+/// What the records are drawn with in this frame.
+#[derive(Clone, Copy)]
+struct RecordsFrame {
+    s: Scale,
+    overflows: bool,
+}
+
 pub struct HistoryView {
     model: Entity<HistoryModel>,
     meter_model: Entity<MeterModel>,
@@ -61,7 +68,12 @@ pub struct HistoryView {
     confirm: Option<Confirm>,
     confirm_timer: Option<Task<()>>,
     menu_timer: Option<Task<()>>,
-    list_scroll: ScrollHandle,
+    /// The records, drawn by GPUI's `list` as they come into view.
+    rows: Rows,
+    records_frame: Option<RecordsFrame>,
+    /// The record whose report button the keyboard just reached, scrolled
+    /// into view at the next frame.
+    reveal: Option<String>,
     menu_scroll: ScrollHandle,
     target_anchor: Anchor,
     player_anchor: Anchor,
@@ -78,6 +90,9 @@ pub struct HistoryView {
     /// Dev captures draw a focus ring without a keyboard.
     #[cfg(feature = "probes")]
     forced_ring: Option<String>,
+    /// The records the list built in the last frame, for the scrollbar check.
+    #[cfg(feature = "probes")]
+    built: std::cell::RefCell<Vec<String>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -108,7 +123,9 @@ impl HistoryView {
             confirm: None,
             confirm_timer: None,
             menu_timer: None,
-            list_scroll: ScrollHandle::new(),
+            rows: Rows::new(px(LIST_MAX)),
+            records_frame: None,
+            reveal: None,
             menu_scroll: ScrollHandle::new(),
             target_anchor: Anchor::default(),
             player_anchor: Anchor::default(),
@@ -120,6 +137,8 @@ impl HistoryView {
             pointer_held_over: false,
             #[cfg(feature = "probes")]
             forced_ring: None,
+            #[cfg(feature = "probes")]
+            built: std::cell::RefCell::default(),
             _subscriptions: subscriptions,
         }
     }
@@ -133,19 +152,30 @@ impl HistoryView {
         handle
     }
 
-    /// Tab moves between the report buttons; the window never takes the
-    /// keyboard from the game, so this serves accessibility tools.
+    /// Tab moves between the report buttons, in the records' order and
+    /// round, also to buttons scrolled out of view, which the list then
+    /// brings in; the window never takes the keyboard from the game, so this
+    /// serves accessibility tools.
     fn on_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         if event.keystroke.key != "tab" || modifiers.control || modifiers.alt || modifiers.platform {
             return;
         }
         cx.stop_propagation();
-        if modifiers.shift {
-            window.focus_prev(cx);
-        } else {
-            window.focus_next(cx);
-        }
+        let bosses: Vec<String> = self.model.read(cx).list.shown().filter(|row| row.is_boss).map(|row| row.id.clone()).collect();
+        let Some(last) = bosses.len().checked_sub(1) else {
+            return;
+        };
+        let at = bosses.iter().position(|id| self.report_focus.get(id).is_some_and(|handle| handle.is_focused(window)));
+        let next = match (at, modifiers.shift) {
+            (None, false) => 0,
+            (None, true) => last,
+            (Some(at), false) => if at == last { 0 } else { at + 1 },
+            (Some(at), true) => if at == 0 { last } else { at - 1 },
+        };
+        let handle = self.report_button_focus(&bosses[next], cx);
+        window.focus(&handle, cx);
+        self.reveal = Some(bosses[next].clone());
         cx.notify();
     }
 
@@ -250,19 +280,27 @@ impl Render for HistoryView {
         } else {
             // An opened record adds its players to the room, so it opens
             // without pushing the others out of sight.
-            let opened = model
-                .open
-                .as_deref()
+            let open = model.open.as_deref();
+            let opened = open
                 .filter(|id| records.iter().any(|row| row.id == *id))
                 .map_or(0., |id| players_height(model.players(id).len()));
-            let content_height = RECORD_HEIGHT * records.len() as f32 + RECORD_GAP * (records.len() - 1) as f32 + opened;
+            let mut items: Vec<(Pixels, Option<FocusHandle>)> = Vec::with_capacity(records.len());
+            for (ix, row) in records.iter().enumerate() {
+                let gap = if ix > 0 { RECORD_GAP } else { 0. };
+                let players = if open == Some(row.id.as_str()) { opened } else { 0. };
+                let focus = row.is_boss.then(|| self.report_button_focus(&row.id, cx));
+                items.push((s.px(RECORD_HEIGHT + gap + players), focus));
+            }
             let max = LIST_MAX + opened;
-            let list = div()
-                .flex()
-                .flex_col()
-                .gap(s.px(RECORD_GAP))
-                .children(records.iter().map(|row| self.record(row, &settings, s, window, cx)));
-            chrome::scroll_list("records", &self.list_scroll, max, content_height > max, list, s).into_any_element()
+            self.rows.set(&items);
+            if let Some(ix) = self.reveal.take().and_then(|id| records.iter().position(|row| row.id == id)) {
+                self.rows.reveal(ix, s.px(3.));
+            }
+            #[cfg(feature = "probes")]
+            self.built.borrow_mut().clear();
+            self.records_frame = Some(RecordsFrame { s, overflows: self.rows.overflows(max, s) });
+            let records = list(self.rows.state.clone(), cx.processor(|this: &mut Self, ix: usize, window, cx| this.record_line(ix, window, cx)));
+            chrome::scroll_rows("records", &self.rows, records, max, s).into_any_element()
         };
         let status = model.status().map(|status| {
             chrome::note(Icon::Check, status.clone(), true, s)
@@ -378,6 +416,29 @@ impl HistoryView {
                 .with_animation("filter-menu", Animation::new(MENU_FADE), |menu, t| menu.opacity(t))
                 .into_any_element(),
         )
+    }
+
+    /// Record `ix` of those shown, as the list asks for it, with the gap
+    /// above it and the thumb's gutter while the list scrolls.
+    fn record_line(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let Some(frame) = self.records_frame else {
+            return div().into_any_element();
+        };
+        let Some(row) = self.model.read(cx).list.shown().nth(ix).cloned() else {
+            return div().into_any_element();
+        };
+        let settings = self.meter_model.read(cx).settings.clone();
+        #[cfg(feature = "probes")]
+        self.built.borrow_mut().push(row.id.clone());
+        let s = frame.s;
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .when(ix > 0, |item| item.pt(s.px(RECORD_GAP)))
+            .when(frame.overflows, |item| item.pr(s.px(chrome::GUTTER)))
+            .child(self.record(&row, &settings, s, window, cx))
+            .into_any_element()
     }
 
     fn record(&mut self, row: &RecordRow, settings: &OverlaySettings, s: Scale, window: &Window, cx: &Context<Self>) -> impl IntoElement {
@@ -721,6 +782,20 @@ impl HistoryView {
         self.forced_ring = ring;
         cx.notify();
     }
+
+    /// The records' list as the scrollbar check reads it.
+    pub fn list_reading(&self, cx: &App) -> crate::capture_secondary::ListReading {
+        let built = self.built.borrow();
+        let list = &self.model.read(cx).list;
+        let built_record = |row: Option<&super::list::RecordRow>| row.is_some_and(|row| built.contains(&row.id));
+        crate::capture_secondary::ListReading {
+            viewport: self.rows.viewport(),
+            max: f32::from(self.rows.max()),
+            scrolled: f32::from(self.rows.scrolled()),
+            first_built: built_record(list.shown().next()),
+            last_built: built_record(list.shown().last()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -853,5 +928,83 @@ mod tests {
         cx.simulate_click(button.center(), Modifiers::none());
 
         assert_eq!(*asked.borrow(), vec!["wipe".to_string()]);
+    }
+
+    /// The window on 40 boss records, newest first: `r39` on top, `r0` at
+    /// the bottom.
+    fn open_long(cx: &mut TestAppContext) -> (Entity<HistoryView>, &mut VisualTestContext) {
+        let meter_model = cx.new(|_| MeterModel::new(OverlaySettings::default(), None));
+        let history = cx.new(|cx| HistoryModel::new(None, &meter_model, cx));
+        history.update(cx, |history, _| {
+            history.load((0..40).map(|i| record(&format!("r{i}"), "Veilwarden Orsikh", true, i as u64)).collect())
+        });
+        cx.add_window_view(|window, cx| HistoryView::new(history, meter_model, window, cx))
+    }
+
+    /// The list's viewport, its furthest scroll and the scroll now, after a
+    /// frame drawn with them.
+    fn scroll_of(view: &Entity<HistoryView>, cx: &mut VisualTestContext) -> (gpui::Bounds<Pixels>, Pixels, Pixels) {
+        cx.update(|window, cx| {
+            view.update(cx, |_, cx| cx.notify());
+            let _ = window.draw(cx);
+            let rows = &view.read(cx).rows;
+            (rows.viewport(), rows.max(), rows.scrolled())
+        })
+    }
+
+    #[gpui::test]
+    fn the_thumb_keeps_following_the_pointer_over_the_records_and_below_the_list(cx: &mut TestAppContext) {
+        let (view, cx) = open_long(cx);
+        let (viewport, max, scrolled) = scroll_of(&view, cx);
+        assert!(max > px(0.) && scrolled == px(0.));
+        assert!(cx.debug_bounds("report-r39").is_some() && cx.debug_bounds("report-r0").is_none(), "only the top records are built");
+
+        let height = viewport.size.height;
+        let length = height * (height / (height + max));
+        let travel = height - px(4.) - length;
+        let thumb = gpui::point(viewport.right() - px(4.), viewport.top() + px(2.) + length / 2.);
+        let over_records = viewport.center().x;
+        cx.simulate_mouse_down(thumb, gpui::MouseButton::Left, Modifiers::none());
+        cx.simulate_mouse_move(gpui::point(over_records, thumb.y + px(30.)), Some(gpui::MouseButton::Left), Modifiers::none());
+        let expected = max * (px(30.) / travel);
+        assert!((scroll_of(&view, cx).2 - expected).abs() < px(0.5), "over the records, the list follows the thumb in proportion");
+        let below = gpui::point(over_records, viewport.bottom() + px(300.));
+        cx.simulate_mouse_move(below, Some(gpui::MouseButton::Left), Modifiers::none());
+        cx.simulate_mouse_up(below, gpui::MouseButton::Left, Modifiers::none());
+        assert_eq!(scroll_of(&view, cx).2, max, "below the list, the list reaches its end");
+        assert!(cx.debug_bounds("report-r0").is_some() && cx.debug_bounds("report-r39").is_none(), "the bottom records are built, the top ones not");
+    }
+
+    #[gpui::test]
+    fn tab_reaches_report_buttons_scrolled_out_of_view_and_brings_their_record_in(cx: &mut TestAppContext) {
+        let (view, cx) = open_long(cx);
+        let press = |key: &str, cx: &mut VisualTestContext| {
+            let keystroke = Keystroke::parse(key).expect("a key name");
+            cx.simulate_event(KeyDownEvent { keystroke: keystroke.clone(), is_held: false, prefer_character_input: false });
+            cx.simulate_event(KeyUpEvent { keystroke });
+        };
+        let inside = |selector: &'static str, viewport: gpui::Bounds<Pixels>, cx: &mut VisualTestContext| {
+            cx.debug_bounds(selector).is_some_and(|button| button.top() >= viewport.top() && button.bottom() <= viewport.bottom())
+        };
+        assert!(cx.debug_bounds("report-r29").is_none(), "the 11th record is far below the view");
+        for _ in 0..11 {
+            press("tab", cx);
+        }
+        let (viewport, _, scrolled) = scroll_of(&view, cx);
+        assert!(scrolled > px(0.), "the list scrolled");
+        assert!(inside("report-r29", viewport, cx), "the 11th record's button, which has the keyboard, is in view");
+        assert!(cx.debug_bounds("focus-ring").is_some());
+
+        press("shift-tab", cx);
+        let (viewport, _, _) = scroll_of(&view, cx);
+        assert!(inside("report-r30", viewport, cx), "Shift+Tab goes back one");
+
+        for _ in 0..10 {
+            press("shift-tab", cx);
+        }
+        press("shift-tab", cx);
+        let (viewport, max, scrolled) = scroll_of(&view, cx);
+        assert_eq!(scrolled, max, "from the first, Shift+Tab goes round to the last record, at the bottom");
+        assert!(inside("report-r0", viewport, cx));
     }
 }

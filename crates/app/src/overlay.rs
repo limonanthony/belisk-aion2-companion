@@ -2,7 +2,7 @@
 //! taskbar and Alt+Tab, never activated, click-through while locked, and
 //! exactly as large as the card it shows.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::rc::Rc;
 
@@ -19,18 +19,19 @@ use windows::Win32::Graphics::Dwm::{
     DWMWINDOWATTRIBUTE,
 };
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONULL,
+    ClientToScreen, GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONULL,
     MONITOR_DEFAULTTOPRIMARY,
 };
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetWindow, GetWindowLongPtrW, GetWindowRect, SetLayeredWindowAttributes,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT,
-    HWND_NOTOPMOST, HWND_TOPMOST,
+    GetClientRect, GetWindow, GetWindowLongPtrW, GetWindowRect, PostMessageW, SendMessageW,
+    SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE,
+    GWL_STYLE, GW_HWNDNEXT, HWND_NOTOPMOST, HWND_TOPMOST,
     LWA_ALPHA, MA_NOACTIVATE, SPI_GETCLIENTAREAANIMATION, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
     SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    WINDOW_STYLE, WM_MOUSEACTIVATE, WM_NCDESTROY, WS_CAPTION, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    WINDOW_STYLE, WM_ACTIVATEAPP, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_KILLFOCUS, WM_MOUSEACTIVATE, WM_MOVE,
+    WM_NCDESTROY, WM_SHOWWINDOW, WS_CAPTION, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use crate::meter::{MeterModel, MeterView};
@@ -40,6 +41,104 @@ const INITIAL_WIDTH: f32 = 310.0;
 const INITIAL_HEIGHT: f32 = 280.0;
 const OVERLAY_MARGIN: f32 = 64.0;
 const NO_CLICK_ACTIVATION_SUBCLASS: usize = 1;
+
+/// Posted to a window whose drag ended, so its last move and the report of
+/// its place to GPUI happen from the message loop, outside any GPUI handler.
+/// `wparam` 1: move to the screen point packed in `lparam` first.
+const FINISH_DRAG: u32 = WM_APP + 0x100;
+
+thread_local! {
+    /// Windows run their messages on the UI thread, as GPUI does.
+    static DRAGS: RefCell<Drags> = RefCell::new(Drags::default());
+}
+
+/// The overlay window a drag is moving, and the move it still has to make.
+#[derive(Default)]
+struct Drags {
+    dragged: Option<Dragged>,
+    pending: Option<Move>,
+}
+
+struct Dragged {
+    hwnd: isize,
+    /// The `WindowDrag`'s grab: once it is let go, the drag is over even if
+    /// nothing said so.
+    grab: Rc<Cell<Option<Grab>>>,
+}
+
+/// A window and the screen point its top left goes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Move {
+    hwnd: isize,
+    x: i32,
+    y: i32,
+}
+
+/// A drag that ended: its window, and the move it had not made yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Ending {
+    hwnd: isize,
+    target: Option<(i32, i32)>,
+}
+
+impl Drags {
+    /// A pointer move asks for `target` while `grab` holds its window.
+    /// Returns whether a deferred move must be scheduled (none waits yet),
+    /// and the drag of another window this one replaces.
+    fn ask(&mut self, target: Move, grab: &Rc<Cell<Option<Grab>>>) -> (bool, Option<Ending>) {
+        let replaced = match &self.dragged {
+            Some(dragged) if dragged.hwnd != target.hwnd => self.end(dragged.hwnd),
+            _ => None,
+        };
+        self.dragged = Some(Dragged { hwnd: target.hwnd, grab: grab.clone() });
+        (self.pending.replace(target).is_none(), replaced)
+    }
+
+    /// The move the deferred task makes: the latest one asked, if its window
+    /// is still the one dragged.
+    fn take_move(&mut self) -> Option<Move> {
+        let pending = self.pending.take()?;
+        self.dragged.as_ref().is_some_and(|dragged| dragged.hwnd == pending.hwnd && dragged.grab.get().is_some()).then_some(pending)
+    }
+
+    fn end(&mut self, hwnd: isize) -> Option<Ending> {
+        let target = self.pending.take_if(|pending| pending.hwnd == hwnd).map(|pending| (pending.x, pending.y));
+        self.dragged.take_if(|dragged| dragged.hwnd == hwnd)?;
+        Some(Ending { hwnd, target })
+    }
+
+    /// Whether a `WM_MOVE` of `hwnd` is kept from GPUI. A drag whose grab was
+    /// let go without an end is forgotten here, and the move goes through.
+    fn keeps_move(&mut self, hwnd: isize) -> bool {
+        let Some(dragged) = self.dragged.as_ref().filter(|dragged| dragged.hwnd == hwnd) else {
+            return false;
+        };
+        if dragged.grab.get().is_some() {
+            return true;
+        }
+        self.end(hwnd);
+        false
+    }
+}
+
+/// The messages that end a drag of the window they reach, whatever the
+/// pointer does next: the mouse capture lost (the release, Alt+Tab, another
+/// window taking it), the window hidden, the app or the keyboard focus lost.
+fn ends_a_drag(message: u32, wparam: WPARAM) -> bool {
+    match message {
+        WM_CAPTURECHANGED | WM_CANCELMODE | WM_KILLFOCUS => true,
+        WM_SHOWWINDOW | WM_ACTIVATEAPP => wparam.0 == 0,
+        _ => false,
+    }
+}
+
+fn pack(x: i32, y: i32) -> isize {
+    ((y as u16 as isize) << 16) | x as u16 as isize
+}
+
+fn unpack(lparam: LPARAM) -> (i32, i32) {
+    (lparam.0 as u16 as i16 as i32, (lparam.0 >> 16) as u16 as i16 as i32)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Placement {
@@ -85,6 +184,11 @@ pub fn make_overlay(hwnd: HWND) -> Result<(), String> {
 /// activating a window. The style is read per message because the typing
 /// focus exception clears it while a field is edited. `MA_NOACTIVATE`, not
 /// `MA_NOACTIVATEANDEAT`: the click still reaches GPUI.
+///
+/// GPUI answers every `WM_MOVE` by redrawing the whole window, as it cannot
+/// reuse a view drawn before a move. While a drag moves the window the moves
+/// are kept from it (the window's composition moves with it unredrawn), and
+/// it hears the final position once the drag ends ([`end_drag`]).
 unsafe extern "system" fn refuse_click_activation(
     hwnd: HWND,
     message: u32,
@@ -95,11 +199,60 @@ unsafe extern "system" fn refuse_click_activation(
 ) -> LRESULT {
     match message {
         WM_MOUSEACTIVATE if ex_style(hwnd) & WS_EX_NOACTIVATE.0 != 0 => LRESULT(MA_NOACTIVATE as isize),
+        WM_MOVE if DRAGS.with_borrow_mut(|drags| drags.keeps_move(hwnd.0 as isize)) => LRESULT(0),
+        FINISH_DRAG => {
+            finish_drag(hwnd, wparam, lparam);
+            LRESULT(0)
+        }
         WM_NCDESTROY => unsafe {
+            DRAGS.with_borrow_mut(|drags| drags.end(hwnd.0 as isize));
             let _ = RemoveWindowSubclass(hwnd, Some(refuse_click_activation), subclass);
             DefSubclassProc(hwnd, message, wparam, lparam)
         },
-        _ => unsafe { DefSubclassProc(hwnd, message, wparam, lparam) },
+        _ => {
+            if ends_a_drag(message, wparam) {
+                end_drag(hwnd);
+            }
+            unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
+        }
+    }
+}
+
+/// Ends the drag of `hwnd`, if it is dragged: its moves reach GPUI again at
+/// once, and [`FINISH_DRAG`] makes the move still owed and tells GPUI where
+/// the window is.
+fn end_drag(hwnd: HWND) {
+    if let Some(ending) = DRAGS.with_borrow_mut(|drags| drags.end(hwnd.0 as isize)) {
+        post_finish(ending);
+    }
+}
+
+fn post_finish(ending: Ending) {
+    let (moves, (x, y)) = (ending.target.is_some(), ending.target.unwrap_or_default());
+    let hwnd = HWND(ending.hwnd as *mut c_void);
+    if let Err(error) = unsafe { PostMessageW(Some(hwnd), FINISH_DRAG, WPARAM(moves as usize), LPARAM(pack(x, y))) } {
+        crate::app_log::warn(format!("cannot finish the overlay's drag: {error}"));
+    }
+}
+
+/// The move a drag still owed, then GPUI told where the window ended up, as
+/// Windows tells it of a move (`WM_MOVE` with the client area's top left on
+/// the screen). Nothing if a new drag of the window has begun since.
+fn finish_drag(hwnd: HWND, wparam: WPARAM, lparam: LPARAM) {
+    if DRAGS.with_borrow(|drags| drags.dragged.as_ref().is_some_and(|dragged| dragged.hwnd == hwnd.0 as isize)) {
+        return;
+    }
+    if wparam.0 == 1 {
+        let (x, y) = unpack(lparam);
+        if let Err(error) = unsafe { SetWindowPos(hwnd, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) } {
+            crate::app_log::warn(format!("cannot move the overlay: {error}"));
+        }
+    }
+    let mut origin = POINT::default();
+    if unsafe { ClientToScreen(hwnd, &mut origin) }.as_bool() {
+        unsafe {
+            let _ = SendMessageW(hwnd, WM_MOVE, Some(WPARAM(0)), Some(LPARAM(pack(origin.x, origin.y))));
+        }
     }
 }
 
@@ -393,30 +546,50 @@ fn device(position: Point<Pixels>, scale: f32) -> (i32, i32) {
 /// (logical, at the window's current scale), after the current event as in
 /// [`fit_client_size`]. The target is computed now, from the position the
 /// event's coordinates are relative to, so moves that arrive before the
-/// window has caught up do not add up.
-fn drag_to(window: &Window, grab: Grab, position: Point<Pixels>, cx: &mut App) {
-    let (dx, dy) = grab.offset(position, window.scale_factor());
+/// window has caught up do not add up; only the latest target of those is
+/// applied, and only while the window is still the one dragged.
+fn drag_to(window: &Window, grab: &Rc<Cell<Option<Grab>>>, from: Grab, position: Point<Pixels>, cx: &mut App) {
+    let (dx, dy) = from.offset(position, window.scale_factor());
     if dx == 0 && dy == 0 {
         return;
     }
     let target = hwnd(window).and_then(|hwnd| {
         let mut rect = RECT::default();
         unsafe { GetWindowRect(hwnd, &mut rect) }.map_err(|error| format!("GetWindowRect failed: {error}"))?;
-        Ok((hwnd, rect.left + dx, rect.top + dy))
+        Ok(Move { hwnd: hwnd.0 as isize, x: rect.left + dx, y: rect.top + dy })
     });
-    let (hwnd, x, y) = match target {
+    let target = match target {
         Ok(target) => target,
         Err(error) => {
             crate::app_log::warn(format!("cannot move the overlay: {error}"));
             return;
         }
     };
+    let (schedule, replaced) = DRAGS.with_borrow_mut(|drags| drags.ask(target, grab));
+    if let Some(replaced) = replaced {
+        post_finish(replaced);
+    }
+    if !schedule {
+        return;
+    }
     cx.spawn(async move |_| {
-        if let Err(error) = unsafe { SetWindowPos(hwnd, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) } {
+        let Some(next) = DRAGS.with_borrow_mut(Drags::take_move) else {
+            return;
+        };
+        let hwnd = HWND(next.hwnd as *mut c_void);
+        if let Err(error) = unsafe { SetWindowPos(hwnd, None, next.x, next.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) } {
             crate::app_log::warn(format!("cannot move the overlay: {error}"));
         }
     })
     .detach();
+}
+
+/// Ends the drag of the window at once; the move it still owes follows
+/// ([`end_drag`]).
+fn release_drag(window: &Window) {
+    if let Ok(hwnd) = hwnd(window) {
+        end_drag(hwnd);
+    }
 }
 
 /// Pressing a handle and moving drags the window. Not GPUI's
@@ -476,15 +649,17 @@ impl WindowDrag {
                         return;
                     };
                     if event.pressed_button == Some(MouseButton::Left) {
-                        drag_to(window, from, event.position, cx);
+                        drag_to(window, &moved, from, event.position, cx);
                     } else {
                         moved.set(None);
+                        release_drag(window);
                     }
                 });
                 let released = grab.clone();
-                window.on_mouse_event(move |event: &MouseUpEvent, phase, _, _| {
+                window.on_mouse_event(move |event: &MouseUpEvent, phase, window, _| {
                     if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
                         released.set(None);
+                        release_drag(window);
                     }
                 });
             },
@@ -616,9 +791,100 @@ pub mod off_screen {
 
 #[cfg(test)]
 mod tests {
-    use gpui::{point, px};
+    use std::cell::Cell;
+    use std::rc::Rc;
 
-    use super::Grab;
+    use gpui::{point, px};
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        WM_ACTIVATEAPP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_KILLFOCUS, WM_MOUSEMOVE, WM_MOVE, WM_SHOWWINDOW,
+    };
+
+    use super::{ends_a_drag, pack, unpack, Drags, Ending, Grab, Move};
+
+    const A: isize = 0x1000;
+    const B: isize = 0x2000;
+
+    fn held() -> Rc<Cell<Option<Grab>>> {
+        Rc::new(Cell::new(Some(Grab { x: 10, y: 10 })))
+    }
+
+    fn to(hwnd: isize, x: i32, y: i32) -> Move {
+        Move { hwnd, x, y }
+    }
+
+    #[test]
+    fn a_drag_keeps_the_moves_from_gpui_and_makes_only_the_latest_move_asked() {
+        let (mut drags, grab) = (Drags::default(), held());
+        assert!(!drags.keeps_move(A), "no drag, no move kept");
+        assert_eq!(drags.ask(to(A, 5, 5), &grab), (true, None), "the first move asked is scheduled");
+        assert_eq!(drags.ask(to(A, 9, 7), &grab), (false, None), "one already waits: this one replaces its target");
+        assert!(drags.keeps_move(A));
+        assert!(!drags.keeps_move(B), "another window's moves still reach GPUI");
+        assert_eq!(drags.take_move(), Some(to(A, 9, 7)));
+        assert_eq!(drags.take_move(), None);
+        assert_eq!(drags.ask(to(A, 12, 7), &grab), (true, None), "after the move is made, the next is scheduled again");
+    }
+
+    #[test]
+    fn the_end_gives_back_the_move_owed_and_the_moves_reach_gpui_again() {
+        let (mut drags, grab) = (Drags::default(), held());
+        drags.ask(to(A, 5, 5), &grab);
+        assert_eq!(drags.end(A), Some(Ending { hwnd: A, target: Some((5, 5)) }));
+        assert!(!drags.keeps_move(A));
+        assert_eq!(drags.take_move(), None, "the move scheduled before the end does nothing");
+        assert_eq!(drags.end(A), None, "a second end (the release after the capture loss) does nothing");
+
+        drags.ask(to(A, 6, 6), &grab);
+        assert_eq!(drags.take_move(), Some(to(A, 6, 6)));
+        assert_eq!(drags.end(A), Some(Ending { hwnd: A, target: None }), "every move made: only the report is owed");
+    }
+
+    #[test]
+    fn a_grab_let_go_without_an_end_no_longer_keeps_the_moves() {
+        let (mut drags, grab) = (Drags::default(), held());
+        drags.ask(to(A, 5, 5), &grab);
+        grab.set(None);
+        assert_eq!(drags.take_move(), None, "the move scheduled is not made");
+        drags.ask(to(A, 5, 5), &held());
+        let stopped = held();
+        drags.ask(to(A, 8, 8), &stopped);
+        stopped.set(None);
+        assert!(!drags.keeps_move(A), "the move goes to GPUI");
+        assert_eq!(drags.end(A), None, "and the drag is forgotten");
+    }
+
+    #[test]
+    fn a_move_scheduled_for_one_window_never_moves_another() {
+        let (mut drags, grab) = (Drags::default(), held());
+        drags.ask(to(A, 5, 5), &grab);
+        let (scheduled, replaced) = drags.ask(to(B, 300, 40), &held());
+        assert_eq!(replaced, Some(Ending { hwnd: A, target: Some((5, 5)) }), "A's drag ends with its own move");
+        assert!(scheduled, "B's move gets its own task");
+        assert!(!drags.keeps_move(A));
+        assert!(drags.keeps_move(B));
+        assert_eq!(drags.take_move(), Some(to(B, 300, 40)), "the task queued for A makes B's move, on B");
+    }
+
+    #[test]
+    fn capture_loss_hiding_and_focus_loss_end_a_drag() {
+        assert!(ends_a_drag(WM_CAPTURECHANGED, WPARAM(0)));
+        assert!(ends_a_drag(WM_CANCELMODE, WPARAM(0)));
+        assert!(ends_a_drag(WM_KILLFOCUS, WPARAM(0)));
+        assert!(ends_a_drag(WM_SHOWWINDOW, WPARAM(0)), "hidden");
+        assert!(!ends_a_drag(WM_SHOWWINDOW, WPARAM(1)), "shown");
+        assert!(ends_a_drag(WM_ACTIVATEAPP, WPARAM(0)), "the app deactivated");
+        assert!(!ends_a_drag(WM_ACTIVATEAPP, WPARAM(1)));
+        assert!(!ends_a_drag(WM_MOVE, WPARAM(0)));
+        assert!(!ends_a_drag(WM_MOUSEMOVE, WPARAM(1)));
+    }
+
+    #[test]
+    fn screen_points_left_of_and_above_the_primary_monitor_survive_the_message() {
+        for (x, y) in [(0, 0), (1920, 1080), (-1920, -200), (-1, 32767), (-32768, 5)] {
+            assert_eq!(unpack(LPARAM(pack(x, y))), (x, y));
+        }
+    }
 
     #[test]
     fn a_drag_follows_the_pointer_in_device_pixels() {

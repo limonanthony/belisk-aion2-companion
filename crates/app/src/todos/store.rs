@@ -7,13 +7,10 @@
 //! Kept apart from `settings.json` because counts change all day while
 //! settings rarely do, and a bad to-do file must never take the settings with it.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
-use meter_core::mobs::store::write_atomic;
-
 use super::data::TodoData;
-use crate::stored_file::{LoadNotice, Problem, SaveError};
+use crate::stored_file::{self, LoadNotice, Problem, Read, SaveError};
 
 pub const FILE_NAME: &str = "todos.json";
 pub const SCHEMA_VERSION: u32 = 1;
@@ -29,63 +26,27 @@ pub fn path_in(data_dir: &Path) -> PathBuf {
 }
 
 pub fn load(path: &Path, now_secs: u64) -> Loaded {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return fresh(None),
-        Err(error) => return fresh(Some(LoadNotice::Unreadable { path: path.to_path_buf(), error: error.to_string() })),
-    };
-    let problem = match parse(&bytes) {
-        Ok(data) => return Loaded { data, notice: None },
-        Err(problem) => problem,
-    };
-    let aside = set_aside_path(path, now_secs);
-    let notice = match fs::rename(path, &aside) {
-        Ok(()) => LoadNotice::SetAside { path: path.to_path_buf(), problem, aside },
-        Err(error) => LoadNotice::NotMoved { path: path.to_path_buf(), problem, error: error.to_string() },
-    };
-    fresh(Some(notice))
-}
-
-fn fresh(notice: Option<LoadNotice>) -> Loaded {
-    Loaded { data: TodoData::default(), notice }
+    match stored_file::read(path, now_secs, parse) {
+        Read::Used(data) => Loaded { data, notice: None },
+        Read::Missing => Loaded { data: TodoData::default(), notice: None },
+        Read::Unusable(notice) => Loaded { data: TodoData::default(), notice: Some(notice) },
+    }
 }
 
 fn parse(bytes: &[u8]) -> Result<TodoData, Problem> {
-    let stored: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|error| Problem::NotJson(error.to_string()))?;
-    let Some(fields) = stored.as_object() else {
-        return Err(Problem::NotObject);
-    };
-    let version = fields.get("version").and_then(serde_json::Value::as_u64).unwrap_or(0);
-    if version > u64::from(SCHEMA_VERSION) {
-        return Err(Problem::Newer { version, supported: SCHEMA_VERSION });
-    }
+    let (stored, _) = stored_file::parse_versioned_object(bytes, SCHEMA_VERSION)?;
     serde_json::from_value::<TodoData>(stored)
         .map(TodoData::sanitised)
         .map_err(|error| Problem::WrongShape(error.to_string()))
 }
 
-fn set_aside_path(path: &Path, now_secs: u64) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".bad-{now_secs}"));
-    path.with_file_name(name)
-}
-
-pub fn encode(data: &TodoData) -> serde_json::Result<Vec<u8>> {
-    let mut value = serde_json::to_value(data)?;
-    if let Some(object) = value.as_object_mut() {
-        object.insert("version".to_string(), SCHEMA_VERSION.into());
-    }
-    serde_json::to_vec_pretty(&value)
-}
-
 pub fn save(path: &Path, data: &TodoData) -> Result<(), SaveError> {
-    let bytes = encode(data).map_err(|error| SaveError::Encode(error.to_string()))?;
-    write_atomic(path, &bytes).map_err(|error| SaveError::Write { path: path.to_path_buf(), error: error.to_string() })
+    stored_file::save_versioned(path, data, SCHEMA_VERSION)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use meter_core::capture::parser::ticket_record::TicketRecord;

@@ -15,6 +15,7 @@ use crate::i18n::{self, fl, Language};
 const SERVERS_JSON: &str = include_str!("../assets/game/data/servers.json");
 const DUNGEONS_JSON: &str = include_str!("../assets/game/data/dungeons.json");
 const SKILLS_FR_JSON: &str = include_str!("../assets/game/data/skill_names_fr.json");
+const PETS_JSON: &str = include_str!("../assets/game/data/pets.json");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlayerClass {
@@ -207,6 +208,68 @@ pub fn mob_name(mob_code: Option<u32>, english: Option<&str>) -> Option<String> 
     french.cloned().or_else(|| english.map(str::to_string))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum PetFamily {
+    Cogni,
+    Fera,
+    Natura,
+    Varian,
+    Special,
+}
+
+#[derive(Deserialize)]
+struct PetRecord {
+    en: String,
+    fr: String,
+    family: PetFamily,
+    mobs: Vec<u32>,
+}
+
+static PETS: LazyLock<HashMap<u32, PetRecord>> =
+    LazyLock::new(|| serde_json::from_str(PETS_JSON).expect("bundled pets.json is valid"));
+
+static PET_OF_MOB: LazyLock<HashMap<u32, u32>> = LazyLock::new(|| {
+    PETS.iter().flat_map(|(pet_id, pet)| pet.mobs.iter().map(|mob| (*mob, *pet_id))).collect()
+});
+
+static PET_IDS: LazyLock<Vec<u32>> = LazyLock::new(|| {
+    let mut ids: Vec<u32> = PETS.keys().copied().collect();
+    ids.sort_unstable();
+    ids
+});
+
+/// Both names of every pet in lower case, so a search reads them once.
+static PET_SEARCH: LazyLock<HashMap<u32, String>> =
+    LazyLock::new(|| PETS.iter().map(|(pet_id, pet)| (*pet_id, format!("{}\n{}", pet.en, pet.fr).to_lowercase())).collect());
+
+/// Every pet of the bundled list in the game's order, which is the pet id's.
+pub fn pet_ids() -> &'static [u32] {
+    &PET_IDS
+}
+
+/// Whether the pet's English or French name contains `query`, which must be
+/// in lower case already.
+pub fn pet_name_contains(pet_id: u32, query: &str) -> bool {
+    PET_SEARCH.get(&pet_id).is_some_and(|names| names.contains(query))
+}
+
+/// A pet's name in the language in force, English where it has no French one;
+/// `None` for an id the bundled list does not know.
+pub fn pet_name(pet_id: u32) -> Option<String> {
+    let pet = PETS.get(&pet_id)?;
+    let french = (i18n::language() == Language::French).then_some(&pet.fr).filter(|name| !name.is_empty());
+    Some(french.unwrap_or(&pet.en).clone())
+}
+
+pub fn pet_family(pet_id: u32) -> Option<PetFamily> {
+    PETS.get(&pet_id).map(|pet| pet.family)
+}
+
+/// The pet whose soul a mob drops.
+pub fn pet_of_mob(mob_code: u32) -> Option<u32> {
+    PET_OF_MOB.get(&mob_code).copied()
+}
+
 /// Asset path of a skill or buff icon, when the game data has one: a six-digit
 /// id has its own icon, any other id shares the icon of its first four digits.
 pub fn skill_icon(code: u32) -> Option<String> {
@@ -293,5 +356,72 @@ mod tests {
         assert_eq!(skill_icon(11_020_150).as_deref(), Some("skills/1102.png"));
         assert_eq!(skill_icon(100_010).as_deref(), Some("skills/100010.png"));
         assert_eq!(skill_icon(4_000_000), None);
+    }
+
+    fn has_han(text: &str) -> bool {
+        text.chars().any(|c| ('\u{3400}'..='\u{4dbf}').contains(&c) || ('\u{4e00}'..='\u{9fff}').contains(&c))
+    }
+
+    #[test]
+    fn pet_names_follow_the_language_and_unknown_pets_have_none() {
+        i18n::set_language(Language::English);
+        assert_eq!(pet_name(1119).as_deref(), Some("Aberrant Coradon"));
+        assert_eq!(pet_name(1001).as_deref(), Some("Black Dragon"));
+
+        i18n::set_language(Language::French);
+        assert_eq!(pet_name(1119).as_deref(), Some("Coradon variant"));
+        assert_eq!(pet_name(1214).as_deref(), Some("Esprit des ténèbres"));
+
+        assert_eq!(pet_name(0), None);
+        assert_eq!(pet_name(1000), None);
+        assert_eq!(pet_family(1000), None);
+        assert_eq!(pet_of_mob(1), None);
+    }
+
+    #[test]
+    fn pets_come_in_game_order_and_match_their_english_or_french_name() {
+        let ids = pet_ids();
+        assert_eq!(ids.len(), PETS.len());
+        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "by pet id");
+        assert_eq!(ids.first(), Some(&1001));
+
+        assert!(pet_name_contains(1214, "black spi"));
+        assert!(pet_name_contains(1214, "ténèbres"));
+        assert!(!pet_name_contains(1214, "kalgolem"));
+        assert!(!pet_name_contains(1000, "pet"), "an id the list does not know has no names");
+    }
+
+    #[test]
+    fn mobs_resolve_to_the_pet_whose_soul_they_drop() {
+        assert_eq!(pet_of_mob(2_100_821), Some(1119));
+        assert_eq!(pet_of_mob(2_100_828), Some(1119));
+        assert_eq!(pet_of_mob(2_100_456), Some(1086));
+        assert_eq!(pet_of_mob(2_100_453), Some(1047));
+        assert_eq!(pet_of_mob(2_100_807), Some(1214));
+    }
+
+    #[test]
+    fn pets_have_a_family_of_the_five_and_every_mob_points_at_a_listed_pet() {
+        assert_eq!(pet_family(1119), Some(PetFamily::Fera));
+        assert_eq!(pet_family(1086), Some(PetFamily::Natura));
+        assert_eq!(pet_family(1001), Some(PetFamily::Special));
+
+        assert!(PETS.len() >= 200, "the pet list shrank to {}", PETS.len());
+        let mob_count: usize = PETS.values().map(|pet| pet.mobs.len()).sum();
+        assert_eq!(PET_OF_MOB.len(), mob_count, "a mob is listed under two pets");
+        assert!(PET_OF_MOB.values().all(|pet_id| PETS.contains_key(pet_id)));
+        for family in [PetFamily::Cogni, PetFamily::Fera, PetFamily::Natura, PetFamily::Varian, PetFamily::Special] {
+            assert!(PETS.values().any(|pet| pet.family == family), "no pet in {family:?}");
+        }
+    }
+
+    #[test]
+    fn every_pet_has_english_and_french_names_without_chinese() {
+        for (pet_id, pet) in PETS.iter() {
+            for name in [&pet.en, &pet.fr] {
+                assert!(name.chars().any(char::is_alphabetic), "pet {pet_id} has no name");
+                assert!(!has_han(name), "pet {pet_id} has a Chinese name: {name}");
+            }
+        }
     }
 }

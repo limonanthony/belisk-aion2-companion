@@ -9,9 +9,11 @@ pub enum WindowKind {
     Pvp,
     Todos,
     Resources,
+    Pets,
     Settings,
     Prompt,
     Reminder,
+    PetCard,
     WhatsNew,
 }
 
@@ -46,8 +48,8 @@ impl<W> Registry<W> {
         self.open.remove(&kind)
     }
 
-    pub fn all(&self) -> impl Iterator<Item = &W> {
-        self.open.values()
+    pub fn entries(&self) -> impl Iterator<Item = (WindowKind, &W)> {
+        self.open.iter().map(|(kind, window)| (*kind, window))
     }
 
     pub fn drain(&mut self) -> Vec<W> {

@@ -113,6 +113,7 @@ pub async fn from_fixtures(
     bests_page(&page, dir, cx).await?;
     reminders_page(&page, dir, cx).await?;
     todos_page(&page, dir, cx).await?;
+    pets_page(&page, dir, cx).await?;
     general_page(&page, dir, cx).await?;
     about_page(&page, dir, cx).await?;
     report_title_bar(&page, cx);
@@ -433,6 +434,47 @@ async fn todos_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
     if badge != Some(fl!("settings-todos-reset-done")) || own != 0 {
         return Err("Reset to-dos completely did not reset the to-dos".to_string());
     }
+    Ok(())
+}
+
+/// The page before the collection of the server being played was read, once
+/// read at this login, with the test card and its badge, and with the master
+/// switch off.
+async fn pets_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()> {
+    let record = |report: meter_core::pets::PetReport, cx: &mut AsyncApp| cx.update(|cx| crate::pets::record(cx, vec![report]));
+    record(fixtures::pet_unlock_elsewhere(1003, fixtures::PET_FOSSA), cx);
+    page.show(Section::Pets, cx).await?;
+    page.blur(cx).await;
+    shoot_window(WindowKind::Settings, dir, "settings-29b-pets-not-read", cx).await?;
+
+    record(fixtures::pet_login(crate::clock::now_ms() as f64 / 1000.0), cx);
+    pause(cx, TICK).await;
+    shoot_window(WindowKind::Settings, dir, "settings-29c-pets", cx).await?;
+
+    page.tab_to("test-pet-card", cx).await?;
+    let foreground_before = capture_reminders::foreground();
+    page.key(VK_RETURN, cx).await;
+    pause(cx, TICK).await;
+    let badge = page.view.update(cx, |view, _, _| view.pet_test_note_is_shown()).unwrap_or(false);
+    let card = cx.update(|cx| secondary::window_of(WindowKind::PetCard, cx).is_some());
+    println!("pets: Enter on Show a test card: badge shown {badge}, soul tracker card open {card}");
+    if !badge || !card {
+        return Err("Show a test card did not show the card and its badge".to_string());
+    }
+    capture_reminders::check_never_focused(WindowKind::PetCard, "the test card", foreground_before, cx)?;
+    page.blur(cx).await;
+    shoot_window(WindowKind::Settings, dir, "settings-29d-pets-test", cx).await?;
+    shoot_window(WindowKind::PetCard, dir, "pet-card-00-test", cx).await?;
+    close(WindowKind::PetCard, cx).await?;
+
+    page.tab_to("pets-tracker", cx).await?;
+    page.key(VK_SPACE, cx).await;
+    page.key(VK_TAB, cx).await;
+    let on = cx.update(|cx| settings::global(cx).read(cx).get().pets.soul_tracker);
+    println!("pets: Space on Soul tracker: on {on}; Tab then goes to {:?} (the dimmed rows are skipped)", page.focused(cx));
+    page.blur(cx).await;
+    shoot_window(WindowKind::Settings, dir, "settings-29e-pets-off", cx).await?;
+    reset_settings(cx);
     Ok(())
 }
 

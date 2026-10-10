@@ -11,6 +11,7 @@ use super::{characters, store};
 use crate::changelog::Version;
 use crate::i18n::{fl, LanguageChoice};
 use crate::meter::OverlaySettings;
+use crate::pets::PetsSettings;
 use crate::reminders::ReminderSettings;
 use crate::stored_file::{LoadNotice, SaveError};
 use crate::todos::TodoSettings;
@@ -35,6 +36,7 @@ pub struct AppSettings {
     pub windows: WindowSettings,
     pub reminders: ReminderSettings,
     pub todos: TodoSettings,
+    pub pets: PetsSettings,
     pub updates: UpdateSettings,
     /// Characters the game named as the player, most recent first; not a
     /// setting the page shows, and kept when the settings are reset.
@@ -506,7 +508,8 @@ mod tests {
     #[test]
     fn the_last_seen_version_survives_a_round_trip_and_an_unreadable_value_is_dropped() {
         let mut settings = AppSettings::default();
-        assert!(!String::from_utf8(store::encode(&settings).unwrap()).unwrap().contains("lastSeenVersion"));
+        let encoded = crate::stored_file::encode_versioned(&settings, store::SCHEMA_VERSION).unwrap();
+        assert!(!String::from_utf8(encoded).unwrap().contains("lastSeenVersion"));
         settings.last_seen_version = Some(Version::new(1, 2, 3));
         let dir = TestDir::new("round-trip");
         store::save(&store::path_in(&dir.0), &settings).unwrap();

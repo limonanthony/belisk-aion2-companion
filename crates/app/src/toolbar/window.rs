@@ -18,7 +18,7 @@ use crate::secondary::Rect;
 use crate::settings::ScreenPoint;
 
 /// The bar at 100% with no warning; the first frame fits the window to it.
-const INITIAL_SIZE: (f32, f32) = (440.0, 34.0);
+const INITIAL_SIZE: (f32, f32) = (468.0, 34.0);
 /// Between the top of the work area and a toolbar placed for the first time.
 const TOP_MARGIN: f32 = 8.0;
 

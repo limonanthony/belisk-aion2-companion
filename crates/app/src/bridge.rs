@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use meter_core::events::{EventSink, MeterEvent};
 use meter_core::identity::KnownCharacter;
+use meter_core::pets::PetReport;
 use meter_core::tickets::TicketReport;
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use futures::StreamExt;
@@ -11,6 +12,7 @@ use crate::meter::{MeterModel, ReplayState};
 use crate::secondary;
 use crate::settings;
 use crate::todos;
+use crate::pets;
 
 /// After a replay ends the pipeline still holds packets; the app may exit once
 /// no event has arrived for this long.
@@ -63,6 +65,13 @@ pub fn spawn_pump(
                     _ => None,
                 })
                 .collect();
+            let pet_reports: Vec<PetReport> = batch
+                .iter()
+                .filter_map(|event| match event {
+                    MeterEvent::Pets(report) => Some(report.clone()),
+                    _ => None,
+                })
+                .collect();
 
             let (changed, replay_just_ended, replay_over) = cx.update(|cx| {
                 model.update(cx, |model, cx| {
@@ -88,6 +97,9 @@ pub fn spawn_pump(
             }
             if !ticket_reports.is_empty() {
                 cx.update(|cx| todos::record_tickets(cx, ticket_reports));
+            }
+            if !pet_reports.is_empty() {
+                cx.update(|cx| pets::record(cx, pet_reports));
             }
             if saved_a_fight {
                 cx.update(secondary::history_updated);

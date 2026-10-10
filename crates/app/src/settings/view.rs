@@ -57,10 +57,12 @@ use crate::update::{self, Updates};
 
 mod capture_check;
 mod changelog_page;
+mod pets_page;
 mod todos_page;
 mod updates_group;
 
 use changelog_page::ChangelogPage;
+use pets_page::PetsSeen;
 
 const WINDOW_SIZE: (f32, f32) = (960., 620.);
 const SIDEBAR_WIDTH: f32 = 208.;
@@ -89,18 +91,20 @@ pub enum Section {
     Bests,
     Reminders,
     Todos,
+    Pets,
     General,
     About,
 }
 
 impl Section {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::Overlay,
         Self::Behaviour,
         Self::Capture,
         Self::Bests,
         Self::Reminders,
         Self::Todos,
+        Self::Pets,
         Self::General,
         Self::About,
     ];
@@ -113,6 +117,7 @@ impl Section {
             Self::Bests => fl!("settings-section-bests"),
             Self::Reminders => fl!("settings-section-reminders"),
             Self::Todos => fl!("settings-section-todos"),
+            Self::Pets => fl!("settings-section-pets"),
             Self::General => fl!("settings-section-general"),
             Self::About => fl!("settings-section-about"),
         }
@@ -126,6 +131,7 @@ impl Section {
             Self::Bests => Icon::Trophy,
             Self::Reminders => Icon::Bell,
             Self::Todos => Icon::ListChecks,
+            Self::Pets => Icon::PawPrint,
             Self::General => Icon::Languages,
             Self::About => Icon::Info,
         }
@@ -139,6 +145,7 @@ impl Section {
             Self::Bests => "nav-bests",
             Self::Reminders => "nav-reminders",
             Self::Todos => "nav-todos",
+            Self::Pets => "nav-pets",
             Self::General => "nav-general",
             Self::About => "nav-about",
         }
@@ -385,11 +392,16 @@ pub struct SettingsView {
     confirm_bests: Option<Task<()>>,
     /// A test reminder was just shown; the task takes the note away.
     test_shown: Option<Task<()>>,
+    /// A test soul tracker card was just shown; the task takes the badge away.
+    pet_test_shown: Option<Task<()>>,
     /// What a To-dos button just did; the task takes the badge away.
     todos_done: Option<(TodosDone, Task<()>)>,
     /// What the To-dos page shows of the to-dos, to redraw only when it
     /// changes.
     todos_seen: TodosSeen,
+    /// What the Pets page shows of the collection, to redraw only when it
+    /// changes.
+    pets_seen: PetsSeen,
     /// What an action handed to Windows could not do, under its control.
     action_error: Option<(&'static str, files::OpenError)>,
     /// About's Changelog page, while it is open in place of About.
@@ -436,6 +448,13 @@ impl SettingsView {
                     cx.notify();
                 }
             }),
+            cx.observe(&crate::pets::global(cx), |this, _, cx| {
+                let seen = PetsSeen::of(cx);
+                if seen != this.pets_seen {
+                    this.pets_seen = seen;
+                    cx.notify();
+                }
+            }),
             // A focused control that goes away (a Cancel replay button once
             // the replay ends) leaves the focus with the window, as a page
             // gives it back to its body, so Tab keeps working.
@@ -474,6 +493,7 @@ impl SettingsView {
         }
 
         let todos_seen = TodosSeen::of(todos::global(cx).read(cx));
+        let pets_seen = PetsSeen::of(cx);
         let root_focus = cx.focus_handle();
         window.focus(&root_focus, cx);
         Self {
@@ -499,8 +519,10 @@ impl SettingsView {
             dialog: None,
             confirm_bests: None,
             test_shown: None,
+            pet_test_shown: None,
             todos_done: None,
             todos_seen,
+            pets_seen,
             action_error: None,
             changelog: None,
             updates,
@@ -520,6 +542,7 @@ impl SettingsView {
         self.dragging = None;
         self.confirm_bests = None;
         self.test_shown = None;
+        self.pet_test_shown = None;
         self.todos_done = None;
         self.action_error = None;
         self.scroll.set_offset(point(px(0.), px(0.)));
@@ -2210,6 +2233,7 @@ impl Render for SettingsView {
             Section::Bests => self.bests_page(&settings, window, cx),
             Section::Reminders => self.reminders_page(&settings, window, cx),
             Section::Todos => self.todos_page(&settings, window, cx),
+            Section::Pets => self.pets_page(&settings, window, cx),
             Section::General => self.general_page(&settings, window, cx),
             Section::About if self.changelog.is_some() => self.changelog_page(window, cx),
             Section::About => self.about_page(&settings, window, cx),
@@ -2474,6 +2498,7 @@ mod tests {
             install(&store, cx);
             reminders::install(&store, false, cx);
             todos::install(&store, false, cx);
+            crate::pets::install(cx);
             let update_commands = update::install_recording_fixture(&store, updates, cx);
             let overlay = store.read(cx).get().overlay.clone();
             let meter = cx.new(|_| MeterModel::new(overlay, None));
@@ -2561,6 +2586,7 @@ mod tests {
             "nav-bests",
             "nav-reminders",
             "nav-todos",
+            "nav-pets",
             "nav-general",
             "nav-about",
             "opacity",
@@ -2868,6 +2894,87 @@ mod tests {
         assert!(window.settings().reminders.enabled);
         window.press("tab");
         assert_eq!(window.focused().as_deref(), Some("lead-time"), "back in the tab order");
+    }
+
+    #[gpui::test]
+    fn the_pets_page_sets_the_card_switches_dims_under_its_master_switch_and_shows_a_test_card(cx: &mut TestAppContext) {
+        let mut window = open(cx, None);
+        let pets = window.cx.update(|_, cx| crate::pets::global(cx));
+        let tests = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let seen = tests.clone();
+        window.cx.update(|_, cx| cx.subscribe(&pets, move |_, request: &crate::pets::ShowTestCard, _| seen.borrow_mut().push(*request)).detach());
+        window.show(Section::Pets);
+        window.tab_to("pets-tracker");
+        let expected = ["pets-tracker", "pets-only-pinned", "pets-maxed", "pets-black-market", "test-pet-card", "nav-overlay"];
+        let mut walked = vec![window.focused().unwrap_or_default()];
+        for _ in 1..expected.len() {
+            window.press("tab");
+            walked.push(window.focused().unwrap_or_default());
+        }
+        assert_eq!(walked, expected, "the page in reading order: the collection has no control");
+
+        let defaults = window.settings().pets;
+        assert!(defaults.soul_tracker && !defaults.only_pinned && defaults.maxed_pets && defaults.black_market);
+        for key in ["pets-only-pinned", "pets-maxed", "pets-black-market"] {
+            window.tab_to(key);
+            window.press("space");
+        }
+        let flipped = window.settings().pets;
+        assert!(flipped.only_pinned && !flipped.maxed_pets && !flipped.black_market);
+
+        window.tab_to("test-pet-card");
+        window.press("enter");
+        window.cx.run_until_parked();
+        let view = window.view.clone();
+        assert!(window.cx.update(|_, cx| view.read(cx).pet_test_note_is_shown()), "the badge says where the card went");
+        assert!(window.cx.debug_bounds("pet-test-shown").is_some());
+        let first = crate::game_data::pet_ids()[0];
+        assert_eq!(tests.borrow().iter().map(|request| request.pet_id).collect::<Vec<_>>(), vec![first], "whatever the switches say");
+        window.cx.executor().advance_clock(TEST_SHOWN_FOR);
+        window.cx.run_until_parked();
+        assert!(!window.cx.update(|_, cx| view.read(cx).pet_test_note_is_shown()), "for 4 s");
+
+        window.tab_to("pets-tracker");
+        window.press("space");
+        assert!(!window.settings().pets.soul_tracker);
+        window.press("tab");
+        assert_eq!(window.focused().as_deref(), Some("nav-overlay"), "the dimmed controls are out of the tab order");
+        window.click("pets-maxed");
+        window.click("test-pet-card");
+        assert!(!window.settings().pets.maxed_pets, "a dimmed switch does not react");
+        assert_eq!(tests.borrow().len(), 1, "a dimmed test button does not react");
+    }
+
+    #[gpui::test]
+    fn the_pets_page_says_when_the_collection_was_read_and_how_many_pets_are_owned(cx: &mut TestAppContext) {
+        use meter_core::capture::parser::pet_record::{PetLevel, PetSnapshot};
+        use meter_core::identity::KnownCharacter;
+        use meter_core::pets::{PetContent, PetReport};
+
+        let mut window = open(cx, None);
+        window.show(Section::Pets);
+        let text = |window: &mut Opened| {
+            let view = window.view.clone();
+            window.cx.update(|_, cx| view.read(cx).pets_seen.clone())
+        };
+        assert_eq!(text(&mut window), PetsSeen::default(), "nothing read, no server yet");
+
+        let snapshot = PetSnapshot {
+            levels: vec![PetLevel { pet_id: 1004, level: 2 }, PetLevel { pet_id: 1084, level: 3 }],
+            progress: Vec::new(),
+            counters: Vec::new(),
+        };
+        let report = PetReport {
+            character: KnownCharacter { name: "Alder".to_string(), server_id: 1002, class: "RANGER".to_string(), key: None },
+            captured_at: 1_791_634_680.0,
+            content: PetContent::Snapshot(snapshot),
+        };
+        window.cx.update(|_, cx| crate::pets::record(cx, vec![report]));
+        window.cx.run_until_parked();
+
+        let seen = text(&mut window);
+        assert_eq!((seen.server, seen.read_at, seen.owned), (Some(1002), Some(1_791_634_680.0), 2));
+        assert!(window.cx.debug_bounds("pets-owned").is_some());
     }
 
     #[gpui::test]

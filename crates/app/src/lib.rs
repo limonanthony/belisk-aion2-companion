@@ -4,6 +4,8 @@ mod bridge;
 #[cfg(feature = "probes")]
 mod capture;
 #[cfg(feature = "probes")]
+mod capture_pets;
+#[cfg(feature = "probes")]
 mod capture_reminders;
 #[cfg(feature = "probes")]
 mod capture_report;
@@ -41,6 +43,7 @@ mod live_session;
 mod meter;
 mod overlay;
 mod panic_log;
+mod pets;
 #[cfg(feature = "probes")]
 mod probe;
 mod pvp;
@@ -196,6 +199,7 @@ fn start(args: Args, instance: Option<single_instance::Running>, logger: Arc<App
         reminders::log_to(Arc::clone(meter.logger()), cx);
     }
     todos::install(&settings, args.wants_live(), cx);
+    pets::install(cx);
     update::install(&settings, args.wants_live(), meter.clone(), cx);
     cx.on_app_quit({
         let settings = settings.clone();

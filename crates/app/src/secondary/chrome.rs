@@ -5,14 +5,15 @@
 //! the thin scroll thumb. The user's content scale and card opacity are the
 //! meter's.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
     canvas, div, fill, img, point, prelude::*, relative, rgb, rgba, size, svg, AnyElement, AnyView, App, Bounds,
-    Context, Div, ElementId, FontFeatures, FontWeight, Hsla, IntoElement, Pixels, Render, Role, ScrollHandle,
-    SharedString, Stateful, Svg, Window,
+    Context, DispatchPhase, Div, ElementId, FocusHandle, FontFeatures, FontWeight, HitboxBehavior, Hsla, IntoElement,
+    List, ListAlignment, ListOffset, ListState, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
+    Render, Role, ScrollHandle, SharedString, Stateful, Svg, Window,
 };
 
 use crate::assets::Icon;
@@ -547,8 +548,11 @@ pub fn footer(s: Scale) -> Div {
         .text_color(rgba(MUTED))
 }
 
+/// The thumb's gutter on the right of a list that scrolls.
+pub const GUTTER: f32 = 8.;
+
 /// A list that scrolls past `max_height`, with the thin thumb GPUI does not
-/// draw by itself. `overflows` reserves the thumb's 8 px on the right; the
+/// draw by itself. `overflows` reserves the thumb's gutter on the right; the
 /// callers know their row heights, so it is decided before layout.
 pub fn scroll_list(
     id: impl Into<ElementId>,
@@ -558,6 +562,8 @@ pub fn scroll_list(
     content: impl IntoElement,
     s: Scale,
 ) -> Div {
+    let id = id.into();
+    let thumb_key = ElementId::Name(SharedString::from(format!("{id}-thumb")));
     div()
         .flex_none()
         .relative()
@@ -569,28 +575,288 @@ pub fn scroll_list(
                 .max_h(s.px(max_height))
                 .overflow_y_scroll()
                 .track_scroll(handle)
-                .when(overflows, |list| list.pr(s.px(8.)))
+                .when(overflows, |list| list.pr(s.px(GUTTER)))
                 .child(content),
         )
-        .when(overflows, |list| list.child(thumb(handle.clone(), s)))
+        .when(overflows, |list| list.child(scrollbar(thumb_key, Scroller::Div(handle.clone()), s)))
 }
 
-/// Painted from the scroll state of the same frame, so scrolling redraws it
-/// without another render.
-fn thumb(handle: ScrollHandle, s: Scale) -> impl IntoElement {
-    canvas(
-        |_, _, _| {},
-        move |bounds, _, window, _| {
-            let max = handle.max_offset().y;
-            let viewport = handle.bounds().size.height;
-            if max <= Pixels::ZERO || viewport <= Pixels::ZERO {
-                return;
+/// [`Rows`] drawn by `list`, as tall as its items up to `max_height`, with
+/// the thumb while they run past it. The items leave the thumb's gutter
+/// themselves while [`Rows::overflows`].
+pub fn scroll_rows(key: &str, rows: &Rows, list: List, max_height: f32, s: Scale) -> Div {
+    let height = rows.content_height().min(s.px(max_height));
+    div()
+        .flex_none()
+        .relative()
+        .w_full()
+        .h(height)
+        .child(list.size_full())
+        .when(rows.overflows(max_height, s), |area| {
+            area.child(scrollbar(SharedString::from(format!("{key}-thumb")), Scroller::Rows(rows.clone()), s))
+        })
+}
+
+/// GPUI's `list` over items whose heights are known before layout: it builds
+/// only the items in and near the view, and the thumb and the keyboard work
+/// in exact pixels rather than in the heights the list has measured so far.
+#[derive(Clone)]
+pub struct Rows {
+    pub state: ListState,
+    items: Rc<RefCell<RowsItems>>,
+}
+
+#[derive(Default)]
+struct RowsItems {
+    /// Each item's top, then the bottom of the last.
+    tops: Vec<Pixels>,
+    focus: Vec<Option<FocusHandle>>,
+}
+
+impl RowsItems {
+    fn same(&self, items: &[(Pixels, Option<FocusHandle>)]) -> bool {
+        self.focus.len() == items.len()
+            && items.iter().enumerate().all(|(ix, (height, focus))| self.tops[ix + 1] - self.tops[ix] == *height && self.focus[ix] == *focus)
+    }
+}
+
+impl Rows {
+    /// `overdraw`: how far beyond the view items are measured ahead.
+    pub fn new(overdraw: Pixels) -> Self {
+        Self { state: ListState::new(0, ListAlignment::Top, overdraw), items: Rc::default() }
+    }
+
+    /// The items, each as its height and the focus handle of the control it
+    /// holds, if any: the list keeps drawing an item whose control has the
+    /// keyboard wherever it is scrolled. Items that differ from the last ones
+    /// replace them, at the same scroll in pixels.
+    pub fn set(&self, items: &[(Pixels, Option<FocusHandle>)]) {
+        if self.items.borrow().same(items) {
+            return;
+        }
+        let scrolled = self.scrolled();
+        let old = {
+            let mut stored = self.items.borrow_mut();
+            let old = stored.focus.len();
+            stored.tops.clear();
+            stored.tops.push(Pixels::ZERO);
+            let mut bottom = Pixels::ZERO;
+            for (height, _) in items {
+                bottom += *height;
+                stored.tops.push(bottom);
             }
-            let length = (viewport * (viewport / (viewport + max))).max(s.px(16.));
-            let travel = viewport - s.px(4.) - length;
-            let progress = (-handle.offset().y / max).clamp(0., 1.);
-            let origin = point(bounds.right() - s.px(4.), bounds.top() + s.px(2.) + travel * progress);
-            window.paint_quad(fill(Bounds::new(origin, size(s.px(3.), length)), rgba(THUMB)).corner_radii(s.px(2.)));
+            stored.focus = items.iter().map(|(_, focus)| focus.clone()).collect();
+            old
+        };
+        self.state.splice_focusable(0..old, items.iter().map(|(_, focus)| focus.clone()));
+        self.scroll_to(scrolled);
+    }
+
+    pub fn content_height(&self) -> Pixels {
+        self.items.borrow().tops.last().copied().unwrap_or_default()
+    }
+
+    pub fn overflows(&self, max_height: f32, s: Scale) -> bool {
+        self.content_height() > s.px(max_height)
+    }
+
+    pub fn top_of(&self, ix: usize) -> Option<Pixels> {
+        self.items.borrow().tops.get(ix).copied()
+    }
+
+    pub fn viewport(&self) -> Bounds<Pixels> {
+        self.state.viewport_bounds()
+    }
+
+    pub fn max(&self) -> Pixels {
+        (self.content_height() - self.viewport().size.height).max(Pixels::ZERO)
+    }
+
+    /// How far the list is scrolled, down from its top.
+    pub fn scrolled(&self) -> Pixels {
+        let top = self.state.logical_scroll_top();
+        let at = self.items.borrow().tops.get(top.item_ix).copied().unwrap_or_else(|| self.content_height());
+        (at + top.offset_in_item).min(self.max())
+    }
+
+    pub fn scroll_to(&self, y: Pixels) {
+        let y = y.clamp(Pixels::ZERO, self.max());
+        let (item_ix, top) = {
+            let items = self.items.borrow();
+            let count = items.focus.len();
+            let ix = items.tops.partition_point(|top| *top <= y).saturating_sub(1).min(count.saturating_sub(1));
+            (ix, items.tops.get(ix).copied().unwrap_or_default())
+        };
+        self.state.scroll_to(ListOffset { item_ix, offset_in_item: y - top });
+    }
+
+    /// Scrolls the least that shows item `ix` with `margin` around it.
+    pub fn reveal(&self, ix: usize, margin: Pixels) {
+        let (Some(top), Some(bottom)) = (self.top_of(ix), self.top_of(ix + 1)) else {
+            return;
+        };
+        let (scrolled, height) = (self.scrolled(), self.viewport().size.height);
+        if top - margin < scrolled {
+            self.scroll_to(top - margin);
+        } else if height > Pixels::ZERO && bottom + margin > scrolled + height {
+            self.scroll_to(bottom + margin - height);
+        }
+    }
+
+    /// Whether item `ix` is at least partly in view.
+    pub fn shows(&self, ix: usize) -> bool {
+        let (Some(top), Some(bottom)) = (self.top_of(ix), self.top_of(ix + 1)) else {
+            return false;
+        };
+        let scrolled = self.scrolled();
+        let height = Some(self.viewport().size.height).filter(|height| *height > Pixels::ZERO).unwrap_or_else(|| self.content_height());
+        bottom > scrolled && top < scrolled + height
+    }
+}
+
+/// What a scrollbar scrolls.
+#[derive(Clone)]
+pub enum Scroller {
+    /// A div with `overflow_y_scroll`.
+    Div(ScrollHandle),
+    Rows(Rows),
+}
+
+impl Scroller {
+    fn viewport_height(&self) -> Pixels {
+        match self {
+            Self::Div(handle) => handle.bounds().size.height,
+            Self::Rows(rows) => rows.viewport().size.height,
+        }
+    }
+
+    fn max(&self) -> Pixels {
+        match self {
+            Self::Div(handle) => handle.max_offset().y.max(Pixels::ZERO),
+            Self::Rows(rows) => rows.max(),
+        }
+    }
+
+    fn scrolled(&self) -> Pixels {
+        match self {
+            Self::Div(handle) => (-handle.offset().y).clamp(Pixels::ZERO, self.max()),
+            Self::Rows(rows) => rows.scrolled(),
+        }
+    }
+
+    fn scroll_to(&self, y: Pixels) {
+        match self {
+            Self::Div(handle) => handle.set_offset(point(handle.offset().x, -y.clamp(Pixels::ZERO, self.max()))),
+            Self::Rows(rows) => rows.scroll_to(y),
+        }
+    }
+}
+
+/// Where the thumb runs in its gutter.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Thumb {
+    /// The top of the thumb's run.
+    top: Pixels,
+    length: Pixels,
+    travel: Pixels,
+    max: Pixels,
+}
+
+impl Thumb {
+    fn of(scroller: &Scroller, bounds: Bounds<Pixels>, s: Scale) -> Option<Self> {
+        let (max, viewport) = (scroller.max(), scroller.viewport_height());
+        if max <= Pixels::ZERO || viewport <= Pixels::ZERO {
+            return None;
+        }
+        let length = (viewport * (viewport / (viewport + max))).max(s.px(16.));
+        let travel = (viewport - s.px(4.) - length).max(Pixels::ZERO);
+        Some(Self { top: bounds.top() + s.px(2.), length, travel, max })
+    }
+
+    fn top_at(self, scrolled: Pixels) -> Pixels {
+        self.top + self.travel * (scrolled / self.max).clamp(0., 1.)
+    }
+
+    /// The scroll that puts the thumb's top at `top`.
+    fn scroll_for(self, top: Pixels) -> Pixels {
+        if self.travel <= Pixels::ZERO {
+            return Pixels::ZERO;
+        }
+        self.max * ((top - self.top) / self.travel)
+    }
+}
+
+/// A press that drags the thumb: the pointer's height and the scroll then.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ThumbGrab {
+    y: Pixels,
+    scrolled: Pixels,
+}
+
+/// The thin thumb GPUI does not draw, painted from the scroll state of the
+/// same frame in the gutter on the right, taking the pointer as Zed's
+/// scrollbar does. A press in the gutter is the thumb's alone (no window drag,
+/// no focus): on the thumb it grabs it, beside it the thumb's middle comes to
+/// the pointer and is grabbed there. While it is held, the moves anywhere in
+/// the window drive the scroll and the release ends it, both heard in the
+/// capture phase, before any element. The wheel still scrolls the list.
+pub fn scrollbar(key: impl Into<ElementId>, scroller: Scroller, s: Scale) -> impl IntoElement {
+    let key = key.into();
+    canvas(
+        move |bounds, window, cx| {
+            let grab = window.use_keyed_state(key, cx, |_, _| None::<ThumbGrab>);
+            let gutter = Bounds::new(point(bounds.right() - s.px(GUTTER), bounds.top()), size(s.px(GUTTER), bounds.size.height));
+            (grab, window.insert_hitbox(gutter, HitboxBehavior::BlockMouseExceptScroll))
+        },
+        move |bounds, (grab, gutter), window, _| {
+            let Some(thumb) = Thumb::of(&scroller, bounds, s) else {
+                return;
+            };
+            let origin = point(bounds.right() - s.px(4.), thumb.top_at(scroller.scrolled()));
+            window.paint_quad(fill(Bounds::new(origin, size(s.px(3.), thumb.length)), rgba(THUMB)).corner_radii(s.px(2.)));
+            let view = window.current_view();
+
+            window.on_mouse_event({
+                let (grab, scroller) = (grab.clone(), scroller.clone());
+                move |event: &MouseDownEvent, phase, window, cx| {
+                    if phase != DispatchPhase::Capture || event.button != MouseButton::Left || !gutter.should_handle_scroll(window) {
+                        return;
+                    }
+                    let top = thumb.top_at(scroller.scrolled());
+                    if !(top..=top + thumb.length).contains(&event.position.y) {
+                        scroller.scroll_to(thumb.scroll_for(event.position.y - thumb.length / 2.));
+                    }
+                    let held = ThumbGrab { y: event.position.y, scrolled: scroller.scrolled() };
+                    grab.update(cx, |grab, _| *grab = Some(held));
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    cx.notify(view);
+                }
+            });
+            window.on_mouse_event({
+                let grab = grab.clone();
+                move |event: &MouseMoveEvent, phase, _, cx| {
+                    let Some(from) = *grab.read(cx) else {
+                        return;
+                    };
+                    if phase != DispatchPhase::Capture {
+                        return;
+                    }
+                    if event.pressed_button != Some(MouseButton::Left) {
+                        grab.update(cx, |grab, _| *grab = None);
+                        return;
+                    }
+                    let moved = thumb.scroll_for(thumb.top + event.position.y - from.y);
+                    scroller.scroll_to(from.scrolled + moved);
+                    cx.stop_propagation();
+                    cx.notify(view);
+                }
+            });
+            window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+                if phase == DispatchPhase::Capture && event.button == MouseButton::Left && grab.read(cx).is_some() {
+                    grab.update(cx, |grab, _| *grab = None);
+                }
+            });
         },
     )
     .absolute()
