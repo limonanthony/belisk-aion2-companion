@@ -1,5 +1,11 @@
 # Journal des modifications
 
+## [1.0.2] - 2026-10-10
+
+La première mise à jour livrée par l'application elle-même.
+
+- **Versions** : chaque version vérifie désormais son numéro et ses notes avant d'être publiée, si bien qu'une même version ne peut jamais être publiée deux fois.
+
 ## [1.0.1] - 2026-10-10
 
 Une correction de la vérification des mises à jour.

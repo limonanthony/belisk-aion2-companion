@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.2] - 2026-10-10
+
+The first update delivered by the app itself.
+
+- **Releases**: each release now checks its version and its notes before it is published, so the same version can never be published twice.
+
 ## [1.0.1] - 2026-10-10
 
 A fix for the update check.

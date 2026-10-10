@@ -1,6 +1,6 @@
 [package]
 name = "meter-core"
-version = "1.0.1"
+version = "1.0.2"
 license = "GPL-3.0-only"
 description = "Packet capture, parsing and DPS engine behind Belisk, with no UI dependency"
 edition = "2021"
