@@ -1,6 +1,6 @@
 # Journal des modifications
 
-## [1.0.0] - 2026-10-09
+## [1.0.0] - 2026-10-10
 
 Belisk est un compteur de combat et un compagnon pour AION 2 sur les serveurs globaux : un compteur DPS en direct avec les outils qui l'entourent, tous ouverts depuis une petite barre d'outils.
 

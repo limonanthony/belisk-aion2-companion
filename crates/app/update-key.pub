@@ -1,6 +1,2 @@
-# DEVELOPMENT KEY: a placeholder. Nobody holds its private half (it was made and
-# thrown away), the app never installs an update while this marker is here, and
-# `cargo xtask dist` refuses to build with it. Replace it with a key from
-# `cargo xtask keygen` before the first release (docs/updates.md).
 # Ed25519 public key, 64 hex digits.
-9fe262dd553a6ee73988e83479a71e948fa315897eca98212353c1456dfd462f
+05134fd0fee33ef4368dbe27a29b89ee322e4aa9a6a1c1c7268a3f9f51fa9581

@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.0] - 2026-10-09
+## [1.0.0] - 2026-10-10
 
 Belisk is a combat meter and companion for AION 2 on the global servers: a live DPS meter with the tools around it, all opened from one small toolbar.
 
