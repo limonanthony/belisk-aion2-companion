@@ -47,7 +47,7 @@ Players learn about new versions inside the app and can update with a click. The
 
 ## Prerequisites (not in this ticket)
 
-- **Version numbering.** It must be decided before the first public release: Cargo still says Aether's 2.4.0 while FORK.md claims a reset to 0.1.0 (TASK-26.3). CI must check that the git tag equals the Cargo version.
+- **Version numbering.** It must be decided before the first public release: Cargo still says Aether's 2.4.0 while the removed FORK.md (git history) claims a reset to 0.1.0 (TASK-26.3). CI must check that the git tag equals the Cargo version.
 - **Public repository and CI release workflow.** The workflow should attach a lean update archive (exe plus WinDivert files, without `source/`), its SHA-256 and a signature (see step 1). The GPL source obligation is met by the public repository at the release tag and the full dist zip.
 - **Repository owner and name.** The app embeds them in its update URL, so they must be known. The Kisk rename (TASK-23) may change the repository name.
 

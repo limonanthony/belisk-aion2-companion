@@ -4,6 +4,6 @@ members = ["crates/core", "crates/app", "crates/xtask", "crates/packet-explorer"
 
 # GPUI embeds its own asInvoker manifest through embed-resource, which collides
 # with the app's requireAdministrator one (LNK1123). The patched copy skips
-# the embedding for gpui-pre only; see docs/GPUI_MIGRATION.md, "Live capture and the manifest".
+# the embedding for gpui-pre only; see docs/technical-notes.md, "Live capture and the manifest".
 [patch.crates-io]
 embed-resource = { path = "vendor/embed-resource" }

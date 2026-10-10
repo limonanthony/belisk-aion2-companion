@@ -7,9 +7,10 @@ overlay on a Rust capture/parse/DPS core. Started from
 and nothing is merged from them. The Tauri + React app was removed on 2026-10-04;
 tag `tauri-final` is its last commit.
 
-[FORK.md](./FORK.md) is the record of how the inherited code was changed and why (the
-Tauri-era parts are short history notes). [docs/GPUI_MIGRATION.md](./docs/GPUI_MIGRATION.md)
-holds the scope, plan and per-phase results. Approved designs: `docs/gpui-mockups/approved/`.
+[docs/technical-notes.md](./docs/technical-notes.md) records how the capture, parsing,
+recording and saving code works and why, and how the app side works (distribution,
+overlay windows, fonts, translations, the meter's model, secondary windows, settings,
+reminders, the toolbar). Approved designs: `docs/gpui-mockups/approved/`.
 
 ## Commands
 
@@ -27,7 +28,7 @@ cd crates/core; cargo run --example replay -- <recording> [--names] [--tickets] 
 cargo run -p packet-explorer -- <opcodes|flows|timeline|dump|diff|search|events|periodic|tickets|map-events|boss-hp|parity|unnamed-skills> <recording>... [options]   # developer-only packet explorer for recordings (.belisk, and the .aetherpc of earlier builds) (a path, a folder, or part of a name in the recordings folder); `help` lists the options. `unnamed-skills` lists the skill ids the app would show as "Skill <id>" (hits, damage, class) so their names can be added to the bundled data. `boss-hp` prints each boss entity's HP as the meter stores it (appears, falls by a tenth, back at full after a loss, dead) and every boss wipe the core's detector would close. `tickets [--id <n>]... [--changes-only]` decodes the ticket messages `0B 61` (full snapshot) and `0C 61` (one change, with reason gain/refill/spend) per character (bound to the own-identity `33 36`), with the content name per ticket id and a per-character first/last/changes summary; give recordings in time order. `map-events [--key <substring>]` decodes the map events `2E 92` (event id, key, state bytes, start time, variables) and the zone frames `21 36` and prints them in time order plus a per-local-hour table with the capture coverage of each hour. Text runs are masked unless --show-text; never shipped (not reachable from the app, so not in the dist zip)
 node scripts/build-npc-names.mjs <kuroukihime mobs.json> [noia2 npc_names.json]   # regenerates npc_names_en.json; plain node, no packages
 node scripts/build-fr-names.mjs <questlog-cache.json> [extra-names-en-fr.json]   # regenerates npc_names_fr.json and skill_names_fr.json for the ids the English files hold; fills the QuestLog cache from questlog.gg for ids it lacks; the optional community name list (free online sources) stays outside the repo; plain node, no packages
-cargo xtask dist [--allow-dirty] [--allow-development-key] [--no-source [--source-contact "<text>"]]   # builds the portable zip: target/dist/belisk-<version>-windows-x64.zip (see docs/GPUI_MIGRATION.md, Distribution). --no-source omits source/ for a GPL-3.0 §6(b) written offer in README.txt (zip goes to target/dist/no-source/). Does not run the exe; refuses on a dirty tree (source = `git archive HEAD` / the commit the offer names) or a locked exe, and while crates/app/update-key.pub is the DEVELOPMENT placeholder (--allow-development-key is for local testing only, never CI)
+cargo xtask dist [--allow-dirty] [--allow-development-key] [--no-source [--source-contact "<text>"]]   # builds the portable zip: target/dist/belisk-<version>-windows-x64.zip (see docs/technical-notes.md, Distribution). --no-source omits source/ for a GPL-3.0 §6(b) written offer in README.txt (zip goes to target/dist/no-source/). Does not run the exe; refuses on a dirty tree (source = `git archive HEAD` / the commit the offer names) or a locked exe, and while crates/app/update-key.pub is the DEVELOPMENT placeholder (--allow-development-key is for local testing only, never CI)
 cargo xtask keygen --out <path outside the repo>   # an Ed25519 update signing key pair; the public half goes to crates/app/update-key.pub (docs/updates.md); dist also writes the lean update archive belisk-<version>-windows-x64-update.zip and its .sha256 beside the zip
 cargo xtask sign --key <private key> <the -update.zip>   # writes <file>.sig, which the app checks before it installs; fails, writing nothing, when the key is not the private half of crates/app/update-key.pub. CI runs it with the BELISK_UPDATE_SIGNING_KEY secret (docs/releasing.md)
 ```
@@ -70,11 +71,11 @@ cargo xtask sign --key <private key> <the -update.zip>   # writes <file>.sig, wh
 |`crates/app/assets/`|`fonts/` (Barlow Semi Condensed, OFL), `icons/` (Lucide SVGs), `game/` (game data used by the UI: `data/` servers, dungeons, English and French skill names; `class/`, `skills/` (embedded by `build.rs`) and `profile_power_icon_pc.png` icons)|
 |`crates/app/windivert/`|`WinDivert.dll` and `WinDivert64.sys`, copied beside the exe by `build.rs`|
 |`crates/app/windows/`|Administrator and unelevated manifests, `icon.ico`, the `.rc` files|
-|`vendor/embed-resource/`|Patched copy so GPUI's own manifest does not collide with ours (see docs/GPUI_MIGRATION.md, "Live capture and the manifest")|
+|`vendor/embed-resource/`|Patched copy so GPUI's own manifest does not collide with ours (see docs/technical-notes.md, "Live capture and the manifest")|
 |`scripts/`|`build-npc-names.mjs`, `build-fr-names.mjs`, `resize-aion2-skill-icons.py`|
 |`crates/xtask/`|`cargo xtask dist` (alias in `.cargo/config.toml`): static-CRT release build into `target/x86_64-pc-windows-msvc/release/`, exe checks, licence notices, the zip; `dist/` holds the player README and the notices header; `keygen` and `sign` for the update signature (`update.rs`)|
 |`.github/workflows/`|`ci.yml` (push to dev, pull requests: tests and the probes build) and `release.yml` (push to main: tag check, changelog check, tests, `cargo xtask dist`, signing, GitHub Release); `rust-toolchain.toml` pins the Rust version they use|
-|`docs/`|Migration plan, design mockups, the protocol notes inherited from NOIA2 (`AION2_PACKET_PROTOCOL_ANALYSIS.zh-CN.md`, Chinese), `updates.md` (the updater and its trust model), `releasing.md` (CI, the signing secret, how to release)|
+|`docs/`|`technical-notes.md` (how the code works), design mockups (`gpui-mockups/`), the protocol notes inherited from NOIA2 (`AION2_PACKET_PROTOCOL_ANALYSIS.zh-CN.md`, Chinese), `updates.md` (the updater and its trust model), `releasing.md` (CI, the signing secret, how to release), `aether-changelog.md` (the upstream release history)|
 
 ## Things that will bite you
 
@@ -84,7 +85,7 @@ cargo xtask sign --key <private key> <the -update.zip>   # writes <file>.sig, wh
 - **Never touch a game's process.** No `OpenProcess` on another program, no
   `sysinfo` refresh of all processes, no injection, input or hooks. WinDivert
   is opened only when Npcap cannot capture, and unloaded when the last handle
-  closes. See FORK.md, *Staying clear of anti-cheat*.
+  closes. See docs/technical-notes.md, *Staying clear of anti-cheat*.
 - **WinDivert files must ship.** A release needs `WinDivert.dll` and
   `WinDivert64.sys` beside the exe. The DLL is delay-loaded (`build.rs`:
   `/DELAYLOAD:WinDivert.dll`), so the meter starts and captures with Npcap when

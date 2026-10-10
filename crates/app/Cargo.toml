@@ -61,7 +61,7 @@ gpui = { package = "gpui-pre", version = "=0.3.7", features = ["test-support"] }
 [features]
 # `--overlay-probe`, `--font-probe` and `--capture`: checks of the overlay
 # window and of font selection, and off-screen captures of the meter
-# (docs/GPUI_MIGRATION.md, phases 2a and 2b). Not part of the shipped binary.
+# (docs/technical-notes.md, "Checking without showing anything"). Not part of the shipped binary.
 probes = [
     "dep:image",
     "windows/Win32_Graphics_Gdi",

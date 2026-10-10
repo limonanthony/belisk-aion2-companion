@@ -24,7 +24,7 @@ User (2026-10-06): "I thought we said we should make it i18 friendly right away 
 User (2026-10-06): "if the people who made the language made a i18 library they probably use in firefox i think it's fine, i'm ok with that. Start right away please"
 
 - All app and overlay text is in English and French, through one Fluent setup (i18n-embed / i18n-embed-fl).
-- This was planned since the GPUI migration (`docs/GPUI_MIGRATION.md`, "Translations: English and French") but never built.
+- This was planned since the GPUI migration (the removed docs/GPUI_MIGRATION.md (git history), "Translations: English and French") but never built.
 
 ## Proposed (stated to the user, not yet confirmed)
 

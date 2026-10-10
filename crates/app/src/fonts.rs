@@ -1,6 +1,6 @@
 //! Barlow Semi Condensed (SIL OFL 1.1, `assets/fonts/OFL.txt`), compiled into
 //! the executable. It stands in for Bahnschrift SemiCondensed, which stock
-//! GPUI cannot select (docs/GPUI_MIGRATION.md, phase 2a fonts).
+//! GPUI cannot select (docs/technical-notes.md, "Fonts").
 
 use std::borrow::Cow;
 

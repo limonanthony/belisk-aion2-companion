@@ -13,7 +13,7 @@ use crate::{exe_check, notices, update, Result, WINDOWS_TARGET};
 const PACKAGE: &str = "belisk";
 const FOLDER: &str = "belisk";
 
-/// Official WinDivert-2.2.2-A.zip, x64 (see FORK.md, "WinDivert files").
+/// Official WinDivert-2.2.2-A.zip, x64 (see docs/technical-notes.md, "WinDivert files").
 const WINDIVERT_FILES: [(&str, &str); 2] = [
     ("WinDivert.dll", "c1e060ee19444a259b2162f8af0f3fe8c4428a1c6f694dce20de194ac8d7d9a2"),
     ("WinDivert64.sys", "8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2"),

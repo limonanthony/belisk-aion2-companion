@@ -31,7 +31,7 @@ The fork was renamed in the user-visible places first; the remaining names were 
 |---|---|---|
 | `authors = ["Helveticxa"]` | `crates/core/Cargo.toml` line 6; `crates/app/Cargo.toml` line 6 | Replace (the credit stays in the README and the notices) |
 | Core description "behind Aether" | `crates/core/Cargo.toml` line 5 | Reword |
-| Version 2.4.0 (Aether's) | `crates/core/Cargo.toml` line 3; `crates/app/Cargo.toml` line 3 | FORK.md 217-221 says the version was reset to 0.1.0: make the two agree. Needs the user's decision on which version to use |
+| Version 2.4.0 (Aether's) | `crates/core/Cargo.toml` line 3; `crates/app/Cargo.toml` line 3 | the removed FORK.md (git history) 217-221 says the version was reset to 0.1.0: make the two agree. Needs the user's decision on which version to use |
 | Bin `aion-2-dps-meter` and lib `aion_2_dps_meter` | `crates/app/Cargo.toml`; `crates/xtask/src/dist.rs` | Rename at the Kisk cutover (TASK-23), not before |
 | `temp_dir().join("aether")` | `crates/app/src/live_session.rs` 28; `crates/app/src/replay.rs` 15; `crates/core/examples/replay.rs` 94 | Rename |
 | Test temp directories named `aether-*` | app: `decision_log.rs` 83, `reminders/service.rs` 402, `settings/view.rs` 2861; core: `capture/dispatcher.rs` 612, `capture/processor.rs` 537 and 1390, `capture/recorder.rs` 465, 600 and 625, `engine/meter.rs` 1143-1147 | Rename |
@@ -47,7 +47,7 @@ Product-name strings (the "AION 2 DPS Meter" name in titles, text, the zip name)
 
 ## Decision needed (not decided)
 
-Which version number the project uses: Aether's 2.4.0 as it is in the manifests, or the 0.1.0 reset that FORK.md describes. Options: (a) keep 2.4.0 and fix FORK.md, (b) set 0.1.0 in the manifests, (c) another number the user names. The review has no recommendation beyond "make them agree"; the dist zip and the About page show this number to players.
+Which version number the project uses: Aether's 2.4.0 as it is in the manifests, or the 0.1.0 reset that the removed FORK.md (git history) describes. Options: (a) keep 2.4.0 and fix the removed FORK.md (git history), (b) set 0.1.0 in the manifests, (c) another number the user names. The review has no recommendation beyond "make them agree"; the dist zip and the About page show this number to players.
 
 ## Evidence
 
@@ -71,7 +71,7 @@ Source: fork-leftovers inventory of commit 7a48824 (2026-10-08). Line numbers re
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Package authors, the core description, temp and test folder names, probe strings, the log prefix, chrono_stamp, the stale messages and the tray wording no longer name Aether or the previous maintainer.
-- [ ] #2 The core and app manifests and FORK.md agree on one version number, chosen by the user.
+- [ ] #2 The core and app manifests and the removed FORK.md (git history) agree on one version number, chosen by the user.
 - [ ] #3 boss_ids.json carries no provenance text; the provenance is in the notices.
 - [ ] #4 Persisted identifiers and product-name strings are unchanged by this ticket.
 <!-- AC:END -->
@@ -87,7 +87,7 @@ Source: fork-leftovers inventory of commit 7a48824 (2026-10-08). Line numbers re
 <!-- COMMENTS:BEGIN -->
 created: 2026-10-08 15:31
 ---
-Decided (user, 2026-10-08): the version resets to 1.0.0 when the code goes to GitHub. Today crates/app and crates/core say 2.4.0 (Aether's) and packet-explorer/xtask 0.0.0. Proposed: one number for the workspace ([workspace.package] version = "1.0.0", crates use version.workspace = true) so CI checks a single value. Do the reset before building or testing the updater (TASK-28): a build that still says 2.4.0 would see 1.0.0 as older and never offer it. FORK.md's claim of a reset to 0.1.0 is Aether's history and goes with TASK-26.5.
+Decided (user, 2026-10-08): the version resets to 1.0.0 when the code goes to GitHub. Today crates/app and crates/core say 2.4.0 (Aether's) and packet-explorer/xtask 0.0.0. Proposed: one number for the workspace ([workspace.package] version = "1.0.0", crates use version.workspace = true) so CI checks a single value. Do the reset before building or testing the updater (TASK-28): a build that still says 2.4.0 would see 1.0.0 as older and never offer it. the removed FORK.md (git history)'s claim of a reset to 0.1.0 is Aether's history and goes with TASK-26.5.
 ---
 
 created: 2026-10-08 15:33

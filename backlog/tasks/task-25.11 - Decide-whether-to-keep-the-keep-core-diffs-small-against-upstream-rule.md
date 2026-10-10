@@ -31,7 +31,7 @@ Remove the "keep core diffs small against upstream" rule, and everything justifi
 
 - `AGENTS.md`: the Conventions bullet "Keep core diffs against upstream small and anchored; `git fetch upstream && git merge upstream/main` should stay cheap".
 - `AGENTS.md`: the "Upstream merges" entry under "Things that will bite you", which covers resolving merges of Tauri-era paths and the renames from `src-tauri/src/dps_meter/**`.
-- `docs/GPUI_MIGRATION.md`, around lines 336-339: the same rule.
+- the removed docs/GPUI_MIGRATION.md (git history), around lines 336-339: the same rule.
 - `crates/core/src/region.rs`, around lines 19-22: keeps the region profile as a process-wide global "on purpose", to keep the upstream diff small.
 - Other comments in core that justify code by upstream (region.rs ~155 and ~245-247, engine/meter.rs, capture/processor.rs). TASK-26.2 lists them.
 
@@ -42,7 +42,7 @@ Git history: zero merge commits since the fork point `d9f1d98` (Aether 2.4.0, 20
 ## Suggested direction (Proposed, not agreed)
 
 - Delete the convention and the "Upstream merges" entry from AGENTS.md.
-- Delete the same rule from GPUI_MIGRATION.
+- Delete the same rule from the removed docs/GPUI_MIGRATION.md (git history).
 - Drop the "upstream" justification from the region.rs comment. Whether the global itself goes is TASK-25.18.
 - The local git remote named `upstream` still points at the Aether repository. Removing it is the user's own local choice; it is not a repository change.
 
@@ -53,7 +53,7 @@ Git history: zero merge commits since the fork point `d9f1d98` (Aether 2.4.0, 20
 
 ## How to verify
 
-Reading AGENTS.md, docs/GPUI_MIGRATION.md and the core comments finds no request to keep diffs small against upstream and no merge instructions. The credits and the GPL-3.0 licence are unchanged.
+Reading AGENTS.md, the removed docs/GPUI_MIGRATION.md (git history) and the core comments finds no request to keep diffs small against upstream and no merge instructions. The credits and the GPL-3.0 licence are unchanged.
 
 ## Related
 
@@ -65,7 +65,7 @@ Reading AGENTS.md, docs/GPUI_MIGRATION.md and the core comments finds no request
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 AGENTS.md and docs/GPUI_MIGRATION.md no longer ask for small core diffs against upstream and no longer describe upstream merges
+- [ ] #1 AGENTS.md and the removed docs/GPUI_MIGRATION.md (git history) no longer ask for small core diffs against upstream and no longer describe upstream merges
 - [ ] #2 No code comment justifies a design by keeping the upstream diff small
 - [ ] #3 Credits and the GPL-3.0 licence are unchanged
 <!-- AC:END -->
@@ -73,5 +73,5 @@ Reading AGENTS.md, docs/GPUI_MIGRATION.md and the core comments finds no request
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-10-09: Built and reviewed; not yet checked by the user. The upstream-merge rule and the merge instructions are gone from AGENTS.md and docs/GPUI_MIGRATION.md, and no code comment justifies a design by the upstream diff any more. Whether the region profile stays a global is TASK-25.18.
+2026-10-09: Built and reviewed; not yet checked by the user. The upstream-merge rule and the merge instructions are gone from AGENTS.md and the removed docs/GPUI_MIGRATION.md (git history), and no code comment justifies a design by the upstream diff any more. Whether the region profile stays a global is TASK-25.18.
 <!-- SECTION:NOTES:END -->

@@ -44,7 +44,7 @@ default 150, so `a = 150/255 ≈ 0.59`).
 - Labels are sentence case. No uppercase transforms, no letter spacing.
 - Long names cut off with an ellipsis; numbers never wrap.
 - The mockups were drawn with Bahnschrift SemiCondensed. Stock GPUI cannot
-  select that width (docs/GPUI_MIGRATION.md, phase 2a), so the overlays ship
+  select that width (docs/technical-notes.md, "Fonts"), so the overlays ship
   Barlow Semi Condensed (SIL OFL 1.1, `crates/app/assets/fonts/`): a
   semi-condensed DIN-like face with static 400, 500, 600 and 700 weights.
   It has no 650, so "you" is 600.

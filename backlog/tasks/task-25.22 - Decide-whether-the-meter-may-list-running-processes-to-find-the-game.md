@@ -24,7 +24,7 @@ The meter lists every running process on the PC to find the game's process ids, 
 
 `crates/core/src/capture/game_connections.rs` (around lines 101-166) calls `CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS)` and walks the process list to find `aion2.exe`, then calls `GetExtendedTcpTable(TCP_TABLE_OWNER_PID_ALL)` to map those process ids to TCP connections. It never calls `OpenProcess` and keeps no handle to the game; the only handle closed is the snapshot itself. (This was verified by reading the code.) The result is used for two things: the Npcap adapter hint (`capturer.rs` around line 771) and the rolling recorder's game-traffic filter (about 1 s refresh, `rolling_recorder.rs`).
 
-Where the documents conflict: `FORK.md` ("Staying clear of anti-cheat", around lines 542-551) accepts this Toolhelp listing explicitly as allowed because no handle on the game is opened. `AGENTS.md` says there must be no `sysinfo` refresh of all processes, which is the same kind of act (listing all processes), and `docs/GPUI_MIGRATION.md` (around lines 320-321) repeats the "never touch a game process" wording. The capture reviewer called the listing a violation of "no process enumeration"; the architecture check found the project docs accept it and that the only other `OpenProcess*` in the core is on the meter itself (`preflight.rs`) and `sysinfo` is only used for the meter's own process id. Nothing was measured about whether any anti-cheat flags a Toolhelp listing.
+Where the documents conflict: `the removed FORK.md (git history)` ("Staying clear of anti-cheat", around lines 542-551) accepts this Toolhelp listing explicitly as allowed because no handle on the game is opened. `AGENTS.md` says there must be no `sysinfo` refresh of all processes, which is the same kind of act (listing all processes), and the removed docs/GPUI_MIGRATION.md (git history) (around lines 320-321) repeats the "never touch a game process" wording. The capture reviewer called the listing a violation of "no process enumeration"; the architecture check found the project docs accept it and that the only other `OpenProcess*` in the core is on the meter itself (`preflight.rs`) and `sysinfo` is only used for the meter's own process id. Nothing was measured about whether any anti-cheat flags a Toolhelp listing.
 
 ## Evidence
 
@@ -41,7 +41,7 @@ The review marks this a policy choice and does not recommend one; it suggests th
 
 ## How to verify
 
-The decision is recorded and `AGENTS.md`, `FORK.md` and `docs/GPUI_MIGRATION.md` say the same thing. If Option B: with no process listing the Npcap adapter hint and the rolling recorder still pick the game's flows on a recording from a live session, and the project's rolling-recorder filter tests still pass.
+The decision is recorded and `AGENTS.md`, `the removed FORK.md (git history)` and the removed docs/GPUI_MIGRATION.md (git history) say the same thing. If Option B: with no process listing the Npcap adapter hint and the rolling recorder still pick the game's flows on a recording from a live session, and the project's rolling-recorder filter tests still pass.
 
 ## Related
 
@@ -53,6 +53,6 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 The decision (keep the process listing, or identify game flows only by traffic) is recorded.
-- [ ] #2 AGENTS.md, FORK.md and docs/GPUI_MIGRATION.md agree with it.
+- [ ] #2 AGENTS.md, the removed FORK.md (git history) and the removed docs/GPUI_MIGRATION.md (git history) agree with it.
 - [ ] #3 If the listing is removed: the Npcap adapter hint and the rolling recorder still select the game's traffic.
 <!-- AC:END -->

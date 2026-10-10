@@ -36,7 +36,7 @@ Give packet recordings the product's own name, and keep every `.aetherpc` file t
   - packet-explorer: `crates/packet-explorer/src/args.rs` resolves a path, a folder, or part of a name inside the recordings folder.
   - The recordings list in Settings: `capture::recorder::list_recordings`, and `ROLLING_FILE_PREFIX` for rolling files.
 - **Probes.** `crates/app/src/capture_settings.rs` (~596-599, verify) shows `.aetherpc` names in Settings captures.
-- **Docs.** AGENTS.md (commands), README.md, docs/GPUI_MIGRATION.md and FORK.md name `.aetherpc`.
+- **Docs.** AGENTS.md (commands), README.md, the removed docs/GPUI_MIGRATION.md (git history) and the removed FORK.md (git history) name `.aetherpc`.
 
 ## Derived
 
