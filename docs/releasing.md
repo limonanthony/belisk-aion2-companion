@@ -15,9 +15,14 @@ pinned Rust is `rust-toolchain.toml`. Update trust model and asset formats:
 
 ## What Release does on a push to main
 
-1. Reads the version from `crates/app/Cargo.toml`.
-2. If the tag `v<version>` exists, it only builds and tests: **nothing is
-   published**, so a merge without a version bump releases nothing.
+The decisions are `cargo xtask release-plan` (steps 1-2) and `cargo xtask
+release-notes <version>` (step 3), so both run locally too.
+
+1. Reads the version from `crates/app/Cargo.toml` (via `cargo metadata`).
+2. If the tag `v<version>` exists on `origin` (`git ls-remote`), it only builds
+   and tests: **nothing is published**, so a merge without a version bump
+   releases nothing. If `origin` cannot be reached the step fails: it never
+   guesses.
 3. Otherwise it fails, before building, unless the first `## ` section of both
    `CHANGELOG.md` and `CHANGELOG.fr.md` is `## [<version>] - <date>`, is not
    empty, and no `## [Unreleased]` section exists.
@@ -92,7 +97,11 @@ not been run there yet.
    and rename the top changelog section to that version in **both**
    `CHANGELOG.md` and `CHANGELOG.fr.md` (`## [x.y.z] - YYYY-MM-DD`, with the
    summary and bullets in each).
-   Run `cargo test --workspace`. Commit.
+   Run `cargo test --workspace`, then `cargo xtask release-notes <version>`
+   (for example `cargo xtask release-notes 1.0.2`): it runs the changelog checks
+   the Release run makes and prints the release notes, so a mistake shows now
+   and not after the merge. `cargo xtask release-plan` shows what a push would
+   do (it only publishes on `main`). Commit.
 2. Open a pull request `dev` → `main`, wait for **Test (Windows)**, merge.
 3. Watch the **Release** run. When it ends, the GitHub release holds the four
    assets; installed apps offer it at their next hourly check.

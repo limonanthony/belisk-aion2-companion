@@ -2,6 +2,7 @@ mod crates;
 mod dist;
 mod exe_check;
 mod notices;
+mod release;
 mod spdx;
 mod update;
 
@@ -15,6 +16,8 @@ pub const WINDOWS_TARGET: &str = "x86_64-pc-windows-msvc";
 const USAGE: &str = "usage: cargo xtask dist [--allow-dirty] [--allow-development-key] [--no-source [--source-contact <text>]]
        cargo xtask keygen --out <path outside the repository>
        cargo xtask sign --key <private key file> <belisk-<version>-windows-x64-update.zip>
+       cargo xtask release-plan
+       cargo xtask release-notes <version> [--out <file>]
 
 dist   build the release exe with the static CRT and package target/dist/belisk-<version>-windows-x64.zip
        and, beside it, the lean update archive belisk-<version>-windows-x64-update.zip with its .sha256
@@ -27,7 +30,13 @@ dist   build the release exe with the static CRT and package target/dist/belisk-
        --source-contact who to ask for the source (default: \"the person who gave you this copy\")
 keygen make an Ed25519 update signing key pair: <path> (private) and <path>.pub (copy it over crates/app/update-key.pub)
 sign   write <file>.sig, the signature the app checks before it installs an update (docs/updates.md); fails, writing nothing,
-       when the key is not the private half of crates/app/update-key.pub";
+       when the key is not the private half of crates/app/update-key.pub
+release-plan
+       print version, prerelease and publish for this checkout (publish only on refs/heads/main when tag v<version> is
+       not on origin); appends them to the file named by $GITHUB_OUTPUT when set. Fails when origin cannot be reached
+release-notes
+       check CHANGELOG.md and CHANGELOG.fr.md for <version> (top section, no [Unreleased], not empty) and write the
+       release notes (default target/release-assets/notes.md); run it before merging to main";
 
 fn main() -> ExitCode {
     match run() {
@@ -79,6 +88,25 @@ fn run() -> Result<()> {
                 return Err(format!("unknown option {flag}\n{USAGE}").into());
             }
             update::keygen(root, Path::new(&out))
+        }
+        Some("release-plan") => {
+            if let Some(extra) = args.next() {
+                return Err(format!("release-plan takes no arguments (got {extra})\n{USAGE}").into());
+            }
+            release::annotate_failure(release::plan::run(root))
+        }
+        Some("release-notes") => {
+            let version = args.next().ok_or_else(|| format!("release-notes needs a version\n{USAGE}"))?;
+            let mut out = None;
+            while let Some(argument) = args.next() {
+                match argument.as_str() {
+                    "--out" => {
+                        out = Some(args.next().ok_or_else(|| format!("--out needs a value\n{USAGE}"))?)
+                    }
+                    other => return Err(format!("unknown option {other}\n{USAGE}").into()),
+                }
+            }
+            release::annotate_failure(release::notes::run(root, &version, out.as_deref().map(Path::new)))
         }
         Some("sign") => {
             let rest: Vec<String> = args.collect();
