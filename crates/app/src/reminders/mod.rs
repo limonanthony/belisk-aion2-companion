@@ -13,4 +13,4 @@ pub use events::{EventId, Rule, EVENTS};
 pub use schedule::upcoming;
 pub use service::{global, install, log_to, ShowReminder};
 pub use settings::{ReminderSettings, LEAD_MINUTES_OPTIONS};
-pub use view::{expected_size, MeterLink, ReminderView, GAP};
+pub use view::{card_width, expected_size, Countdown, MeterLink, ReminderView, TimerRing, FADE, GAP};

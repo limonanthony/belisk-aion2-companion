@@ -1,10 +1,10 @@
 ---
 id: TASK-28.2
 title: 'Download updates automatically, throttled, then only ask to restart'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-08 15:23'
-updated_date: '2026-10-10 02:28'
+updated_date: '2026-10-10 03:11'
 labels:
   - feature
 dependencies:
@@ -81,4 +81,6 @@ Step 2 of the update feature: an "auto update" setting. When it is on, the app d
 2026-10-09: built and reviewed; see TASK-28's note.
 
 2026-10-10: see TASK-28: v1.0.1 fixes the v1.0.0 update-check crash; the real update test (1.0.1 → 1.0.2) remains.
+
+2026-10-10: verified by the 1.0.1 → 1.0.2 update; see TASK-28. User: 'It works thanks !'
 <!-- SECTION:NOTES:END -->

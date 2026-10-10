@@ -80,6 +80,13 @@ pub enum Icon {
     RotateCw,
     RefreshCw,
     CloudOff,
+    PawPrint,
+    Pin,
+    Search,
+    ListFilter,
+    ArrowRight,
+    ChevronsUp,
+    Sparkles,
 }
 
 impl Icon {
@@ -156,6 +163,13 @@ impl Icon {
             Self::RotateCw => "icons/rotate-cw.svg",
             Self::RefreshCw => "icons/refresh-cw.svg",
             Self::CloudOff => "icons/cloud-off.svg",
+            Self::PawPrint => "icons/paw-print.svg",
+            Self::Pin => "icons/pin.svg",
+            Self::Search => "icons/search.svg",
+            Self::ListFilter => "icons/list-filter.svg",
+            Self::ArrowRight => "icons/arrow-right.svg",
+            Self::ChevronsUp => "icons/chevrons-up.svg",
+            Self::Sparkles => "icons/sparkles.svg",
         }
     }
 }
@@ -241,6 +255,13 @@ static ASSETS: &[(&str, &[u8])] = embedded! {
     "icons/rotate-cw.svg" => "../assets/icons/rotate-cw.svg",
     "icons/refresh-cw.svg" => "../assets/icons/refresh-cw.svg",
     "icons/cloud-off.svg" => "../assets/icons/cloud-off.svg",
+    "icons/paw-print.svg" => "../assets/icons/paw-print.svg",
+    "icons/pin.svg" => "../assets/icons/pin.svg",
+    "icons/search.svg" => "../assets/icons/search.svg",
+    "icons/list-filter.svg" => "../assets/icons/list-filter.svg",
+    "icons/arrow-right.svg" => "../assets/icons/arrow-right.svg",
+    "icons/chevrons-up.svg" => "../assets/icons/chevrons-up.svg",
+    "icons/sparkles.svg" => "../assets/icons/sparkles.svg",
     "class/assassin.png" => "../assets/game/class/assassin.png",
     "class/chanter.png" => "../assets/game/class/chanter.png",
     "class/cleric.png" => "../assets/game/class/cleric.png",
@@ -363,6 +384,13 @@ mod tests {
             Icon::RotateCw,
             Icon::RefreshCw,
             Icon::CloudOff,
+            Icon::PawPrint,
+            Icon::Pin,
+            Icon::Search,
+            Icon::ListFilter,
+            Icon::ArrowRight,
+            Icon::ChevronsUp,
+            Icon::Sparkles,
         ];
         for icon in icons {
             assert!(Assets.load(icon.path()).unwrap().is_some_and(|bytes| !bytes.is_empty()), "{icon:?}");

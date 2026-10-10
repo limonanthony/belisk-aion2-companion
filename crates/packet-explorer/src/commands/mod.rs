@@ -6,6 +6,7 @@ pub mod flows;
 pub mod map_events;
 pub mod opcodes;
 pub mod parity;
+pub mod pets;
 pub mod periodic;
 pub mod search;
 pub mod tickets;
@@ -31,6 +32,7 @@ commands:
   dump      hex + field view per packet                                          [--fields-max N (0 = no field table)]
   diff      changed offsets between two packets of one opcode                    --a <id> --b <id>   |   --op 0be3 (consecutive packets)
   search    a number in every encoding                                           --value 560 [--value ..] [--enc u16le,varint]   |   --pair 560,23 --within 16
+  pets      00 90 pet collection snapshots, 0D 90 soul gains (with source: loot, black market, other), 09 90 unlocks and 11 90 counter gains (with the looted mobs), each pet's level and souls after a gain, the pickups before a gain   [--pet 1086]...
   tickets   0B 61 / 0C 61 ticket snapshots and changes per character, by content    [--id 60000001]... [--changes-only] [--show-text]
   map-events  2E 92 map events (event id, key, state, start time) and 21 36 zones, per hour  [--key SUBSTRING] [--show-text]
   events    opcodes near, and rare away from, noted moments                      --notes notes.txt [--before 5] [--after 30] [--ratio 5]
@@ -83,6 +85,7 @@ pub fn run(args: &Args) -> Result<(), String> {
                 "events" => events::run(&capture, args),
                 "periodic" => periodic::run(&capture, args),
                 "tickets" => tickets::run(&capture, args),
+                "pets" => pets::run(&capture, args),
                 "map-events" => map_events::run(&capture, args),
                 other => Err(format!("unknown command '{other}' (try: packet-explorer help)")),
             }

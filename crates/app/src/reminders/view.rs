@@ -1,17 +1,18 @@
 //! The reminder card (docs/gpui-mockups/approved/reminders.html, values in
 //! tokens.md, "Reminder card"): its own overlay window on the meter's left
 //! edge, or under the toolbar while the meter is closed (toolbar.html) or
-//! steps aside between fights, up for 30 s with a thin line draining the
-//! time left. The pointer over the card pauses it; a click dismisses it.
-//! While the meter is locked the card is click-through and shows no ×.
+//! steps aside between fights, up for 30 s with a timer ring emptying beside
+//! the ×. The pointer over the card pauses it; a click dismisses it. While
+//! the meter is locked the card is click-through and shows no ×.
 
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    div, prelude::*, relative, rgba, size, Animation, AnimationExt as _, AnyElement, App, Context, ElementId,
-    FontWeight, Pixels, Render, Role, SharedString, Size, Subscription, Task, Window, WindowHandle,
+    canvas, div, point, prelude::*, px, rgba, size, Animation, AnimationExt as _, AnyElement, App, Bounds, Context,
+    ElementId, FontWeight, PathBuilder, Pixels, Render, Role, SharedString, Size, Subscription, Task, Window,
+    WindowHandle,
 };
 
 use super::events::{EventId, Rule};
@@ -23,20 +24,21 @@ use crate::clock::{clock_time, now_ms, ClockTime, LocalZone};
 use crate::i18n::{self, fl, join_and};
 use crate::meter::{board_width, Layout, LockChanged, MeterView, OverlaySettings};
 use crate::overlay;
-use crate::secondary::chrome::{self, Look, Scale, FAINT, GAUGE_EMPTY, MUTED};
+use crate::secondary::chrome::{self, Look, Scale, FAINT, GAUGE_EMPTY, MUTED, TEXT};
 use crate::secondary::Stacking;
 use crate::settings;
 
 pub const SHOWN_FOR: Duration = Duration::from_secs(30);
-const FADE: Duration = Duration::from_millis(150);
-/// The line loses about a pixel per tick at 100%.
-const TICK: Duration = Duration::from_millis(100);
+/// The cards' fade in and out.
+pub const FADE: Duration = Duration::from_millis(150);
+/// The ring moves a degree per tick, the slowest that keeps its arc smooth.
+const TICK: Duration = Duration::from_nanos(SHOWN_FOR.as_nanos() as u64 / 360);
 /// Between the card and the meter, at 100%.
 pub const GAP: f32 = 6.0;
 const CAPSULE_WIDTH: f32 = 220.0;
 /// The card with one event, border included, at 100%; each further event
 /// adds its block and the 7 px above it.
-const ONE_EVENT_HEIGHT: f32 = 84.0;
+const ONE_EVENT_HEIGHT: f32 = 81.0;
 const EVENT_HEIGHT: f32 = 39.0;
 
 /// The meter the card belongs to: its lock, and where the card sits.
@@ -45,42 +47,57 @@ pub struct MeterLink {
     pub placement: Rc<Stacking>,
 }
 
-/// 30 s that stand still while paused.
+/// A card's time on screen that stands still while paused.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Countdown {
+pub struct Countdown {
+    total: Duration,
     left: Duration,
     running_since: Option<Instant>,
 }
 
 impl Countdown {
-    fn started(now: Instant) -> Self {
-        Self { left: SHOWN_FOR, running_since: Some(now) }
+    pub fn started(total: Duration, now: Instant) -> Self {
+        Self { total, left: total, running_since: Some(now) }
     }
 
-    fn left(&self, now: Instant) -> Duration {
+    pub fn left(&self, now: Instant) -> Duration {
         match self.running_since {
             Some(since) => self.left.saturating_sub(now.saturating_duration_since(since)),
             None => self.left,
         }
     }
 
-    fn pause(&mut self, now: Instant) {
+    pub fn pause(&mut self, now: Instant) {
         if self.running_since.is_some() {
             self.left = self.left(now);
             self.running_since = None;
         }
     }
 
-    fn resume(&mut self, now: Instant) {
+    pub fn resume(&mut self, now: Instant) {
         self.running_since.get_or_insert(now);
     }
 
-    fn is_running(&self) -> bool {
+    pub fn is_running(&self) -> bool {
         self.running_since.is_some()
     }
 
-    fn fraction_left(&self, now: Instant) -> f32 {
-        self.left(now).as_secs_f32() / SHOWN_FOR.as_secs_f32()
+    /// How long to wait for the next frame: a `tick`, or less so the last
+    /// one lands when the time runs out.
+    pub fn next_tick(&self, now: Instant, tick: Duration) -> Duration {
+        let left = self.left(now);
+        if self.is_running() && !left.is_zero() { tick.min(left) } else { tick }
+    }
+
+    pub fn fraction_left(&self, now: Instant) -> f32 {
+        self.left(now).as_secs_f32() / self.total.as_secs_f32()
+    }
+
+    /// For dev captures: `fraction` of the time left from `now`.
+    #[cfg(feature = "probes")]
+    pub fn set_fraction_left(&mut self, fraction: f32, now: Instant) {
+        self.left = self.total.mul_f32(fraction.clamp(0.0, 1.0));
+        self.running_since = self.running_since.map(|_| now);
     }
 }
 
@@ -169,7 +186,7 @@ fn next_line(settings: &ReminderSettings) -> String {
 
 /// The card's width at 100%: the meter's, or a fixed width beside the
 /// capsule, whose own width follows its figures.
-fn card_width(overlay: &OverlaySettings) -> f32 {
+pub fn card_width(overlay: &OverlaySettings) -> f32 {
     if overlay.layout == Layout::Capsule {
         CAPSULE_WIDTH
     } else {
@@ -260,7 +277,10 @@ impl ReminderView {
             (settings.reminders.clone(), settings.overlay.clone())
         };
         let ticker = cx.spawn_in(window, async move |this, cx| loop {
-            cx.background_executor().timer(TICK).await;
+            let Ok(wait) = this.read_with(cx, |this, cx| this.countdown.next_tick(cx.background_executor().now(), TICK)) else {
+                break;
+            };
+            cx.background_executor().timer(wait).await;
             if this.update_in(cx, |this, window, cx| this.tick(window, cx)).is_err() {
                 break;
             }
@@ -268,7 +288,7 @@ impl ReminderView {
         let mut view = Self {
             card: Card::of(request, &reminders),
             request: request.clone(),
-            countdown: Countdown::started(cx.background_executor().now()),
+            countdown: Countdown::started(SHOWN_FOR, cx.background_executor().now()),
             shows: 0,
             leaving: None,
             locked: false,
@@ -293,7 +313,7 @@ impl ReminderView {
         self.card = Card::of(request, &settings);
         self.request = request.clone();
         let now = cx.background_executor().now();
-        self.countdown = Countdown::started(now);
+        self.countdown = Countdown::started(SHOWN_FOR, now);
         if self.pointer_over {
             self.countdown.pause(now);
         }
@@ -352,8 +372,7 @@ impl ReminderView {
     #[cfg(feature = "probes")]
     pub fn force_time_left(&mut self, fraction: f32, cx: &mut Context<Self>) {
         let now = cx.background_executor().now();
-        self.countdown.left = SHOWN_FOR.mul_f32(fraction.clamp(0.0, 1.0));
-        self.countdown.running_since = self.countdown.running_since.map(|_| now);
+        self.countdown.set_fraction_left(fraction, now);
         cx.notify();
     }
 
@@ -397,11 +416,16 @@ impl ReminderView {
         cx.notify();
     }
 
-    fn head(&self, s: Scale, cx: &mut Context<Self>) -> impl IntoElement {
+    fn timer_ring(&self, now: Instant) -> TimerRing {
+        TimerRing { left: self.countdown.fraction_left(now), paused: self.pointer_over, solo: self.locked }
+    }
+
+    fn head(&self, s: Scale, now: Instant, cx: &mut Context<Self>) -> impl IntoElement {
         let dismiss = (!self.locked).then(|| {
             chrome::tool_button("dismiss", Icon::Close, fl!("common-dismiss"), self.pointer_over, s)
                 .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx)))
         });
+        let ring = self.timer_ring(now);
         div()
             .flex_none()
             .h(s.px(22.))
@@ -423,6 +447,7 @@ impl ReminderView {
                 )
             })
             .child(div().flex_1())
+            .child(ring.element(s))
             .children(dismiss)
     }
 
@@ -430,7 +455,7 @@ impl ReminderView {
         self.card.events.iter().enumerate().map(move |(index, (name, detail))| {
             div()
                 .mt(s.px(if index == 0 { 4. } else { 7. }))
-                .pl(s.px(23.))
+                .pl(s.px(4.))
                 .pr(s.px(4.))
                 .flex()
                 .flex_col()
@@ -455,15 +480,81 @@ impl ReminderView {
     }
 }
 
-fn time_left_line(fraction: f32, s: Scale) -> impl IntoElement {
-    div()
-        .mt(s.px(8.))
-        .mx(s.px(4.))
-        .h(s.px(2.))
-        .rounded(s.px(1.))
-        .bg(rgba(GAUGE_EMPTY))
-        .overflow_hidden()
-        .child(div().h_full().w(relative(fraction.clamp(0.0, 1.0))).rounded(s.px(1.)).bg(rgba(FAINT)))
+/// The cards' timer ring (tokens.md, "Timer ring"): the time left as an arc
+/// over a full-circle track, emptying clockwise from 12 o'clock.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TimerRing {
+    /// The time left, 0 to 1.
+    pub left: f32,
+    /// The pointer is over the card: the arc stands still and brightens.
+    pub paused: bool,
+    /// No × beside it (the card is locked): the ring takes the ×'s slot.
+    pub solo: bool,
+}
+
+impl TimerRing {
+    const SIDE: f32 = 12.;
+    const STROKE: f32 = 2.;
+
+    /// Where the arc starts, in degrees clockwise from 12 o'clock; it always
+    /// ends at 12 o'clock. None once no time is left.
+    pub fn arc_start(self) -> Option<f32> {
+        let left = self.left.clamp(0., 1.);
+        (left > 0.).then(|| (1. - left) * 360.)
+    }
+
+    pub fn arc_colour(self) -> u32 {
+        if self.paused { TEXT } else { MUTED }
+    }
+
+    pub fn slot_width(self) -> f32 {
+        if self.solo { 22. } else { 16. }
+    }
+
+    /// The 16 × 22 px slot, 8 px before the × (the header's gap and 2 px),
+    /// or the ×'s own 22 px slot when there is no ×.
+    pub fn element(self, s: Scale) -> impl IntoElement {
+        div()
+            .id("timer-ring")
+            .debug_selector(|| "timer-ring".to_string())
+            .role(Role::Timer)
+            .aria_label(fl!("common-time-left"))
+            .flex_none()
+            .w(s.px(self.slot_width()))
+            .h(s.px(22.))
+            .when(!self.solo, |slot| slot.mr(s.px(2.)))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(canvas(|_, _, _| {}, move |bounds, _, window, _| self.paint(bounds, s, window)).size(s.px(Self::SIDE)))
+    }
+
+    fn paint(self, bounds: Bounds<Pixels>, s: Scale, window: &mut Window) {
+        let centre = bounds.center();
+        let radius = s.px((Self::SIDE - Self::STROKE) / 2.);
+        let on_circle = |degrees: f32| {
+            let radians = degrees.to_radians();
+            point(centre.x + radius * radians.sin(), centre.y - radius * radians.cos())
+        };
+        let arc = |from: f32, to: f32| {
+            let mut path = PathBuilder::stroke(s.px(Self::STROKE));
+            path.move_to(on_circle(from));
+            // Halves, so a full turn has distinct start and end points.
+            let middle = (from + to) / 2.;
+            for (start, end) in [(from, middle), (middle, to)] {
+                path.arc_to(point(radius, radius), px(0.), end - start > 180., true, on_circle(end));
+            }
+            path.build()
+        };
+        let mut paint = |from: f32, colour: u32| match arc(from, 360.) {
+            Ok(path) => window.paint_path(path, rgba(colour)),
+            Err(error) => crate::app_log::warn(format!("cannot draw the card's timer ring: {error:?}")),
+        };
+        paint(0., GAUGE_EMPTY);
+        if let Some(start) = self.arc_start() {
+            paint(start, self.arc_colour());
+        }
+    }
 }
 
 impl Render for ReminderView {
@@ -474,17 +565,19 @@ impl Render for ReminderView {
         let look = self.appearance.look();
         let s = look.s;
 
+        // 9 px above and 12 px below put 14 px between the border and the
+        // ink on all four sides: the header's glyphs sit 4 px inside its
+        // row, the last line's 2 px inside its line.
         let card = chrome::card(self.appearance.width, look)
-            .pt(s.px(8.))
-            .pb(s.px(6.))
+            .pt(s.px(9.))
+            .pb(s.px(12.))
             .overflow_hidden()
             .id("reminder")
             .debug_selector(|| "reminder".to_string())
             .role(Role::Status)
             .aria_label(self.card.label())
-            .child(self.head(s, cx))
+            .child(self.head(s, now, cx))
             .children(self.events(s))
-            .child(time_left_line(self.countdown.fraction_left(now), s))
             .when(!self.locked, |card| {
                 card.cursor_pointer().on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx)))
             });
@@ -679,5 +772,51 @@ mod tests {
         wait(cx, FADE);
         assert!(is_open(cx), "the fade out was cancelled");
         assert_eq!(names(&view, cx), vec!["Dimensional Invasion"]);
+    }
+
+    #[test]
+    fn the_ring_empties_clockwise_from_twelve_and_always_ends_at_twelve() {
+        let ring = |left: f32| TimerRing { left, paused: false, solo: false };
+        assert_eq!(ring(1.).arc_start(), Some(0.), "full: the whole turn");
+        assert_eq!(ring(0.75).arc_start(), Some(90.), "a quarter gone: the start has moved to 3 o'clock");
+        assert_eq!(ring(0.25).arc_start(), Some(270.));
+        assert_eq!(ring(0.).arc_start(), None, "no arc once the time is up");
+        assert_eq!(ring(1.5).arc_start(), Some(0.));
+    }
+
+    #[test]
+    fn the_ring_brightens_while_paused_and_takes_the_x_slot_without_an_x() {
+        let ring = TimerRing { left: 0.5, paused: false, solo: false };
+        assert_eq!(ring.arc_colour(), MUTED);
+        assert_eq!(TimerRing { paused: true, ..ring }.arc_colour(), TEXT);
+        assert_eq!(ring.slot_width(), 16.);
+        assert_eq!(TimerRing { solo: true, ..ring }.slot_width(), 22.);
+    }
+
+    #[gpui::test]
+    fn the_ring_follows_the_time_left_stops_under_the_pointer_and_takes_the_x_slot_when_locked(cx: &mut TestAppContext) {
+        let (view, cx) = open(cx, request(vec![EventId::ShugoFestival], 16));
+        let ring = |view: &Entity<ReminderView>, cx: &mut VisualTestContext| {
+            cx.update(|_, cx| view.read(cx).timer_ring(cx.background_executor().now()))
+        };
+        assert!((ring(&view, cx).left - 1.).abs() < 1e-3, "a new card starts full");
+        let card = cx.debug_bounds("reminder").expect("the card is drawn");
+        assert_eq!(card.size.height, gpui::px(81.), "one event");
+        assert_eq!(cx.debug_bounds("timer-ring").map(|slot| slot.size.width), Some(gpui::px(16.)));
+
+        wait(cx, Duration::from_secs(15));
+        let half = ring(&view, cx);
+        assert!((half.left - 0.5).abs() < 0.01 && !half.paused, "{half:?}");
+
+        cx.update(|window, cx| view.update(cx, |view, cx| view.force_pointer(Some(true), window, cx)));
+        wait(cx, Duration::from_secs(5));
+        let paused = ring(&view, cx);
+        assert!(paused.paused && (paused.left - half.left).abs() < 0.01, "the arc stands still under the pointer: {paused:?}");
+        cx.update(|window, cx| view.update(cx, |view, cx| view.force_pointer(None, window, cx)));
+
+        cx.update(|window, cx| view.update(cx, |view, cx| view.set_locked(true, window, cx)));
+        cx.run_until_parked();
+        assert!(ring(&view, cx).solo);
+        assert_eq!(cx.debug_bounds("timer-ring").map(|slot| slot.size.width), Some(gpui::px(22.)), "the ring in the ×'s slot");
     }
 }

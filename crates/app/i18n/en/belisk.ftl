@@ -2,7 +2,8 @@
 ## fr/belisk.ftl too, with the same arguments; a test checks it.
 ## Keys are prefixed by their area: common-, unit-, class-, duration-, weekday-,
 ## month-, day-, date-, list-, todos-, resources-, reminder-, settings-, stored-,
-## meter-, history-, detail-, report-, pvp-, tray-, toolbar-, prompt-, whatsnew-.
+## meter-, history-, detail-, report-, pvp-, tray-, toolbar-, prompt-, whatsnew-,
+## pets-.
 
 ## Product name, used by every message that says it (the tray, the
 ## window titles): renaming the product is this one line in each language.
@@ -28,6 +29,7 @@ common-dps = DPS
 common-cancel = Cancel
 common-close = Close
 common-dismiss = Dismiss
+common-time-left = Time left
 common-character = Character
 common-server = Server
 common-skill-numbered = Skill { $code }
@@ -215,6 +217,64 @@ resources-window-plain-caps = Caps without membership
 resources-window-no-character-line = Your resources appear once { -app-name } has seen your character. Start it before login, or relog via character select.
 resources-window-picker-note = Characters { -app-name } has seen, with what each has left. Shugo keys, Invasion keys and the Daily Dungeon are shared by your characters on one server.
 
+## Pets: the window and the soul tracker card
+
+pets-window-title = Pets
+pets-search = Search pets
+pets-clear-search = Clear the search
+pets-filter = Show and order
+pets-tab-all = All
+pets-family-cogni = Cogni
+pets-family-fera = Fera
+pets-family-natura = Natura
+pets-family-varian = Varian
+pets-family-special = Special
+pets-owned = { $owned } of { $total } owned
+pets-maxed = { $count } at Lv 3
+pets-levels = Levels
+pets-pinned = Pinned
+pets-all-pets = All pets
+pets-no-stats = no stats
+pets-source-live = From the game, live · logged in at { $time } · { $server }
+pets-source-earlier = As of your login { $stamp } · relog to refresh
+pets-source-earlier-tip = Read at your login { $stamp }; souls gained since, while { -app-name } ran, are added.
+pets-source-earlier-tip-detail = The game sends your pets only at login: log in again while { -app-name } runs for exact values.
+pets-source-none = No pets read yet. Log in while { -app-name } runs.
+pets-souls-per-level = Souls per level
+pets-cap = Lv 3 is the cap
+pets-level = Lv { $level }
+pets-max = Max
+pets-pin = Pin { $name }
+pets-unpin = Unpin { $name }
+pets-pin-tip = Pin to the top
+pets-unpin-tip = Unpin
+pets-pinned-announce = { $name } pinned
+pets-unpinned-announce = { $name } unpinned
+pets-show = Show
+pets-order = Order
+pets-show-all = All pets
+pets-show-not-owned = Not owned yet
+pets-show-not-maxed = Not at Lv 3
+pets-order-game = Game order
+pets-order-closest = Closest to the next level
+pets-closest-first = closest first
+pets-shown = { $count } shown
+pets-clear = Clear
+pets-clear-name = Clear the Show and Order choice
+pets-empty-title = No pets yet
+pets-empty-line = The game sends your pets once, when you log in. Log in with a character while { -app-name } runs, and every pet shows here with its level and souls.
+pets-no-match = No pet matches “{ $query }”
+pets-nothing-in = Nothing in { $tab }.
+pets-search-all = Search all families
+pets-no-match-all = No pet in any family has that in its name.
+pets-unknown = Pet { $id }
+pets-row = { $name }, Lv { $level }, { $souls } of { $needed } souls toward Lv { $next }
+pets-row-max = { $name }, Lv { $level }, at the cap
+pets-card-title = Pet souls
+pets-card-test = Test card
+pets-card-reached = Lv { $level } reached
+pets-card-unlocked = Unlocked
+
 ## Event reminders
 
 reminder-event-shugo-festival = Shugo Festival
@@ -263,6 +323,7 @@ settings-section-capture = Capture
 settings-section-bests = Personal bests
 settings-section-reminders = Reminders
 settings-section-todos = To-dos
+settings-section-pets = Pets
 settings-section-general = General
 settings-section-about = About
 settings-meter-status = Meter: { $status }
@@ -483,6 +544,28 @@ settings-todos-not-saved = The to-dos could not be saved
 settings-todos-starting-empty = The to-dos start empty.
 settings-todos-reset-title = Reset the to-dos completely?
 settings-todos-reset-confirm = Reset to-dos
+
+settings-pets-lead = The Pets window opens from the toolbar. The card works with the meter open or closed.
+settings-pets-card = Soul tracker card
+settings-pets-tracker = Soul tracker
+settings-pets-tracker-text = A small card when you pick up a pet's souls, with its progress to the next level. It goes 10 s after the last pickup.
+settings-pets-only-pinned = Only pinned pets
+settings-pets-only-pinned-text = Shows the card only for the pets you pinned in the Pets window.
+settings-pets-maxed = Pets already at Lv 3
+settings-pets-maxed-text = Also shows the card for pets at the cap, as Lv 3 · 75/75.
+settings-pets-black-market = Black-market purchases
+settings-pets-black-market-text = Souls bought at the black market (+5) show the card like a pickup.
+settings-pets-test-text = Shows the card now with your first pinned pet.
+settings-pets-show-test = Show a test card
+settings-pets-test-shown-toolbar = Shown under the toolbar
+settings-pets-test-shown-meter = Shown above the meter
+settings-pets-collection = Collection
+settings-pets-collection-on = Pets on { $server }
+settings-pets-collection-no-server = Your pets
+settings-pets-read = Read at login, { $stamp }. The game sends your pets only when you log in; pickups since are added.
+settings-pets-not-read = Not read yet. Log in with a character on this server while { -app-name } runs.
+settings-pets-not-read-any = Not read yet. Log in with a character while { -app-name } runs.
+settings-pets-owned-of = of { $total }
 
 settings-general-app = App
 settings-language = Language
@@ -839,6 +922,7 @@ toolbar-meter-open-line = Click to close. Fights stop being tracked.
 toolbar-meter-aside-line = Hidden between fights. Click to show it for { $seconds } s.
 toolbar-pvp = PvP meter
 toolbar-todos = To-dos
+toolbar-pets = Pets
 toolbar-history = Fight history
 toolbar-reminders = Reminders
 toolbar-reminders-paused = Paused

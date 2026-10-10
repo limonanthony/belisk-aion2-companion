@@ -1,0 +1,1268 @@
+/* The pets round (TASK-34.3), 2026-10-10, not approved yet: the pets window
+   (layout A chosen; B and C kept for ?compare), the soul tracker card (A
+   chosen), the toolbar's entry and, in round 2, the level colours (end of
+   this file). Only what this round adds: values follow ../approved/tokens.md;
+   values new in this round are marked "new". Loaded after
+   ../approved/overlay.css, todos.css (the bundled Barlow Semi Condensed,
+   the to-do window's rows, the source line), meter.css and hub.css (the
+   toolbar, the reminder card's classes). */
+
+/* ---- Pets window: frame ----------------------------------------------------
+   The to-do window's frame (370 px, 28 px header, 26 px footer). */
+.ov.o.td.pt {
+  width: 370px;
+}
+
+/* The search row: the 26 px input, then the filter button. */
+.pt-find {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+
+.pt-find.is-off {
+  opacity: 0.4;
+}
+
+.pt-search.o-input {
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+  padding: 0 4px 0 8px;
+  cursor: text;
+}
+
+.pt-search > .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.pt-search.is-focus,
+.pt-search:focus-within {
+  border-color: rgba(255, 246, 236, 0.55);
+}
+
+.pt-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--o-text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.pt-search input::placeholder {
+  color: var(--o-faint);
+}
+
+.pt-search .val {
+  flex: 0 1 auto;
+  font-weight: 500;
+}
+
+.pt-search .o-caret {
+  margin-left: -5px;
+}
+
+.pt-search .ph {
+  flex: 1;
+}
+
+.pt-search .o-btn.is-sm {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--o-muted);
+}
+
+.pt-search .o-btn.is-sm:hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+/* The filter button: 26 x 26 px (the input's height, new), 7 px radius,
+   Lucide list-filter 13 px in muted. A filter in force lights it as the
+   toolbar lights an open tool: hot, text, the icon 3 px higher and the
+   4 x 4 px dot. */
+.pt-filter {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--o-muted);
+}
+
+.pt-filter:hover,
+.pt-filter.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.pt-filter.is-on,
+.pt-filter.is-open {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+.pt-filter.is-on::after {
+  content: "";
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.pt-filter.is-on .i {
+  margin-top: -3px;
+}
+
+/* The filter menu: the popover, 6 px under the button, right edges
+   aligned, 232 px (new). Items as the meter's "…" menu: a 12 px lead slot
+   with Lucide check on the current choice, which is 600. */
+.pt-menu.o-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  width: 232px;
+  z-index: 8;
+}
+
+.pt-menu .hb-drop-label {
+  height: 22px;
+}
+
+.pt-menu .o-menu-item {
+  gap: 6px;
+  cursor: pointer;
+}
+
+.pt-menu .o-menu-item:hover {
+  background: var(--o-hot);
+}
+
+.pt-menu .o-menu-item .lead {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 12px;
+}
+
+.pt-menu .o-menu-item .i {
+  width: 12px;
+  height: 12px;
+}
+
+.pt-menu .o-menu-item.is-cur {
+  font-weight: 600;
+}
+
+/* Tabs: the approved segmented tabs. */
+.pt .o-tabs {
+  margin: 0 0 6px;
+}
+
+.pt .o-tab {
+  cursor: pointer;
+}
+
+.pt .o-tab:not(.is-on):hover {
+  color: var(--o-text);
+}
+
+.pt .o-tabs.is-off {
+  opacity: 0.4;
+}
+
+/* ---- Family summary (Proposed) -------------------------------------------
+   One 18 px line, 4 px inset, 11.5 px / 500 muted, figures text / 600; a
+   4 px bar under it (the thin coverage bar's shape: 2 px radius), track
+   gauge-empty, fill cream at 0.55 (new): levels gained of the levels the
+   tab can reach. */
+.pt-sum {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 4px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.pt-sum b {
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+.pt-sum small {
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.pt-prog {
+  height: 4px;
+  margin: 3px 4px 6px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 240, 225, 0.12);
+}
+
+.pt-prog i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: rgba(255, 246, 236, 0.55);
+}
+
+/* What the filter keeps: the source line's style, Clear as a link. */
+.pt-fline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  margin: -2px 0 4px;
+  padding: 0 4px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.pt-fline > .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.pt-fline .t-link {
+  margin-left: auto;
+  cursor: pointer;
+}
+
+/* The source line's tooltip (the figure tooltip's two lines). */
+.pt-srcwrap {
+  position: relative;
+}
+
+.pt-srcwrap .t-tip {
+  top: 20px;
+  left: 22px;
+  max-width: 300px;
+  white-space: normal;
+}
+
+/* ---- The list -------------------------------------------------------------
+   Scrolls past 452 px (the to-do window's list) with the 3 px thumb, 4 px
+   from the right; 11 px right padding while it overflows; 3 px of room
+   around the rows so a focus ring is never clipped. */
+.pt-scrollwrap {
+  position: relative;
+  margin: -3px;
+}
+
+.pt-scroll {
+  position: relative;
+  max-height: 458px;
+  padding: 3px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.pt-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.pt-scrollwrap.is-over .pt-scroll {
+  padding-right: 11px;
+}
+
+.pt-scrollwrap .o-thumb {
+  display: none;
+  right: 4px;
+}
+
+.pt-scrollwrap.is-over .o-thumb {
+  display: block;
+}
+
+/* Group labels in layout A: the to-do section label, not clickable. */
+.pt .t-sec.is-static {
+  cursor: default;
+}
+
+.pt .t-sec.is-static:hover {
+  color: var(--o-muted);
+}
+
+.pt-gap {
+  height: 3px;
+}
+
+/* No match: the empty state, then a link. */
+.pt .o-empty .t-link {
+  cursor: pointer;
+}
+
+/* ---- Layout A: meter rows --------------------------------------------------
+   The meter's row: a level badge (the rank badge's shape, 30 px wide for
+   "Lv 2", new), 8 px to the track; the track (5 px radius, 8 px left and
+   9 px right inset) holds the progress fill, the name, the souls and the
+   next level; the 20 px pin slot after it. */
+.pt-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pt-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+}
+
+.pt-lv {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 18px;
+  margin-right: 3px;
+  border-radius: 4px;
+  background: rgba(255, 240, 225, 0.09);
+  color: var(--o-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Lv 3, the cap: chip-good. Never obtained: quieter. */
+.pt-row.is-max .pt-lv {
+  background: rgba(134, 227, 168, 0.13);
+  color: var(--o-good);
+}
+
+.pt-row.is-none .pt-lv {
+  background: rgba(255, 240, 225, 0.05);
+  color: var(--o-faint);
+}
+
+.pt-track {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 9px 0 8px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--o-track);
+}
+
+/* Souls toward the next level: neutral-fill (no class colour), floor 4%
+   while above zero, none at zero; full at Lv 3. */
+.pt-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 5px;
+  background: linear-gradient(90deg, rgba(255, 240, 225, 0.04), rgba(255, 240, 225, 0.16));
+  transition: width 240ms ease-out;
+}
+
+.pt-track > :not(.pt-fill) {
+  position: relative;
+}
+
+.pt-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.pt-name small,
+.t-name small.pt-tag {
+  margin-left: 5px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pt-row.is-none .pt-name {
+  color: var(--o-muted);
+}
+
+.pt-fig {
+  flex-shrink: 0;
+  width: 44px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.pt-fig small {
+  margin-left: 1px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pt-row.is-max .pt-fig,
+.pt-row.is-none .pt-fig {
+  color: var(--o-muted);
+}
+
+.pt-fig.is-blank {
+  color: var(--o-faint);
+  font-weight: 500;
+}
+
+/* The next level: Lucide arrow-right 10 px faint, then "Lv 3", right-
+   aligned in 40 px; "Max" at the cap. */
+.pt-to {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 40px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.pt-to .i {
+  width: 10px;
+  height: 10px;
+  color: var(--o-faint);
+  stroke-width: 2.25;
+}
+
+.pt-to.is-max {
+  color: var(--o-faint);
+}
+
+/* The pencil before a typed figure (the to-do window's gutter icon). */
+.pt-typed {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--o-faint);
+}
+
+.pt-typed .i {
+  width: 11px;
+  height: 11px;
+}
+
+/* ---- The pin button --------------------------------------------------------
+   The to-do window's × slot: 20 x 20 px, 5 px radius, Lucide pin 12 px in
+   muted, shown while the pointer is in the row (enter and leave only) or
+   the button has keyboard focus. A pinned pet keeps it shown, in text. */
+.pt-pin {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--o-muted);
+  visibility: hidden;
+}
+
+.pt-pin .i {
+  width: 12px;
+  height: 12px;
+}
+
+.pt-row:hover .pt-pin,
+.pt-row.is-hover .pt-pin,
+.pt-trow:hover .pt-pin,
+.pt-trow.is-hover .pt-pin,
+.pt-crow:hover .pt-pin,
+.pt-crow.is-hover .pt-pin,
+.pt-pin.is-on,
+.pt-pin.is-focus,
+.pt-pin:focus-visible {
+  visibility: visible;
+}
+
+.pt-pin.is-on {
+  color: var(--o-text);
+}
+
+.pt-pin:hover,
+.pt-pin.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.pt .pt-pin.is-focus,
+.pt .pt-pin:focus-visible {
+  outline: 2px solid var(--t-ring);
+  outline-offset: 1px;
+}
+
+.pt-row .t-tip,
+.pt-trow .t-tip,
+.pt-crow .t-tip {
+  top: 24px;
+  right: 0;
+}
+
+/* Typing a count by hand (Proposed fallback): the level select and the
+   approved amount field take the figure's place. */
+.pt-edit {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.pt-lvsel {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 4px 0 7px;
+  border: 1px solid rgba(255, 240, 225, 0.12);
+  border-radius: 6px;
+  background: var(--o-track);
+  color: var(--o-text);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.pt-lvsel .i {
+  width: 11px;
+  height: 11px;
+  color: var(--o-muted);
+}
+
+.pt-edit .t-field {
+  width: 92px;
+}
+
+/* ---- Layout B: a table ----------------------------------------------------
+   The fight report's death rows: 24 px, track, 5 px radius, 8 px left
+   inset; figures right-aligned in fixed columns under a 20 px header whose
+   labels sort. */
+.pt-th.o-th {
+  gap: 6px;
+  padding: 0 3px 0 8px;
+}
+
+.pt-th .c-pet {
+  flex: 1;
+  min-width: 0;
+}
+
+.pt-th .c-pet small {
+  margin-left: 6px;
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.pt-c {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.pt-c.c-gut {
+  width: 12px;
+}
+
+.pt-c.c-lv {
+  width: 26px;
+}
+
+.pt-c.c-souls {
+  width: 50px;
+}
+
+.pt-c.c-left {
+  width: 34px;
+}
+
+.pt-c.c-pin {
+  width: 20px;
+}
+
+.pt-th .pt-c {
+  display: inline-flex;
+  justify-content: flex-end;
+  cursor: pointer;
+}
+
+.pt-trows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pt-trow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 3px 0 8px;
+  border-radius: 5px;
+  background: var(--o-track);
+}
+
+.pt-trow .c-gut {
+  display: inline-flex;
+  justify-content: center;
+  color: var(--o-faint);
+}
+
+.pt-trow .c-gut .i {
+  width: 11px;
+  height: 11px;
+}
+
+.pt-trow .pt-name {
+  font-size: 13px;
+}
+
+.pt-trow .c-lv {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pt-trow .c-souls {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pt-trow .c-souls small {
+  margin-left: 1px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pt-trow .c-left {
+  color: var(--o-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.pt-trow.is-max .c-lv {
+  color: var(--o-good);
+}
+
+.pt-trow.is-max .c-souls,
+.pt-trow.is-none .c-souls,
+.pt-trow.is-none .pt-name {
+  color: var(--o-muted);
+}
+
+.pt-trow.is-none .c-lv,
+.pt-trow .c-left.is-none {
+  color: var(--o-faint);
+}
+
+/* ---- Layout C: sections by family, level pips -----------------------------
+   The to-do window's sections (24 px labels with a chevron and the
+   family's summary at the end) and rows (26 px, 2 px apart, 12 px
+   gutter). The level as three pips: the gauge's segment (5 px tall, 3 px
+   radius) at 9 px wide, 2 px apart (new); a reached level in muted cream,
+   the others gauge-empty. */
+.pt-crow .t-name {
+  font-weight: 500;
+}
+
+.pt-crow.is-none .t-name {
+  color: var(--o-muted);
+}
+
+.pt-pips {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.pt-pips i {
+  width: 9px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 240, 225, 0.12);
+}
+
+.pt-pips i.on {
+  background: rgba(255, 246, 236, 0.66);
+}
+
+.pt-crow.is-max .pt-pips i.on {
+  background: var(--o-good);
+}
+
+.pt-cfig {
+  flex-shrink: 0;
+  width: 46px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.pt-cfig small {
+  margin-left: 1px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pt-crow.is-max .pt-cfig,
+.pt-crow.is-none .pt-cfig {
+  color: var(--o-muted);
+}
+
+.pt .t-sec .at {
+  white-space: nowrap;
+}
+
+/* ---- Soul tracker card A: the reminder card's twin -------------------------
+   The reminder card's frame and header (hub.css .rm), 310 px; a block per
+   pet, 23 px in: the name 13 px / 600 and, on a level change, a good chip
+   pushed right; the fact line 11.5 px / 500 muted; a 4 px progress bar
+   (the thin coverage bar's shape) 5 px under it. */
+.ov.rm.pc .rm-head {
+  margin-right: -2px;
+}
+
+.pc-x {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border-radius: 7px;
+  color: var(--r-muted);
+  cursor: pointer;
+}
+
+.pc-x:hover,
+.pc-x.is-hot {
+  background: var(--r-hot);
+  color: var(--r-text);
+}
+
+.pc-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+}
+
+.pc-top .rm-name {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A level reached / a first unlock: chip-good, 18 px (the window header's
+   chip size), Lucide chevrons-up or sparkles 11 px. */
+.pc-chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(134, 227, 168, 0.14);
+  color: #86e3a8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pc-chip .i {
+  width: 11px;
+  height: 11px;
+}
+
+.pc-fact {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 16px;
+  color: var(--r-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.pc-fact .faint {
+  color: var(--r-faint);
+}
+
+.pc-fig {
+  color: var(--r-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pc-fig small {
+  margin-left: 1px;
+  color: var(--r-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pc-fact .i {
+  width: 10px;
+  height: 10px;
+  color: var(--r-faint);
+  stroke-width: 2.25;
+}
+
+/* The progress bar: 4 px, 2 px radius, track; fill the neutral bar at the
+   coverage bar's strength, cream 0.14 -> 0.50 (new). */
+.pc-bar {
+  height: 4px;
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.34);
+}
+
+.pc-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(255, 240, 225, 0.14), rgba(255, 240, 225, 0.5));
+  transition: width 240ms ease-out;
+}
+
+/* ---- Soul tracker card B: the window's rows ---------------------------------
+   The meter card (310 px, 14 px radius, 6 px top and bottom padding) with
+   layout A's rows and no header; a level reached shows as its badge in
+   chip-good. The time-left line under the rows. */
+.ov.o.pc-strip {
+  width: 310px;
+  padding: 6px 8px 6px;
+  cursor: default;
+}
+
+.pc-strip .pt-row.is-new .pt-lv {
+  background: rgba(134, 227, 168, 0.13);
+  color: var(--o-good);
+}
+
+.pc-strip .rm-left {
+  margin-top: 6px;
+}
+
+/* ---- Soul tracker card C: a pill -------------------------------------------
+   The capsule's shape: 30 px, fully rounded, card colours; hugs its
+   content up to 310 px. Several pets stack 4 px apart, the newest first. */
+.pc-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(4px * var(--scale));
+}
+
+.ov.o.pc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 310px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border-radius: 999px;
+  cursor: default;
+}
+
+.pc-pill > .i {
+  color: var(--o-muted);
+}
+
+.pc-pill.is-new > .i {
+  color: var(--o-good);
+}
+
+.pc-pill .nm {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.pc-pill .lv {
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.pc-pill.is-new .lv {
+  color: var(--o-good);
+}
+
+.pc-pill .fig {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pc-pill .fig small {
+  margin-left: 1px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pc-pill .to {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+}
+
+.pc-pill .to .i {
+  width: 10px;
+  height: 10px;
+  color: var(--o-faint);
+}
+
+.pc-pill .dot {
+  color: var(--o-faint);
+}
+
+/* The pill has no visible time-left line; this one only times it. */
+.pc-life {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* ---- Motion (the "Try it" tile) --------------------------------------------
+   Fades in over 150 ms and out over 150 ms, as the reminder card; the
+   time-left line drains over 10 s and starts over at each gain; the
+   pointer over the card pauses it. Figures swap in place; bars grow over
+   240 ms. Nothing flashes or pulses. */
+.pc-live.is-enter {
+  animation: pc-in 150ms ease-out both;
+}
+
+.pc-live .rm-left i,
+.pc-live .pc-life i {
+  animation: pc-drain 10s linear forwards;
+}
+
+.pc-live:hover .rm-left i,
+.pc-live:hover .pc-life i {
+  animation-play-state: paused;
+}
+
+.pc-live.is-gone {
+  opacity: 0;
+  transition: opacity 150ms ease-in;
+}
+
+.pc-life i {
+  display: block;
+  width: 100%;
+  height: 1px;
+}
+
+@keyframes pc-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pc-drain {
+  from {
+    width: 100%;
+  }
+
+  to {
+    width: 0;
+  }
+}
+
+/* ---- Toolbar additions -----------------------------------------------------
+   The pets tool is an approved 26 px tool (hub.css .hb-btn). The pinned
+   count (Proposed) is an approved count (hub.css .hb-count) with its
+   tooltip's right edge on the count's, as the other counts. */
+.pt-pc .hb-tip {
+  right: 0;
+  left: auto;
+}
+
+.pt-pc.is-open {
+  background: var(--o-hot);
+}
+
+.hb-drop .o-menu-item .pt-dlv {
+  width: 30px;
+  flex-shrink: 0;
+  color: var(--o-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.hb-drop .o-menu-item .fig.pt-dfig {
+  width: 46px;
+  color: var(--o-text);
+}
+
+.hb-drop .o-menu-item .fig.pt-dfig small {
+  color: var(--o-faint);
+}
+
+/* ---- Page chrome (not product styling) ------------------------------------ */
+
+/* Decision tags, copied from ../updates/updates.css, unchanged. */
+.dec {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  vertical-align: 1px;
+}
+
+.dec.is-agreed {
+  background: rgba(134, 227, 168, 0.14);
+  color: #86e3a8;
+}
+
+.dec.is-proposed {
+  background: rgba(242, 198, 109, 0.14);
+  color: #f2c66d;
+}
+
+.dec.is-open {
+  background: rgba(143, 184, 255, 0.16);
+  color: #a9c7ff;
+}
+
+.dec.is-rec {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.tile__cap .dec {
+  flex-shrink: 0;
+  margin-right: 0;
+}
+
+.tile__cap {
+  flex-wrap: wrap;
+}
+
+.tile__cap span.sub {
+  flex-basis: 100%;
+}
+
+/* A toolbar low on the screen: the card goes above it. */
+.pt-low {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: calc(var(--stage-min, 320px) - 44px);
+}
+
+/* The working tile: the card and the window side by side under the
+   toolbar. */
+.pt-try .hb-row {
+  flex-wrap: wrap;
+}
+
+.pt-try .mk-sim {
+  width: 560px;
+  max-width: 100%;
+}
+
+.pt-try-card {
+  min-width: calc(310px * var(--scale));
+  min-height: 40px;
+}
+
+.pt-try-card .ov {
+  cursor: pointer;
+}
+
+section.pt-sec .tiles.is-wide {
+  grid-template-columns: 1fr;
+}
+
+/* Narrow pages: a tile never asks for more than the page's width. */
+section.pt-sec .tiles {
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--tile-min, 360px), 100%), 1fr));
+}
+
+section.pt-sec .tile {
+  min-width: 0;
+}
+
+/* ---- Level colours (round 2, new) ------------------------------------------
+   Lv 0 grey (the rank badge's neutral), Lv 1 to Lv 3 the good token
+   (#86e3a8) at rising strength, Lv 3 a filled badge with ink text. The
+   "Lv N" text always stays: colour is never the only cue.
+     Lv 0  bg rgba(255, 240, 225, 0.09)   text muted rgba(255, 246, 236, 0.66)
+     Lv 1  bg rgba(134, 227, 168, 0.10)   text rgba(134, 227, 168, 0.66)
+     Lv 2  bg rgba(134, 227, 168, 0.28)   text #86e3a8
+     Lv 3  bg rgba(134, 227, 168, 0.86)   text #17120d (ink)
+   (b) also tints the progress fill, a two-stop gradient as every bar:
+     Lv 0  cream 0.04 -> 0.16 (unchanged)
+     Lv 1  good 0.04 -> 0.14
+     Lv 2  good 0.06 -> 0.24
+     Lv 3  good 0.08 -> 0.34 */
+.has-lvc {
+  --lv0-bg: rgba(255, 240, 225, 0.09);
+  --lv0-fg: rgba(255, 246, 236, 0.66);
+  --lv1-bg: rgba(134, 227, 168, 0.1);
+  --lv1-fg: rgba(134, 227, 168, 0.66);
+  --lv2-bg: rgba(134, 227, 168, 0.28);
+  --lv2-fg: #86e3a8;
+  --lv3-bg: rgba(134, 227, 168, 0.86);
+  --lv3-fg: #17120d;
+}
+
+/* Lv 0 to Lv 2 sit on the track's dark plate (rgba(0, 0, 0, 0.34)) under
+   their tint, as the rows' names sit on the track, so "Lv 1" and "Lv 2"
+   stay readable over a bright scene at low opacity. GPUI: the badge's fill
+   is the tint composited over track (one precomputed colour per level, or
+   a track div holding the tint). */
+.has-lvc .lv-0 .pt-lv,
+.has-lvc .lv-0 .pc-lv {
+  background: linear-gradient(var(--lv0-bg), var(--lv0-bg)), rgba(0, 0, 0, 0.34);
+  color: var(--lv0-fg);
+}
+
+.has-lvc .lv-1 .pt-lv,
+.has-lvc .lv-1 .pc-lv {
+  background: linear-gradient(var(--lv1-bg), var(--lv1-bg)), rgba(0, 0, 0, 0.34);
+  color: var(--lv1-fg);
+}
+
+.has-lvc .lv-2 .pt-lv,
+.has-lvc .lv-2 .pc-lv {
+  background: linear-gradient(var(--lv2-bg), var(--lv2-bg)), rgba(0, 0, 0, 0.34);
+  color: var(--lv2-fg);
+}
+
+.has-lvc .lv-3 .pt-lv,
+.has-lvc .lv-3 .pc-lv {
+  background: var(--lv3-bg);
+  color: var(--lv3-fg);
+}
+
+.lvc-b .lv-1 .pt-fill {
+  background: linear-gradient(90deg, rgba(134, 227, 168, 0.04), rgba(134, 227, 168, 0.14));
+}
+
+.lvc-b .lv-2 .pt-fill {
+  background: linear-gradient(90deg, rgba(134, 227, 168, 0.06), rgba(134, 227, 168, 0.24));
+}
+
+.lvc-b .lv-3 .pt-fill {
+  background: linear-gradient(90deg, rgba(134, 227, 168, 0.08), rgba(134, 227, 168, 0.34));
+}
+
+/* Card A: the fact line's "Lv 2" becomes the window's level badge, 16 px
+   tall (the fact line's 16 px), 4 px radius, 6 px sides; the "·" after it
+   goes. (b) tints the card's 4 px bar with the fill's leading colour. */
+.pc.has-lvc .pc-lv {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pc.has-lvc .pc-dot {
+  display: none;
+}
+
+.pc.lvc-b .lv-1 .pc-bar i {
+  background: linear-gradient(90deg, rgba(134, 227, 168, 0.1), rgba(134, 227, 168, 0.36));
+}
+
+.pc.lvc-b .lv-2 .pc-bar i {
+  background: linear-gradient(90deg, rgba(134, 227, 168, 0.14), rgba(134, 227, 168, 0.5));
+}
+
+.pc.lvc-b .lv-3 .pc-bar i {
+  background: linear-gradient(90deg, rgba(134, 227, 168, 0.2), rgba(134, 227, 168, 0.66));
+}
+
+/* ---- Page chrome (round 2) ------------------------------------------------ */
+
+/* Two variants side by side in one tile. */
+.pt-pair {
+  position: relative;
+  z-index: 1;
+}
+
+/* Settings › Pets, embedded from settings.html (the main window's desk). */
+.tile__stage.pt-desk {
+  min-height: 0;
+  padding: 0;
+  background: linear-gradient(180deg, #232836, #12151c);
+}
+
+.pt-frame {
+  display: block;
+  width: 1012px;
+  max-width: 100%;
+  height: 672px;
+  border: 0;
+}
+
+/* The 2 px time-left line these cards were drawn with: since the timer
+   ring's approval (2026-10-10, ../card-timer/) hub.css no longer has it,
+   so this round record keeps a copy. */
+.rm-left {
+  height: 2px;
+  margin: 8px 4px 0;
+  overflow: hidden;
+  border-radius: 1px;
+  background: rgba(255, 240, 225, 0.12);
+}
+
+.rm-left i {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: rgba(255, 246, 236, 0.44);
+}
+
+/* The card body as drawn in this round (23 px in): since the pet card
+   layout round's approval, ../approved/hub.css starts it at the icon. */
+.ov.rm .rm-ev {
+  padding-left: 23px;
+}

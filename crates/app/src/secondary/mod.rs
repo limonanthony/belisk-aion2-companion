@@ -1,26 +1,29 @@
 //! The windows besides the meter and the toolbar: fight history, player
-//! detail, the fight report, PvP, the to-dos, the resources, Settings, the
-//! first-open prompt, the event reminder and What's new.
+//! detail, the fight report, PvP, the to-dos, the resources, the pets,
+//! Settings, the first-open prompt, the event reminder, the soul tracker card
+//! and What's new.
 //!
 //! Each kind has at most one window. Opening one that is already open brings
 //! it forward, and the player detail window is pointed at the new player
 //! instead, as the report window is at another fight; a newer reminder takes
-//! the place of the one up. A window closes with its own ×, from the toolbar,
-//! or when the app quits.
+//! the place of the one up, and new souls go on the soul tracker card up. A
+//! window closes with its own ×, from the toolbar, or when the app quits.
 //! Like the meter's, the history, detail, report, PvP, to-do, resources,
-//! prompt, reminder and What's new windows are frameless, topmost, out of the
-//! taskbar and non-activating, and are exactly as large as their card. A tool
-//! opens beside the meter while the meter is open, else under the toolbar.
+//! pets, prompt, reminder, soul tracker and What's new windows are
+//! frameless, topmost, out of the taskbar and non-activating, and are exactly
+//! as large as their card. A tool opens beside the meter while the meter is
+//! open, else under the toolbar.
 //! The prompt keeps to the meter, and the reminder card keeps above the meter
 //! (or the prompt on it) while the meter is open, and under the toolbar while
-//! it is closed or steps aside between fights. What's new keeps under the
-//! toolbar.
+//! it is closed or steps aside between fights; the soul tracker card keeps
+//! the same place, or stacks beyond a reminder card that is up. What's new
+//! keeps under the toolbar.
 //! Settings is a normal window instead: it takes the keyboard focus, has a
 //! taskbar button and opens in the middle of the screen. While it is the
 //! active window it is topmost like the overlays, in front of the game; once
 //! the user goes to another program it goes back among the normal windows.
-//! The lock (Alt+CapsLock) applies to the meter, and to the reminder sitting
-//! on it.
+//! The lock (Alt+CapsLock) applies to the meter, and to the reminder and soul
+//! tracker cards sitting on it.
 
 pub mod chrome;
 mod monitor;
@@ -39,13 +42,14 @@ use gpui::{
 };
 use meter_core::report::fight_report::FightReport;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible};
 
 use crate::changelog::WhatsNew;
 use crate::detail::{DetailModel, DetailSource, DetailView};
 use crate::history::{HistoryModel, HistoryView};
 use crate::meter::{self, MeterModel, MeterView};
 use crate::overlay::{self, Placement};
+use crate::pets::{self, CardRequest, PetCardView, PetsView, ShowTestCard};
 use crate::pvp::{PvpModel, PvpView};
 use crate::reminders::{self, MeterLink, ReminderView, ShowReminder};
 use crate::report::{build_off_thread, ReportModel, ReportRequest, ReportView};
@@ -109,6 +113,8 @@ pub fn init(
     let changes = cx.new(|_| OpenWindows);
     cx.set_global(Secondary { registry: registry.clone(), meter_hwnd, placement, changes });
     cx.subscribe(&reminders::global(cx), |_, request: &ShowReminder, cx| show_reminder(request, cx)).detach();
+    pets::watch_gains(cx, |gains, cx| show_pet_card(&CardRequest::Gains(gains), cx)).detach();
+    cx.subscribe(&pets::global(cx), |_, request: &ShowTestCard, cx| show_pet_card(&CardRequest::Test(*request), cx)).detach();
     let model = meter_model.clone();
     cx.subscribe(&meter_view, move |_, request: &ReportRequest, cx| open_report(&model, request, cx)).detach();
     cx.on_app_quit(move |cx| {
@@ -149,11 +155,48 @@ pub fn hwnd_of(kind: WindowKind, cx: &App) -> Option<HWND> {
     cx.try_global::<Secondary>()?.registry.borrow().get(kind)?.hwnd
 }
 
-/// The native handles of every open window of this layer.
-pub fn open_hwnds(cx: &App) -> Vec<HWND> {
-    cx.try_global::<Secondary>()
-        .map(|secondary| secondary.registry.borrow().all().filter_map(|open| open.hwnd).collect())
-        .unwrap_or_default()
+/// Alt+Shift+CapsLock: takes every window of this layer that is on screen
+/// off it, and returns the kinds to bring back. A soul tracker card that is
+/// up goes, as when its time is up: hidden, its time would run out unseen, and
+/// the next gain shows it again at once, everything hidden or not.
+pub fn hide_all(cx: &mut App) -> Vec<WindowKind> {
+    let Some(secondary) = cx.try_global::<Secondary>() else {
+        return Vec::new();
+    };
+    let visible = |hwnd: HWND| unsafe { IsWindowVisible(hwnd) }.as_bool();
+    let shown: Vec<(WindowKind, AnyWindowHandle, HWND)> = secondary
+        .registry
+        .borrow()
+        .entries()
+        .filter_map(|(kind, open)| open.hwnd.filter(|hwnd| visible(*hwnd)).map(|hwnd| (kind, open.window, hwnd)))
+        .collect();
+    let mut hidden = Vec::new();
+    for (kind, window, hwnd) in shown {
+        if let Some(card) = window.downcast::<PetCardView>().filter(|_| kind == WindowKind::PetCard) {
+            let _ = card.update(cx, |card, window, cx| card.put_away(window, cx));
+            continue;
+        }
+        overlay::hide(hwnd);
+        hidden.push(kind);
+    }
+    hidden
+}
+
+/// Brings back the windows [`hide_all`] took off screen that are still open;
+/// one closed since is not looked for, so no stale handle is ever shown.
+pub fn show_again(kinds: &[WindowKind], cx: &App) {
+    let Some(secondary) = cx.try_global::<Secondary>() else {
+        return;
+    };
+    for hwnd in still_open(kinds, |kind| secondary.registry.borrow().get(kind).and_then(|open| open.hwnd)) {
+        if let Err(error) = overlay::reveal(hwnd, secondary.placement) {
+            crate::app_log::warn(format!("cannot show a window again: {error}"));
+        }
+    }
+}
+
+fn still_open(kinds: &[WindowKind], hwnd_of: impl Fn(WindowKind) -> Option<HWND>) -> Vec<HWND> {
+    kinds.iter().filter_map(|kind| hwnd_of(*kind)).collect()
 }
 
 fn changed(cx: &mut App) {
@@ -184,6 +227,9 @@ pub enum Card {
     /// The reminder card: on the meter (or the prompt on it) while the meter
     /// is open and not stepped aside between fights, else under the toolbar.
     Reminder,
+    /// The soul tracker card: where the reminder card goes, or beyond the
+    /// reminder card while one is up.
+    PetCard,
     /// What's new: under the toolbar, wherever the meter is.
     WhatsNew,
 }
@@ -196,6 +242,19 @@ fn card_anchor(card: Card, cx: &App) -> Option<(HWND, Stack)> {
             Some((hwnd_of(WindowKind::Prompt, cx).unwrap_or(meter_hwnd), Stack::Above))
         }
         Card::Reminder | Card::WhatsNew => Some((toolbar::toolbar_hwnd(cx).unwrap_or(meter_hwnd), Stack::Below)),
+        Card::PetCard => {
+            let (base, preferred) = card_anchor(Card::Reminder, cx)?;
+            let Some(reminder) = hwnd_of(WindowKind::Reminder, cx) else {
+                return Some((base, preferred));
+            };
+            // Beyond the reminder, on the side it took of what it sits on.
+            let side = match (monitor::window_and_work_area(reminder), monitor::window_and_work_area(base)) {
+                (Some((reminder_rect, _)), Some((base_rect, _))) if reminder_rect.top >= base_rect.bottom => Stack::Below,
+                (Some(_), Some(_)) => Stack::Above,
+                _ => preferred,
+            };
+            Some((reminder, side))
+        }
     }
 }
 
@@ -333,6 +392,18 @@ pub fn open_todos(meter_model: &Entity<MeterModel>, cx: &mut App) {
 /// meter so it and the to-do window can be open side by side.
 pub fn open_resources(meter_model: &Entity<MeterModel>, cx: &mut App) {
     open_todo_view(WindowKind::Resources, Contents::Resources, Side::Below, meter_model, cx);
+}
+
+/// The Pets window: left of the meter while it is open, so the to-do window
+/// can stay on its right; under the toolbar while it is closed.
+pub fn open_pets(cx: &mut App) {
+    let registry = registry(cx);
+    let place = tool_anchor(Anchor::Beside(Side::Left), cx);
+    let opened = open_once(&registry, WindowKind::Pets, || {
+        let (window, hwnd) = create_window(WindowKind::Pets, pets::EXPECTED_SIZE, place, |window, cx| cx.new(|cx| PetsView::new(window, cx)), |_| {}, cx)?;
+        Ok(Open { window, hwnd: Some(hwnd), model: None })
+    });
+    finish(WindowKind::Pets, opened, cx);
 }
 
 fn open_todo_view(kind: WindowKind, contents: Contents, side: Side, meter_model: &Entity<MeterModel>, cx: &mut App) {
@@ -543,6 +614,44 @@ fn log_card(request: &ShowReminder, outcome: &str, cx: &App) {
     reminders::global(cx).read(cx).log_card(|| format!("{:?} at {}: {outcome}", request.events, request.starts_at));
 }
 
+/// Shows the soul tracker card, or puts the pets on the one up. The card's
+/// window outlives the card: once its time is up it waits hidden, and the
+/// next gain shows it again at once (opening a window takes 0.2 to 0.4 s).
+pub fn show_pet_card(request: &CardRequest, cx: &mut App) {
+    let registry = registry(cx);
+    let open = registry.borrow().get(WindowKind::PetCard).and_then(|open| open.window.downcast::<PetCardView>());
+    if let Some(window) = open {
+        if window.update(cx, |view, window, cx| view.show(request, window, cx)).is_ok() {
+            return;
+        }
+        registry.borrow_mut().remove(WindowKind::PetCard);
+    }
+    let placement = cx.global::<Secondary>().placement;
+    let overlay = settings::global(cx).read(cx).get().overlay.clone();
+    let expected = pets::card_size(request, &overlay);
+    let place = card_place(Card::PetCard, reminders::GAP * overlay.scale(), cx);
+    let meter_window = meter::window(cx);
+    let for_window = request.clone();
+    let opened: Result<Opened, String> = open_once(&registry, WindowKind::PetCard, || {
+        let stacking = Rc::new(Stacking { card: Card::PetCard, placement, placed: Cell::new(None) });
+        let (window, hwnd) = create_window(
+            WindowKind::PetCard,
+            (expected.width.as_f32(), expected.height.as_f32()),
+            place,
+            move |window, cx| {
+                let link = MeterLink { window: meter_window, placement: stacking };
+                cx.new(|cx| PetCardView::new(&for_window, Some(link), window, cx))
+            },
+            |_| {},
+            cx,
+        )?;
+        Ok(Open { window, hwnd: Some(hwnd), model: None })
+    });
+    if let Err(error) = opened {
+        crate::app_log::error(format!("cannot open the soul tracker card's window: {error}"));
+    }
+}
+
 /// Opens the first-open prompt on the meter; nothing when it is up already.
 pub fn open_prompt(cx: &mut App) {
     let Some(secondary) = cx.try_global::<Secondary>() else {
@@ -658,6 +767,22 @@ impl Stacking {
             }
         })
         .detach();
+    }
+
+    /// Puts the card's window back on screen where it was, without the focus.
+    pub fn reveal(&self, window: &Window) {
+        match overlay::hwnd(window).and_then(|hwnd| overlay::reveal(hwnd, self.placement)) {
+            Ok(()) => {}
+            Err(error) => crate::app_log::warn(format!("cannot show the {:?} card again: {error}", self.card)),
+        }
+    }
+
+    /// Takes the card's window off screen; the window stays, ready to show again.
+    pub fn hide(&self, window: &Window) {
+        match overlay::hwnd(window) {
+            Ok(hwnd) => overlay::hide(hwnd),
+            Err(error) => crate::app_log::warn(format!("cannot hide the {:?} card: {error}", self.card)),
+        }
     }
 }
 
@@ -814,6 +939,19 @@ mod tests {
     fn settings_comes_to_the_foreground_when_opened_and_when_opened_again() {
         assert_eq!(forward(WindowKind::Settings, Opened::Created, Placement::Screen), Forward::Foreground);
         assert_eq!(forward(WindowKind::Settings, Opened::Existing, Placement::Screen), Forward::Foreground);
+    }
+
+    #[test]
+    fn showing_everything_again_shows_only_the_windows_still_open() {
+        let history = HWND(0x10 as *mut _);
+        let pets = HWND(0x20 as *mut _);
+        let open = |kind: WindowKind| match kind {
+            WindowKind::History => Some(history),
+            WindowKind::Pets => Some(pets),
+            _ => None,
+        };
+        let hidden = [WindowKind::History, WindowKind::Pvp, WindowKind::Pets];
+        assert_eq!(still_open(&hidden, open), vec![history, pets], "the PvP window closed while everything was hidden");
     }
 
     #[test]

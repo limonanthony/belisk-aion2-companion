@@ -955,6 +955,101 @@ pub fn ticket_login(
     }
 }
 
+/// The pets the approved Pets window and card draw by name, with the values
+/// their states need: Fossa Lv 2 27/75, Kalgolem and Blue Kalgolem at Lv 3,
+/// Sparkie Lv 1 24/25, Forest Spirit Lv 0 4/5, Coradon Lv 2 70/75, Slime
+/// Lv 1 12/25, Krall Laborer never obtained.
+pub const PET_FOSSA: u32 = 1004;
+pub const PET_KALGOLEM: u32 = 1084;
+pub const PET_BLUE_KALGOLEM: u32 = 1110;
+pub const PET_SPARKIE: u32 = 1006;
+pub const PET_FOREST_SPIRIT: u32 = 1048;
+/// A mob whose soul is Blue Kalgolem's.
+pub const BLUE_KALGOLEM_MOB: u32 = 2_100_454;
+const NAMED_PETS: [(u32, u32, u32); 8] = [
+    (PET_FOSSA, 2, 27),
+    (PET_KALGOLEM, 3, 0),
+    (PET_BLUE_KALGOLEM, 3, 0),
+    (PET_SPARKIE, 1, 24),
+    (PET_FOREST_SPIRIT, 0, 4),
+    (1057, 2, 70),
+    (1061, 1, 12),
+    (1002, 0, 0),
+];
+
+/// Mirelle, on NEZ, as the game names her with her pets.
+fn pet_owner() -> meter_core::identity::KnownCharacter {
+    meter_core::identity::KnownCharacter { name: "Mirelle".to_string(), server_id: 1002, class: "RANGER".to_string(), key: None }
+}
+
+/// Mirelle's collection as the game lists it at login, captured at
+/// `captured_at` (seconds since the Unix epoch): the named pets above and an
+/// invented but fixed level and souls for every other pet of the catalogue,
+/// about a fifth never obtained and a fifth at Lv 3.
+pub fn pet_login(captured_at: f64) -> meter_core::pets::PetReport {
+    use meter_core::capture::parser::pet_record::{PetLevel, PetProgress, PetSnapshot};
+    let invented = |pet_id: u32| {
+        let x = pet_id.wrapping_mul(2_654_435_761) % 100;
+        match x {
+            0..=21 => (0, 0),
+            22..=27 => (0, 1 + x % 4),
+            28..=47 => (1, x % 25),
+            48..=77 => (2, (x * 7) % 75),
+            _ => (3, 0),
+        }
+    };
+    let mut levels = Vec::new();
+    let mut progress = Vec::new();
+    for &pet_id in crate::game_data::pet_ids() {
+        let (level, souls) = NAMED_PETS.iter().find(|named| named.0 == pet_id).map_or_else(|| invented(pet_id), |&(_, level, souls)| (level, souls));
+        if level > 0 {
+            levels.push(PetLevel { pet_id, level });
+        }
+        if souls > 0 {
+            progress.push(PetProgress { pet_id, progress: souls });
+        }
+    }
+    meter_core::pets::PetReport {
+        character: pet_owner(),
+        captured_at,
+        content: meter_core::pets::PetContent::Snapshot(PetSnapshot { levels, progress, counters: Vec::new() }),
+    }
+}
+
+/// Souls Mirelle picked up: (pet, amount).
+pub fn pet_souls(source: meter_core::pet_sources::SoulSource, gains: &[(u32, u32)]) -> meter_core::pets::PetReport {
+    use meter_core::capture::parser::pet_record::SoulGain;
+    meter_core::pets::PetReport {
+        character: pet_owner(),
+        captured_at: crate::clock::now_ms() as f64 / 1000.0,
+        content: meter_core::pets::PetContent::SoulGains {
+            gains: gains.iter().map(|&(pet_id, amount)| SoulGain { pet_id, amount }).collect(),
+            source,
+        },
+    }
+}
+
+/// The souls of a pet already at Lv 3, which the game reports without the
+/// pet: the counters' gain after the loot of `mob` was picked up.
+pub fn pet_maxed_loot(mob: u32) -> meter_core::pets::PetReport {
+    meter_core::pets::PetReport {
+        character: pet_owner(),
+        captured_at: crate::clock::now_ms() as f64 / 1000.0,
+        content: meter_core::pets::PetContent::CounterGains { gains: Vec::new(), looted_mobs: vec![mob] },
+    }
+}
+
+/// A pet obtained on `server_id`: the game has spoken about that server, and
+/// its collection is not read yet.
+pub fn pet_unlock_elsewhere(server_id: u32, pet_id: u32) -> meter_core::pets::PetReport {
+    use meter_core::capture::parser::pet_record::PetUnlock;
+    meter_core::pets::PetReport {
+        character: meter_core::identity::KnownCharacter { server_id, ..pet_owner() },
+        captured_at: crate::clock::now_ms() as f64 / 1000.0,
+        content: meter_core::pets::PetContent::Unlock(PetUnlock { pet_id }),
+    }
+}
+
 /// The changelog the What's new and Changelog captures draw: the approved
 /// mockup's ten invented versions, 1.0.0 to 1.6.0 (updates.js), in the
 /// subset the app's parser reads.

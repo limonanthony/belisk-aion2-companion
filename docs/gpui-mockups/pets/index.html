@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pets window and soul tracker (mockups, TASK-34.3)</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../approved/todos.css" />
+    <link rel="stylesheet" href="../approved/meter.css" />
+    <link rel="stylesheet" href="../approved/hub.css" />
+    <link rel="stylesheet" href="pets.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Pets mockups">
+        <a href="index.html" aria-current="page">Pets: all</a>
+        <a href="#colours">Level colours</a>
+        <a href="#colours-game">Over the game</a>
+        <a href="#colours-card">In the card</a>
+        <a href="#window-states">Window states</a>
+        <a href="#card-states">Card states</a>
+        <a href="#card-place">Card places</a>
+        <a href="#toolbar">Toolbar</a>
+        <a href="#settings">Settings › Pets</a>
+        <a href="#try">Try it</a>
+        <a href="settings.html">Settings page alone</a>
+        <a href="index.html?compare">Round 1 comparison</a>
+        <a href="README.md">README</a>
+      </nav>
+      <h1>Pets window and soul tracker <small>round 2, 2026-10-10: level colours and Settings › Pets; round 1 chosen (TASK-34.3, for TASK-34); approved 2026-10-10</small></h1>
+      <ul class="rationale">
+        <li><b>Approved 2026-10-10</b>: everything recommended in both rounds, level colours (a) and Settings › Pets as drawn. The approved design is in <a href="../approved/pets.html">../approved/pets.html</a>, the <a href="../approved/toolbar.html?states=pets,petsOpen">toolbar</a>, <a href="../approved/settings.html?states=pets,pets:off,pets:test,pets:none">Settings › Pets</a> and <a href="../approved/tokens.md">tokens.md</a>; this page is the record of how it was chosen.</li>
+        <li><b>Round 1 is decided</b>: window layout A (meter rows), card design A (the reminder card's twin), the name "Pets" (French "Familiers"); kept: the family summary, the Show and Order menu, Special pets marked "no stats", the "as of" line, the card for black-market buys; dropped: the toolbar's pinned-pets count and typed-in counts; the proposals on the toolbar tool, order, pins, several pets, the reminder stacking and keyboard and focus are agreed. They are tagged <span class="dec is-agreed">Agreed</span>. Layouts B and C, cards B and C and the dropped items are kept out of this view: <a href="index.html?compare">?compare</a> shows them again, and the selectors still switch to B and C.</li>
+        <li><b>Round 2 asks one thing</b>: level colours, (a) the badge only or (b) the badge and the progress fill. Lv 0 grey, Lv 1 to Lv 3 greens from the approved good token (#86e3a8), strongest at Lv 3; "Lv N" stays, so colour is never the only cue. Sections 1 to 3 compare them, over the game's bright, busy and dark scenes and at low and full opacity; the states after section 3 follow the "Level colours" selector (I recommend (a), the default).</li>
+        <li><b>Settings › Pets</b> (section 8, or <a href="settings.html">settings.html</a> alone): the agreed contents in the approved Settings widgets, English and French. The wording is <span class="dec is-proposed">Proposed</span>.</li>
+        <li>Built on the approved design, which is not edited: the toolbar, meter, reminder card and Settings shell are the approved drawings; values are in <a href="../approved/tokens.md">tokens.md</a>, new ones are marked "new" in <code>pets.css</code>. Pet names, families, levels and souls are invented except seven public names; the clock is Monday 21:48, logged in at 19:02 on Ossia.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Level colours (round 2)</h2>
+      <ul>
+        <li><span class="dec is-proposed">Proposed</span> <b>Values</b>, all from the good token, no new hue. Badge: Lv 0 <code>rgba(255, 240, 225, 0.09)</code> with muted text (the rank badge's neutral); Lv 1 good at 0.10 with good text at 0.66; Lv 2 good at 0.28 with good text; Lv 3 good at 0.86 with ink text <code>#17120d</code> (a filled badge, as "you" is on the meter). Lv 0 to Lv 2 lay their tint over the track's dark plate (<code>rgba(0, 0, 0, 0.34)</code>), as names sit on the track. (b) also tints the fill: Lv 1 good 0.04 → 0.14, Lv 2 0.06 → 0.24, Lv 3 0.08 → 0.34; Lv 0 keeps the cream fill. In the card, the fact line's "Lv 2" becomes the same badge (16 px tall); (b) tints its 4 px bar too.</li>
+        <li><span class="dec is-rec">Recommended</span> <b>(a), the badge only.</b> The badges form one column at the row's left edge, so the eye scans levels down that column; the fill keeps one meaning, progress toward the next level. In (b) every Lv 3 row is a full green bar, so a family with many maxed pets turns into a green wall where the pets still to farm (short, low bars) are the hardest rows to see, the opposite of what the list is for; and a green fill would also say "level" while its length says "progress".</li>
+        <li>The Lv 3 badge is filled, and Lv 0 to Lv 2 sit on the track's dark plate, so every badge stays readable over the bright scene at opacity 60 (section 2); without the plate, "Lv 1" and "Lv 2" washed out there in my first pass. Lv 1 and Lv 2 differ less from each other than from Lv 0 and Lv 3: the step that matters most in a long list is "maxed or not".</li>
+      </ul>
+
+      <h2>Behaviour (agreed in round 1)</h2>
+      <ul>
+        <li><b>The rule</b>: 5 souls for Lv 0 → 1, 25 for 1 → 2, 75 for 2 → 3; Lv 3 is the cap on Global; souls beyond a level carry over (Lv 1 24/25 +5 → Lv 2 4/75). A pet at the cap reads "Lv 3 · 75/75". No insight-crystal figure anywhere.</li>
+        <li><b>The window</b> lists every pet: tabs All, Cogni, Fera, Natura, Varian, Special, a search, pins on top, the game's order by default; "Closest to the next level" in the Show and Order menu.</li>
+        <li><b>The card</b> appears when you gain souls of a pet and disappears 10 s after its last update. One card, pets in arrival order, at most three; any gain restarts the 10 s. The pointer over it pauses it; a click or × dismisses it; locked, it is click-through. It never takes focus.</li>
+        <li><b>Without the meter</b>: the card sits 6 px under the toolbar while the meter is closed (above it when the toolbar is low), and 6 px above the meter while it is open; with a reminder card, the pet card stacks 6 px beyond it.</li>
+        <li><b>Keyboard and focus</b>: the window never takes the keyboard from the game, except while the search field has it; Esc clears the search, a second Esc hands the keyboard back.</li>
+      </ul>
+
+      <h2>For you to answer</h2>
+      <ul>
+        <li>Level colours: (a) the badge only (recommended) or (b) the badge and the fill; or the values changed.</li>
+        <li>Settings › Pets: the wording of its rows (English and French).</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="../approved/app-name.js"></script>
+    <script src="../approved/hub.js"></script>
+    <script src="pets.js"></script>
+  </body>
+</html>

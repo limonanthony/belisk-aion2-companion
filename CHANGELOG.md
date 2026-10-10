@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.0] - 2026-10-11
+
+Pet tracking, and smoother windows.
+
+- **Pets**: a new window, opened from the paw in the toolbar, lists every pet with its level and the souls you have toward the next one, read from the game. Tabs follow the game's families, a search finds a pet by name, and pinned pets stay at the top.
+- **Soul tracker**: a small card shows a pet's progress as soon as you get its souls, from a kill or the black market, and goes away after 10 seconds. Choose when it appears in **Settings › Pets**.
+- The game sends your pet collection when you log in, so start Belisk before you log in. If you start it while already playing a character it knows, new souls and the to-do counts still follow the game, and the Pets window shows the collection from your last login.
+- **Cards**: the reminder and soul tracker cards show their time left as a small ring next to the ×, with even spacing on every side.
+- **Smoother windows**: History and Pets stay fast with long lists, dragging a window no longer stutters, and the scrollbars of History, Pets, the to-dos and the other tool windows can now be dragged.
+- **Alt+Shift+CapsLock**: showing everything again brings back only the windows that are still open.
+
 ## [1.0.2] - 2026-10-10
 
 The first update delivered by the app itself.

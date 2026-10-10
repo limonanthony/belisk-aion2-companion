@@ -114,12 +114,16 @@ impl HistoryList {
 
     /// Newest first, after the filters.
     pub fn visible(&self) -> Vec<&RecordRow> {
+        self.shown().collect()
+    }
+
+    /// [`Self::visible`], one at a time.
+    pub fn shown(&self) -> impl Iterator<Item = &RecordRow> {
         self.entries
             .iter()
             .map(|entry| &entry.row)
             .filter(|row| self.target_filter.as_ref().is_none_or(|target| *target == row.target))
             .filter(|row| self.player_filter.as_ref().is_none_or(|player| *player == main_player_label(row)))
-            .collect()
     }
 
     pub fn record(&self, id: &str) -> Option<&Arc<HistoryRecord>> {

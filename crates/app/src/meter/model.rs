@@ -436,6 +436,7 @@ impl MeterModel {
             }
             MeterEvent::CharacterSeen(_)
             | MeterEvent::Tickets(_)
+            | MeterEvent::Pets(_)
             | MeterEvent::DpsMeterStatus(_)
             | MeterEvent::HistoryUpdated => false,
         }

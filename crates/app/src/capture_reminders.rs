@@ -144,7 +144,7 @@ pub async fn from_fixtures(
     card.update(cx, |view, _, cx| view.force_time_left(0.01, cx)).map_err(gone)?;
     pause(cx, Duration::from_secs(1)).await;
     let open = cx.update(|cx| secondary::window_of(WindowKind::Reminder, cx).is_some());
-    println!("time-out: still open 1 s after the line ran out: {open}");
+    println!("time-out: still open 1 s after the ring ran out: {open}");
     if open {
         return Err("the card stayed after its time ran out".to_string());
     }

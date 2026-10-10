@@ -1,6 +1,7 @@
 use crate::models::combat::CombatSnapshot;
 use crate::models::diagnostics::MemorySnapshot;
 use crate::identity::{IdentityDecision, KnownCharacter};
+use crate::pets::PetReport;
 use crate::tickets::TicketReport;
 use crate::report::fight_report::FightReport;
 use crate::storage::data_storage::MainActorDetectedPayload;
@@ -38,6 +39,9 @@ pub enum MeterEvent {
     /// What the game said about the local player's tickets, keys and Odyle
     /// Energy, tied to the character it said it about.
     Tickets(TicketReport),
+    /// What the game said about the local player's pet collection and soul
+    /// gains, tied to the character it said it about.
+    Pets(PetReport),
     PacketReplayFinished(u64),
     PacketReplayFailed(String),
     /// The overlay should step aside (`true`) or come back (`false`) because

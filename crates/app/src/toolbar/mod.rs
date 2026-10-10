@@ -56,10 +56,17 @@ pub struct Hub {
     /// Whether the meter's window is on screen, as last shown or hidden.
     meter_shown: bool,
     toolbar: Option<(WindowHandle<ToolbarView>, HWND)>,
-    /// The windows Alt+Shift+CapsLock hid, shown again by its next press or
-    /// by the tray's Show toolbar. The meter's window is not among them: it
-    /// comes back only if it is still wanted then.
-    hidden: Option<Vec<HWND>>,
+    /// What Alt+Shift+CapsLock hid, shown again by its next press or by the
+    /// tray's Show toolbar. The meter's window is not among it: it comes back
+    /// only if it is still wanted then.
+    hidden: Option<Hidden>,
+}
+
+/// The toolbar, and the kinds of the other windows: each is looked up again
+/// when shown, so one closed meanwhile stays closed.
+struct Hidden {
+    toolbar: Option<HWND>,
+    windows: Vec<WindowKind>,
 }
 
 impl Hub {
@@ -220,6 +227,7 @@ pub fn handle(request: ToolbarRequest, cx: &mut App) {
             match tool {
                 Tool::Pvp => secondary::open_pvp(&model, cx),
                 Tool::Todos => secondary::open_todos(&model, cx),
+                Tool::Pets => secondary::open_pets(cx),
                 Tool::History => secondary::open_history(&model, cx),
                 Tool::Settings => secondary::open_settings(&model, cx),
                 Tool::Meter | Tool::Reminders => {}
@@ -348,25 +356,26 @@ pub fn toggle_everything(cx: &mut App) {
     };
     let (hidden, placement) = hub.update(cx, |hub, _| (hub.hidden.take(), hub.placement));
     if let Some(hidden) = hidden {
-        show_hidden(&hidden, placement);
+        show_hidden(&hidden, placement, cx);
         sync_meter_window(&hub, cx);
         return;
     }
-    let mut put_away: Vec<HWND> = hub.read(cx).toolbar.map(|(_, hwnd)| hwnd).into_iter().collect();
-    put_away.extend(secondary::open_hwnds(cx));
-    for &hwnd in &put_away {
+    let toolbar = hub.read(cx).toolbar.map(|(_, hwnd)| hwnd);
+    if let Some(hwnd) = toolbar {
         overlay::hide(hwnd);
     }
-    hub.update(cx, |hub, _| hub.hidden = Some(put_away));
+    let windows = secondary::hide_all(cx);
+    hub.update(cx, |hub, _| hub.hidden = Some(Hidden { toolbar, windows }));
     sync_meter_window(&hub, cx);
 }
 
-fn show_hidden(hidden: &[HWND], placement: Placement) {
-    for &hwnd in hidden {
+fn show_hidden(hidden: &Hidden, placement: Placement, cx: &App) {
+    if let Some(hwnd) = hidden.toolbar {
         if let Err(error) = overlay::reveal(hwnd, placement) {
-            crate::app_log::warn(format!("cannot show a window again: {error}"));
+            crate::app_log::warn(format!("cannot show the toolbar again: {error}"));
         }
     }
+    secondary::show_again(&hidden.windows, cx);
 }
 
 /// The tray's Show toolbar, and a second launch: brings back what
@@ -378,7 +387,7 @@ pub fn show_toolbar(cx: &mut App) {
     };
     let (hidden, placement, toolbar) = hub.update(cx, |hub, _| (hub.hidden.take(), hub.placement, hub.toolbar));
     if let Some(hidden) = hidden {
-        show_hidden(&hidden, placement);
+        show_hidden(&hidden, placement, cx);
     }
     sync_meter_window(&hub, cx);
     let shown_meter = {

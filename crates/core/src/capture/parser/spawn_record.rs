@@ -102,6 +102,12 @@ pub(crate) fn read_spawn_record(frame: &[u8], widths: &[FlagsWidth]) -> Option<S
     head_only
 }
 
+/// The entity and mob code a `41 36` frame spawns, for tools outside the crate.
+pub fn spawned_mob(frame: &[u8]) -> Option<(u32, u32)> {
+    let record = read_spawn_record(frame, flags_widths(crate::region::resolved()))?;
+    Some((record.entity_id, record.mob_code))
+}
+
 fn read_with_width(body: &[u8], width: FlagsWidth) -> Option<SpawnRecord> {
     let mut cursor = Cursor::new(body);
 

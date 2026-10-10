@@ -1,6 +1,6 @@
 //! The toolbar (docs/gpui-mockups/approved/toolbar.html, values in tokens.md,
-//! "Hub" and "Toolbar update icon"): grip; DPS meter, PvP meter, To-dos, Fight
-//! history, Reminders, Settings; Odyle Energy, Shugo keys and the warning
+//! "Hub" and "Toolbar update icon"): grip; DPS meter, PvP meter, To-dos,
+//! Pets, Fight history, Reminders, Settings; Odyle Energy, Shugo keys and the warning
 //! while other resources are full; the update icon while an update is
 //! available, downloading or ready; fold and quit. A lit tool is open.
 //! Controls light on the pointer's enter and go on its leave, never on moves
@@ -70,13 +70,14 @@ pub enum Tool {
     Meter,
     Pvp,
     Todos,
+    Pets,
     History,
     Reminders,
     Settings,
 }
 
 impl Tool {
-    const ALL: [Tool; 6] = [Tool::Meter, Tool::Pvp, Tool::Todos, Tool::History, Tool::Reminders, Tool::Settings];
+    const ALL: [Tool; 7] = [Tool::Meter, Tool::Pvp, Tool::Todos, Tool::Pets, Tool::History, Tool::Reminders, Tool::Settings];
 
     /// The window the tool is; none for the meter (the hub's) and the
     /// reminders (a dropdown).
@@ -84,6 +85,7 @@ impl Tool {
         match self {
             Tool::Pvp => Some(WindowKind::Pvp),
             Tool::Todos => Some(WindowKind::Todos),
+            Tool::Pets => Some(WindowKind::Pets),
             Tool::History => Some(WindowKind::History),
             Tool::Settings => Some(WindowKind::Settings),
             Tool::Meter | Tool::Reminders => None,
@@ -95,6 +97,7 @@ impl Tool {
             Tool::Meter => "tool-meter",
             Tool::Pvp => "tool-pvp",
             Tool::Todos => "tool-todos",
+            Tool::Pets => "tool-pets",
             Tool::History => "tool-history",
             Tool::Reminders => "tool-reminders",
             Tool::Settings => "tool-settings",
@@ -106,6 +109,7 @@ impl Tool {
             Tool::Meter => fl!("toolbar-meter"),
             Tool::Pvp => fl!("toolbar-pvp"),
             Tool::Todos => fl!("toolbar-todos"),
+            Tool::Pets => fl!("toolbar-pets"),
             Tool::History => fl!("toolbar-history"),
             Tool::Reminders => fl!("toolbar-reminders"),
             Tool::Settings => fl!("toolbar-settings"),
@@ -646,6 +650,7 @@ impl ToolbarView {
             Tool::Meter => Icon::Swords,
             Tool::Pvp => Icon::Crosshair,
             Tool::Todos => Icon::ListChecks,
+            Tool::Pets => Icon::PawPrint,
             Tool::History => Icon::Crown,
             Tool::Reminders if paused => Icon::BellOff,
             Tool::Reminders => Icon::Bell,

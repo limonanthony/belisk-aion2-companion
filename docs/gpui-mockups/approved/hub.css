@@ -339,7 +339,7 @@
 
 /* Downloading, paused, checking the download: a plain tool in muted with a
    2 px progress line, 5 px inset, 4 px above the bottom edge (inset and
-   rounded like the reminder card's time-left line: track gauge-empty, fill
+   rounded as the reminder card's time-left line was: track gauge-empty, fill
    muted; paused: fill faint; checking: full). The icon sits 2 px higher.
    new */
 .hb-btn.hb-up.is-busy {
@@ -627,8 +627,10 @@
 }
 
 /* ---- Reminder card ---------------------------------------------------------
-   Copied from reminders.html (the card's classes), unchanged, so its place
-   under the toolbar can be judged; reminders.html is the source. */
+   Copied from reminders.html (the card's classes) so its place under the
+   toolbar can be judged; reminders.html is the source. The timer ring
+   (approved 2026-10-10, ../card-timer/README.md) replaced the 2 px
+   time-left line; the soul tracker card (pets.css) uses the same ring. */
 .ov.rm {
   --r-text: rgba(255, 246, 236, 0.96);
   --r-muted: rgba(255, 246, 236, 0.66);
@@ -638,7 +640,10 @@
   position: relative;
   zoom: var(--scale);
   width: 310px;
-  padding: 8px 8px 6px;
+  /* Equal padding (2026-10-10): 14 px from the card's outer edge to the
+     visible content on all four sides. The soul tracker card's bottom is
+     13 px (pets.css). */
+  padding: 9px 8px 12px;
   overflow: hidden;
   border: 1px solid rgba(255, 236, 214, 0.1);
   border-radius: 14px;
@@ -685,9 +690,12 @@
   font-weight: 500;
 }
 
+/* The body starts at the header icon's left edge (the header's 4 px inset,
+   13 px from the card's outer edge; approved 2026-10-10, the pet card
+   layout round). The soul tracker card's pet blocks use it too. */
 .rm-ev {
   margin-top: 4px;
-  padding-left: 23px;
+  padding-left: 4px;
   padding-right: 4px;
 }
 
@@ -712,19 +720,95 @@
   text-overflow: ellipsis;
 }
 
-.rm-left {
-  height: 2px;
-  margin: 8px 4px 0;
-  overflow: hidden;
-  border-radius: 1px;
-  background: rgba(255, 240, 225, 0.12);
+/* The ×: the meter's 22 px tool button, flush right; pointer over the card:
+   hot, text. */
+.rm-x {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border-radius: 7px;
+  color: var(--r-muted);
+  cursor: pointer;
 }
 
-.rm-left i {
+.rm-x:hover,
+.rm-x.is-hot {
+  background: var(--r-hot);
+  color: var(--r-text);
+}
+
+/* The timer ring: a 12 px hollow ring, 2 px stroke (an 8 px hole), in a
+   16 x 22 px slot pushed right, 8 px before the × (the header's 6 px gap
+   and 2 px). Locked (no ×) the slot is the ×'s 22 px, flush right, so the
+   ring is centred where the × was. Track gauge-empty; the arc is the time
+   left, muted, emptying clockwise from 12 o'clock with square ends; paused
+   under the pointer, text. */
+.rm-timer {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 22px;
+  margin-left: auto;
+}
+
+.rm-timer.is-solo {
+  width: 22px;
+}
+
+.rm-timer + .rm-x,
+.rm-timer + .pc-x {
+  margin-left: 2px;
+}
+
+.rm-ring {
   display: block;
-  height: 100%;
-  border-radius: 1px;
-  background: rgba(255, 246, 236, 0.44);
+  overflow: visible;
+}
+
+.rm-ring circle {
+  fill: none;
+  stroke-width: 2px;
+}
+
+.rm-ring .tr {
+  stroke: rgba(255, 240, 225, 0.12);
+}
+
+.rm-ring .arc {
+  stroke: rgba(255, 246, 236, 0.66);
+  stroke-dasharray: 100 100;
+}
+
+.ov.rm.is-paused .rm-ring .arc,
+.ov.rm.is-live:not(.is-locked):hover .rm-ring .arc {
+  stroke: rgba(255, 246, 236, 0.96);
+}
+
+/* Running (the live states): the arc empties over the card's time, 30 s
+   for a reminder (reminders.html), 10 s for the soul tracker card
+   (pets.css), linear; the pointer over the card pauses it. */
+.ov.rm.is-live .rm-ring .arc {
+  animation: rm-ring var(--rm-life, 30s) linear forwards;
+}
+
+.ov.rm.is-live:not(.is-locked):hover .rm-ring .arc {
+  animation-play-state: paused;
+}
+
+@keyframes rm-ring {
+  from {
+    stroke-dashoffset: 0;
+  }
+
+  to {
+    stroke-dashoffset: -100;
+  }
 }
 
 /* ---- Tray (page chrome: Windows draws the tooltip and the menu) ------------

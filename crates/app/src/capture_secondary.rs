@@ -60,6 +60,7 @@ pub async fn from_fixtures(
     capture_settings::from_fixtures(meter, model, dir, cx).await?;
     capture_reminders::from_fixtures(meter, model, dir, cx).await?;
     capture_toolbar::from_fixtures(dir, cx).await?;
+    crate::capture_pets::from_fixtures(meter, model, dir, cx).await?;
     crate::capture_whats_new::from_fixtures(model, dir, cx).await?;
     crate::capture_updates::from_fixtures(dir, cx).await
 }
@@ -146,6 +147,8 @@ async fn history_window(model: &Entity<MeterModel>, dir: &Path, cx: &mut AsyncAp
     check_title(WindowKind::History, "records", cx).await?;
 
     let handle = window_handle::<HistoryView>(WindowKind::History, cx)?;
+    let read = |cx: &mut AsyncApp| handle.update(cx, |view, _, cx| view.list_reading(cx)).map_err(|error| format!("history window gone: {error:#}"));
+    check_scrollbar(WindowKind::History, read, cx).await?;
     cx.update(|cx| {
         history.update(cx, |history, cx| {
             history.list.filter_target(Some("Veilwarden Orsikh".to_string()));
@@ -422,6 +425,100 @@ fn frame(kind: WindowKind, cx: &mut AsyncApp) -> Result<(HWND, f32, f32)> {
             overlay::hwnd(window).map(|hwnd| (hwnd, window.scale_factor(), window.viewport_size().height.as_f32()))
         })
         .map_err(|error| format!("{kind:?} window gone: {error:#}"))?
+}
+
+/// What a scrolling list tells the scrollbar check, read after a frame: its
+/// viewport (logical, in the window), its furthest scroll and its scroll now,
+/// and whether its first and last items were built in that frame.
+pub(crate) struct ListReading {
+    pub viewport: gpui::Bounds<gpui::Pixels>,
+    pub max: f32,
+    pub scrolled: f32,
+    pub first_built: bool,
+    pub last_built: bool,
+}
+
+impl std::fmt::Display for ListReading {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "scrolled {:.1} of {:.1}, first item built {}, last item built {}", self.scrolled, self.max, self.first_built, self.last_built)
+    }
+}
+
+/// The scrollbar through Windows' own mouse messages, posted to the window
+/// (GPUI's message handlers, its mouse capture and the overlay subclass all
+/// run): a press on the thumb, then moves with the button held down its
+/// gutter, sideways over the rows and past the window's bottom edge, then the
+/// release there; the list must follow and build the items it brings into
+/// view, and stop following once released. Then a press in the gutter above
+/// the thumb must bring the thumb there.
+pub(crate) async fn check_scrollbar(kind: WindowKind, read: impl Fn(&mut AsyncApp) -> Result<ListReading>, cx: &mut AsyncApp) -> Result<()> {
+    let (hwnd, scale, client_height) = frame(kind, cx)?;
+    let device = |x: f32, y: f32| ((x * scale).round() as i32, (y * scale).round() as i32);
+    settle(hwnd, cx).await;
+    let start = read(cx)?;
+    println!("scrollbar {kind:?}: at the start {start}");
+    if start.max <= 0. {
+        return Err(format!("scrollbar {kind:?}: the list does not scroll, nothing to check"));
+    }
+    let viewport = start.viewport;
+    let (top, right, height) = (f32::from(viewport.top()), f32::from(viewport.right()), f32::from(viewport.size.height));
+    let length = (height * (height / (height + start.max))).max(16.);
+    let travel = height - 4. - length;
+    let thumb = (right - 2.5, top + 2. + travel * (start.scrolled / start.max) + length / 2.);
+    let over_rows = f32::from(viewport.center().x);
+
+    post(hwnd, WM_MOUSEMOVE, 0, pack(device(thumb.0, thumb.1)));
+    post(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, pack(device(thumb.0, thumb.1)));
+    post(hwnd, WM_MOUSEMOVE, MK_LBUTTON, pack(device(thumb.0, thumb.1 + 30.)));
+    post(hwnd, WM_MOUSEMOVE, MK_LBUTTON, pack(device(over_rows, thumb.1 + 60.)));
+    settle(hwnd, cx).await;
+    let held = read(cx)?;
+    let expected = (start.scrolled + start.max * 60. / travel).min(start.max);
+    println!(
+        "scrollbar {kind:?}: pressed the thumb at {:?}, moved 30 px down its gutter then 60 px down over the rows with the button held: {held} (expected {expected:.1})",
+        device(thumb.0, thumb.1)
+    );
+    if (held.scrolled - expected).abs() > 1.5 {
+        return Err(format!("scrollbar {kind:?}: the list did not follow the thumb (scrolled {:.1}, expected {expected:.1})", held.scrolled));
+    }
+
+    let beyond = device(over_rows, client_height + 200.);
+    post(hwnd, WM_MOUSEMOVE, MK_LBUTTON, pack(beyond));
+    post(hwnd, WM_LBUTTONUP, 0, pack(beyond));
+    settle(hwnd, cx).await;
+    let end = read(cx)?;
+    println!("scrollbar {kind:?}: moved past the window's bottom edge to {beyond:?} with the button held and released there: {end}");
+    if (end.scrolled - end.max).abs() > 0.5 || !end.last_built || end.first_built {
+        return Err(format!("scrollbar {kind:?}: past the bottom edge the list must be at its end with its last item built and its first not ({end})"));
+    }
+
+    post(hwnd, WM_MOUSEMOVE, 0, pack(device(over_rows, top + 10.)));
+    settle(hwnd, cx).await;
+    let released = read(cx)?;
+    println!("scrollbar {kind:?}: a move after the release: {released}");
+    if (released.scrolled - end.scrolled).abs() > 0.5 {
+        return Err(format!("scrollbar {kind:?}: the list still followed the pointer after the release ({released})"));
+    }
+
+    let above = device(thumb.0, top + 3.);
+    post(hwnd, WM_MOUSEMOVE, 0, pack(above));
+    post(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, pack(above));
+    post(hwnd, WM_LBUTTONUP, 0, pack(above));
+    settle(hwnd, cx).await;
+    let jumped = read(cx)?;
+    println!("scrollbar {kind:?}: a press in the gutter at its top {above:?}, above the thumb: {jumped}");
+    if jumped.scrolled > 0.5 || !jumped.first_built || jumped.last_built {
+        return Err(format!("scrollbar {kind:?}: a press above the thumb must bring the list to its start ({jumped})"));
+    }
+    post(hwnd, WM_MOUSEMOVE, 0, pack(device(60., 14.)));
+    settle(hwnd, cx).await;
+    Ok(())
+}
+
+/// The messages posted to `hwnd` handled, and the frame they asked for drawn.
+async fn settle(hwnd: HWND, cx: &mut AsyncApp) {
+    until_handled(hwnd, cx).await;
+    pause(cx, TICK).await;
 }
 
 /// Windows reports the pointer crossing between client and non-client area

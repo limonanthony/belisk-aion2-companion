@@ -201,6 +201,24 @@
         font-weight: 600;
       }
 
+      /* Pets › Collection (2026-10-10): the owned count's quiet part, the
+         dash before the first read, and the login time in the description. */
+      .ro small {
+        margin-left: 2px;
+        color: var(--a-faint);
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .ro.is-none {
+        color: var(--a-faint);
+      }
+
+      .row-desc .ro-at {
+        color: var(--a-text);
+        font-weight: 600;
+      }
+
       .dlg p + p {
         margin-top: 6px;
       }
@@ -255,9 +273,11 @@
         <a href="reminders.html">Reminder card</a>
         <a href="todos.html">To-do window</a>
         <a href="whatsnew.html">What's new</a>
+        <a href="pets.html">Pets window and card</a>
       </nav>
-      <h1>Settings <small>approved, round 3; Reminders 2026-10-05; To-dos 2026-10-06; Overlay › Window and To-dos changed 2026-10-08; To-dos describes the Resources window, 2026-10-08; About › Updates and About › Changelog, and Overlay › Window "Hide between fights", 2026-10-09</small></h1>
+      <h1>Settings <small>approved, round 3; Reminders 2026-10-05; To-dos 2026-10-06; Overlay › Window and To-dos changed 2026-10-08; To-dos describes the Resources window, 2026-10-08; About › Updates and About › Changelog, and Overlay › Window "Hide between fights", 2026-10-09; Pets 2026-10-10</small></h1>
       <ul class="rationale">
+        <li><b>Added 2026-10-10</b> (the pets round, <a href="../pets/README.md">pets/</a>): <b>Pets</b>, between To-dos and General (Lucide paw-print, the toolbar tool's icon). Group "Soul tracker card": the master switch "Soul tracker" (on), "Only pinned pets" (off), "Pets already at Lv 3" (on), "Black-market purchases" (on), "Show a test card"; group "Collection": when the game last sent your pets and how many you own, or how to get them read. States "Pets" to "Pets, collection not read yet"; French: <a href="settings.html?lang=fr&amp;states=pets,pets:off,pets:test,pets:none">settings.html?lang=fr</a>. The <a href="pets.html">Pets window and the soul tracker card</a> are their own page.</li>
         <li><b>Changed 2026-10-09</b> (the updates round, <a href="../updates/README.md">updates/</a>): About gains an <b>Updates</b> group right after the app's own group (the update status with its one action, "Download updates automatically", on by default, and "Changelog"), and the <b>Changelog</b> opens as a sub-page of About with "‹ About" (states "About" to "Changelog, after Show older"; French: <a href="settings.html?lang=fr&amp;states=about,about:available,about:downloading,about:ready,about:failed,about:limited,changelog,changelog:older">the same states in French</a>). About's other rows are the build's (Fluent <code>settings-about-*</code>, English and French): its name is the app's, from one constant (<code>app-name.js</code>, the Fluent term <code>-app-name</code>), and the version is the running one. The same day, Overlay › Window gains "Hide between fights" after "Open the meter at launch", off by default.</li>
         <li><b>Changed 2026-10-08</b> (hub and to-do autofill rounds, <a href="../hub/README.md">hub/</a>, <a href="../todos-autofill/README.md">todos-autofill/</a>): Settings opens from the <a href="toolbar.html">toolbar</a>'s gear. Overlay › Window gains "Open the meter at launch" (first, off by default) and "Show or hide everything" (Alt + Shift + CapsLock, read-only), and "Lock overlay" says the toolbar always takes clicks (states "Overlay, Window" and "After Yes in the first-open prompt"). To-dos: the lead says the window opens from the toolbar; Membership names Shugo keys too (the row's name, "yeah shugo keys is ok") and asks when the game shows more than the cap; Start over keeps the game's values (states "To-dos", "Membership off, the game shows more", "Reset to-dos completely"). Then the recharges left the to-do window ("I think we can remove the recharges from the todos now no ?"): the lead, Daily reset, Weekly reset and Membership (its group renamed "Resources") say they also set the Resources window's refill times and caps, Start over says it empties the amounts typed there, and Hidden to-dos counts to-dos only.</li>
         <li>Everything kept: overlay look and rows (with a live preview beside them), meter behaviour, the three shortcuts, capture (backend, connection status, recording and replay, log folder), personal bests, language and About. Changes apply at once; there is no Save.</li>
@@ -317,6 +337,17 @@
         <li><b>Restore default to-dos</b>: on every character, every built-in to-do you hid comes back (Duty Commands too, which start hidden). Only to-dos are listed: the resources have no hide control any more, and a resource hidden before 2026-10-08 shows in the Resources window again without counting here. Your own to-dos, every count and every amount stay. The description says how many are hidden now ("3 hidden, on 2 characters."); with none hidden it says "Nothing is hidden." and the button is disabled. No dialog; after a click a good badge "3 to-dos back" shows beside the button for 4 s.</li>
         <li><b>Reset to-dos completely…</b>: opens the dialog with Cancel focused, so Enter or Esc changes nothing. "Reset to-dos", on every character: your own to-dos are removed, every hidden to-do comes back, every count you typed and every amount typed in the Resources window is emptied ("—"); values from the game stay (they are the game's, and come back at each login anyway). The reset hour and the membership stay. Afterwards a good badge "To-dos reset" shows beside the button for 4 s; open to-do and Resources windows show the fresh values at once.</li>
         <li><b>Not here</b>: hiding and showing single rows, adding your own and the counts stay in the to-do window; amounts are typed in the Resources window. "+1?" from boss kills (built later, off by default) would get its switch here. No switch to stop filling from the game: typing over a value covers a wrong one, and the next login fixes it.</li>
+      </ul>
+      <h2>Pets (approved 2026-10-10)</h2>
+      <ul>
+        <li><b>Soul tracker</b> off: no card for any pet. The three switches under it and the test button dim (labels at 50%, controls at 40%) and do not react, but keep their values, as Reminders.</li>
+        <li><b>Only pinned pets</b> (off): the card shows only for pets pinned in the Pets window; with nothing pinned it shows for none.</li>
+        <li><b>Pets already at Lv 3</b> (on): the card reads "Lv 3 · 75/75" for a pet at the cap. Off: no card for them.</li>
+        <li><b>Black-market purchases</b> (on): the game sends the same message for +5 souls bought; on, the card shows as for a pickup. The window updates either way.</li>
+        <li><b>Show a test card</b>: shows the card now with the first pinned pet's real progress (the first pet in game order when nothing is pinned), header "Test card", whatever the switches say; nothing is added. A good badge "Shown under the toolbar" (or "Shown above the meter" while the meter is open) beside the button for 4 s.</li>
+        <li><b>Collection</b>: one read-only line for the server of the character in game: "Read at login, Mon 19:02." and the pets owned ("197 of 290"); before any read, "Not read yet. Log in with a character on this server while Belisk runs." and a dash.</li>
+        <li><b>Not here</b>: the window's sort and filters (its Show and Order menu), the card's 10 s and place, a sound, forgetting the collection.</li>
+        <li>In French the page runs about 33 px past the window and scrolls with the thumb, as Reminders does.</li>
       </ul>
       <h2>Overlay › Window</h2>
       <ul>
@@ -623,6 +654,82 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
               )
             );
           },
+
+          // Settings › Pets (approved 2026-10-10, ../pets/README.md).
+          pets(ctx, st) {
+            const L = PETS_T[ctx.lang];
+            const off = st === "off";
+            const dim = off ? " is-dim" : "";
+            const test = (st === "test" ? C.badge(L.shown, "good", "check") : "") + C.btn(L.testBtn, { ic: "play" });
+            const coll =
+              st === "none"
+                ? row(L.collLabel("Ossia"), L.collNone, `<span class="ro is-none">&mdash;</span>`)
+                : row(L.collLabel("Ossia"), L.collRead(L.when), `<span class="ro">${L.owned(197, 290)}</span>`);
+            return (
+              head(L.title, L.lead) +
+              group(
+                L.card,
+                row(L.tracker, L.trackerDesc, C.sw(!off)) +
+                  row(L.pinned, L.pinnedDesc, C.sw(false), dim) +
+                  row(L.max, L.maxDesc, C.sw(true), dim) +
+                  row(L.market, L.marketDesc, C.sw(true), dim) +
+                  row(L.test, L.testDesc, test, dim),
+                true
+              ) +
+              group(L.coll, coll)
+            );
+          },
+        };
+
+        // Settings › Pets strings (English; French drawn to check the room,
+        // through i18n).
+        const PETS_T = {
+          en: {
+            title: "Pets",
+            lead: "The Pets window opens from the toolbar. The card works with the meter open or closed.",
+            card: "Soul tracker card",
+            tracker: "Soul tracker",
+            trackerDesc: "A small card when you pick up a pet's souls, with its progress to the next level. It goes 10 s after the last pickup.",
+            pinned: "Only pinned pets",
+            pinnedDesc: "Shows the card only for the pets you pinned in the Pets window.",
+            max: "Pets already at Lv 3",
+            maxDesc: "Also shows the card for pets at the cap, as Lv 3 · 75/75.",
+            market: "Black-market purchases",
+            marketDesc: "Souls bought at the black market (+5) show the card like a pickup.",
+            test: "Test card",
+            testDesc: "Shows the card now with your first pinned pet.",
+            testBtn: "Show a test card",
+            shown: "Shown under the toolbar",
+            coll: "Collection",
+            collLabel: (srv) => `Pets on ${srv}`,
+            collRead: (t) => `Read at login, <b class="ro-at">${t}</b>. The game sends your pets only when you log in; pickups since are added.`,
+            collNone: `Not read yet. Log in with a character on this server while ${APP} runs.`,
+            owned: (a, b) => `${a}<small>of ${b}</small>`,
+            when: "Mon 19:02",
+          },
+          fr: {
+            title: "Familiers",
+            lead: "La fenêtre Familiers s'ouvre depuis la barre d'outils. La carte fonctionne compteur ouvert ou fermé.",
+            card: "Carte de suivi des âmes",
+            tracker: "Suivi des âmes",
+            trackerDesc: "Une petite carte quand vous ramassez des âmes d'un familier, avec sa progression. Elle disparaît 10 s après le dernier ramassage.",
+            pinned: "Familiers épinglés seulement",
+            pinnedDesc: "N'affiche la carte que pour les familiers épinglés dans la fenêtre Familiers.",
+            max: "Familiers déjà au Lv 3",
+            maxDesc: "Affiche aussi la carte pour les familiers au maximum, en Lv 3 · 75/75.",
+            market: "Achats au marché noir",
+            marketDesc: "Les âmes achetées au marché noir (+5) affichent la carte comme un ramassage.",
+            test: "Carte de test",
+            testDesc: "Affiche la carte maintenant avec votre premier familier épinglé.",
+            testBtn: "Afficher une carte de test",
+            shown: "Affichée sous la barre d'outils",
+            coll: "Collection",
+            collLabel: (srv) => `Familiers sur ${srv}`,
+            collRead: (t) => `Lue à la connexion, <b class="ro-at">${t}</b>. Le jeu n'envoie vos familiers qu'à la connexion ; les ramassages depuis sont ajoutés.`,
+            collNone: `Pas encore lue. Connectez-vous avec un personnage de ce serveur pendant que ${APP} tourne.`,
+            owned: (a, b) => `${a}<small>sur ${b}</small>`,
+            when: "lun. 19:02",
+          },
         };
 
         function render(state, ctx) {
@@ -636,8 +743,12 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
                 ? `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-todos"><h3 id="dlg-todos">Reset the to-dos completely?</h3><p>On every character: your own to-dos (3) are removed, every hidden to-do comes back, and every count you typed and every amount typed in the Resources window is emptied. Values from the game stay.</p><p>The reset hour and the membership stay. This cannot be undone.</p><div class="dlg-actions">${C.btn("Cancel").replace('class="btn', 'class="btn is-focus')}${C.btn("Reset to-dos", { kind: "danger" })}</div></div></div>`
                 : "";
           // Scrolled to the Window group, the thumb shortened so it stays in the track.
-          const thumb = { "overlay:window": 110, "overlay:on": 110, "changelog:older": 330 }[state] || { overlay: 150, behaviour: 360, capture: 200, reminders: 272, about: 300 }[section] || 0;
-          const scroll = { "overlay:window": 1020, "overlay:on": 1020, "capture:rec": 300, "capture:replay": 470, "reminders:scrolled": 640, "changelog:older": 120 }[state] || 0;
+          // Settings › Pets runs past the window in French (and with the test
+          // badge, which wraps the description): measured overflow in px.
+          const petsOver = section === "pets" ? ({ en: { test: 16 }, fr: { "": 33, off: 33, test: 66, none: 33 } }[ctx.lang][sub || ""] || 0) : 0;
+          const petsThumb = petsOver ? Math.round((566 * 582) / (582 + petsOver)) : 0;
+          const thumb = petsThumb || { "overlay:window": 110, "overlay:on": 110, "changelog:older": 330 }[state] || { overlay: 150, behaviour: 360, capture: 200, reminders: 272, about: 300 }[section] || 0;
+          const scroll = (section === "pets" && sub === "none" ? petsOver : 0) || { "overlay:window": 1020, "overlay:on": 1020, "capture:rec": 300, "capture:replay": 470, "reminders:scrolled": 640, "changelog:older": 120 }[state] || 0;
           // The changelog is a sub-page of About: the sidebar keeps About.
           return ctx.shell(ctx, section === "changelog" ? "about" : section, content, {
             meter: { tone: "live", label: `${ctx.t.running} · 12:41` },
@@ -673,6 +784,10 @@ ${tile("server", "Server", "Global · 2011, 2014", "", "good")}
             { id: "todos:restored", title: "Default to-dos restored", sub: "the hidden ones are back on every character; your own to-dos and all progress kept; the badge fades after 4 s" },
             { id: "todos:confirm", title: "Reset to-dos completely", sub: "the confirm dialog, Cancel focused; the game's values stay" },
             { id: "todos:reset", title: "After the complete reset", sub: "your own to-dos gone, nothing hidden, every count you typed and every amount typed in the Resources window empty (the game's values stay); the badge fades after 4 s" },
+            { id: "pets", title: "Pets", sub: "added 2026-10-10, between To-dos and General: the soul tracker card on, every pet, pets at Lv 3 and black-market buys included; the collection read at this login, with how many pets are owned" },
+            { id: "pets:off", title: "Soul tracker off", sub: "the rows under the master switch dim and keep their values, as Reminders" },
+            { id: "pets:test", title: "Test card shown", sub: "the card shows now with the first pinned pet's real progress; a good badge for 4 s, since Settings may cover it" },
+            { id: "pets:none", title: "Pets, collection not read yet", sub: "before any login while the app runs; drawn scrolled to the end in French" },
             { id: "general:lang", title: "General", sub: "language menu open" },
             { id: "about", title: "About", sub: "the app's group (its name from -app-name, the running version), then Updates (up to date: the status, \"Download updates automatically\" on by default, the changelog), credits, storage" },
             { id: "about:checking", title: "About, checking for updates", sub: "after Check now, or at the hourly check while About is open: the spinner badge, Check now disabled" },

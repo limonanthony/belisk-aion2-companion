@@ -3,13 +3,10 @@
 //! renamed to `settings.json.bad-<seconds>` and the defaults are used. Fields
 //! missing from the file take their defaults and unknown fields are ignored.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
-use meter_core::mobs::store::write_atomic;
-
 use super::model::AppSettings;
-use crate::stored_file::{LoadNotice, Problem, SaveError};
+use crate::stored_file::{self, LoadNotice, Problem, Read, SaveError};
 
 pub const FILE_NAME: &str = "settings.json";
 pub const SCHEMA_VERSION: u32 = 2;
@@ -27,23 +24,11 @@ pub fn path_in(data_dir: &Path) -> PathBuf {
 }
 
 pub fn load(path: &Path, now_secs: u64) -> Loaded {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return fresh(None, true),
-        Err(error) => return fresh(Some(LoadNotice::Unreadable { path: path.to_path_buf(), error: error.to_string() }), false),
-    };
-
-    let problem = match parse(&bytes) {
-        Ok(settings) => return Loaded { settings: settings.clamped(), notice: None, fresh_install: false },
-        Err(problem) => problem,
-    };
-
-    let aside = set_aside_path(path, now_secs);
-    let notice = match fs::rename(path, &aside) {
-        Ok(()) => LoadNotice::SetAside { path: path.to_path_buf(), problem, aside },
-        Err(error) => LoadNotice::NotMoved { path: path.to_path_buf(), problem, error: error.to_string() },
-    };
-    fresh(Some(notice), false)
+    match stored_file::read(path, now_secs, parse) {
+        Read::Used(settings) => Loaded { settings: settings.clamped(), notice: None, fresh_install: false },
+        Read::Missing => fresh(None, true),
+        Read::Unusable(notice) => fresh(Some(notice), false),
+    }
 }
 
 fn fresh(notice: Option<LoadNotice>, fresh_install: bool) -> Loaded {
@@ -51,16 +36,7 @@ fn fresh(notice: Option<LoadNotice>, fresh_install: bool) -> Loaded {
 }
 
 fn parse(bytes: &[u8]) -> Result<AppSettings, Problem> {
-    let stored: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|error| Problem::NotJson(error.to_string()))?;
-    let Some(fields) = stored.as_object() else {
-        return Err(Problem::NotObject);
-    };
-    let version = fields.get("version").and_then(serde_json::Value::as_u64).unwrap_or(0);
-    if version > u64::from(SCHEMA_VERSION) {
-        return Err(Problem::Newer { version, supported: SCHEMA_VERSION });
-    }
-    let mut stored = stored;
+    let (mut stored, version) = stored_file::parse_versioned_object(bytes, SCHEMA_VERSION)?;
     if version < 2 {
         forget_the_old_default_reset_hour(&mut stored);
     }
@@ -132,27 +108,13 @@ fn set_path(root: &mut serde_json::Value, path: &[String], leaf: serde_json::Val
     }
 }
 
-fn set_aside_path(path: &Path, now_secs: u64) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".bad-{now_secs}"));
-    path.with_file_name(name)
-}
-
-pub fn encode(settings: &AppSettings) -> serde_json::Result<Vec<u8>> {
-    let mut value = serde_json::to_value(settings)?;
-    if let Some(object) = value.as_object_mut() {
-        object.insert("version".to_string(), SCHEMA_VERSION.into());
-    }
-    serde_json::to_vec_pretty(&value)
-}
-
 pub fn save(path: &Path, settings: &AppSettings) -> Result<(), SaveError> {
-    let bytes = encode(settings).map_err(|error| SaveError::Encode(error.to_string()))?;
-    write_atomic(path, &bytes).map_err(|error| SaveError::Write { path: path.to_path_buf(), error: error.to_string() })
+    stored_file::save_versioned(path, settings, SCHEMA_VERSION)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use meter_core::config::CaptureBackendPriority;
@@ -488,5 +450,44 @@ mod tests {
 
         assert_eq!(load(&dir.file(), 7).settings.todos.reset_hour, Some(9));
         assert_eq!(load(&dir.file(), 7).settings.todos.reset_hour, Some(9), "loading does not rewrite it");
+    }
+
+    #[test]
+    fn an_old_file_without_pets_gets_the_pets_defaults() {
+        let dir = TestDir::new("no-pets");
+        fs::write(dir.file(), r#"{"version":2,"overlay":{"showDps":false}}"#).unwrap();
+
+        let pets = load(&dir.file(), 7).settings.pets;
+
+        assert_eq!(pets, crate::pets::PetsSettings::default());
+        assert!(pets.soul_tracker && !pets.only_pinned && pets.maxed_pets && pets.black_market);
+    }
+
+    #[test]
+    fn one_bad_pets_value_costs_that_setting_only() {
+        let dir = TestDir::new("pets-tolerance");
+        fs::write(dir.file(), r#"{"version":2,"pets":{"soulTracker":"yes","onlyPinned":true,"blackMarket":false,"unknown":1}}"#).unwrap();
+
+        let loaded = load(&dir.file(), 7);
+
+        assert!(loaded.notice.is_none());
+        let pets = loaded.settings.pets;
+        assert!(pets.soul_tracker, "a mistyped switch keeps its default");
+        assert!(pets.only_pinned && !pets.black_market);
+        assert!(pets.maxed_pets, "a missing switch keeps its default");
+    }
+
+    #[test]
+    fn pets_settings_survive_a_round_trip() {
+        let dir = TestDir::new("pets-roundtrip");
+        let mut settings = AppSettings::default();
+        settings.pets.soul_tracker = false;
+        settings.pets.only_pinned = true;
+        settings.pets.maxed_pets = false;
+        settings.pets.black_market = false;
+        save(&dir.file(), &settings).unwrap();
+
+        assert_eq!(load(&dir.file(), 7).settings.pets, settings.pets);
+        assert_eq!(load(&dir.file(), 7).settings, settings);
     }
 }
