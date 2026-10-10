@@ -1,5 +1,16 @@
 # Journal des modifications
 
+## [1.1.0] - 2026-10-11
+
+Le suivi des familiers, et des fenêtres plus fluides.
+
+- **Familiers** : une nouvelle fenêtre, ouverte depuis la patte de la barre d'outils, liste chaque familier avec son niveau et les âmes déjà obtenues pour le suivant, lus dans le jeu. Les onglets suivent les familles du jeu, une recherche trouve un familier par son nom, et les familiers épinglés restent en haut.
+- **Suivi des âmes** : une petite carte montre la progression d'un familier dès que vous obtenez ses âmes, sur un monstre ou au marché noir, et disparaît après 10 secondes. Choisissez quand elle apparaît dans **Paramètres › Familiers**.
+- Le jeu envoie votre collection de familiers à la connexion : lancez Belisk avant de vous connecter. Si vous le lancez en jouant déjà un personnage qu'il connaît, les nouvelles âmes et les compteurs des tâches suivent quand même le jeu, et la fenêtre Familiers montre la collection de votre dernière connexion.
+- **Cartes** : les cartes de rappel et de suivi des âmes montrent leur temps restant par un petit anneau à côté du ×, avec un espacement égal sur tous les côtés.
+- **Fenêtres plus fluides** : l'Historique et les Familiers restent rapides avec de longues listes, déplacer une fenêtre ne saccade plus, et les barres de défilement de l'Historique, des Familiers, des tâches et des autres fenêtres d'outils se font maintenant glisser.
+- **Alt+Maj+Verr. Maj** : tout réafficher ne ramène que les fenêtres encore ouvertes.
+
 ## [1.0.2] - 2026-10-10
 
 La première mise à jour livrée par l'application elle-même.
