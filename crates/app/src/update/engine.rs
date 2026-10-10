@@ -6,6 +6,7 @@
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -138,12 +139,43 @@ impl Engine {
     }
 
     pub fn check_if_due(&mut self) {
-        if self.schedule.automatic_due(self.parts.clock.now()) {
-            self.check();
-        }
+        self.survive_panics(|engine| {
+            if engine.schedule.automatic_due(engine.parts.clock.now()) {
+                engine.check();
+            }
+        });
     }
 
     pub fn handle(&mut self, command: Command) {
+        self.survive_panics(|engine| engine.dispatch(command));
+    }
+
+    /// A panic in one step (the panic hook has already logged it) must not end
+    /// the worker: the window would show "Checking…" for good and no hourly
+    /// check would follow. The step's state becomes a failure the window shows;
+    /// a known update stays as it was, and the schedule goes on.
+    fn survive_panics(&mut self, step: impl FnOnce(&mut Self)) {
+        let Err(payload) = catch_unwind(AssertUnwindSafe(|| step(self))) else {
+            return;
+        };
+        let reason = payload
+            .downcast_ref::<&str>()
+            .map(|message| (*message).to_owned())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown cause".to_owned());
+        let failure = match self.state {
+            UpdateState::Checking => Some(Failure::Check(format!("the update worker stopped on an internal error: {reason}"))),
+            UpdateState::Downloading { .. } => Some(Failure::Download(format!("the update worker stopped on an internal error: {reason}"))),
+            _ => None,
+        };
+        crate::app_log::error(format!("the update worker survived an internal error: {reason}"));
+        if let Some(failure) = failure {
+            self.state = UpdateState::Failed { failure };
+        }
+        self.publish();
+    }
+
+    fn dispatch(&mut self, command: Command) {
         match command {
             Command::CheckNow => {
                 if self.schedule.can_check_now(self.parts.clock.now()) {

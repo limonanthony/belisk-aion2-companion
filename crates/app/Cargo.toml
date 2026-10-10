@@ -18,7 +18,7 @@ test = false
 meter-core = { path = "../core" }
 ed25519-dalek = "2"
 sha2 = "0.10"
-ureq = { version = "3", default-features = false, features = ["native-tls-no-default"] }
+ureq = { version = "3", default-features = false, features = ["native-tls"] }
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 futures = "0.3"
 global-hotkey = "0.7"

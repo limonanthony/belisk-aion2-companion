@@ -116,7 +116,12 @@ impl UreqHttp {
             .http_status_as_error(false)
             .https_only(policy.https_only)
             .max_redirects(0)
-            .tls_config(ureq::tls::TlsConfig::builder().provider(ureq::tls::TlsProvider::NativeTls).build())
+            .tls_config(
+                ureq::tls::TlsConfig::builder()
+                    .provider(ureq::tls::TlsProvider::NativeTls)
+                    .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+                    .build(),
+            )
             .timeout_connect(Some(CONNECT_TIMEOUT))
             .timeout_recv_response(Some(RESPONSE_TIMEOUT))
             .build();
@@ -313,5 +318,52 @@ mod tests {
         let error = UreqHttp::new().get("http://api.github.com/repos/o/r/releases/latest", "*/*", None).err().expect("the address is refused");
 
         assert!(error.0.contains("not https"), "{error}");
+    }
+
+    fn accept_one_connection_and_hang_up() -> (std::net::SocketAddr, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || drop(listener.accept().unwrap()));
+        (address, server)
+    }
+
+    #[test]
+    fn an_https_request_runs_the_tls_handshake_and_a_failed_one_is_an_error() {
+        let (address, server) = accept_one_connection_and_hang_up();
+
+        let error = UreqHttp::with_policy(LOOPBACK).get(&format!("https://{address}/"), "*/*", None).err().expect("a failed handshake is an error");
+
+        server.join().unwrap();
+        assert!(!error.0.is_empty());
+    }
+
+    #[test]
+    fn a_redirect_to_https_runs_the_tls_handshake_and_a_failed_one_is_an_error() {
+        let (address, tls_server) = accept_one_connection_and_hang_up();
+        let (url, first_server) = serve_once(redirect_to(&format!("https://{address}/asset.zip")));
+
+        let error = UreqHttp::with_policy(LOOPBACK).get(&url, "*/*", None).err().expect("a failed handshake is an error");
+
+        first_server.join().unwrap();
+        tls_server.join().unwrap();
+        assert!(!error.0.contains("not an address updates may use"), "{error}");
+    }
+
+    #[test]
+    #[ignore = "contacts api.github.com"]
+    fn github_answers_the_latest_release_over_schannel() {
+        let url = "https://api.github.com/repos/limonanthony/belisk-aion2-companion/releases/latest";
+
+        let response = UreqHttp::new().get(url, "application/vnd.github+json", None).expect("TLS to api.github.com works");
+        let status = response.status;
+        let body = String::from_utf8(response.read_limited(1024 * 1024).expect("the body is read")).expect("the body is UTF-8");
+        let release: serde_json::Value = serde_json::from_str(&body).expect("the answer is JSON");
+
+        println!("status {status}, tag {}", release["tag_name"]);
+        for asset in release["assets"].as_array().expect("assets") {
+            println!("asset {} ({} bytes)", asset["name"], asset["size"]);
+        }
+        assert_eq!(status, 200);
+        assert_eq!(release["assets"].as_array().map(Vec::len), Some(4));
     }
 }

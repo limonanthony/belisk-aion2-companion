@@ -48,6 +48,7 @@ enum Api {
     Latest(Version),
     Status(u16, Vec<(&'static str, String)>),
     Unreachable,
+    Panics,
 }
 
 type ReadHook = Arc<dyn Fn(usize) + Send + Sync>;
@@ -119,6 +120,7 @@ impl Http for FakeHttp {
             world.api_requests += 1;
             return match &world.api {
                 Api::Unreachable => Err(HttpError("dns error".to_owned())),
+                Api::Panics => panic!("the transport is broken"),
                 Api::Status(status, headers) => {
                     let headers = headers.iter().map(|(name, value)| ((*name).to_owned(), value.clone())).collect();
                     answer(*status, headers, Box::new(Cursor::new(b"{}".to_vec())))
@@ -497,6 +499,36 @@ fn no_network_is_unreachable_until_the_next_hourly_check_and_does_not_disturb_a_
     rig.world.lock().api = Api::Unreachable;
     rig.after(HOUR);
     assert!(available(Version::new(1, 1, 0))(&rig.state()), "an update that was found stays found");
+}
+
+#[test]
+fn a_panic_in_a_check_is_a_failed_check_and_the_hourly_schedule_goes_on() {
+    let mut rig = Rig::new("engine-panic", false);
+    rig.world.lock().api = Api::Panics;
+
+    rig.launch_check();
+
+    let state = rig.state();
+    assert!(
+        matches!(&state, UpdateState::Failed { failure: Failure::Check(reason) } if reason.contains("the transport is broken")),
+        "{state:?}"
+    );
+    assert_eq!(rig.shown_states().last(), Some(&rig.state()), "the window is told");
+
+    rig.world.lock().api = Api::Latest(Version::new(1, 1, 0));
+    rig.after(HOUR);
+    assert!(available(Version::new(1, 1, 0))(&rig.state()), "the next hourly check still runs");
+}
+
+#[test]
+fn a_panic_in_a_check_leaves_a_known_update_showing() {
+    let mut rig = Rig::new("engine-panic-known", false);
+    rig.launch_check();
+    rig.world.lock().api = Api::Panics;
+
+    rig.after(HOUR);
+
+    assert!(available(Version::new(1, 1, 0))(&rig.state()), "{:?}", rig.state());
 }
 
 #[test]
