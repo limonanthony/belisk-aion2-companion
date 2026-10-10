@@ -1,0 +1,716 @@
+/* Pets, approved 2026-10-10 (the pets round, ../pets/README.md): the Pets
+   window (layout A, meter rows, with level colours on the badge) and the
+   soul tracker card (design A, the reminder card's twin). Values are in
+   tokens.md, "Pets"; a change here changes them too. Loaded after
+   overlay.css, todos.css (the bundled Barlow Semi Condensed, the to-do
+   window's section labels, source line and tooltips) and hub.css (the
+   toolbar, the reminder card's classes the card reuses). */
+
+/* ---- Window frame ----------------------------------------------------------
+   The to-do window's frame (370 px, 28 px header, 26 px footer). */
+.ov.o.td.pt {
+  width: 370px;
+}
+
+/* ---- Search and the filter button ------------------------------------------
+   The 26 px input, 4 px gap, the 26 px filter button; 6 px under it. */
+.pt-find {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+
+.pt-find.is-off {
+  opacity: 0.4;
+}
+
+.pt-search.o-input {
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+  padding: 0 4px 0 8px;
+  cursor: text;
+}
+
+.pt-search > .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.pt-search.is-focus,
+.pt-search:focus-within {
+  border-color: rgba(255, 246, 236, 0.55);
+}
+
+.pt-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--o-text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.pt-search input::placeholder {
+  color: var(--o-faint);
+}
+
+.pt-search .val {
+  flex: 0 1 auto;
+  font-weight: 500;
+}
+
+.pt-search .o-caret {
+  margin-left: -5px;
+}
+
+.pt-search .ph {
+  flex: 1;
+}
+
+/* The clear button: 18 x 18 px, 4 px radius, Lucide x 12 px in muted. */
+.pt-search .o-btn.is-sm {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--o-muted);
+}
+
+.pt-search .o-btn.is-sm:hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+/* The filter button: 26 x 26 px, 7 px radius, Lucide list-filter 13 px in
+   muted. Pointer over: soft, text. A filter in force lights it as the
+   toolbar lights an open tool: hot, text, the icon 3 px higher and the
+   4 x 4 px dot 2 px above the bottom edge. */
+.pt-filter {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--o-muted);
+}
+
+.pt-filter:hover,
+.pt-filter.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.pt-filter.is-on,
+.pt-filter.is-open {
+  background: var(--o-hot);
+  color: var(--o-text);
+}
+
+.pt-filter.is-on::after {
+  content: "";
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.pt-filter.is-on .i {
+  margin-top: -3px;
+}
+
+/* The Show and Order menu: the popover, 6 px under the button, right edges
+   aligned, 232 px. Labels 22 px; items 26 px with a 12 px lead slot holding
+   Lucide check on the current choice, which is 600. */
+.pt-menu.o-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  width: 232px;
+  z-index: 8;
+}
+
+.pt-menu .hb-drop-label {
+  height: 22px;
+}
+
+.pt-menu .o-menu-item {
+  gap: 6px;
+  cursor: pointer;
+}
+
+.pt-menu .o-menu-item:hover {
+  background: var(--o-hot);
+}
+
+.pt-menu .o-menu-item .lead {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 12px;
+}
+
+.pt-menu .o-menu-item .i {
+  width: 12px;
+  height: 12px;
+}
+
+.pt-menu .o-menu-item.is-cur {
+  font-weight: 600;
+}
+
+/* Tabs: the approved segmented tabs, 6 px under them. */
+.pt .o-tabs {
+  margin: 0 0 6px;
+}
+
+.pt .o-tab {
+  cursor: pointer;
+}
+
+.pt .o-tab:not(.is-on):hover {
+  color: var(--o-text);
+}
+
+.pt .o-tabs.is-off {
+  opacity: 0.4;
+}
+
+/* ---- Family summary ---------------------------------------------------------
+   One 18 px line, 4 px inset, 11.5 px / 500 muted, figures text / 600, the
+   cap 11 px faint; a 4 px bar under it (the thin coverage bar's shape: 2 px
+   radius), 3 px above and 6 px below, track gauge-empty, fill cream at 0.55:
+   the levels gained of the levels the tab can reach. */
+.pt-sum {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 4px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.pt-sum b {
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+.pt-sum small {
+  color: var(--o-faint);
+  font-size: 11px;
+}
+
+.pt-prog {
+  height: 4px;
+  margin: 3px 4px 6px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 240, 225, 0.12);
+}
+
+.pt-prog i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: rgba(255, 246, 236, 0.55);
+}
+
+/* What the filter keeps: the source line's style (20 px, Lucide list-filter
+   12 px faint), Clear as the to-do window's link pushed right. */
+.pt-fline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  margin: -2px 0 4px;
+  padding: 0 4px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.pt-fline > .i {
+  width: 12px;
+  height: 12px;
+  color: var(--o-faint);
+}
+
+.pt-fline .t-link {
+  margin-left: auto;
+  cursor: pointer;
+}
+
+/* The source line's tooltip: the figure tooltip's two lines, up to 300 px. */
+.pt-srcwrap {
+  position: relative;
+}
+
+.pt-srcwrap .t-tip {
+  top: 20px;
+  left: 22px;
+  max-width: 300px;
+  white-space: normal;
+}
+
+/* ---- The list ---------------------------------------------------------------
+   Scrolls past 452 px (the to-do window's list) with the 3 px thumb, 4 px
+   from the right; 11 px right padding while it overflows; 3 px of room
+   around the rows so a focus ring is never clipped. */
+.pt-scrollwrap {
+  position: relative;
+  margin: -3px;
+}
+
+.pt-scroll {
+  position: relative;
+  max-height: 458px;
+  padding: 3px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.pt-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.pt-scrollwrap.is-over .pt-scroll {
+  padding-right: 11px;
+}
+
+.pt-scrollwrap .o-thumb {
+  display: none;
+  right: 4px;
+}
+
+.pt-scrollwrap.is-over .o-thumb {
+  display: block;
+}
+
+/* "Pinned" and the family label: the to-do window's section label (24 px),
+   not clickable here. */
+.pt .t-sec.is-static {
+  cursor: default;
+}
+
+.pt .t-sec.is-static:hover {
+  color: var(--o-muted);
+}
+
+.pt .o-empty .t-link {
+  cursor: pointer;
+}
+
+/* ---- Rows: the meter's row ---------------------------------------------------
+   22 px, 3 px apart: the 30 x 18 px level badge (the rank badge's shape,
+   4 px radius), 8 px to the track; the track (5 px radius, 8 px left and
+   9 px right inset) holds the progress fill, the name, the souls and the
+   next level; the 20 px pin slot after it, 5 px apart. */
+.pt-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pt-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+}
+
+.pt-lv {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 18px;
+  margin-right: 3px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pt-track {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 9px 0 8px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--o-track);
+}
+
+/* Souls toward the next level: neutral-fill (cream 0.04 -> 0.16, no level
+   colour), floor 4% while above zero, none at zero; full at Lv 3. */
+.pt-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 5px;
+  background: linear-gradient(90deg, rgba(255, 240, 225, 0.04), rgba(255, 240, 225, 0.16));
+  transition: width 240ms ease-out;
+}
+
+.pt-track > :not(.pt-fill) {
+  position: relative;
+}
+
+.pt-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+/* "no stats" after a Special pet's name. */
+.pt-name small {
+  margin-left: 5px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Never obtained (Lv 0, 0 souls): the name in muted. */
+.pt-row.is-none .pt-name {
+  color: var(--o-muted);
+}
+
+/* "27/75": 12.5 px / 600 right-aligned in 44 px, "/75" 11 px faint. */
+.pt-fig {
+  flex-shrink: 0;
+  width: 44px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.pt-fig small {
+  margin-left: 1px;
+  color: var(--o-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pt-row.is-max .pt-fig,
+.pt-row.is-none .pt-fig {
+  color: var(--o-muted);
+}
+
+/* The next level: Lucide arrow-right 10 px faint, then "Lv 3" 11.5 px / 500
+   muted, right-aligned in 40 px; "Max" in faint at the cap. */
+.pt-to {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 40px;
+  color: var(--o-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.pt-to .i {
+  width: 10px;
+  height: 10px;
+  color: var(--o-faint);
+  stroke-width: 2.25;
+}
+
+.pt-to.is-max {
+  color: var(--o-faint);
+}
+
+/* ---- Level colours -------------------------------------------------------------
+   On the level badge only (the fill stays neutral); "Lv N" always stays.
+   All from good (#86e3a8); Lv 0 to Lv 2 lay their tint over the track's
+   dark plate rgba(0, 0, 0, 0.34) so they read over a bright scene at low
+   opacity (in GPUI: one precomputed colour per level, or a track div
+   holding the tint).
+     Lv 0  rgba(255, 240, 225, 0.09) over track, text muted
+     Lv 1  good at 0.10 over track, text good at 0.66
+     Lv 2  good at 0.28 over track, text good
+     Lv 3  good at 0.86, text ink #17120d */
+.lv-0 .pt-lv,
+.lv-0 .pc-lv {
+  background: linear-gradient(rgba(255, 240, 225, 0.09), rgba(255, 240, 225, 0.09)), rgba(0, 0, 0, 0.34);
+  color: rgba(255, 246, 236, 0.66);
+}
+
+.lv-1 .pt-lv,
+.lv-1 .pc-lv {
+  background: linear-gradient(rgba(134, 227, 168, 0.1), rgba(134, 227, 168, 0.1)), rgba(0, 0, 0, 0.34);
+  color: rgba(134, 227, 168, 0.66);
+}
+
+.lv-2 .pt-lv,
+.lv-2 .pc-lv {
+  background: linear-gradient(rgba(134, 227, 168, 0.28), rgba(134, 227, 168, 0.28)), rgba(0, 0, 0, 0.34);
+  color: #86e3a8;
+}
+
+.lv-3 .pt-lv,
+.lv-3 .pc-lv {
+  background: rgba(134, 227, 168, 0.86);
+  color: #17120d;
+}
+
+/* ---- The pin button -------------------------------------------------------------
+   The to-do window's × slot: 20 x 20 px, 5 px radius, Lucide pin 12 px in
+   muted, shown while the pointer is in the row (enter and leave only) or
+   the button has keyboard focus. A pinned pet keeps it shown, in text. */
+.pt-pin {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--o-muted);
+  visibility: hidden;
+}
+
+.pt-pin .i {
+  width: 12px;
+  height: 12px;
+}
+
+.pt-row:hover .pt-pin,
+.pt-row.is-hover .pt-pin,
+.pt-pin.is-on,
+.pt-pin.is-focus,
+.pt-pin:focus-visible {
+  visibility: visible;
+}
+
+.pt-pin.is-on {
+  color: var(--o-text);
+}
+
+.pt-pin:hover,
+.pt-pin.is-hover {
+  background: var(--o-soft);
+  color: var(--o-text);
+}
+
+.pt .pt-pin.is-focus,
+.pt .pt-pin:focus-visible {
+  outline: 2px solid var(--t-ring);
+  outline-offset: 1px;
+}
+
+/* The pin's tooltip: the to-do window's control tooltip, under it. */
+.pt-row .t-tip {
+  top: 24px;
+  right: 0;
+}
+
+/* ---- Soul tracker card ------------------------------------------------------------
+   The reminder card's frame and header (hub.css .rm: 310 px, padding 9 px
+   top, 8 px sides and 13 px bottom here, so the content sits 14 px from
+   the outer edge on all four sides; 22 px header with Lucide paw-print 13 px muted and
+   "Pet souls" 12.5 px / 600; × the meter's 22 px tool button). A block per
+   pet, starting at the header icon's left edge (hub.css .rm-ev, 4 px in,
+   13 px from the card's outer edge), 7 px apart: the name 13 px / 600 and,
+   on a level change, the good chip pushed right; the fact line (16 px) 4 px
+   under its 18 px line, so 8 px show between the name's letters and the
+   level badge: the badge, the souls, the next level; 8 px under that a 4 px
+   bar. The timer ring (hub.css
+   .rm-timer, approved 2026-10-10) sits 8 px before the ×, emptying over
+   10 s; the card has no time-left line. */
+.ov.rm.pc {
+  padding-bottom: 13px;
+}
+
+.pc-x {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border-radius: 7px;
+  color: var(--r-muted);
+  cursor: pointer;
+}
+
+.pc-x:hover,
+.pc-x.is-hot {
+  background: var(--r-hot);
+  color: var(--r-text);
+}
+
+.pc-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+}
+
+.pc-top .rm-name {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A level reached / a first unlock: chip-good, 18 px (the window header's
+   chip size), 11 px / 600, Lucide chevrons-up or sparkles 11 px. */
+.pc-chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(134, 227, 168, 0.14);
+  color: #86e3a8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pc-chip .i {
+  width: 11px;
+  height: 11px;
+}
+
+/* The Lv line: 4 px under the name's 18 px line, so the visible space
+   between the 13 px name letters and the level badge is 8 px, as between
+   the badge and the bar (approved 2026-10-10, the pet card layout round). */
+.pc-fact {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 16px;
+  margin-top: 4px;
+  color: var(--r-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+/* The level badge in the card: 16 px tall, 4 px radius, 6 px sides,
+   11 px / 600, the window's level colours. */
+.pc-lv {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pc-fig {
+  color: var(--r-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pc-fig small {
+  margin-left: 1px;
+  color: var(--r-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pc-fact .i {
+  width: 10px;
+  height: 10px;
+  color: var(--r-faint);
+  stroke-width: 2.25;
+}
+
+/* The bar: 4 px, 2 px radius, track; the neutral fill at the coverage
+   bar's strength, cream 0.14 -> 0.50; floor 4%, none at zero. */
+.pc-bar {
+  height: 4px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.34);
+}
+
+.pc-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(255, 240, 225, 0.14), rgba(255, 240, 225, 0.5));
+  transition: width 240ms ease-out;
+}
+
+/* ---- Motion ----------------------------------------------------------------------
+   Fades in over 150 ms and out over 150 ms, as the reminder card; the
+   timer ring empties over 10 s and is full again at each gain; the pointer
+   over the card pauses it. Figures swap in place; bars grow over 240 ms.
+   Nothing flashes or pulses. */
+.pc-live.is-enter {
+  animation: pc-in 150ms ease-out both;
+}
+
+/* The ring's run (hub.css .is-live): 10 s here, 30 s on a reminder. */
+.ov.rm.pc {
+  --rm-life: 10s;
+}
+
+.pc-live.is-gone {
+  opacity: 0;
+  transition: opacity 150ms ease-in;
+}
+
+@keyframes pc-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---- Page chrome (not product styling) --------------------------------------- */
+
+/* A toolbar low on the screen: the card goes above it. */
+.pt-low {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 250px;
+}
+
+.pt-try .hb-row {
+  flex-wrap: wrap;
+}
+
+.pt-try .mk-sim {
+  width: 560px;
+  max-width: 100%;
+}
+
+.pt-try-card {
+  min-width: calc(310px * var(--scale));
+  min-height: 40px;
+}
+
+.pt-try-card .ov {
+  cursor: pointer;
+}

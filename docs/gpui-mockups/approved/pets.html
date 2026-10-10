@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Approved: Pets window and soul tracker card</title>
+    <link rel="stylesheet" href="shared.css" />
+    <link rel="stylesheet" href="overlay.css" />
+    <link rel="stylesheet" href="todos.css" />
+    <link rel="stylesheet" href="meter.css" />
+    <link rel="stylesheet" href="hub.css" />
+    <link rel="stylesheet" href="pets.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Approved screens">
+        <a href="index.html">Approved screens</a>
+        <a href="toolbar.html?states=pets,petsOpen">Toolbar</a>
+        <a href="pets.html" aria-current="page">Pets window and card</a>
+        <a href="settings.html?states=pets,pets:off,pets:test,pets:none">Settings, Pets</a>
+        <a href="reminders.html">Reminder card</a>
+        <a href="resources.html">Resources window</a>
+      </nav>
+      <h1>Pets window and soul tracker card <small>approved 2026-10-10 (the pets round, TASK-34.3)</small></h1>
+      <ul class="rationale">
+        <li>A window listing every pet with its level and its souls toward the next level, opened from the toolbar's paw-print; and a short-lived card that shows a pet's progress when you pick up its souls. Both work with the DPS meter closed: the game's pet messages are read always, like resources.</li>
+        <li>Chosen in the pets round (<a href="../pets/README.md">pets/README.md</a>, the record of how it was chosen): window layout A (meter rows), card design A (the reminder card's twin), the name "Pets" (French draft "Familiers"), level colours on the badge only (round 2, variant (a)). Settings › Pets is in <a href="settings.html?states=pets,pets:off,pets:test,pets:none">settings.html</a>.</li>
+        <li>Values are in <a href="tokens.md">tokens.md</a>, "Pets". Pet names, families, levels and souls are invented except seven public names (the pet catalogue, TASK-34.2, supplies the real ones); the clock is Monday 21:48, logged in at 19:02 on Ossia.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>The window</h2>
+      <ul>
+        <li><b>The rule</b>: 5 souls for Lv 0 → 1, 25 for 1 → 2, 75 for 2 → 3; Lv 3 is the cap on Global; souls beyond a level carry over (Lv 1 24/25 +5 → Lv 2 4/75). A pet at the cap reads "75/75 Max". No insight-crystal figure anywhere.</li>
+        <li><b>Frame</b>: the to-do window's 370 px with Lucide paw-print and "Pets"; the source line ("From the game, live · logged in at 19:02 · Ossia"; "As of your login Sun 22:40 · relog to refresh" when the collection was read at an earlier login, with a tooltip; "No pets read yet. Log in while Belisk runs." before any read); the search and its filter button; the tabs All, Cogni, Fera, Natura, Varian, Special; the family summary (owned of the tab's pets, how many at Lv 3, and the levels gained as a 4 px bar); the list, scrolling past 452 px; the footer "Souls per level 5 · 25 · 75 · Lv 3 is the cap".</li>
+        <li><b>Rows</b>: the meter's row. The level badge "Lv 2" is coloured by level: Lv 0 grey, Lv 1 and Lv 2 greens, Lv 3 a filled green with ink text; "Lv N" always stays, so colour is never the only cue. The track's fill is the souls toward the next level in the neutral cream, so it means only progress; then the name, "27/75" and "→ Lv 3" ("Max" at the cap). A pet never obtained reads "Lv 0 · 0/5", its name in muted. Special pets give no stats: a faint "no stats" after the name.</li>
+        <li><b>Order</b>: the game's order (pet ids), so the list compares with the game's Pets window row by row. The Show and Order menu (the filter button): Show all pets / not owned yet / not at Lv 3; Order: game order / closest to the next level (fewest souls left first). A filter in force lights the button with the dot and adds a line saying what is kept and how many, with Clear.</li>
+        <li><b>Pins</b>: the pin button shows while the pointer is in the row (enter and leave, never on moves inside) and stays shown on a pinned pet; tooltip "Pin to the top" / "Unpin". Pinned pets sit on top of All and of their own family's tab, under "Pinned", in the order pinned; kept per server, with the collection.</li>
+        <li><b>Search</b>: matches anywhere in the name, in the current tab, pinned first; no match in a family offers "Search all families".</li>
+        <li><b>Per server</b>: the collection is shared by your characters on one server; the window shows the server of the character in game. The game sends the whole collection only at login; between logins, the gains Belisk sees are added.</li>
+        <li><b>Keyboard and focus</b>: the window never takes the keyboard from the game, except while the search field has it (a click in it, the PvP name field's rule); Esc clears the search, a second Esc hands the keyboard back. For accessibility tools: Tab reaches the search, the filter button, the tabs (Left and Right) and the pins (Up and Down, Space pins), the focus ring 1 px outside the control.</li>
+        <li><b>Window</b>: an overlay window like the to-do window (no-activate, tool window); opened and closed from the toolbar's paw-print (lit while open), under the toolbar the first time, then where you left it.</li>
+      </ul>
+      <h2>The soul tracker card</h2>
+      <ul>
+        <li><b>When</b>: on a soul pickup (and a black-market purchase, +5, the same game message), with the meter open or closed. Settings › Pets can turn it off, limit it to pinned pets, and leave out pets at Lv 3 or black-market buys.</li>
+        <li><b>Look</b>: the reminder card's frame and header (Lucide paw-print, "Pet souls", the timer ring, × when unlocked); per pet, starting at the paw icon's left edge, the name, then the level badge with "28/75 → Lv 3", then a 4 px bar, with 8 px of visible space between the name's letters and the badge and between the badge and the bar (approved 2026-10-10, <a href="../pet-card-layout/README.md">pet-card-layout/</a>); a level reached adds a good chip "Lv 2 reached", a first unlock "Unlocked"; at the cap "Lv 3 · 75/75", the bar full.</li>
+        <li><b>Lifetime</b>: it disappears 10 s after its last update. The timer is the 12 px hollow ring left of the × (approved 2026-10-10, <a href="../card-timer/README.md">card-timer/</a>; it replaced the 2 px time-left line, which read as a second bar under the pets' progress bars): it empties clockwise from 12 o'clock and is full again at each gain. The pointer over the card pauses it (the arc turns text) and lights the ×; a click or × dismisses it. Locked, it is click-through with no ×, and the ring takes the ×'s place. It never takes focus.</li>
+        <li><b>Several pets</b>: one card, pets in arrival order (a newcomer is added at the end, nothing moves), at most three (a fourth replaces the oldest).</li>
+        <li><b>Place</b>: the reminder card's: 6 px above the meter while it is open (below it when there is no room), 6 px under the toolbar while it is closed (above it when the toolbar sits low), 310 px. With a reminder card on screen, the reminder keeps its place and the pet card stacks 6 px beyond it.</li>
+        <li><b>Motion</b>: fades in and out over 150 ms; the bar grows over 240 ms; figures swap in place; nothing flashes or pulses.</li>
+      </ul>
+      <h2>To confirm with the catalogue and in game</h2>
+      <ul>
+        <li>The game's order of pets inside a family (drawn: by pet id); French family and pet names.</li>
+        <li>Souls of pets already at Lv 3 arrive without a pet id; their card needs the catalogue's mob → pet map (TASK-34.2).</li>
+      </ul>
+      <h2>Icons</h2>
+      <ul>
+        <li>Lucide (ISC), added when built: <code>paw-print</code>, <code>pin</code>, <code>search</code>, <code>list-filter</code>, <code>arrow-right</code>, <code>chevrons-up</code>, <code>sparkles</code> (all in gpui-kit-assets 0.6.6); <code>info</code>, <code>check</code>, <code>x</code>, <code>gamepad-2</code>, <code>chevron-down</code> are used as approved.</li>
+      </ul>
+    </section>
+
+    <script src="kit.js"></script>
+    <script src="app-name.js"></script>
+    <script src="hub.js"></script>
+    <script src="pets.js"></script>
+    <script>
+      (function () {
+        const { win, card, gainOf, addSouls, idOf, PETS, DEFAULT_PINS, NEED, CAP } = Pets;
+        const { toolbar, meter, reminder, view } = Hub;
+
+        const fossa = idOf("Fossa");
+        const armadon = idOf("Splendent Armadon");
+        const coradon = idOf("Hill Coradon");
+        const G = {
+          gain: gainOf("Fossa", { lv: 2, souls: 27 }, 1),
+          up: gainOf("Hill Coradon", { lv: 1, souls: 24 }, 5),
+          unlock: gainOf("Forest Spirit", { lv: 0, souls: 4 }, 1),
+          max: gainOf("Kalgolem", { lv: 3, souls: 75 }, 1),
+          cap: gainOf("Splendent Armadon", { lv: 2, souls: 70 }, 5),
+          slime: gainOf("Slime", { lv: 1, souls: 12 }, 1),
+          market: gainOf("Slime", { lv: 1, souls: 12 }, 5),
+          test: gainOf("Fossa", { lv: 2, souls: 27 }, 0),
+        };
+        const col = (...parts) => `<div class="hb-col">${parts.join("")}</div>`;
+
+        // ---- "Try it": a working toolbar, window and card (nothing is saved)
+        const TRY = { open: true, tab: "all", q: "", show: "all", order: "game", pinned: DEFAULT_PINS.slice(), filterOpen: false, pets: PETS.map((p) => ({ ...p })), items: [], up: false, gen: 0 };
+        let lastCtx = null;
+
+        function tryWin(scroll = 0) {
+          return TRY.open ? win({ interactive: true, tab: TRY.tab, q: TRY.q, show: TRY.show, order: TRY.order, pinned: TRY.pinned, pets: TRY.pets, filterOpen: TRY.filterOpen, scroll }) : "";
+        }
+
+        function tryCard(enter) {
+          return TRY.items.length ? card(TRY.items, { live: true, enter }) : "";
+        }
+
+        function tryHtml(ctx) {
+          const bar = toolbar(ctx, { v: view(), lit: { pets: TRY.open }, live: true });
+          const sim = `<div class="mk-sim"><b>Page only: what the game sends (soul pickups)</b><button type="button" data-pt-gain="Fossa" data-n="1">Fossa +1</button><button type="button" data-pt-gain="Hill Coradon" data-n="2">Hill Coradon +2</button><button type="button" data-pt-gain="Forest Spirit" data-n="1">Forest Spirit +1</button><button type="button" data-pt-gain="Kalgolem" data-n="1">Kalgolem +1 (at Lv 3)</button><button type="button" data-pt-gain="Slime" data-n="5">Black market: Slime +5</button><button type="button" data-pt-reset="1">Start again</button></div>`;
+          return `<div class="pt-try hb-col"><div class="pt-try-bar">${bar}</div><div class="hb-row"><div class="pt-try-card">${tryCard(false)}</div><div class="pt-try-win">${tryWin()}</div></div>${sim}</div>`;
+        }
+
+        const boxes = () => document.querySelectorAll(".pt-try");
+
+        function drawBars() {
+          boxes().forEach((b) => (b.querySelector(".pt-try-bar").innerHTML = toolbar(lastCtx, { v: view(), lit: { pets: TRY.open }, live: true })));
+        }
+
+        // Redraws every working window, keeping each list's scroll and the
+        // search field's focus and caret.
+        function drawWins(resetScroll) {
+          const act = document.activeElement;
+          const focusBox = act && act.matches && act.matches("[data-pt-q]") ? act.closest(".pt-try") : null;
+          const caret = focusBox ? act.selectionStart : null;
+          boxes().forEach((b) => {
+            const el = b.querySelector(".pt-try-win");
+            const sc = el.querySelector(".pt-scroll");
+            el.innerHTML = tryWin(resetScroll || !sc ? 0 : sc.scrollTop);
+            if (b === focusBox) {
+              const i = el.querySelector("[data-pt-q]");
+              i.focus();
+              i.setSelectionRange(caret, caret);
+            }
+          });
+        }
+
+        // Bars grow from their last width over 240 ms.
+        function drawCards(enter) {
+          TRY.gen++;
+          boxes().forEach((b) => (b.querySelector(".pt-try-card").innerHTML = tryCard(enter)));
+          for (const it of TRY.items) it.from = null;
+          requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll(".pt-try-card [data-to]").forEach((i) => (i.style.width = i.dataset.to + "%"))));
+        }
+
+        function fadeCards() {
+          const gen = ++TRY.gen;
+          document.querySelectorAll(".pt-try-card > .ov").forEach((c) => c.classList.add("is-gone"));
+          setTimeout(() => {
+            if (gen !== TRY.gen) return;
+            TRY.items = [];
+            TRY.up = false;
+            document.querySelectorAll(".pt-try-card").forEach((c) => (c.innerHTML = ""));
+          }, 160);
+        }
+
+        function gain(name, n) {
+          const p = TRY.pets.find((x) => x.name === name);
+          const before = { lv: p.lv, souls: p.souls };
+          const after = addSouls(p, n);
+          const ev = before.lv === 0 && after.lv >= 1 ? "unlock" : after.lv > before.lv ? "up" : before.lv >= CAP ? "max" : "gain";
+          const from = before.lv >= CAP ? 100 : (before.souls / NEED[before.lv]) * 100;
+          Object.assign(p, after);
+          const it = TRY.items.find((x) => x.p.id === p.id);
+          if (it) {
+            Object.assign(it, { lv: p.lv, souls: p.souls, from: ev === "gain" ? from : null });
+            if (ev === "up" || ev === "unlock") it.ev = ev;
+          } else {
+            TRY.items.push({ p, lv: p.lv, souls: p.souls, ev, from: ev === "gain" ? from : null });
+            if (TRY.items.length > 3) TRY.items.shift();
+          }
+          const enter = !TRY.up;
+          TRY.up = true;
+          drawCards(enter);
+          drawWins(false);
+        }
+
+        // The card goes 10 s after its last gain (the timer ring's end); the
+        // ring ends in every scene's tile, so only the first one fades.
+        document.addEventListener("animationend", (e) => {
+          if (e.animationName !== "rm-ring" || !e.target.closest(".pt-try-card")) return;
+          if (TRY.items.length && !document.querySelector(".pt-try-card > .ov.is-gone")) fadeCards();
+        });
+
+        document.addEventListener("click", (e) => {
+          const box = e.target.closest(".pt-try");
+          if (!box) return;
+          const t = (sel) => e.target.closest(sel);
+          let el;
+          if ((el = t("[data-pt-gain]"))) return gain(el.dataset.ptGain, Number(el.dataset.n));
+          if (t("[data-pt-reset]")) {
+            Object.assign(TRY, { open: true, tab: "all", q: "", show: "all", order: "game", pinned: DEFAULT_PINS.slice(), filterOpen: false, pets: PETS.map((p) => ({ ...p })), items: [], up: false });
+            TRY.gen++;
+            boxes().forEach((b) => (b.outerHTML = tryHtml(lastCtx)));
+            return;
+          }
+          if (t(".pt-try-card .ov")) return fadeCards();
+          if (t('[data-hb="pets"]') || t("[data-pt-close]")) {
+            TRY.open = !TRY.open;
+            TRY.filterOpen = false;
+            drawBars();
+            return drawWins(true);
+          }
+          if (!t(".pt-try-win")) return;
+          // Changing what is listed starts the list at the top.
+          let reset = true;
+          if ((el = t("[data-pt-show]"))) Object.assign(TRY, { show: el.dataset.ptShow, filterOpen: false });
+          else if ((el = t("[data-pt-order]"))) Object.assign(TRY, { order: el.dataset.ptOrder, filterOpen: false });
+          else if (t("[data-pt-clear]")) Object.assign(TRY, { show: "all", order: "game" });
+          else if ((el = t("[data-pt-tab]"))) Object.assign(TRY, { tab: el.dataset.ptTab, filterOpen: false });
+          else if (t("[data-pt-filter]")) {
+            TRY.filterOpen = !TRY.filterOpen;
+            reset = false;
+          }
+          else if ((el = t("[data-pt-pin]"))) {
+            const id = Number(el.dataset.ptPin);
+            TRY.pinned = TRY.pinned.includes(id) ? TRY.pinned.filter((x) => x !== id) : TRY.pinned.concat(id);
+            reset = false;
+          } else if (t("[data-pt-qclear]")) {
+            TRY.q = "";
+            drawWins(true);
+            const i = box.querySelector("[data-pt-q]");
+            if (i) i.focus();
+            return;
+          } else if (TRY.filterOpen && !t(".pt-menu")) {
+            TRY.filterOpen = false;
+            reset = false;
+          }
+          else return;
+          drawWins(reset);
+        });
+
+        document.addEventListener("input", (e) => {
+          if (!e.target.matches || !e.target.matches(".pt-try [data-pt-q]")) return;
+          TRY.q = e.target.value;
+          drawWins(true);
+        });
+
+        document.addEventListener("keydown", (e) => {
+          if (!e.target.matches || !e.target.matches(".pt-try [data-pt-q]") || e.key !== "Escape") return;
+          if (TRY.q) {
+            TRY.q = "";
+            drawWins(true);
+          } else e.target.blur();
+        });
+
+        function render(state, ctx) {
+          lastCtx = ctx;
+          const B = (o) => toolbar(ctx, { v: view(), ...o });
+          switch (state) {
+            case "live":
+              return win({});
+            case "fera":
+              return win({ tab: "fera" });
+            case "scrolled":
+              return win({ tab: "fera", scroll: 820 });
+            case "hover":
+              return win({ tab: "fera", hover: armadon, pinHover: armadon, tip: armadon });
+            case "pinnedTab":
+              return win({ tab: "fera", pinned: [fossa, idOf("Kalgolem"), coradon] });
+            case "search":
+              return win({ q: "co", searchFocus: true });
+            case "noMatch":
+              return win({ tab: "fera", q: "kalg", searchFocus: true });
+            case "menu":
+              return win({ tab: "fera", filterOpen: true });
+            case "filter":
+              return win({ tab: "fera", show: "notmax", order: "close" });
+            case "special":
+              return win({ tab: "special" });
+            case "stale":
+              return win({ src: "stale", srcTip: true });
+            case "none":
+              return win({ src: "none" });
+            case "focus":
+              return win({ tab: "fera", focus: armadon });
+            case "fr":
+              return win({ lang: "fr", tab: "fera" });
+            case "cGain":
+              return card([G.gain]);
+            case "cUp":
+              return card([G.up]);
+            case "cUnlock":
+              return card([G.unlock]);
+            case "cMax":
+              return card([G.max]);
+            case "cCap":
+              return card([G.cap]);
+            case "cTwo":
+              return card([G.gain, G.slime]);
+            case "cMarket":
+              return card([G.market]);
+            case "cTest":
+              return card([G.test], { test: true, left: 0.9 });
+            case "cHover":
+              return card([G.gain], { hover: true, left: 0.4 });
+            case "cLast":
+              return card([G.gain], { left: 0.12 });
+            case "cRestart":
+              return card([G.gain, G.slime], { left: 1 });
+            case "cLocked":
+              return card([G.gain], { locked: true, left: 0.8 });
+            case "cFr":
+              return card([G.up, G.slime], { lang: "fr" });
+            case "pMeterOpen":
+              return col(card([G.gain], { left: 0.7 }), meter(ctx, { board: "session" }));
+            case "pMeterClosed":
+              return col(B({}), card([G.gain], { left: 0.7 }));
+            case "pReminderClosed":
+              return col(B({}), reminder(), card([G.gain], { left: 0.7 }));
+            case "pReminderOpen":
+              return col(card([G.gain], { left: 0.7 }), reminder(), meter(ctx, { board: "session" }));
+            case "pLow":
+              return `<div class="pt-low">${col(card([G.gain], { left: 0.7 }), B({}))}</div>`;
+            case "tool":
+              return B({ hover: "pets", tip: "pets" });
+            case "open":
+              return col(B({ lit: { pets: true } }), win({ tab: "fera" }));
+            case "try":
+              return tryHtml(ctx);
+          }
+          return "";
+        }
+
+        Kit.mount({
+          states: [
+            { id: "live", title: "Pets, All", sub: "every pet in the game's order; Fossa and Kalgolem pinned on top; the family summary under the tabs; level badges coloured by level, the fill neutral" },
+            { id: "fera", title: "Fera, a long family", sub: "92 pets, 25 at Lv 3; the list scrolls past 452 px with the 3 px thumb (scroll it)" },
+            { id: "scrolled", title: "Scrolled down", sub: "pets never obtained among the owned ones: \"Lv 0 · 0/5\", grey badge, no bar, the name in muted" },
+            { id: "hover", title: "Pointer on a row, then on its pin", sub: "the pin shows only while the pointer is in the row (enter and leave); the tooltip \"Pin to the top\" under it. Rows never move" },
+            { id: "pinnedTab", title: "Pinned pets in a family tab", sub: "a tab shows its own family's pinned pets on top (Kalgolem, a Varian, stays in All and Varian)" },
+            { id: "search", title: "Searching", sub: "\"co\" in All: the window takes the keyboard only while the field has focus; Esc clears, a second Esc gives the keyboard back to the game" },
+            { id: "noMatch", title: "No match in this tab", sub: "the empty state names the tab and offers all families" },
+            { id: "menu", title: "Show and order", sub: "the filter button's menu: Show all pets / not owned yet / not at Lv 3; Order: game order / closest to the next level" },
+            { id: "filter", title: "A filter in force", sub: "not at Lv 3, closest first: the button lit with the dot; a line says what is kept and how many; Clear puts everything back" },
+            { id: "special", title: "Special pets", sub: "they give no stats: a faint \"no stats\" after the name" },
+            { id: "stale", title: "As of an earlier login", sub: "Belisk was not running at this login: the last saved collection plus the gains seen since; the source line says when it was read; pointer on it" },
+            { id: "none", title: "Nothing read yet", sub: "the game sends the collection once, at login: the empty state; the search and tabs dimmed" },
+            { id: "focus", title: "Keyboard focus on a pin", sub: "the ring 1 px outside the button; Tab: search, filter, tabs, pins" },
+            { id: "fr", title: "In French", sub: "Familiers; tabs Tous … Spécial; Lv kept as in game; pet names from the catalogue (drafts here for a few)" },
+            { id: "cGain", title: "Card: an ordinary gain", sub: "Fossa Lv 2 27/75 +1: \"Lv 2 · 28/75 → Lv 3\"; the timer ring left of the × empties over 10 s" },
+            { id: "cUp", title: "Card: a level reached, carry-over", sub: "Hill Coradon Lv 1 24/25 +5 → Lv 2 4/75: \"Lv 2 reached\"" },
+            { id: "cUnlock", title: "Card: a first unlock", sub: "Forest Spirit Lv 0 4/5 +1 → Lv 1 0/25: \"Unlocked\"" },
+            { id: "cMax", title: "Card: already at Lv 3", sub: "Kalgolem at the cap: \"Lv 3 · 75/75\", the bar full, no next level, no crystal figure" },
+            { id: "cCap", title: "Card: reaching Lv 3", sub: "Splendent Armadon Lv 2 70/75 +5: \"Lv 3 reached\"" },
+            { id: "cTwo", title: "Card: two pets close together", sub: "one card, in arrival order; at most three; any gain restarts the 10 s" },
+            { id: "cMarket", title: "Card: a black-market purchase", sub: "the same game message (+5): Slime 12/25 → 17/25" },
+            { id: "cTest", title: "Card: test card", sub: "Settings › Pets › Show a test card: the first pinned pet's real progress, nothing added" },
+            { id: "cHover", title: "Card: pointer over it", sub: "paused: the ring stops and its arc turns text, the × lights; a click anywhere dismisses" },
+            { id: "cLast", title: "Card: the last seconds", sub: "a sliver of arc; no colour change, nothing flashes; then the card fades out over 150 ms" },
+            { id: "cRestart", title: "Card: a new gain restarts it", sub: "Slime +1 with 1 s left on Fossa's card: Slime is added at the end and the ring is full again at once (no sweep back); the 10 s start over" },
+            { id: "cLocked", title: "Card: locked overlay", sub: "click-through like the meter: no ×, the ring takes its place; it runs out by itself" },
+            { id: "cFr", title: "Card: in French", sub: "Âmes de familier; Lv kept" },
+            { id: "pMeterOpen", title: "Card place: meter open", sub: "6 px above the meter, left edges aligned, the meter's width" },
+            { id: "pMeterClosed", title: "Card place: meter closed", sub: "6 px under the toolbar, left edges aligned, 310 px" },
+            { id: "pReminderClosed", title: "Card place: with a reminder, meter closed", sub: "the reminder keeps its place; the pet card stacks 6 px beyond it" },
+            { id: "pReminderOpen", title: "Card place: with a reminder, meter open", sub: "the reminder keeps its place above the meter; the pet card 6 px above it" },
+            { id: "pLow", title: "Card place: toolbar low on the screen", sub: "above the toolbar, as the reminder card" },
+            { id: "tool", title: "The toolbar's pets tool", sub: "Lucide paw-print after To-dos; tooltip \"Pets\" after 500 ms" },
+            { id: "open", title: "Window open from the toolbar", sub: "the tool lit (hot and the dot); under the toolbar the first time, then where you left it" },
+            { id: "try", title: "Try it", sub: "a working toolbar, window and card: the paw opens and closes the window; tabs, search, pins and the menu work; the buttons play soul pickups; the card goes 10 s after its last gain. Nothing is saved" },
+          ],
+          controls: ["alpha", "scale"],
+          tileMin: 430,
+          stageMin: 300,
+          render,
+        });
+
+        Pets.watch(document.querySelector("main.scenes"));
+      })();
+    </script>
+  </body>
+</html>

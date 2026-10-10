@@ -68,6 +68,9 @@
     lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
     tick: '<path d="M20 6 9 17l-5-5"/>',
     dash: '<path d="M8 12h8"/>',
+    // Settings › Pets (2026-10-10, the pets round): Lucide paw-print, the
+    // toolbar tool's icon, from gpui-kit-assets 0.6.6.
+    paw: '<circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/>',
   };
 
   function icon(name, cls) {
@@ -87,6 +90,7 @@
       bests: "Personal bests",
       reminders: "Reminders",
       todos: "To-dos",
+      pets: "Pets",
       general: "General",
       about: "About",
       ready: "Ready",
@@ -119,6 +123,7 @@
       bests: "Records perso",
       reminders: "Rappels",
       todos: "Tâches",
+      pets: "Familiers",
       general: "Général",
       about: "À propos",
       ready: "Prêt",
@@ -153,6 +158,7 @@
     ["bests", "trophy"],
     ["reminders", "bell"],
     ["todos", "listChecks"],
+    ["pets", "paw"],
     ["general", "languages"],
     ["about", "info"],
   ];

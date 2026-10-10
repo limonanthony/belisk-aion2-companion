@@ -99,7 +99,9 @@
         position: relative;
         zoom: var(--scale);
         width: 310px;
-        padding: 8px 8px 6px;
+        /* Equal padding (2026-10-10): 14 px from the outer edge to the
+           visible content on all four sides. */
+        padding: 9px 8px 12px;
         overflow: hidden;
         border: 1px solid rgba(255, 236, 214, 0.1);
         border-radius: 14px;
@@ -175,10 +177,12 @@
         color: var(--r-text);
       }
 
-      /* One block per event, under the header text (4 + 13 + 6 px in). */
+      /* The body starts at the bell's left edge (the header's 4 px inset,
+         13 px from the card's outer edge; approved 2026-10-10). The fact
+         line stays right under the name. */
       .rm-ev {
         margin-top: 4px;
-        padding-left: 23px;
+        padding-left: 4px;
         padding-right: 4px;
       }
 
@@ -203,21 +207,53 @@
         text-overflow: ellipsis;
       }
 
-      /* Time left: a 2 px inset line in the gauge colours' neutral pair,
-         draining right to left over 30 s. */
-      .rm-left {
-        height: 2px;
-        margin: 8px 4px 0;
-        overflow: hidden;
-        border-radius: 1px;
-        background: rgba(255, 240, 225, 0.12);
+      /* Time left: the timer ring (approved 2026-10-10, ../card-timer/), a
+         12 px hollow ring, 2 px stroke (an 8 px hole), in a 16 x 22 px slot
+         8 px before the × (the header's 6 px gap and 2 px); locked (no ×)
+         the slot is the ×'s 22 px, flush right, centred where the × was. Track
+         gauge-empty; the arc muted, emptying clockwise from 12 o'clock over
+         30 s; paused under the pointer, text. It replaced the 2 px
+         time-left line. */
+      .rm-timer {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 22px;
+        margin-left: auto;
       }
 
-      .rm-left i {
+      .rm-timer.is-solo {
+        width: 22px;
+      }
+
+      .rm-timer + .rm-x {
+        margin-left: 2px;
+      }
+
+      .rm-ring {
         display: block;
-        height: 100%;
-        border-radius: 1px;
-        background: rgba(255, 246, 236, 0.44);
+        overflow: visible;
+      }
+
+      .rm-ring circle {
+        fill: none;
+        stroke-width: 2px;
+      }
+
+      .rm-ring .tr {
+        stroke: rgba(255, 240, 225, 0.12);
+      }
+
+      .rm-ring .arc {
+        stroke: rgba(255, 246, 236, 0.66);
+        stroke-dasharray: 100 100;
+      }
+
+      .ov.rm.is-paused .rm-ring .arc,
+      .ov.rm.is-live:hover .rm-ring .arc {
+        stroke: rgba(255, 246, 236, 0.96);
       }
 
       /* Unlocked, the whole card is the dismiss target. */
@@ -232,12 +268,12 @@
           rm-out 150ms ease-in 30s forwards;
       }
 
-      .ov.rm.is-live .rm-left i {
-        animation: rm-drain 30s linear forwards;
+      .ov.rm.is-live .rm-ring .arc {
+        animation: rm-ring 30s linear forwards;
       }
 
       .ov.rm.is-live:hover,
-      .ov.rm.is-live:hover .rm-left i {
+      .ov.rm.is-live:hover .rm-ring .arc {
         animation-play-state: paused;
       }
 
@@ -259,13 +295,13 @@
         }
       }
 
-      @keyframes rm-drain {
+      @keyframes rm-ring {
         from {
-          width: 100%;
+          stroke-dashoffset: 0;
         }
 
         to {
-          width: 0;
+          stroke-dashoffset: -100;
         }
       }
 
@@ -577,12 +613,12 @@
         <a href="reminders.html" aria-current="page">Reminder card</a>
         <a href="settings.html?states=reminders,reminders:off,reminders:test">Settings, Reminders</a>
       </nav>
-      <h1>Reminder card <small>approved 2026-10-05; placement while the meter is closed approved 2026-10-08</small></h1>
+      <h1>Reminder card <small>approved 2026-10-05; placement while the meter is closed approved 2026-10-08; the timer ring, equal padding and the body at the bell's edge 2026-10-10</small></h1>
       <ul class="rationale">
         <li><b>Changed 2026-10-08</b> (hub round, <a href="../hub/README.md">hub/</a>): the meter is now a tool the user opens from the <a href="toolbar.html">toolbar</a>. While the meter is closed the card sits 6 px under the toolbar, left edges aligned (above it when the toolbar is low on the screen), at 310 px (<a href="toolbar.html?states=reminder">toolbar.html, "A reminder while the meter is closed"</a>); while the meter is open, as drawn here. The toolbar's bell lists the next reminders and pauses them.</li>
         <li>Its own small overlay window just above the meter (just below it when the meter sits at the top of the screen), on the meter's left edge and at its width; same translucent card, opacity and content scale as the meter. It never takes focus.</li>
-        <li>A quiet header says when ("In 1 min · 16:00"); under it, each event's name in bold and one line of fact from the game data. Events at the same minute share one card and one sound, the rarer event first.</li>
-        <li>It goes by itself after 30 s; a thin line at the bottom drains over those 30 s. Unlocked, a click anywhere on the card, or its ×, dismisses it; locked, it is click-through and simply runs out. All names and figures are invented except the event facts (from the game client's tables).</li>
+        <li>A quiet header says when ("In 1 min · 16:00"); under it, starting at the bell's left edge (2026-10-10, as the soul tracker card: <a href="../pet-card-layout/README.md">pet-card-layout/</a>), each event's name in bold and right under it one line of fact from the game data. Events at the same minute share one card and one sound, the rarer event first.</li>
+        <li>It goes by itself after 30 s; a small hollow ring left of the × empties over those 30 s (approved 2026-10-10, <a href="../card-timer/README.md">card-timer/</a>; it replaced the thin line at the bottom, so the reminder card and the soul tracker card share one timer). Unlocked, a click anywhere on the card, or its ×, dismisses it; locked, it is click-through and simply runs out. All names and figures are invented except the event facts (from the game client's tables).</li>
       </ul>
     </header>
 
@@ -594,13 +630,13 @@
         <li><b>When.</b> At the lead time chosen in Settings (1 min by default) before each event switched on. The header reads "In 1 min" rounded up to the minute, so it does not tick while the card is up; the clock time beside it never changes.</li>
         <li><b>Same minute.</b> All events due at that minute go into one card with one sound. Order: weekly, then daily, then every 3 hours, then hourly (the rarer event matters more). With everything on, three can meet: 11:00 (Arena of Tactics, Rift portals, Shugo Festival), 16:00 (reward keys, Watcher Kaira, Shugo Festival), 19:00 (Arena of Tactics, Watcher Kaira, Shugo Festival). Three on one card is fine.</li>
         <li><b>Placement.</b> 6 px above the meter's top edge, left edges aligned. If the card does not fit above the meter on its monitor, it goes 6 px below the meter's bottom edge and follows the meter's height. In the capsule layout, a fixed 220 px card on the capsule's left edge.</li>
-        <li><b>Dismissal.</b> Unlocked: a click anywhere on the card or on × closes it at once; the pointer over the card pauses the 30 s (the line stops) and lights the ×. Locked: the card is click-through like the meter, shows no × and simply runs out. A newer reminder replaces an older one still on screen.</li>
+        <li><b>Dismissal.</b> Unlocked: a click anywhere on the card or on × closes it at once; the pointer over the card pauses the 30 s (the ring stops and its arc turns text) and lights the ×. Locked: the card is click-through like the meter, shows no × (the ring takes its place) and simply runs out. A newer reminder replaces an older one still on screen.</li>
         <li><b>Focus.</b> The window never activates (same no-activate, tool-window styles as the meter); the game keeps keyboard and mouse focus. No Windows notification is produced.</li>
       </ul>
 
       <h2>Values</h2>
       <ul>
-        <li>In <a href="tokens.md">tokens.md</a>, "Reminder card": widths 310, 340 and 220 px, heights 84, 123 and 162 px, the header, the event block, the time-left line and the 150 ms fades.</li>
+        <li>In <a href="tokens.md">tokens.md</a>, "Reminder card": widths 310, 340 and 220 px, heights 81, 120 and 159 px, padding 9 / 8 / 12 px (14 px from the outer edge to the content on every side), the header, the event block, the timer ring and the 150 ms fades.</li>
       </ul>
 
       <h2>Not built yet</h2>
@@ -612,7 +648,7 @@
       <h2>GPUI notes</h2>
       <ul>
         <li>A second overlay window with the meter's styles (transparent, no-activate, tool window, click-through while locked), sized to the card like the meter (fit-to-card); positioned from the meter window's bounds in device pixels.</li>
-        <li>The fade is the card's opacity tween inside the window; the window itself appears at full size, transparent. The line is a 2 px div whose width is recomputed per frame only while the card is up.</li>
+        <li>The fade is the card's opacity tween inside the window; the window itself appears at full size, transparent. The ring is an arc path (line segments along the circle, or a small custom element) recomputed per frame only while the card is up.</li>
       </ul>
     </section>
 
@@ -646,7 +682,9 @@
           const cls = ["ov", "rm"];
           if (ctx.opts.damage && !r.narrow) cls.push("has-dmg");
           if (r.narrow) cls.push("is-narrow");
-          if (!r.locked) cls.push("is-click");
+          if (r.locked) cls.push("is-locked");
+          else cls.push("is-click");
+          if (r.hot && !r.locked) cls.push("is-paused");
           if (r.live) cls.push("is-live");
           const when = r.at
             ? `<span class="rm-when">${r.when}</span><span class="rm-dot">·</span><span class="rm-at">${r.at}</span>`
@@ -655,8 +693,11 @@
           const evs = r.events
             .map((k) => `<div class="rm-ev"><div class="rm-name">${EV[k][0]}</div><div class="rm-detail">${EV[k][1]}</div></div>`)
             .join("");
-          const left = `<div class="rm-left"><i style="width:${((r.left ?? 1) * 100).toFixed(0)}%"></i></div>`;
-          return `<div class="${cls.join(" ")}" role="status" aria-label="Event reminder">${`<div class="rm-head">${icon("bell")}${when}${x}</div>`}${evs}${left}</div>`;
+          // The timer ring (hub.js Hub.ring, copied: this page loads kit.js only).
+          const leftF = r.live ? 1 : r.left ?? 1;
+          const off = (-(1 - leftF) * 100).toFixed(2);
+          const ring = `<span class="rm-timer${r.locked ? " is-solo" : ""}" role="timer" aria-label="Time left"><svg class="rm-ring" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle class="tr" cx="6" cy="6" r="5"/><circle class="arc" cx="6" cy="6" r="5" pathLength="100" transform="rotate(-90 6 6)" style="stroke-dashoffset:${off}"/></svg></span>`;
+          return `<div class="${cls.join(" ")}" role="status" aria-label="Event reminder">${`<div class="rm-head">${icon("bell")}${when}${ring}${x}</div>`}${evs}</div>`;
         }
 
         // ---- The meter (copy of approved/meter.html, Session board) --------------
@@ -721,13 +762,13 @@
             { id: "two", title: "Two at the same minute", sub: "02:00: Rift portals and the Shugo Festival share one card and one sound, the rarer first" },
             { id: "two-weekly", title: "Monday 21:00, 5 min ahead", sub: "Artifact Siege (switched on) with the Shugo Festival; lead time set to 5 min" },
             { id: "three", title: "Three at once", sub: "11:00 with every event on: Arena of Tactics, Rift portals, Shugo Festival" },
-            { id: "pointer", title: "Pointer over", sub: "the × lights up and the 30 s pause; a click anywhere on the card dismisses it" },
-            { id: "late", title: "Last seconds", sub: "the line has nearly run out; the card then fades out over 150 ms" },
+            { id: "pointer", title: "Pointer over", sub: "the × lights up and the 30 s pause: the ring stops and its arc turns text; a click anywhere on the card dismisses it" },
+            { id: "late", title: "Last seconds", sub: "a sliver of arc left of the ×; no colour change, nothing flashes; the card then fades out over 150 ms" },
             { id: "capsule", title: "Capsule layout", sub: "a fixed 220 px card on the capsule's left edge" },
             { id: "below", title: "Meter at the top of the screen", sub: "no room above, so the card sits 6 px below the meter" },
-            { id: "locked", title: "Meter locked", sub: "click-through like the meter: no ×, it runs out by itself" },
+            { id: "locked", title: "Meter locked", sub: "click-through like the meter: no ×, the ring takes its place; it runs out by itself" },
             { id: "test", title: "Test reminder", sub: "from Settings → Reminders; plays the sound too" },
-            { id: "live", title: "Live", sub: "fades in, the line runs 30 s, fades out; pointer over pauses, a click dismisses" },
+            { id: "live", title: "Live", sub: "fades in, the ring empties over 30 s, fades out; pointer over pauses, a click dismisses" },
           ],
           controls: ["alpha", "scale", "damage", "cp"],
           stageMin: 400,

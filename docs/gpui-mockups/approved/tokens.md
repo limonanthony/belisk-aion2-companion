@@ -14,10 +14,13 @@ report button in meter.html and the boss records in history.html
 (2026-10-07), the hub pages (2026-10-08, see "Hub"), and the updates round
 (2026-10-09, see "Updates and the changelog"): the toolbar's update icon in
 [toolbar.html](toolbar.html), [whatsnew.html](whatsnew.html), and About ›
-Updates and About › Changelog in settings.html. The shared overlay classes
+Updates and About › Changelog in settings.html, and the pets round
+(2026-10-10, see "Pets"): [pets.html](pets.html), the toolbar's Pets tool and
+Settings › Pets. The shared overlay classes
 live in [overlay.css](overlay.css), the fight report's in
 [report.css](report.css), the hub's in `hub.css`, the updates round's in
-`updates.css`, the main-window components in [app.css](app.css). Later
+`updates.css`, the pets round's in `pets.css`, the main-window components in
+[app.css](app.css). Later
 rounds extend this file only with values the user has approved.
 
 Colours are sRGB. `a` is the user's background opacity (0–255 in Settings,
@@ -132,6 +135,7 @@ shades where the ink would fall below 4.5:1.
 | Rank badge | 18 × 18 px, 4 px radius, `rgba(255, 240, 225, 0.09)`, text `muted` 11.5 px / 600; you: `you-badge` |
 | Capsule rank badge | 22 × 22 px, 5 px radius, your class colour, `#17120d` text 13 px / 700 |
 | Gauge | 10 segments, 5 px tall, 3 px radius, 3 px gaps, in a fixed 22 px block |
+| Timer ring | The cards' timer (reminder card, soul tracker card; 2026-10-10): 12 px, 2 px stroke, an 8 px hole; track `gauge-empty`, arc `muted` (`text` while paused), square ends; in a 16 × 22 px slot 8 px before the × (the header's 6 px gap and 2 px); locked, the ×'s 22 px slot, flush right. See "Reminder card" |
 | Tool button | 22 × 22 px, 7 px radius, icon 13 px, stroke 2 (20 px inside rows, icon 12 px) |
 | Text button | 20–22 px tall pill, `soft` fill, icon 12 px; quiet variant has no fill |
 | Status chip | 20–22 px tall pill |
@@ -252,9 +256,10 @@ card outline, the 1 px "you" rim, the opened-record rim, inputs and popovers.
 - The capsule grows into the card over 180 ms on pointer over and returns
   after a 350 ms grace period.
 - The reminder card fades in over 150 ms and fades out over 150 ms, on
-  time-out and on dismissal alike; no slide, no scale. Its time-left line
-  needs about one frame per pixel (10 per second at 100%), only while the
-  card is up.
+  time-out and on dismissal alike; no slide, no scale. Its timer ring
+  redraws only while the card is up and the arc moves: about one frame per
+  degree (12 a second for the 30 s reminder, 36 for the 10 s soul tracker
+  card) at most.
 - The to-do window's check and × appear and go at once, with no fade, on the
   row's pointer enter and leave only; nothing in that window animates.
 - The fight report's row lift and chevron appear on the row's pointer enter
@@ -280,11 +285,14 @@ meter's content scale.
 |---|---|
 | Placement | 6 px above the meter's top edge, left edges aligned. If it does not fit above the meter on that monitor: 6 px below the meter's bottom edge, following the meter's height. Capsule layout: 6 px above the capsule, on its left edge. While the meter is closed (hub, 2026-10-08): 6 px under the toolbar, left edges aligned, 310 px; above the toolbar when it sits low on the screen. A first-open prompt on screen: the card stacks 6 px above it |
 | Width | The meter's: 310 px, 340 with total damage; capsule layout a fixed 220 px. All times the content scale |
-| Height | Hugs the content, border included, at 100%: 1 event 84 px, 2 events 123, 3 events 162 |
-| Card | 14 px radius; 8 px sides and top, 6 px bottom |
-| Header | 22 px, 4 px left inset, 6 px gaps: Lucide `bell` 13 px in `muted`; "In 1 min" 12.5 px / 600 `text`; a `faint` "·"; the start time 12.5 px / 500 `muted`. Unlocked, the × is the meter's 22 px tool button (7 px radius, `muted`; pointer over the card: `hot` fill, `text`), flush right |
-| Event block | 23 px left inset, so names line up with the header text; 4 px right. 4 px under the header, 7 px between events. Name 13 px / 600 `text`, 17 px line; one line of fact 11.5 px / 500 `muted`, 15 px line; both cut off with an ellipsis |
-| Time-left line | 2 px tall, 1 px radius, 4 px inset on both sides, 8 px under the last event; track `gauge-empty`, fill `faint`; drains right to left, linear, over 30 s. Inset and rounded like the gauge, not an edge stripe |
+| Height | Hugs the content, border included, at 100%: 1 event 81 px, 2 events 120, 3 events 159 (39 px per event) |
+| Card | 14 px radius; padding 9 px top, 8 px sides, 12 px bottom, so the content sits 14 px from the card's outer edge on all four sides (equal padding, 2026-10-10: "make padding equal everywhere in the card ? The bottom padding is lower than the top padding") |
+| Header | 22 px, 4 px left inset, 6 px gaps: Lucide `bell` 13 px in `muted`; "In 1 min" 12.5 px / 600 `text`; a `faint` "·"; the start time 12.5 px / 500 `muted`; then, pushed right, the timer ring and, unlocked, the × (the meter's 22 px tool button, 7 px radius, `muted`; pointer over the card: `hot` fill, `text`), flush right |
+| Event block | Starts at the bell's left edge: 4 px left inset, the header's, so names sit 13 px from the card's outer edge, under the icon (approved 2026-10-10, [../pet-card-layout/README.md](../pet-card-layout/README.md); it was 23 px, under the header text); 4 px right. 4 px under the header, 7 px between events. Name 13 px / 600 `text`, 17 px line; one line of fact 11.5 px / 500 `muted`, 15 px line, right under the name (no gap); both cut off with an ellipsis. Heights unchanged |
+| Timer ring | Approved 2026-10-10 ([../card-timer/README.md](../card-timer/README.md); it replaced the 2 px time-left line under the last event, which on the soul tracker card read as a second bar under the pets' progress bars). A hollow ring, 12 × 12 px, 2 px stroke (radius 5 px at the stroke's centre, an 8 px hole), in a 16 × 22 px slot pushed right, 8 px before the × (the header's 6 px gap and 2 px), so the ring's edge is 10 px from the ×'s button. Track: the full circle in `gauge-empty` `rgba(255, 240, 225, 0.12)`. Arc: the time left, in `muted` `rgba(255, 246, 236, 0.66)`, from 12 o'clock clockwise, square ends; it empties clockwise (its start follows the clock hand round, its end stays at 12 o'clock), linear, over 30 s |
+| Ring paused | While the pointer is over the card: the arc stops and turns `text` `rgba(255, 246, 236, 0.96)`, beside the lit × |
+| Ring locked | No ×: the slot takes the ×'s 22 px, flush right, so the ring sits centred where the × was; nothing reacts to the pointer |
+| Ring, last seconds | A sliver of arc; no colour change, nothing flashes; at zero the card fades out over 150 ms |
 
 - **When**: the lead time set in Settings (1 min by default) before each
   event switched on. "In 1 min" is rounded up to the minute and does not tick
@@ -294,11 +302,11 @@ meter's content scale.
   sound, the rarer first: weekly, daily, every 3 hours, hourly. Up to three
   events meet (11:00, 16:00, 19:00 with everything on).
 - **Lifetime**: 30 s, then the fade out. The pointer over the card pauses the
-  30 s (the line stops) and lights the ×. A newer reminder replaces one still
-  on screen.
+  30 s (the ring stops, its arc turns `text`) and lights the ×. A newer
+  reminder replaces one still on screen (its ring starts full).
 - **Unlocked**: a click anywhere on the card, or on ×, dismisses it at once.
-- **Locked**: click-through like the meter: no ×, nothing reacts to the
-  pointer, and it runs out by itself.
+- **Locked**: click-through like the meter: no × (the ring takes its slot),
+  nothing reacts to the pointer, and it runs out by itself.
 - **Focus**: the window never activates (the meter's no-activate, tool-window
   styles); the game keeps keyboard and mouse focus. No Windows notification.
 - Not built yet, decided with that feature: whether Alt+E also dismisses
@@ -556,7 +564,7 @@ toolbar opens, and every tool opens and closes from it. Pages:
 | Element | Value |
 |---|---|
 | Window | An overlay card of its own: `card` at the user's opacity, `card-border`, no shadow; 4 px padding, 12 px radius (the card's 14 px reads as a pill at this height); one row, 2 px gaps; the content scale. Horizontal only |
-| Order | Grip; DPS meter (Lucide `swords`), PvP meter (`crosshair`), To-dos (`list-checks`), Fight history (`crown`), Reminders (`bell`), Settings (`settings`); a rule; Odyle Energy (`zap`), Shugo keys (`key-round`), the warning; a rule; the update icon while there is something to do or know (2026-10-09, see "Updates and the changelog"), fold (`chevrons-left`), quit (`x`) |
+| Order | Grip; DPS meter (Lucide `swords`), PvP meter (`crosshair`), To-dos (`list-checks`), Pets (`paw-print`, 2026-10-10, see "Pets"), Fight history (`crown`), Reminders (`bell`), Settings (`settings`); a rule; Odyle Energy (`zap`), Shugo keys (`key-round`), the warning; a rule; the update icon while there is something to do or know (2026-10-09, see "Updates and the changelog"), fold (`chevrons-left`), quit (`x`) |
 | Grip | 14 × 26 px, Lucide `grip-vertical` 12 px in `faint`; the bar's empty space drags too |
 | Tool | 26 × 26 px, 7 px radius, icon 14 px in `muted`. Pointer over: `soft`, `text`. Lit (the tool is open): `hot`, `text`, the icon 3 px higher and a 4 × 4 px dot (`currentColor`, the pin dot's size) 2 px above the bottom edge. Reminders paused: Lucide `bell-off` in `faint` |
 | Fold and quit | 20 × 26 px, icon 12 px in `faint`; pointer over: `soft`, `text` |
@@ -572,7 +580,7 @@ toolbar opens, and every tool opens and closes from it. Pages:
   "Click to close. Fights stop being tracked."; open and stepped aside with
   Settings › Overlay › "Hide between fights", added 2026-10-09: "Hidden
   between fights. Click to show it for 10 s."), "PvP meter", "To-dos",
-  "Fight history", "Reminders" ("Reminders / Paused"), "Settings", "Fold the
+  "Pets" ("Familiers"), "Fight history", "Reminders" ("Reminders / Paused"), "Settings", "Fold the
   toolbar", "Unfold the toolbar", "Quit { -app-name } / Closes every tool."
   ("Quit Belisk"); a count: its name, then "245 of 840, +380
   extra · full in 2 d 14 h. Click for all resources." ("Full, spend by Tue
@@ -686,7 +694,7 @@ the rest in `updates.js`. Values new in this round are marked (new).
 | Place | First in the end group, after the rule and before fold: `… warning \| update « ×`; folded, after the warning. Shown only while there is something to do or know: available, downloading, paused, checking the download, ready, and after a failed download. Up to date, checking for updates, GitHub unreachable or limiting: no icon |
 | Button | A tool: 26 × 26 px, 7 px radius, icon 14 px; its tooltip's right edge on the button's, as fold's and quit's |
 | Available | Lucide `download` in `text` on `soft` (new: a tool at rest has no fill, so it reads as "something waits"); pointer over: `hot` |
-| Downloading | The same icon in `muted`, 2 px higher, no fill; a 2 px progress line, 1 px radius, 5 px inset on both sides, 4 px above the bottom edge: track `gauge-empty`, fill `muted` (new; the reminder card's time-left line, inset and rounded, not an edge stripe); pointer over: `soft`, `text` |
+| Downloading | The same icon in `muted`, 2 px higher, no fill; a 2 px progress line, 1 px radius, 5 px inset on both sides, 4 px above the bottom edge: track `gauge-empty`, fill `muted` (new; drawn as the reminder card's time-left line was before the timer ring, inset and rounded, not an edge stripe); pointer over: `soft`, `text` |
 | Paused | As downloading, the fill in `faint` (new) |
 | Checking the download | As downloading, the line full |
 | Ready | Lucide `rotate-cw` in `good` on `chip-good` (`good` at 0.13); pointer over: `good` at 0.20 (new) |
@@ -789,6 +797,123 @@ the rest in `updates.js`. Values new in this round are marked (new).
 - The CI release workflow (TASK-30), the lean update archive, its hash and
   signature are prerequisites, not drawn.
 
+## Pets
+
+Approved on 2026-10-10 ([../pets/README.md](../pets/README.md) is the record
+of how it was chosen: window layout A, card design A, the name "Pets", level
+colours on the badge only). A window listing every pet with its level and
+souls toward the next level, and a short-lived card on soul pickups; both
+work with the meter closed (the game's pet messages are read always, like
+resources). Pages: [pets.html](pets.html), the toolbar's Pets tool in
+[toolbar.html](toolbar.html), Settings › Pets in
+[settings.html](settings.html). Styles: `pets.css`; drawing: `pets.js`, the
+tool in `hub.js`.
+
+The rule: 5 souls for Lv 0 → 1, 25 for 1 → 2, 75 for 2 → 3; Lv 3 is the
+Global cap; souls beyond a level carry over (Lv 1 24/25 +5 → Lv 2 4/75). A
+pet at the cap reads 75/75. No insight-crystal figure anywhere.
+
+### Level colours
+
+On the level badge only; the progress fill stays neutral. "Lv N" always
+stays, so colour is never the only cue. All from `good`, no new hue.
+
+| Level | Badge fill | Badge text |
+|---|---|---|
+| Lv 0 | `rgba(255, 240, 225, 0.09)` over `track` (grey) | `muted` |
+| Lv 1 | `good` at 0.10 over `track` | `good` at 0.66 |
+| Lv 2 | `good` at 0.28 over `track` | `good` |
+| Lv 3 | `good` at 0.86 | ink `#17120d` |
+
+- Lv 0 to Lv 2 lay their tint over the track's dark plate
+  (`rgba(0, 0, 0, 0.34)`), as names sit on the track, so they read over a
+  bright scene at low opacity; in GPUI, one precomputed colour per level or
+  a `track` div holding the tint. Lv 3 is filled with ink text, as "you" is
+  on the meter.
+- Not chosen (round 2): tinting the progress fill by level too; a family
+  with many pets at Lv 3 became a wall of green bars.
+
+### Pets window
+
+| Element | Value |
+|---|---|
+| Window | The to-do window's frame: 370 px; card padding 6 px top, 8 px sides and bottom; the list scrolls past 452 px with the 3 px `scroll-thumb`, 4 px from the right, 11 px right padding while it overflows, 3 px of room around the rows for the focus ring. All times the content scale |
+| Header | The 28 px window header: Lucide `paw-print` 13 px in `muted`, "Pets" (French "Familiers") 13.5 px / 600; the close tool button (22 px) flush right |
+| Source line | The to-do window's source line (20 px, Lucide `gamepad-2` 12 px `faint`, 11.5 px / 500 `muted`, times and names `text` / 600): "From the game, live · logged in at 19:02 · Ossia"; "As of your login Sun 22:40 · relog to refresh", with the figure tooltip's two lines up to 300 px ("Read at your login Sun 22:40; souls gained since, while Belisk ran, are added." / "The game sends your pets only at login: log in again while Belisk runs for exact values."); "No pets read yet. Log in while Belisk runs." |
+| Search | The 26 px input (8 px left padding, 6 px gaps): Lucide `search` 12 px `faint`, "Search pets" placeholder, 12.5 px / 500; typed: the clear button 18 × 18 px, 4 px radius, Lucide `x` 12 px `muted` (pointer: `soft`, `text`). 6 px under it |
+| Filter button | 4 px after the input: 26 × 26 px, 7 px radius, Lucide `list-filter` 13 px in `muted`; pointer over: `soft`, `text`; menu open: `hot`; a filter in force: `hot`, `text`, the icon 3 px higher and the 4 × 4 px dot 2 px above the bottom edge (the toolbar's lit tool) |
+| Show and Order menu | The `popover`, 232 px, 6 px under the button, right edges aligned: label "Show" (22 px, 11 px / 500 `faint`), All pets, Not owned yet, Not at Lv 3; the 1 px divider; "Order", Game order, Closest to the next level. Items 26 px, a 12 px lead slot with Lucide `check` 12 px on the current choice, which is 600 |
+| Filter line | While a filter is in force: the source line's style with Lucide `list-filter`, "Not at Lv 3 · closest first · 67 shown" (the count in `faint`), "Clear" as the to-do window's link pushed right |
+| Tabs | The segmented tabs, 6 px under them: All, Cogni, Fera, Natura, Varian, Special (French Tous … Spécial) |
+| Family summary | 18 px, 4 px inset, 11.5 px / 500 `muted`, figures `text` / 600: "61 of 92 owned · 25 at Lv 3", pushed right "Levels 132/276" ("/276" 11 px `faint`); under it, 3 px above and 6 px below, a 4 px bar (2 px radius), track `gauge-empty`, fill cream `rgba(255, 246, 236, 0.55)`: levels gained of the levels the tab can reach |
+| Section labels | "Pinned" (Lucide `pin`) over the pinned pets, then "All pets" or the family (Lucide `paw-print`), with their counts: the to-do window's section label, not clickable; none when nothing is pinned |
+| Row | The meter's row: 22 px, 3 px apart. The level badge 30 × 18 px, 4 px radius, 11 px / 600, "Lv 2", with 8 px to the track; the track (5 px radius, 8 px left and 9 px right inset, 6 px gaps); the 20 px pin slot 5 px after it |
+| Progress fill | Souls toward the next level: `neutral-fill` (cream 0.04 → 0.16), width = souls ÷ need, floor 4% while above zero, none at zero, full at Lv 3; grows over 240 ms |
+| Name | 13 px / 500, ellipsis; a Special pet: "no stats" 11 px / 500 `faint`, 5 px after; never obtained (Lv 0, 0 souls): `muted` |
+| Souls | "27/75": 12.5 px / 600 right-aligned in 44 px, "/75" 11 px / 500 `faint`; at Lv 3 and never obtained, the figure in `muted` |
+| Next level | Right-aligned in 40 px, 3 px gap: Lucide `arrow-right` 10 px at stroke 2.25 in `faint`, "Lv 3" 11.5 px / 500 `muted`; at the cap "Max" in `faint` |
+| Pin | The to-do window's × slot: 20 × 20 px, 5 px radius, Lucide `pin` 12 px in `muted`; shown while the pointer is in the row (enter and leave only) or it has keyboard focus; a pinned pet's stays shown, in `text`; pointer on it: `soft`, `text`; tooltip under it, right edges aligned: "Pin to the top" / "Unpin" |
+| Footer | The 26 px window footer: Lucide `info` 12 px `faint`, "Souls per level 5 · 25 · 75" (figures `text` / 600), "Lv 3 is the cap" in `faint` pushed right |
+| Empty | Before any read: the empty state "No pets yet" / "The game sends your pets once, when you log in. Log in with a character while Belisk runs, and every pet shows here with its level and souls."; search and tabs at 0.4 opacity, inert. No match: "No pet matches "kalg"" / "Nothing in Fera." and the link "Search all families" (in All: "No pet in any family has that in its name.") |
+| Focus ring | `focus-ring`, 2 px, 1 px outside the pin, the filter button or a tab; the search field shows focus with its brighter border |
+
+- **Order**: the game's order (pet ids) by default, so the list compares
+  with the game's Pets window row by row; "Closest to the next level" sorts
+  by the fewest souls left (Lv 3 last), then the larger share done.
+- **Pins**: pinned pets sit on top of All and of their own family's tab, in
+  the order pinned; kept per server, with the collection.
+- **Search**: in the current tab, anywhere in the name, pinned first.
+- **Per server**: the collection is shared by the characters of one
+  server; the window shows the server of the character in game. The game
+  sends the whole collection only at login; the gains seen since are added.
+- **Keyboard**: the window never takes the keyboard, except while the
+  search field has it (a click in it); Esc clears the search, a second Esc
+  hands the keyboard back. Accessibility tools: Tab reaches the search, the
+  filter button, the tabs (Left and Right) and the pins (Up and Down, Space
+  pins).
+- **Opening it**: the toolbar's Pets tool (Lucide `paw-print`, after
+  To-dos), lit while the window is open; under the toolbar the first time,
+  then where you left it.
+
+### Soul tracker card
+
+| Element | Value |
+|---|---|
+| Frame | The reminder card's: its own overlay window, 310 px, `card`, `card-border`, 14 px radius; padding 9 px top, 8 px sides, 13 px bottom, so the content sits 14 px from the outer edge on all four sides (2026-10-10) |
+| Header | The reminder card's 22 px header: Lucide `paw-print` 13 px `muted`, "Pet souls" (French "Âmes de familier"; the test card "Test card") 12.5 px / 600; then, pushed right, the timer ring and, unlocked, the × tool button flush right |
+| Pet block | Starts at the paw icon's left edge: the reminder card's 4 px inset, 13 px from the card's outer edge, so the name, the level badge and the bar line up under the icon (approved 2026-10-10, [../pet-card-layout/README.md](../pet-card-layout/README.md); it was 23 px). 4 px under the header, 7 px between pets. Line 1 (18 px): the name 13 px / 600, ellipsis; on a level change the chip pushed right, 18 px, `chip-good`, 11 px / 600, Lucide `chevrons-up` 11 px "Lv 2 reached" or Lucide `sparkles` 11 px "Unlocked". Line 2 (16 px, 5 px gaps), 4 px under line 1's box (it was 0): the level badge, "28/75" 12.5 px / 600 `text` with "/75" 11 px `faint`, Lucide `arrow-right` 10 px `faint` and "Lv 3" 11.5 px / 500 `muted` (none at the cap). Visible spacing: 8 px from the name's letters to the level badge (the 13 px letters sit inside their 18 px line, so the 4 px box margin shows as 8 px), and 8 px from the badge to the bar |
+| Level badge | 16 px tall, 4 px radius, 6 px sides, 11 px / 600, the window's level colours |
+| Bar | 8 px under line 2 (it was 4 px): 4 px, 2 px radius, `track`; fill cream 0.14 → 0.50; floor 4%, full at Lv 3; grows over 240 ms; it runs the card's full inner width |
+| Timer ring | The reminder card's ring (12 px, 2 px stroke, `gauge-empty` track, `muted` arc, `text` while paused, the ×'s slot when locked), emptying over 10 s; no time-left line (2026-10-10) |
+| Height | At 100%: 1 pet 100 px, 2 pets 157, 3 pets 214 (57 px per pet; it was 92 / 141 / 190 before the even 8 px spacing). The content still sits 14 px from the outer edge on all four sides (padding 9 / 8 / 13 px). One exception, measured in the build: when the last pet's bar is empty (0 souls), the bottom reads larger, because an empty 4 px track draws in the card's own colour |
+
+- **When**: a soul pickup (and a black-market purchase, +5, the same game
+  message), with the meter open or closed, as Settings › Pets allows.
+- **Several pets**: one card; pets in arrival order (a newcomer is added at
+  the end, nothing moves); at most three (a fourth replaces the oldest).
+- **Lifetime**: 10 s after its last update; any gain on the card fills the
+  ring again at once (no sweep back) and starts the 10 s again. The pointer
+  over it pauses the ring (its arc turns `text`) and lights the ×;
+  unlocked, a click or × dismisses it; locked, it is click-through with no
+  ×, the ring in the ×'s slot. It never takes focus.
+- **Place**: the reminder card's: 6 px above the meter while it is open
+  (below it when there is no room), 6 px under the toolbar while it is
+  closed (above it when the toolbar sits low). With a reminder card on
+  screen, the reminder keeps its place and the pet card stacks 6 px beyond
+  it.
+- **Motion**: fades in and out over 150 ms, as the reminder card; figures
+  swap in place; nothing flashes or pulses.
+
+### Not decided by the mockups
+
+- Icons to add from Lucide (ISC) when built: `paw-print`, `pin`, `search`,
+  `list-filter`, `arrow-right`, `chevrons-up`, `sparkles` (all in
+  gpui-kit-assets 0.6.6); `info`, `check`, `x`, `play`, `gamepad-2`,
+  `chevron-down`, `arrow-down` are used as approved.
+- With the catalogue (TASK-34.2) and in game: the game's order inside a
+  family; French family and pet names; souls of pets already at Lv 3 arrive
+  without a pet id, so their card needs the catalogue's mob → pet map.
+
 ## Main window (GPUI Kit)
 
 The startup gate, Home and Settings use GPUI Kit components dressed in the
@@ -831,7 +956,7 @@ Text, `good`, `warn` and `bad` are the overlay values.
 |---|---|---|
 | Window | borderless window | 960 × 620 (gate 600 × 470, not resizable), 9 px radius, 1 px `rgba(255, 236, 214, 0.12)` border |
 | Title bar | `TitleBar` | 36 px; 20 px cream logo square (6 px radius) + `-app-name` ("Belisk"); minimise, maximise, close 46 × 36 (gate: close only) |
-| Sidebar | `Sidebar` | 208 px; Meter, then a "Settings" label and nine sections (Reminders after Personal bests, To-dos after Reminders); items 32 px, 7 px radius; the meter's status line (dot + "Running · 12:41") at the bottom |
+| Sidebar | `Sidebar` | 208 px; Meter, then a "Settings" label and ten sections (Reminders after Personal bests, To-dos after Reminders, Pets after To-dos); items 32 px, 7 px radius; the meter's status line (dot + "Running · 12:41") at the bottom |
 | Settings group | styled div | title above; 10 px radius, `win-surface`, 1 px `win-line`; rows ≥ 54 px, 11 × 16 px padding, 1 px dividers |
 | Settings row | styled div | label and one-sentence description on the left (≤ 58ch), control on a stable right edge |
 | Settings row, dimmed | styled div | While the section's master switch is off (Reminders): label and description at 0.5 opacity, the control at 0.4 and inert; every control keeps its own value |
@@ -881,6 +1006,21 @@ and Start over say what they do in the Resources window.
 | Restored | A good badge "3 to-dos back" with a check, 2 px before the button, for 4 s; no dialog |
 | Confirm dialog | The Dialog: "Reset the to-dos completely?", two paragraphs 6 px apart (the first ends "Values from the game stay."), Cancel (focused, the focus ring drawn) then the danger "Reset to-dos" |
 | After the reset | A good badge "To-dos reset" with a check before the button, for 4 s |
+
+### Settings → Pets
+
+Approved on 2026-10-10 with the Pets window and the soul tracker card.
+
+| Part | Value |
+|---|---|
+| Place | Sidebar item after To-dos, Lucide `paw-print`; no preview column (the test button shows the real card) |
+| Lead | "The Pets window opens from the toolbar. The card works with the meter open or closed." |
+| Soul tracker card | Soul tracker (master switch, on): "A small card when you pick up a pet's souls, with its progress to the next level. It goes 10 s after the last pickup."; Only pinned pets (switch, off): "Shows the card only for the pets you pinned in the Pets window."; Pets already at Lv 3 (switch, on): "Also shows the card for pets at the cap, as Lv 3 · 75/75."; Black-market purchases (switch, on): "Souls bought at the black market (+5) show the card like a pickup."; Test card (secondary button "Show a test card", Lucide `play`): "Shows the card now with your first pinned pet." |
+| Master switch off | Every row under it dimmed (Settings row, dimmed); no card |
+| Test shown | The card with the first pinned pet's real progress (the first pet in game order when nothing is pinned), header "Test card", nothing added, whatever the switches say; a good badge "Shown under the toolbar" ("Shown above the meter" while the meter is open) with a check, 2 px before the button, for 4 s |
+| Collection | One read-only row for the server of the character in game: "Pets on Ossia" / "Read at login, **Mon 19:02**. The game sends your pets only when you log in; pickups since are added." (the time `text` / 600), and "197 of 290" in display type 13.5 px / 600 `muted` with "of 290" 12 px / 500 `faint`. Before any read: "Not read yet. Log in with a character on this server while Belisk runs." and "—" in `faint` |
+| French | « Familiers », « Carte de suivi des âmes », « Suivi des âmes », « Familiers épinglés seulement », « Familiers déjà au Lv 3 », « Achats au marché noir », « Carte de test », « Afficher une carte de test », « Affichée sous la barre d'outils », « Familiers sur Ossia », « Lue à la connexion, lun. 19:02… », « 197 sur 290 »; the page runs about 33 px past the window and scrolls with the thumb |
+| Not here | The window's sort and filters (its menu), the card's 10 s and place, a sound, forgetting the collection |
 
 ### Settings → Overlay, Window
 
@@ -932,7 +1072,9 @@ pinned version before planning.
   (transparent, no-activate, tool window, click-through while locked), sized
   to the card and placed from the meter window's bounds in device pixels. The
   fade is the card's opacity inside the window; the window appears at full
-  size, transparent.
+  size, transparent. The timer ring is an arc path (`PathBuilder`, line
+  segments along the circle) or a small custom element, recomputed per frame
+  only while the card is up; the soul tracker card draws the same ring.
 - The to-do window is a third overlay window with the meter's styles
   (transparent, no-activate, tool window), sized to its content up to the
   list's maximum height. A done name is drawn with `StrikethroughStyle`; the
@@ -955,3 +1097,10 @@ pinned version before planning.
   no-activate, tool window), sized to its content up to the list's maximum
   height; Windows scrolls inactive windows under the pointer by default. The
   toolbar's progress line redraws only when the percentage changes.
+- The Pets window and the soul tracker card are overlay windows with the
+  meter's styles (transparent, no-activate, tool window), the window sized
+  to its content up to the list's maximum height, the card placed as the
+  reminder card; the window takes the keyboard only while the search field
+  has it. The pin is drawn on every row and its visibility changes on the
+  row's hover enter and leave (`on_hover`), never on mouse move. The list
+  holds about 290 rows and draws only what is on screen (`uniform_list`).

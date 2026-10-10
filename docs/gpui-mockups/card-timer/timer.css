@@ -1,0 +1,350 @@
+/* The card timer round, 2026-10-10, not approved yet: how the soul tracker
+   card and the reminder card show the time they have left. Only what this
+   round adds; loaded after ../approved/overlay.css, todos.css (the bundled
+   Barlow Semi Condensed), hub.css (the reminder card's classes) and
+   pets.css (the soul tracker card). Values new in this round are marked
+   "new"; the rest are tokens.md's. */
+
+/* The reminder card's ×, copied from ../approved/reminders.html, unchanged
+   (hub.css draws the card without it). */
+.rm-x {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border-radius: 7px;
+  color: var(--r-muted);
+  cursor: pointer;
+}
+
+.rm-x:hover,
+.rm-x.is-hot {
+  background: var(--r-hot);
+  color: var(--r-text);
+}
+
+/* Pointer over a live card: the × lights, as the reminder card's does. */
+.ct-live.is-paused .pc-x,
+.ct-live.is-paused .rm-x {
+  background: var(--r-hot);
+  color: var(--r-text);
+}
+
+/* ---- Rings (A, B, C) ---------------------------------------------------------
+   A hollow ring that empties clockwise from 12 o'clock, like a clock hand
+   wiping it (new). Track gauge-empty; the arc muted (the time-left line's
+   faint is too weak on 30 px of arc); paused under the pointer: text. The
+   arc's ends are square, so an empty ring leaves no dot. */
+.ct-ring {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.ct-ring circle {
+  fill: none;
+}
+
+.ct-ring .tr {
+  stroke: rgba(255, 240, 225, 0.12);
+}
+
+.ct-ring .arc {
+  stroke: rgba(255, 246, 236, 0.66);
+  stroke-dasharray: 100 100;
+}
+
+.is-paused .ct-ring .arc {
+  stroke: rgba(255, 246, 236, 0.96);
+}
+
+/* A. Left of the ×: a 16 px slot (the 12 px ring centred), 2 px before the
+   × (the meter's tools are 2 px apart). Locked, no ×: the ring takes the
+   ×'s 22 px slot, so its centre does not move. */
+.ct-slot {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 22px;
+  margin-left: auto;
+}
+
+.ct-slot.is-solo {
+  width: 22px;
+}
+
+.ct-slot + .pc-x,
+.ct-slot + .rm-x,
+.ct-secs + .pc-x,
+.ct-secs + .rm-x {
+  margin-left: 2px;
+}
+
+/* B. Around the ×: a 22 px ring at 1.5 px on the × button, which turns
+   round so its pointer fill sits inside the ring; the × 11 px. */
+.ct-t-b .pc-x,
+.ct-t-b .rm-x {
+  position: relative;
+  border-radius: 50%;
+}
+
+.ct-t-b .pc-x > .i,
+.ct-t-b .rm-x > .i {
+  width: 11px;
+  height: 11px;
+}
+
+.ct-ring.is-x {
+  position: absolute;
+  inset: 0;
+}
+
+.ct-xsolo {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+}
+
+/* C. Around the header's icon: an 18 px ring at 1.5 px around the paw or
+   the bell, which shrinks to 9 px; the slot keeps its 13 px so the title
+   does not move. */
+.ct-ic {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 22px;
+  color: var(--r-muted);
+}
+
+.ct-t-c .ct-ic > .i {
+  width: 9px;
+  height: 9px;
+}
+
+.ct-ring.is-ic {
+  position: absolute;
+  top: 2px;
+  left: -2.5px;
+}
+
+/* ---- D. The card's outline ------------------------------------------------------
+   The 1 px card-border becomes the track; a 1.5 px arc in cream at 0.55
+   runs round the card from the top-left corner and empties clockwise. */
+.ov.rm.ct-t-d {
+  border-color: transparent;
+}
+
+.ct-outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.ct-outline rect {
+  x: 0.5px;
+  y: 0.5px;
+  width: calc(100% - 1px);
+  height: calc(100% - 1px);
+  rx: 13.5px;
+  fill: none;
+}
+
+.ct-outline .tr {
+  stroke: rgba(255, 236, 214, 0.1);
+  stroke-width: 1px;
+}
+
+.ct-outline .arc {
+  stroke: rgba(255, 246, 236, 0.55);
+  stroke-width: 1.5px;
+  stroke-dasharray: 100 100;
+}
+
+.is-paused .ct-outline .arc {
+  stroke: rgba(255, 246, 236, 0.9);
+}
+
+/* ---- E. Seconds left ----------------------------------------------------------------
+   "8 s" 11.5 px / 500 faint, right-aligned in 24 px before the ×. */
+.ct-secs {
+  flex-shrink: 0;
+  min-width: 24px;
+  margin-left: auto;
+  color: var(--r-faint);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-align: right;
+}
+
+.is-paused .ct-secs {
+  color: var(--r-text);
+}
+
+/* ---- Live cards (the working tile) ----------------------------------------------
+   Fade in and out over 150 ms, as the reminder card. Locked: click-through,
+   so the pointer pauses nothing. */
+.ct-live.ct-enter {
+  animation: ct-in 150ms ease-out both;
+}
+
+.ct-live.is-gone {
+  opacity: 0;
+  transition: opacity 150ms ease-in;
+  pointer-events: none;
+}
+
+.ct-live:not(.is-locked) {
+  cursor: pointer;
+}
+
+.ct-live.is-locked {
+  pointer-events: none;
+}
+
+@keyframes ct-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---- Page chrome (not product styling) --------------------------------------------- */
+
+.dec {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  vertical-align: 1px;
+}
+
+.dec.is-agreed {
+  background: rgba(134, 227, 168, 0.14);
+  color: #86e3a8;
+}
+
+.dec.is-proposed {
+  background: rgba(242, 198, 109, 0.14);
+  color: #f2c66d;
+}
+
+.dec.is-rec {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.tile__cap {
+  flex-wrap: wrap;
+}
+
+.tile__cap .dec {
+  margin-right: 0;
+}
+
+.tile__cap span.sub {
+  flex-basis: 100%;
+}
+
+section.ct-sec .tiles {
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--tile-min, 360px), 100%), 1fr));
+}
+
+section.ct-sec .tile {
+  min-width: 0;
+}
+
+section.ct-sec .tiles.is-wide {
+  grid-template-columns: 1fr;
+}
+
+/* Cards stacked in a tile, 6 px apart (the reminder card's gap). */
+.ct-col {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(6px * var(--scale));
+}
+
+.ct-pair {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: calc(14px * var(--scale));
+}
+
+.ct-try .mk-sim {
+  width: 640px;
+  max-width: 100%;
+}
+
+.ct-try .mk-sim label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ct-try .mk-sim select {
+  padding: 2px 4px;
+  border: 1px solid rgba(143, 184, 255, 0.5);
+  border-radius: 6px;
+  background: rgba(10, 12, 18, 0.9);
+  color: #e6edf7;
+  font: inherit;
+}
+
+#ct-rem,
+#ct-pet {
+  display: contents;
+}
+
+/* Today's 2 px time-left line, as approved before this round: since the
+   ring's approval hub.css no longer has it, so this record keeps a copy. */
+.rm-left {
+  height: 2px;
+  margin: 8px 4px 0;
+  overflow: hidden;
+  border-radius: 1px;
+  background: rgba(255, 240, 225, 0.12);
+}
+
+.rm-left i {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: rgba(255, 246, 236, 0.44);
+}
+
+/* The card body as it was when this round was drawn: since the pet card
+   layout round's approval the approved cards start the body at the icon's
+   edge with 8 px spacing. */
+.ov.rm .rm-ev {
+  padding-left: 23px;
+}
+
+.ov.rm .pc-fact {
+  margin-top: 0;
+}
+
+.ov.rm .pc-bar {
+  margin-top: 4px;
+}

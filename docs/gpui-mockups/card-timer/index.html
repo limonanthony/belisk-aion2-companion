@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The cards' timer (mockups)</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../approved/todos.css" />
+    <link rel="stylesheet" href="../approved/hub.css" />
+    <link rel="stylesheet" href="../approved/pets.css" />
+    <link rel="stylesheet" href="timer.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Card timer mockups">
+        <a href="index.html" aria-current="page">Card timer: all</a>
+        <a href="#today">Today</a>
+        <a href="#ring">A. Ring left of ×</a>
+        <a href="#ring-game">A over the game</a>
+        <a href="#closeup">Close-up</a>
+        <a href="#other">Other ideas</a>
+        <a href="#try">Try it</a>
+        <a href="README.md">README</a>
+        <a href="../approved/pets.html">Approved Pets window and card</a>
+        <a href="../approved/reminders.html">Approved reminder card</a>
+      </nav>
+      <h1>The cards' timer <small>one mockup round, 2026-10-10; A approved on both cards the same day (now in <a href="../approved/reminders.html">../approved/</a>; see <a href="README.md">README.md</a>)</small></h1>
+      <ul class="rationale">
+        <li>Your feedback on the soul tracker card: "the bar timer we have below the cards for notifications and this were fine but now it shows 2 bars, do you think a small circle (with the empty middle) on the left of the close button would be better ?" On the pet card each pet has a 4 px progress bar, and the 2 px time-left line sits 8 px under the last one: two bars of the same kind, one about the pet and one about the card (section 1).</li>
+        <li>Section 2 is your idea as I read it: a 12 px hollow ring just left of the ×, emptying over the card's time (10 s for the pet card, 30 s for the reminder card), on both cards so they keep one timer language; the line goes. Sections 3 and 4 check it over the game and up close; section 5 has four other ideas; section 6 runs both cards with their real timers.</li>
+        <li>Tags: <span class="dec is-agreed">Approved today</span> (as built), <span class="dec is-proposed">Proposed</span>, <span class="dec is-rec">Recommended</span>. <a href="README.md">README.md</a> lists the options, what each costs and gains, and what to answer.</li>
+        <li>Built on the approved design, which is not edited: the pet card is the approved <code>Pets.card()</code>, the reminder card the approved markup, the toolbar <code>Hub.toolbar()</code>; the opacity, scale and scene are the real overlay settings. Pets and times are invented.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>What the ring keeps from today</h2>
+      <ul>
+        <li>The lifetimes: 10 s after the pet card's last update (any gain starts it again), 30 s for a reminder.</li>
+        <li>The pointer over the card pauses it and lights the ×; a click anywhere on it, or ×, dismisses it; locked, it is click-through with no ×, and runs out by itself.</li>
+        <li>No colour change at the end, nothing flashes or pulses; the card fades out over 150 ms.</li>
+      </ul>
+      <h2>For you to answer</h2>
+      <ul>
+        <li>Which timer: A (the ring left of the ×, recommended), B, C, D, E, or keep the line.</li>
+        <li>On both cards (recommended), or the ring on the pet card only, the reminder card keeping its line.</li>
+        <li>The ring's size: 12 px (recommended) or 14 px; and while paused, the arc turning text (drawn) or staying as it is.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="../approved/app-name.js"></script>
+    <script src="../approved/hub.js"></script>
+    <script src="../approved/pets.js"></script>
+    <script src="timer.js"></script>
+  </body>
+</html>

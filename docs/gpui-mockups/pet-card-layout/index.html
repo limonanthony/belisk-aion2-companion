@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Soul tracker card layout (mockups)</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../approved/todos.css" />
+    <link rel="stylesheet" href="../approved/hub.css" />
+    <link rel="stylesheet" href="../approved/pets.css" />
+    <link rel="stylesheet" href="layout.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Pet card layout mockups">
+        <a href="index.html" aria-current="page">Pet card layout</a>
+        <a href="README.md">README</a>
+        <a href="../approved/pets.html?states=cGain,cTwo,cUp,cMax,cLocked">Approved soul tracker card</a>
+        <a href="../approved/reminders.html">Approved reminder card</a>
+      </nav>
+      <h1>Soul tracker card: the pet's place and the bar's gap <small>one mockup round, 2026-10-10, not approved yet</small></h1>
+      <ul class="rationale">
+        <li>Your request: "how hard would it be to move sparkie at the same level as the icon + put bigger bottom margin between the lv 2 and the bar ? could you try that in a mockup side by side with the current visual ?" Not hard: two values for A (where the pet block starts, the gap above the bar), a little more for B.</li>
+        <li>"At the same level as the icon" can mean two things, so both are drawn, each with the bigger gap (8 px instead of 4 px between the Lv line and the bar). <b>A</b>: the pet's name, Lv line and bar start at the paw icon's left edge instead of under "Pet souls". <b>B</b>: with one pet, the name goes up into the header, beside the paw, in place of "Pet souls"; with two or three pets the header keeps "Pet souls" and the pets are drawn as in A.</li>
+        <li>Each tile: the approved card (today), A and B, at the same scale, over the scene of its group. Everything else is the approved card: 14 px from the edge on all sides, the timer ring, the level badge colours. The last row draws the reminder card with A's change, so you can decide whether it follows. <a href="README.md">README.md</a> has the heights and the decisions.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Values</h2>
+      <ul>
+        <li><b>Gap between the Lv line and the bar</b>: today 4 px, A and B 8 px.</li>
+        <li><b>Where the pet block starts</b>: today 23 px from the card's padding edge (under the title text); A 4 px (the paw icon's left edge, the header's inset); B with one pet: the name in the header 23 px in (beside the paw), the Lv line and bar under it, 23 px in.</li>
+        <li><b>Heights at 100%</b>: today 92 / 141 / 190 px for 1 / 2 / 3 pets; A 96 / 149 / 202; B 78 / 149 / 202.</li>
+      </ul>
+      <h2>For you to answer</h2>
+      <ul>
+        <li>A (recommended) or B, or today's card.</li>
+        <li>The gap: 8 px (drawn) or another value.</li>
+        <li>Does the reminder card follow (its event block at the bell's edge too)?</li>
+      </ul>
+    </section>
+
+    <script src="../approved/kit.js"></script>
+    <script src="../approved/app-name.js"></script>
+    <script src="../approved/hub.js"></script>
+    <script src="../approved/pets.js"></script>
+    <script src="layout.js"></script>
+  </body>
+</html>

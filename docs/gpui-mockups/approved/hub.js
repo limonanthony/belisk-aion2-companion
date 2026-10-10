@@ -2,7 +2,9 @@
 // Resources window, the first-open prompt and the reminder card under the
 // toolbar, shared by toolbar.html, resources.html, prompt.html, whatsnew.html
 // and the "Opening it" state of todos.html. The toolbar's update slot was
-// approved on 2026-10-09 with the updates round (../updates/README.md).
+// approved on 2026-10-09 with the updates round (../updates/README.md); the
+// Pets tool (paw-print, after To-dos) on 2026-10-10 with the pets round
+// (../pets/README.md).
 // Styles: hub.css; the Resources window's rows use todos.css; the meter drawn
 // under the toolbar uses meter.css. The app's name comes from app-name.js
 // (window.APP_NAME, the Fluent term -app-name), loaded before this file on
@@ -42,6 +44,9 @@
     // The update slot (2026-10-09): available, downloading; ready.
     download: '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
     rotateCw: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+    // The Pets window's tool (2026-10-10, the pets round): Lucide
+    // paw-print, from gpui-kit-assets 0.6.6.
+    paw: '<circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/>',
   };
 
   function icon(name, cls) {
@@ -171,6 +176,7 @@
       meterAside: ["DPS meter", "Hidden between fights. Click to show it for 10 s."],
       pvp: "PvP meter",
       todos: "To-dos",
+      pets: "Pets",
       history: "Fight history",
       reminders: "Reminders",
       remindersOff: ["Reminders", "Paused"],
@@ -206,6 +212,7 @@
       meterAside: ["Compteur DPS", "Masqué entre les combats. Cliquer pour l'afficher 10 s."],
       pvp: "Compteur JcJ",
       todos: "Tâches",
+      pets: "Familiers",
       history: "Historique des combats",
       reminders: "Rappels",
       remindersOff: ["Rappels", "En pause"],
@@ -362,6 +369,7 @@
       toolBtn(o, "meter", "swords", meterTip) +
       toolBtn(o, "pvp", "pvp", L.pvp) +
       toolBtn(o, "todos", "listChecks", L.todos) +
+      toolBtn(o, "pets", "paw", L.pets) +
       toolBtn(o, "history", "crown", L.history) +
       `<span style="position:relative;display:inline-flex">${toolBtn(o, "reminders", bellIc, o.bellOff ? L.remindersOff : L.reminders, { cls: o.bellOff ? "is-off" : "" })}${o.bellOpen ? bellDrop(o) : ""}</span>` +
       toolBtn(o, "settings", "settings", L.settings);
@@ -555,9 +563,19 @@
   }
 
   // ---- Reminder card (reminders.html) -----------------------------------------
-  function reminder() {
-    return `<div class="ov rm" role="status"><div class="rm-head">${icon("bell")}<span class="rm-when">In 1 min</span><span class="rm-dot">·</span><span class="rm-at">22:00</span></div><div class="rm-ev"><div class="rm-name">Shugo Festival</div><div class="rm-detail">3 min to join</div></div><div class="rm-left"><i style="width:62%"></i></div></div>`;
+  // The timer ring (approved 2026-10-10, ../card-timer/README.md): a 12 px
+  // hollow ring left of the ×; `left` is the time left (0..1), the arc
+  // emptying clockwise from 12 o'clock. `solo`: no × (locked), so the ring
+  // takes the ×'s slot. Shared with the soul tracker card (pets.js).
+  function ring(left, solo) {
+    const off = (-(1 - Math.max(0, Math.min(1, left))) * 100).toFixed(2);
+    return `<span class="rm-timer${solo ? " is-solo" : ""}" role="timer" aria-label="Time left"><svg class="rm-ring" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle class="tr" cx="6" cy="6" r="5"/><circle class="arc" cx="6" cy="6" r="5" pathLength="100" transform="rotate(-90 6 6)" style="stroke-dashoffset:${off}"/></svg></span>`;
   }
 
-  window.Hub = { icon, esc, toolbar, resources, meter, prompt, reminder, view, snapshot, SOON };
+  function reminder() {
+    const x = `<span class="rm-x" role="button" aria-label="Dismiss">${icon("close")}</span>`;
+    return `<div class="ov rm" role="status"><div class="rm-head">${icon("bell")}<span class="rm-when">In 1 min</span><span class="rm-dot">·</span><span class="rm-at">22:00</span>${ring(0.62)}${x}</div><div class="rm-ev"><div class="rm-name">Shugo Festival</div><div class="rm-detail">3 min to join</div></div></div>`;
+  }
+
+  window.Hub = { icon, esc, toolbar, resources, meter, prompt, reminder, ring, view, snapshot, SOON };
 })();

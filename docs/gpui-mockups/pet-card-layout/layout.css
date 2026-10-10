@@ -1,0 +1,94 @@
+/* The pet card layout round, 2026-10-10, not approved yet. Only what this
+   round changes on the approved soul tracker card (pets.css) and, for
+   comparison, the reminder card (hub.css). Everything else is the approved
+   card: 14 px from the outer edge on all sides, the timer ring, the level
+   badge colours. */
+
+/* A (and B with several pets): the pet block starts at the header icon's
+   left edge (the header's 4 px inset) instead of under the title text
+   (23 px); the bar sits 8 px under the Lv line instead of 4 px. */
+.ov.rm.lay-a .rm-ev,
+.ov.rm.lay-b .rm-ev {
+  padding-left: 4px;
+}
+
+.ov.rm.lay-a .pc-bar,
+.ov.rm.lay-b .pc-bar {
+  margin-top: 8px;
+}
+
+/* B with one pet: the pet's name takes the title's place in the header,
+   13 px / 600 (the name's size), cut off with an ellipsis; a level chip
+   follows it, pushed right before the ring; the Lv line and the bar stay
+   under the name, 23 px in. */
+.ov.rm.lay-b.is-solo-pet .rm-ev {
+  padding-left: 23px;
+}
+
+.ov.rm.lay-b.is-solo-pet .rm-when {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.ov.rm.lay-b.is-solo-pet .rm-head .pc-chip {
+  margin-left: auto;
+}
+
+.ov.rm.lay-b.is-solo-pet .rm-head .pc-chip + .rm-timer {
+  margin-left: 0;
+}
+
+/* ---- Page chrome (not product styling) ---------------------------------- */
+.pl-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: calc(14px * var(--scale));
+}
+
+.pl-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.pl-col > .pl-lab {
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: rgba(10, 12, 18, 0.8);
+  color: #dfe7f3;
+  font: 600 11.5px/1.5 "Segoe UI", system-ui, sans-serif;
+}
+
+.pl-col > .pl-lab small {
+  margin-left: 5px;
+  color: rgba(223, 231, 243, 0.62);
+  font-weight: 400;
+}
+
+.pl-col > .pl-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(6px * var(--scale));
+}
+
+/* Since the approval (2026-10-10) the approved cards draw A with the even
+   8 px spacing themselves; these rules keep this page showing "today" and
+   A/B as they were compared. */
+.ov.rm:not(.lay-a):not(.lay-b) .rm-ev {
+  padding-left: 23px;
+}
+
+.ov.rm .pc-fact {
+  margin-top: 0;
+}
+
+.ov.rm:not(.lay-a):not(.lay-b) .pc-bar {
+  margin-top: 4px;
+}

@@ -235,6 +235,24 @@ forwards every TCP packet, not only candidate game flows.
   language, English per field where one is missing). They use the Global client's
   names (Hall of Illusion, Citadel of the Fallen Daeva, Abyssal Horn Den, Abyssal
   Forge: Ludra).
+- **Pet names, families and drops.** `crates/app/assets/game/data/pets.json` maps
+  the game's own pet id (the id in the `00 90` / `0D 90` pet messages, 1001 to 1299,
+  207 pets on Global) to `{en, fr, family, mobs}`. The family is Cogni, Fera,
+  Natura, Varian or Special (QuestLog's `intellect`, `feral`, `nature`, `trans`,
+  `special`) and `mobs` are the mob codes that drop the pet's soul. Source:
+  QuestLog.gg's public API, as for the French names (`database.getPets` in both
+  languages, then the `vehiclesoul` items; a mob gives the pet named in the
+  "Soul: <pet name>" item it drops). `scripts/build-pet-data.mjs` builds the file
+  from a cache outside the repository and stops on a mob that would give two
+  pets or a name with Chinese characters. `game_data::pet_name` (language in
+  force, English as the fallback), `pet_family` and `pet_of_mob` read it; an id
+  or mob it does not list gives `None`, and the window shows its own fallback.
+  A mob drops a soul of only one pet, which is how souls of a pet already at
+  Lv 3 (`11 90`, no pet id) can be attributed to the mob that was hit. The mob
+  lists come from the drop tables, not from the recordings: pairing kills with
+  soul gains by time is ambiguous when several mobs of a pack die within a
+  second or two of each other. 42 pets (the 7 Specials and 35 others) have no
+  mob in the source.
 - **Skill names for damage-over-time ids.** A damage-over-time hit carries its
   skill id followed by two digits (`1709014011` = skill `17090140`).
   `crates/core/src/skill_names.rs` (`resolve_skill_key`, used by
@@ -465,6 +483,18 @@ store starts empty; it is never overwritten, and the bests are not rebuilt from
 the history. Only a missing bests file (a first run) is built from the history.
 `personal_bests.json` is `{"version": 1, "bests": [...]}`; a bare list still
 loads. The same set-aside rule applies to `settings.json` and `todos.json`.
+
+## Debug builds
+
+The workspace `Cargo.toml` builds every dependency at `opt-level = 2` in the dev
+and test profiles (`[profile.dev.package."*"]`); the workspace's own crates stay
+unoptimized. GPUI is a dependency here, not a workspace member, so without it its
+layout (taffy), text and image crates ran unoptimized: the History window with
+500 records took 633 to 732 ms a frame in a debug test build, 86 to 135 ms with
+the profile (before its list was built with GPUI's `list`). A cold test build of
+the app takes about 12 minutes with it instead of about 5 and a half; rebuilds
+after a change to the workspace's crates are unaffected. Release builds are
+unchanged.
 
 ## Distribution
 
@@ -925,7 +955,8 @@ unit-tested state machine), `motion.rs`, `settings.rs` (`OverlaySettings`) and
 ## Secondary windows
 
 History, detail, report, PvP, Settings, the first-open prompt, the reminder card,
-What's new, to-dos and Resources live in `crates/app/src/secondary/`.
+What's new, to-dos, Resources, the Pets window and the soul tracker card live in
+`crates/app/src/secondary/`.
 
 - **One window per kind**, in a registry (`registry.rs`, `WindowKind`). Opening a
   kind that is open **raises it without activating it** (`SetWindowPos(HWND_TOPMOST,
@@ -959,12 +990,45 @@ What's new, to-dos and Resources live in `crates/app/src/secondary/`.
 - **Shared drawing.** `src/style.rs` (`Scale`, the class-coloured bar, the health
   fill) and `secondary/chrome.rs` (the overlay.css classes as functions: card,
   header, buttons, chips, tabs, table head, rank badge, inputs and selects,
-  popover and menu items, empty state, footer, tooltip, `scroll_list`).
-  `scroll_list` paints the approved 3 px scroll thumb from the scroll handle in a
-  `canvas` during paint (GPUI draws none), so scrolling redraws it without
-  another render; views know their row heights, so whether a list overflows is
-  decided before layout. `chrome::Anchor` records where a select or field is in a
-  canvas prepaint and asks for one more frame only when it moved.
+  popover and menu items, empty state, footer, tooltip, `scroll_list`,
+  `scroll_rows`, `scrollbar`). `chrome::Anchor` records where a select or field
+  is in a canvas prepaint and asks for one more frame only when it moved.
+- **Scrollbar** (`chrome::scrollbar`, used by `scroll_list` and `scroll_rows`, so
+  by every secondary window but Settings). It paints the approved 3 px thumb in
+  an 8 px gutter from the scroll state of the same frame (GPUI draws none), so
+  scrolling redraws it without another render; views know their row heights, so
+  whether a list overflows is decided before layout. It takes the pointer as
+  Zed's scrollbar does: the gutter's hitbox is `BlockMouseExceptScroll`; a press
+  in it, heard in the capture phase before any element, is the thumb's alone (no
+  window drag, no focus): on the thumb it grabs it, beside it the thumb's middle
+  comes to the pointer and is grabbed there. While it is held, every move in the
+  window (over the rows, outside the list) drives the scroll and the release ends
+  it, both in the capture phase; the grab is the element's keyed state. The
+  previous thumb heard everything in the bubble phase, the press only while its
+  own hitbox was hovered; players could not drag it, for a reason no check here
+  reproduced. The wheel is the list's own.
+  `--capture --fixtures` checks it on History and the Pets window through
+  Windows' mouse messages posted to the window (`capture_secondary::check_scrollbar`:
+  a press on the thumb, moves with the button held down the gutter, over the
+  rows and past the window's bottom edge, the release, then a press above the
+  thumb), so GPUI's own message handlers and mouse capture run. The previous
+  thumb passed that check too, so it does not show what stopped a physical drag.
+- **Long lists** (History's records, the Pets window's lines): GPUI's `list`
+  through `chrome::Rows`, which builds only the items in and near the view each
+  frame. A view gives `Rows::set` each item's height (known before layout:
+  fixed rows, labels, gaps, an opened record's players) and the focus handle of
+  the control it holds; the list's items are replaced only when those change, at
+  the same scroll in pixels. The thumb, `Rows::reveal` (the keyboard bringing a
+  row into view) and `Rows::shows` work from those exact heights, not from the
+  heights the list has measured so far. An item whose control has the keyboard is
+  drawn wherever it is scrolled. Items need `w_full()`: `list` lays each one out
+  as a root, and without a definite width a row does not truncate. History drew
+  all 500 records each frame: 633 to 732 ms a frame in a debug build, 86 to
+  135 ms with optimized dependencies, about 2.5 ms with `list`. A control out of
+  view is not drawn, so GPUI's own Tab order cannot reach it: History moves Tab
+  and Shift+Tab itself, through the boss records' report buttons in order and
+  round, and scrolls the reached record in (`Rows::reveal`), as the Pets window's
+  arrows do along its pins.
 - **Data per window.** History (`history/list.rs`, pure and tested): records
   newest first, filters by target and by main player with counts (a filter nobody
   has any more falls back to all), local times in the Windows zone (`when.rs`:
@@ -984,8 +1048,9 @@ What's new, to-dos and Resources live in `crates/app/src/secondary/`.
 
 ### Typing: the one focus exception
 
-The PvP add-to-watch field is the only place an overlay takes keyboard focus
-(`secondary/typing.rs`, used by `pvp/view.rs`).
+The text fields are the only places an overlay takes keyboard focus
+(`secondary/typing.rs`, used by `pvp/view.rs`, the to-do and Resources windows'
+fields and the Pets window's search).
 
 1. A press on "+" (a click on our window, which is what lets this process call
    `SetForegroundWindow`) removes `WS_EX_NOACTIVATE` and calls
@@ -1094,12 +1159,311 @@ minute share one reminder.
   monitor's work area has no room above, and under the toolbar while the meter is
   closed or stepping aside; it has the meter's width (310 / 340 with total damage,
   220 in Capsule) and opacity, and follows the meter if the meter is dragged while
-  the card is up (checked every 100 ms). A newer reminder replaces the card in the
-  same window. It stays 30 s, paused while the pointer is over it, then fades over
-  150 ms; a click or × dismisses it. While the meter is locked it is click-through
-  (`WS_EX_TRANSPARENT`) with no ×, following `LockChanged` live. Rarer events come
-  first. Notifications are delivered whether the meter is open or not, and never
-  twice.
+  the card is up (checked at each tick of its timer ring, below). A newer reminder
+  replaces the card in the same window. It stays 30 s, paused while the pointer is
+  over it, then fades over 150 ms; a click or × dismisses it. While the meter is
+  locked it is click-through (`WS_EX_TRANSPARENT`) with no ×, following
+  `LockChanged` live. Rarer events come first. Notifications are delivered whether
+  the meter is open or not, and never twice.
+- **Timer ring** (`reminders::TimerRing`, shared with the soul tracker card;
+  approved 2026-10-10, tokens.md "Timer ring"). It replaced the 2 px time-left
+  line: a 12 px ring left of the ×, in a 16 × 22 px slot 8 px before it, or in the
+  ×'s 22 px slot while the card is locked. The track is a full circle and the arc
+  the time left, both 2 px strokes with butt ends drawn as GPUI paths
+  (`PathBuilder::stroke`, two half-arcs each, so a full turn has distinct ends) in
+  a `canvas`. The arc starts at `(1 − left) × 360°` clockwise from 12 o'clock and
+  ends at 12 o'clock, `muted`, or `text` while the pointer pauses the card. The
+  card's timer (`reminders::Countdown`, its total passed in) ticks once per degree:
+  30 s / 360 for the reminder, 10 s / 360 for the soul tracker card. The last tick
+  is shortened so it lands when the time runs out (`Countdown::next_tick`), and a
+  tick redraws the card only while its countdown runs.
+- **Equal padding on the cards** (2026-10-10, both cards). The ink sits 14 px
+  from the card's outer edge on every side, measured on the drawn images: card
+  padding 9 px top, 8 px sides, 12 px bottom on the reminder card and 13 px on
+  the soul tracker card (the header's glyphs sit 4 px inside their 22 px row,
+  the last text line 2 px inside its line, a pet's bar 1 px inside its block).
+  Heights at 100%: 81 / 120 / 159 px for 1 / 2 / 3 events, 100 / 157 / 214 px
+  for 1 / 2 / 3 pets. Below a last pet with no souls toward its next level the
+  gap reads 26 to 29 px: its bar's empty track is the card's own colour.
+- **Bodies under the header's icon** (2026-10-10, approved `pet-card-layout`,
+  "A, reminder follows"). The events and the pet blocks have the header's 4 px
+  inset, so names, the level badge and the bar start 13 px from the card's
+  outer edge, under the bell or the paw (they were indented 23 px, under the
+  header text). In a pet block the name, the level badge and the bar are 8 px
+  apart as seen: the 16 px Lv line is 4 px under the name's 18 px line (the
+  13 px letters sit 4 px inside it), the 4 px bar 8 px under the Lv line; 57 px
+  a pet (the Lv line was right under the name, the bar 4 px under it). An
+  event's fact line stays right under its name.
+
+## Pets
+
+What the game says about the pet collection, read from its traffic and kept per
+server, and the Pets window, the soul tracker card and Settings › Pets that show
+it (approved `pets.html`, values in tokens.md, "Pets").
+
+- **Messages** (server to client, written in wire byte order; decoded by
+  `crates/core/src/capture/parser/pet_record.rs`, which packet-explorer's `pets`
+  command shares):
+  - `00 90`, the snapshot: `u32` header (1170 in every capture, meaning unknown),
+    varint N × `{u32 id, u32 id again, u32 level}`, varint M × `{u32 id, u32
+    souls since the last level-up}`, `u8` K (6) × `{u8 kind, u32 value}`, then
+    stat tables that are not decoded and are skipped. A pet never obtained is in
+    neither list (level 0, no souls); a levelled pet without a progress entry has
+    0 souls; a pet at level 3 has 0. The two ids of a level entry must match,
+    which is what keeps look-alike frames out.
+  - `0D 90`, souls gained: `u8` n × `{u32 pet id, u32 amount}`. The amount is a
+    delta, never a total. Loot gives 1 or 2, a Black Market purchase 5.
+  - `11 90`, counter gains: `u8` n × `{u8 kind, u32 amount}` and a trailing `02`.
+    It adds to the six counters of the snapshot's tail and carries no pet id; it
+    is fired for souls of pets at their cap, so the counters are most likely
+    per-family insight crystals (not proven). The core attaches the mobs whose
+    loot the player picked up just before it (below), which is how the app
+    names the pet.
+  - `09 90`, a pet obtained for the first time (level 0 to 1): own entity
+    varint, `u32` pet id, `u32` 1, `u8` kind, `u32` 5 or 6, `u32` value, `u32` 0;
+    the kind and the two numbers are not identified (the value looks like a stat)
+    and are not kept. It comes in two shapes, both checked against the
+    recordings and the next snapshot. Looting the soul that completes the first
+    5 sends `0D 90` for the pet and the unlock 50 ms later: the gain already made
+    the pet level 1, so the unlock changes nothing and adds no souls (pets 1108
+    and 1109, 2026-10-10 14:38:31 and 14:39:12). Buying a pet that is still
+    level 0 sends the unlock alone, with no `0D 90` for that pet: the 5 bought
+    pay the first threshold, so the pet becomes level 1 with the souls it had
+    (1134: level 0 with 1 soul, unlock at 14:21:10, then level 1 with 1 soul in
+    the next snapshot; six unlocks in one batch at 2026-10-09 23:48:39 beside
+    a `0D 90` batch of other pets, all as predicted by the next snapshot). A pet
+    already above level 1 is never lowered. No recording shows the unlock before
+    the `0D 90` of the same pet.
+  Pet ids are their own space (1001 to 1299), not mob codes. A frame that is cut
+  short, has bytes after its body, a gain count of 0, an unlock whose count is not
+  1 or whose last number is not 0, or a counter trailer other than `02` is
+  rejected, never decoded in part.
+- **Where a gain came from** (`crates/core/src/pet_sources.rs`, decoders in
+  `capture/parser/loot_record.rs`, both shared with packet-explorer and the
+  `replay` example). The game does not say in the pet message, so the core reads
+  the messages before it, tracked per connection and always on:
+  - `1E 56`, a loot object on the ground: `u8` count, then count records of 63
+    bytes (`u32` dropper entity, six `f32` positions, `u32` object id, `u32`
+    serial, 9 bytes not identified, `u32` item id, the rest not identified) and a
+    closing byte. The dropper is the world entity id of the mob (the same id as
+    in its `41 36` spawn, so `get_mob_code` answers it). 238906 is the soul item
+    in every pickup that preceded a pet message.
+  - `21 56`, the player's own pickup: 2 bytes not identified, `u32` object id,
+    `u32` serial, `u8` 1. Object id and serial find the `1E 56` record, so a
+    pickup names the entity and mob it came from. (`1F 56` also reports a loot
+    object leaving the ground, but for any player's pickup, so it is not used.)
+  - `95 56`, a purchase: it comes in the same capture tick as a `0D 90` of +5
+    (the Black Market buys of 14:21:52 to 14:21:58 in session-1791634894978).
+    The message does not say which store, so a gain after one is reported as
+    `SoulSource::BlackMarket`. `84 56` also appears around it but repeats all the
+    time without a gain, so it is not a marker.
+  What the tracker remembers is bounded, from the recordings of 2026-10-07 to 10
+  (5,476 `1E 56` records, 508 own pickups; measured by decoding every `1E 56`
+  and `21 56` and matching them by object id and serial): the busiest minute
+  announced 113 loot objects; the longest gap between an object appearing and
+  the player's pickup was 0.65 s; every pickup found its announcement; and the
+  item before every one of the 488 pet messages was 238906 (the soul item), yet
+  loot of 635 different items arrives, so nothing is filtered by item (that would
+  hard-code one id the game may not keep). Loot objects are kept 30 s (about 46
+  times the longest gap, and about 60 objects at the busiest rate) and at most
+  2048, the oldest going first, which only matters if the clock stops advancing;
+  a soul drop can therefore only be evicted by 2048 other objects within 30 s.
+  A pickup is kept only while a message can still claim it (250 ms, checked on
+  every new pickup, not only when a pet message arrives) and at most 64, so a
+  long session of ordinary looting holds a handful of entries.
+  A message follows its cause by one capture tick: 39 to 72 ms over 488 pickups
+  in the recordings, so a cause counts for 250 ms and is consumed by the message
+  that claims it. A `0D 90` is `Loot` after a pickup, `BlackMarket` after a
+  `95 56`, otherwise `Other` (a cube, a chest, a quest; the 7-pet batch of
+  2026-10-09 23:48:39 and the lone +1 gains of pets 1091, 1058 and 1192 have no
+  pickup or purchase before them). Over every recording of 2026-10-07 to 10:
+  370 `0D 90` as loot, 12 as purchase, 14 as other; in each loot gain the
+  pickup's mob drops the gained pet in the catalogue (one mob, 2100829 beside
+  2100828 for pet 1119, is not listed). The core reports what it proves and
+  `Other` when unsure.
+- **A meter started after login.** The game names the character with `33 36`
+  only at login and zone entry, so a session begun in game has no name for the
+  binder: its soul gains waited and were dropped (the log of 2026-10-10 19:25
+  shows "named from the remembered characters" and no `33 36`, and its 4 `0D 90`
+  never reached the app; the session of 18:34 had a `33 36` at once). When the
+  meter names the player from the remembered characters (`resolve_own_name`),
+  the ticket and pet binders take that character only when exactly one remembered
+  character has the actor's class (two of one class, or one name on two servers,
+  leave the messages waiting: the meter's pick of the most recent would bind them
+  to a possibly wrong name and server) (`CharacterBinder::assume_character`); the game's own name, when it arrives,
+  replaces it, and one the game already gave is never replaced. Gains from
+  before that moment, and any session with no remembered character of the
+  class, still wait for a `33 36`.
+- **A maxed pet's souls.** Its loot gives no `0D 90`, only a `11 90` of +1 right
+  after the pickup (`1E 56` entity 37308, mob 2100453 → kind 1; entity 49184, mob
+  2100454 → kind 4 in session-1791634499923). `PetContent::CounterGains` carries
+  `looted_mobs`: the distinct mob codes of the pickups the message claims, empty
+  when it follows no pickup (the +10 to +200 gains of kind 5 and 6 are not loot)
+  or the entity was not spawned in the world. The amount is not a soul count: one
+  mob can drop two or three loot objects for one counter of +1. A `0D 90` and a
+  `11 90` of the same tick would share one pickup and the second would find none;
+  no recording has that. The app maps each mob with `game_data::pet_of_mob` and
+  reports it when that pet is at level 3.
+- **The snapshot only arrives at login**, in the same millisecond as the own
+  identity `33 36`, and is not sent again when the Pets window opens or the
+  zone changes. A client that was not capturing at login has no snapshot of the
+  session and keeps counting from what it stored; this is why the app persists
+  the collection. The collection is shared by the characters of a server (two
+  snapshots of two characters were byte-identical), so the app keys it by
+  server.
+- **The binding** (`crates/core/src/character_binding.rs`, shared with the
+  tickets): the messages are tied to the local player's character like the
+  tickets. A snapshot belongs to the name that arrives up to 15 s after it or up
+  to 2 s before it; a gain belongs to the character named now; anything that
+  cannot be tied yet waits for the next name and is dropped after 15 s or when a
+  new snapshot shows another world was entered. The result is
+  `MeterEvent::Pets(PetReport)` with the character, the capture time and one of
+  `PetContent::Snapshot`, `SoulGains`, `Unlock` or `CounterGains`, all with the game's
+  numbers untouched. It is not gated by `DpsMeter::set_fight_tracking`, so it runs
+  with the meter closed. A recording that holds no own identity (one cut after
+  login) emits no pet events, for the same reason.
+- **What the app does** (`crates/app/src/pets/`): `bridge.rs` hands every batch's
+  pet reports to the `Pets` entity (`service.rs`), meter open or not. `data.rs`
+  is what `pets.json` stores: per server a `PetCollection`, the pins per server,
+  and the server last heard from. A snapshot
+  replaces that server's collection and records its capture time; a soul gain
+  adds to the pet (an unknown pet starts at level 0); an unlock is applied as the
+  rule below says. Each soul gain, and each maxed pet looted through a counter
+  gain, becomes a `LatestGain` (`gain.rs`): pet, amount, level and souls after,
+  whether the pet was already at the cap, the source (`Loot`, `BlackMarket`,
+  `Other`, `MaxedLoot`) and a sequence number so a gain that leaves a capped pet
+  unchanged still reads as new. `Pets::latest_gain` is the last; the last 16 are
+  kept so a batch is not lost, and `Pets::card_gains_after(sequence, settings)`
+  is what the card calls: the gains after the last sequence it handled that the
+  four switches admit. An unlock does not set one: the tracker card follows soul
+  gains.
+- **Pins** are stored per server in `pets.json`, in a `pinned` map from server id
+  to the pet ids in pin order, beside `servers`. (Putting them inside each
+  server's entry next to the collection's fields would need `#[serde(flatten)]`,
+  which cannot read the collection's `u32` map keys, or a version 2 with a
+  migration.) A file from before them loads with none and the version stays 1.
+  `Pets::pin`, `unpin`, `is_pinned` and `pinned` work on the server being
+  played; a snapshot keeps them.
+- **Settings** (`pets/settings.rs`, the `pets` section of `settings.json`):
+  `soulTracker` (master, on), `onlyPinned` (off), `maxedPets` (pets already at
+  level 3, on), `blackMarket` (on). `PetsSettings::admits(gain, pet_is_pinned)`
+  is the one place the rules live: master off shows nothing; only pinned needs
+  the pet pinned on the gain's server; `maxedPets` off drops a gain whose pet was
+  already at the cap (the gain that takes a pet to the cap still shows); black
+  market off drops purchases. A missing or mistyped value keeps its default.
+- **The level rule lives in the core** (`crates/core/src/pets.rs`:
+  `SOULS_PER_LEVEL = [5, 25, 75]`, `MAX_LEVEL`, `PetState::gain`,
+  `PetCollection`), because packet-explorer's `pets` command applies the same
+  messages to print each pet's level and souls after every gain and unlock, from
+  the first snapshot of the recordings given (in time order; before one it says
+  the start is unknown). The thresholds are per level, not cumulative: the game's
+  arithmetic checks out against the snapshots of consecutive logins. Souls past a
+  level carry into the next, level 3 is the cap and souls past it are not counted
+  (the game turns them into crystals).
+- **Storage.** `pets.json` beside `settings.json`: versioned JSON, atomic write,
+  a bad or newer file renamed `pets.json.bad-<seconds>`, a write 400 ms after the
+  last change, a flush when the app quits. The read, set-aside and write protocol
+  is `stored_file.rs`, shared with `settings.json` and `todos.json`. With no data
+  folder (replays, captures) the collection stays in memory.
+- **The Pets window** (`pets/view.rs`, `view/rows.rs`, opened by the toolbar's
+  paw-print tool after To-dos; `secondary::open_pets`): left of the meter while it
+  is open (the to-do window keeps its right), under the toolbar while it is
+  closed, opened anew each time like the other tools. It shows the collection of
+  the server being played, read at login, so it works with the meter closed.
+  `pets/list.rs` builds what is listed: every pet of `pets.json` in the game's
+  order (pet id), with a pet of the collection the catalogue lacks at its place
+  and named "Pet <id>" through i18n; the tab (All or a family); the search, which
+  matches the English or the French name whatever the language
+  (`game_data::pet_name_contains`, both names lower-cased once); the Show and
+  Order menu (all / not owned yet = level 0 / not at Lv 3; game order / closest to
+  the next level = fewest souls left, then the larger share, then id, Lv 3 last);
+  the pins of the server on top in pin order when the tab, search and menu keep
+  them; and the tab's summary (owned = level ≥ 1, at Lv 3, levels of levels
+  possible), counted before the search and the menu. Souls toward the next level
+  come from the core's `SOULS_PER_LEVEL`; a pet at the cap reads 75/75.
+  The source line says "live" for a snapshot captured during this run
+  (`Pets::read_this_run`, against the time the entity opened), else "as of your
+  login" with a tooltip; before any snapshot the window shows how to get the pets
+  read and its search, filter and tabs are dimmed and inert.
+- **Only the lines in view are built** (`pets/view/rows.rs`, GPUI's `list`
+  through `chrome::Rows`, see Secondary windows). GPUI redraws a window on every
+  `WM_MOVE` (`Window::bounds_changed` calls `refresh`, which also bypasses cached
+  views); building all ~200 rows took about 185 ms a frame in the debug build.
+  The labels and rows have heights known before layout. The pin Tab reaches is
+  the cursor's when its row is in view, else the first pin in view; Up, Down,
+  Home and End move the focus to the pin and `Rows::reveal` scrolls its row in;
+  the row whose pin has the keyboard is drawn wherever it is scrolled. About 4 to
+  6 ms a frame in a debug build with optimized dependencies.
+- **A drag does not redraw the window** (`overlay.rs`, for every overlay
+  window). A drag move handled by the window costs about 20 µs; the full frame
+  GPUI drew for the `WM_MOVE` it caused cost about 12 ms for the Pets window in
+  the debug build, so the drag stuttered. While `WindowDrag` moves a window and
+  its grab is held, the overlay subclass keeps `WM_MOVE` from GPUI
+  (DirectComposition moves the drawn window as it is). The drag ends at once on
+  the release, a move without the button, the mouse capture lost
+  (`WM_CAPTURECHANGED`, `WM_CANCELMODE`: the release itself, Alt+Tab), the
+  window hidden (`WM_SHOWWINDOW`), the app or the keyboard focus lost; a grab
+  let go without any of those stops keeping the moves too. The end posts
+  `FINISH_DRAG` to the window, which makes the move still owed and sends GPUI
+  one `WM_MOVE` with the final position from the message loop, outside any GPUI
+  handler. Pointer moves faster than the window can follow replace the pending
+  target, so at most one `SetWindowPos` waits at a time; the target names its
+  window and is dropped if that window is no longer the one dragged.
+- **The scroll thumb** is the shared `chrome::scrollbar` (Secondary windows).
+- **The menu choice** (Show and Order) is kept in `pets.json` as `list`
+  (`ListChoice`, `Pets::list_choice` / `set_list_choice`), the same on every
+  server, as the to-do window keeps its folded sections in `todos.json`.
+- **Keyboard in the window.** The window never activates except while the search
+  field types (the typing exception, below): a click in it or Enter on it takes
+  the keyboard; Escape clears the text, a second Escape, Enter, a click elsewhere,
+  another window activating or the pointer gone 400 ms gives it back; what was
+  typed stays. Tab reaches close, the search, the filter button, the open tab and
+  one pin: the tabs and the pins are roving groups (only the open tab's and one
+  pin's focus handle is a tab stop; Left/Right/Home/End move the tab, Up/Down the
+  pin, Space or Enter pins). A row's pin shows from the pointer's enter to its
+  leave, with keyboard focus, or always on a pinned pet; after a pin by pointer
+  moves a row away, the row then under the pointer keeps its pin hidden until the
+  pointer moves (the to-do window's rule).
+- **The soul tracker card** (`pets/card.rs`, `secondary::show_pet_card`):
+  `pets::watch_gains` observes the `Pets` entity and, when a newer gain arrived,
+  hands the card `card_gains_after(last handled, settings)`, so Settings › Pets
+  decides what reaches it; it runs whether or not the meter is open. One card,
+  up to three pets in arrival order: a pet on the card is updated in place, a
+  newcomer goes last, a fourth replaces the oldest. "Lv N reached" when a gain
+  takes the pet to a new level (`LatestGain::level_before`), "Unlocked" when that
+  level is 1; a pet already at Lv 3 reads "Lv 3 · 75/75" with no chip. The card
+  is the reminder card's twin: same width (the meter's, or fixed beside the
+  capsule, `reminders::card_width`), non-activating window, lock (click-through
+  and no × while the meter is locked), fade, and timer ring; the countdown is
+  `reminders::Countdown`, shared with the reminder card, here 10 s, its ring
+  refilled by every gain and paused while the pointer is over the card. It sits where the
+  reminder card goes (6 px above the meter, or under the toolbar while the meter
+  is closed or steps aside) and, while a reminder card is up, 6 px beyond it on
+  the side the reminder took (`secondary::Card::PetCard`). A real gain replaces
+  a test card.
+- **The card's window outlives the card.** Opening a window costs 0.2 to 0.4 s
+  (the log's reminder lines, "due" to "opened a card window", 190 to 384 ms on
+  2026-10-10), so a gain right after a card went showed its card late, while a
+  gain on a card still up showed at once. When its time is up (or on a click or
+  the ×) the card fades and parks: its window hides (`Stacking::hide`) and stays
+  registered, its ticker ends. The next gain shows it again at once
+  (`Stacking::reveal`) with that gain's pets alone and a new 10 s; a gain during
+  the fade cancels it. Alt+Shift+CapsLock puts an up card away at once (no
+  fade, `PetCardView::put_away`) instead of hiding it with the rest, so its time
+  never runs out unseen and showing everything again never brings back a card;
+  a gain shows it at once whether everything is hidden or not, as a new card
+  window did before.
+- **Settings › Pets** (`settings/view/pets_page.rs`, between To-dos and General):
+  the four switches (the three under the master dim and leave the tab order when
+  it is off, keeping their values), "Show a test card" (`Pets::show_test_card`
+  emits `ShowTestCard` with the first pet pinned on the server being played, or
+  the first pet in game order, as it is now; nothing is added; the badge says
+  "Shown above the meter" or "under the toolbar" for 4 s), and the collection
+  row: "Pets on <server>", when it was read and how many of the catalogue's pets
+  are owned, or how to have it read. The page redraws only when the server, the
+  read time or the owned count changes (`PetsSeen`).
+- **Level badge** (`pets/badge.rs`): each level's colour precomputed as its tint
+  laid over the track's dark plate, shared by the rows and the card.
 
 ## The toolbar hub
 
@@ -1117,14 +1481,18 @@ click-through.
   opens where it was left.
 - **Fights are tracked only while the meter is open**: startup calls
   `DpsMeter::set_fight_tracking` with whether the meter opens, and opening or
-  closing the meter switches it. Capture, identity, the world and tickets always
-  run.
+  closing the meter switches it. Capture, identity, the world, tickets and pets
+  always run.
 - Dropdowns and tooltips are drawn in the toolbar's own window, which grows for
   them; when the toolbar is low on its screen they open upward and the window
   grows upward, moving so the bar stays still.
 - **Shortcuts and tray**: Alt+CapsLock locks the meter only while it is open;
-  Alt+Shift+CapsLock hides the toolbar and every open window and shows them again;
-  the tray's Show toolbar and a second launch bring them back.
+  Alt+Shift+CapsLock hides the toolbar and every window of the secondary layer on
+  screen and shows them again; the tray's Show toolbar and a second launch bring
+  them back. The hub keeps the toolbar's handle and the other windows' kinds
+  (`secondary::hide_all` / `show_again`), and each kind is looked up again in the
+  registry when shown: a window closed meanwhile stays closed, and no stale handle
+  (which Windows may have given to another program's window) is ever shown.
 - The toolbar's counts and warning (`counts.rs`) come from the to-dos; the update
   icon is below.
 - Deviations from the approved pages: the bell dropdown's next reminders are
@@ -1288,7 +1656,7 @@ The updater is `crates/app/src/update/`; how it works and its trust model are in
 
 ## Data folder
 
-`%APPDATA%/Belisk` holds `settings.json`, the to-dos, the fight history, the
+`%APPDATA%/Belisk` holds `settings.json`, the to-dos, `pets.json`, the fight history, the
 personal bests, the recordings and `mobs.json`; `%LOCALAPPDATA%/Belisk/logs`
 holds `belisk.log`. Builds before the rename used `%APPDATA%/com.helveticxa.aether`
 and `%LOCALAPPDATA%/com.helveticxa.aether/logs/aether.log`.

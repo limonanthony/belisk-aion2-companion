@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Settings › Pets (mockup, TASK-34.3 round 2)</title>
+    <link rel="stylesheet" href="../approved/shared.css" />
+    <link rel="stylesheet" href="../approved/overlay.css" />
+    <link rel="stylesheet" href="../approved/app.css" />
+    <style>
+      /* Copied from ../approved/settings.html's <style>, unchanged: dimmed
+         rows under an off master switch, badges beside a button, read-only
+         values. */
+      .row.is-dim .sw,
+      .row.is-dim .sel,
+      .row.is-dim .btn {
+        opacity: 0.4;
+      }
+
+      .row-ctl .badge {
+        margin-right: 2px;
+      }
+
+      .ro {
+        color: var(--a-muted);
+        font-family: var(--a-display);
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+
+      /* This round: the read-only figure's quiet part, and the dash before
+         the first read. */
+      .ro small {
+        margin-left: 2px;
+        color: var(--a-faint);
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .ro.is-none {
+        color: var(--a-faint);
+      }
+
+      .row-desc b {
+        color: var(--a-text);
+        font-weight: 600;
+      }
+
+      /* Decision tags, copied from ../updates/updates.css. */
+      .dec {
+        display: inline-block;
+        margin-right: 6px;
+        padding: 0 7px;
+        border-radius: 999px;
+        font-size: 11.5px;
+        font-weight: 600;
+        line-height: 18px;
+        vertical-align: 1px;
+      }
+
+      .dec.is-proposed {
+        background: rgba(242, 198, 109, 0.14);
+        color: #f2c66d;
+      }
+
+      .dec.is-agreed {
+        background: rgba(134, 227, 168, 0.14);
+        color: #86e3a8;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-head">
+      <nav class="page-nav" aria-label="Pets mockups">
+        <a href="index.html">Pets: all</a>
+        <a href="settings.html" aria-current="page">Settings › Pets</a>
+        <a href="README.md">README</a>
+        <a href="../approved/settings.html?states=reminders,reminders:off,reminders:test">Approved Settings › Reminders</a>
+      </nav>
+      <h1>Settings › Pets <small>round 2, 2026-10-10, not approved yet (TASK-34.3)</small></h1>
+      <ul class="rationale">
+        <li><span class="dec is-agreed">Agreed</span> contents (user, 2026-10-10): a page between To-dos and General. Group "Soul tracker card": the master switch (on), "Only pinned pets" (off), "Pets already at Lv 3" (on), "Black-market purchases" (on), and "Show a test card". Group "Collection": when the game last sent your pets, or how to get them read. Not here: the window's sort and filters (its own menu), the 10 s, the card's place, a sound, forgetting the collection.</li>
+        <li><span class="dec is-proposed">Proposed</span> the wording, the paw-print icon in the sidebar, and the read-only "197 of 290" beside the collection line. Drawn in the approved Settings widgets (Switch, secondary Button, good badge, dimmed rows as in Reminders); English and French with the selector.</li>
+      </ul>
+    </header>
+
+    <main class="scenes"></main>
+
+    <section class="notes">
+      <h2>Behaviour</h2>
+      <ul>
+        <li><b>Soul tracker</b> off: no card for any pet. The three switches under it and the test button dim (labels at 50%, controls at 40%) and do not react, but keep their values, as Reminders does.</li>
+        <li><b>Only pinned pets</b>: the card shows only for pets pinned in the Pets window. With nothing pinned it shows for none; the description says so in that case ("Nothing is pinned yet: no card would show.").</li>
+        <li><b>Pets already at Lv 3</b>: the card reads "Lv 3 · 75/75" for a pet at the cap. Off: no card for them (their souls change nothing on the pet).</li>
+        <li><b>Black-market purchases</b>: the game sends the same message for +5 souls bought; on, the card shows as for a pickup. The window updates either way.</li>
+        <li><b>Show a test card</b>: shows the card now, with the first pinned pet's real progress (the first pet in game order when nothing is pinned), header "Test card", whatever the switches say; nothing is added. Settings may cover it, so a good badge "Shown under the toolbar" (or "Shown above the meter" while the meter is open) shows beside the button for 4 s.</li>
+        <li><b>Collection</b>: one line for the server of the character in game, as the window's source line: the time the game last sent the pets, and how many are owned. Before any read: "Not read yet" and how to get it read. Read-only; nothing to change.</li>
+      </ul>
+    </section>
+
+    <script src="../approved/app.js"></script>
+    <script src="../approved/app-name.js"></script>
+    <script>
+      (function () {
+        const { C } = App;
+        const row = C.row;
+        const group = C.group;
+        const APP = window.APP_NAME;
+
+        // Lucide paw-print (gpui-kit-assets 0.6.6), as the toolbar's tool.
+        const PAW =
+          '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg>';
+
+        const T = {
+          en: {
+            side: "Pets",
+            title: "Pets",
+            lead: "The Pets window opens from the toolbar. The card works with the meter open or closed.",
+            card: "Soul tracker card",
+            tracker: "Soul tracker",
+            trackerDesc: "A small card when you pick up a pet's souls, with its progress to the next level. It goes 10 s after the last pickup.",
+            pinned: "Only pinned pets",
+            pinnedDesc: "Shows the card only for the pets you pinned in the Pets window.",
+            max: "Pets already at Lv 3",
+            maxDesc: "Also shows the card for pets at the cap, as Lv 3 · 75/75.",
+            market: "Black-market purchases",
+            marketDesc: "Souls bought at the black market (+5) show the card like a pickup.",
+            test: "Test card",
+            testDesc: "Shows the card now with your first pinned pet.",
+            testBtn: "Show a test card",
+            shown: "Shown under the toolbar",
+            coll: "Collection",
+            collLabel: (srv) => `Pets on ${srv}`,
+            collRead: (t) => `Read at login, <b>${t}</b>. The game sends your pets only when you log in; pickups since are added.`,
+            collNone: `Not read yet. Log in with a character on this server while ${APP} runs.`,
+            owned: (a, b) => `${a}<small>of ${b}</small>`,
+            when: "Mon 19:02",
+          },
+          fr: {
+            side: "Familiers",
+            title: "Familiers",
+            lead: "La fenêtre Familiers s'ouvre depuis la barre d'outils. La carte fonctionne compteur ouvert ou fermé.",
+            card: "Carte de suivi des âmes",
+            tracker: "Suivi des âmes",
+            trackerDesc: "Une petite carte quand vous ramassez des âmes d'un familier, avec sa progression. Elle disparaît 10 s après le dernier ramassage.",
+            pinned: "Familiers épinglés seulement",
+            pinnedDesc: "N'affiche la carte que pour les familiers épinglés dans la fenêtre Familiers.",
+            max: "Familiers déjà au Lv 3",
+            maxDesc: "Affiche aussi la carte pour les familiers au maximum, en Lv 3 · 75/75.",
+            market: "Achats au marché noir",
+            marketDesc: "Les âmes achetées au marché noir (+5) affichent la carte comme un ramassage.",
+            test: "Carte de test",
+            testDesc: "Affiche la carte maintenant avec votre premier familier épinglé.",
+            testBtn: "Afficher une carte de test",
+            shown: "Affichée sous la barre d'outils",
+            coll: "Collection",
+            collLabel: (srv) => `Familiers sur ${srv}`,
+            collRead: (t) => `Lue à la connexion, <b>${t}</b>. Le jeu n'envoie vos familiers qu'à la connexion ; les ramassages depuis sont ajoutés.`,
+            collNone: `Pas encore lue. Connectez-vous avec un personnage de ce serveur pendant que ${APP} tourne.`,
+            owned: (a, b) => `${a}<small>sur ${b}</small>`,
+            when: "lun. 19:02",
+          },
+        };
+
+        function page(ctx, st) {
+          const L = T[ctx.lang];
+          const off = st === "off";
+          const dim = off ? " is-dim" : "";
+          const test = (st === "test" ? C.badge(L.shown, "good", "check") : "") + C.btn(L.testBtn, { ic: "play" });
+          const none = st === "none";
+          const coll = none
+            ? row(L.collLabel("Ossia"), L.collNone, `<span class="ro is-none">&mdash;</span>`)
+            : row(L.collLabel("Ossia"), L.collRead(L.when), `<span class="ro">${L.owned(197, 290)}</span>`);
+          return (
+            `<div class="h1">${L.title}</div><p class="lead">${L.lead}</p>` +
+            group(
+              L.card,
+              row(L.tracker, L.trackerDesc, C.sw(!off)) +
+                row(L.pinned, L.pinnedDesc, C.sw(false), dim) +
+                row(L.max, L.maxDesc, C.sw(true), dim) +
+                row(L.market, L.marketDesc, C.sw(true), dim) +
+                row(L.test, L.testDesc, test, dim),
+              true
+            ) +
+            group(L.coll, coll)
+          );
+        }
+
+        // The approved shell, with Pets inserted between To-dos and General
+        // (the shell's section list lives in app.js, which is not edited).
+        function render(state, ctx) {
+          const [, sub] = state.split(":");
+          const L = T[ctx.lang];
+          // How far the page runs past the 582 px content area (measured in
+          // the browser): French is longer, and the test badge wraps the
+          // description. The page scrolls with the thumb, as Reminders does;
+          // "not read yet" is drawn scrolled to the end, so its row shows.
+          const over = { en: { test: 16 }, fr: { "": 33, off: 33, test: 66, none: 33 } }[ctx.lang][sub || ""] || 0;
+          const thumb = over ? Math.round((566 * 582) / (582 + over)) : 0;
+          const scroll = sub === "none" ? over : 0;
+          let html = ctx.shell(ctx, "pets", page(ctx, sub), { meter: { tone: "live", label: `${ctx.t.running} · 12:41` }, thumb, scroll });
+          // Since the approval app.js lists Pets itself.
+          if (ctx.t.pets) return html;
+          const todosItem = `${ctx.t.todos}</div>`;
+          const at = html.indexOf(todosItem) + todosItem.length;
+          html = html.slice(0, at) + `\n  <div class="side-item is-on">${PAW}${L.side}</div>` + html.slice(at);
+          return html;
+        }
+
+        App.mount({
+          lang: true,
+          states: [
+            { id: "pets", title: "Pets", sub: "defaults: the card on, every pet, Lv 3 pets and black-market buys included; the collection read at this login" },
+            { id: "pets:off", title: "Soul tracker off", sub: "the rows under the master switch dim and keep their values" },
+            { id: "pets:test", title: "Test card shown", sub: "a good badge for 4 s, since Settings may cover the card" },
+            { id: "pets:none", title: "Collection not read yet", sub: "before any login while the app runs" },
+          ],
+          render,
+        });
+      })();
+    </script>
+  </body>
+</html>
