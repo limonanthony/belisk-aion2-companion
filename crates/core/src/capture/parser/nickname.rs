@@ -458,9 +458,11 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_nickname_keeps_single_cjk_extension_character() {
-        assert_eq!(sanitize_nickname("𠮷"), Some("𠮷".to_string()));
-        assert_eq!(sanitize_nickname("𫠜"), Some("𫠜".to_string()));
+    fn sanitize_nickname_keeps_accented_french_names_and_drops_symbols_and_what_follows_a_nul() {
+        assert_eq!(sanitize_nickname("Élodie"), Some("Élodie".to_string()));
+        assert_eq!(sanitize_nickname("  Aède\0junk"), Some("Aède".to_string()));
+        assert_eq!(sanitize_nickname("Ka-el_7"), Some("Kael7".to_string()));
+        assert_eq!(sanitize_nickname("1234"), None);
     }
 
     #[test]

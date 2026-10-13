@@ -22,6 +22,9 @@ ureq = { version = "3", default-features = false, features = ["native-tls"] }
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 futures = "0.3"
 global-hotkey = "0.7"
+# GPUI reports its own failures through `log`; app_log forwards warnings and
+# errors to belisk.log.
+log = "0.4"
 raw-window-handle = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

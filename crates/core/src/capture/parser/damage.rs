@@ -28,32 +28,35 @@ impl StreamProcessor {
             return false;
         };
         if let Some(amount) = monster_hit_amount(&record) {
-            self.data_storage.record_incoming_hit(
+            self.data_storage.record_incoming_hit_at(
                 record.target_id,
                 record.actor_id,
                 record.raw_skill_code,
                 amount,
+                self.captured_at,
             );
         }
         let Some(parsed) = damage_event(&record) else {
             return true;
         };
 
-        self.logger.debug(format!(
-            "[{}] damage target={} actor={} skill={} ori_code={} damage={} multi_hit_count={} multi_hit_damage={} specials={:?} packet_len={} packet_hex={}",
-            self.port,
-            parsed.target_id,
-            parsed.actor_id,
-            parsed.skill_code,
-            parsed.ori_skill_code,
-            parsed.damage,
-            parsed.multi_hit_count,
-            parsed.multi_hit_damage,
-            parsed.specials,
-            packet.len(),
-            bytes_to_hex(packet)
-        ));
-        self.data_storage.append_damage(parsed);
+        self.logger.debug(|| {
+            format!(
+                "[{}] damage target={} actor={} skill={} ori_code={} damage={} multi_hit_count={} multi_hit_damage={} specials={:?} packet_len={} packet_hex={}",
+                self.port,
+                parsed.target_id,
+                parsed.actor_id,
+                parsed.skill_code,
+                parsed.ori_skill_code,
+                parsed.damage,
+                parsed.multi_hit_count,
+                parsed.multi_hit_damage,
+                parsed.specials,
+                packet.len(),
+                bytes_to_hex(packet)
+            )
+        });
+        self.data_storage.append_damage_at(parsed, self.captured_at);
         true
     }
 
@@ -66,11 +69,13 @@ impl StreamProcessor {
         let Some(parsed) = dot_damage_event(&tick) else {
             return true;
         };
-        self.logger.debug(format!(
-            "[{}] dot target={} actor={} skill={} ori_code={}, damage={}",
-            self.port, parsed.target_id, parsed.actor_id, parsed.skill_code, parsed.ori_skill_code, parsed.damage
-        ));
-        self.data_storage.append_damage(parsed);
+        self.logger.debug(|| {
+            format!(
+                "[{}] dot target={} actor={} skill={} ori_code={}, damage={}",
+                self.port, parsed.target_id, parsed.actor_id, parsed.skill_code, parsed.ori_skill_code, parsed.damage
+            )
+        });
+        self.data_storage.append_damage_at(parsed, self.captured_at);
         true
     }
 
@@ -84,16 +89,23 @@ impl StreamProcessor {
         let skill_code = periodic_skill_code(tick);
         match tick.mode {
             MODE_HEAL_TICK if skill_code >= FIRST_CLASS_SKILL_CODE && !is_thamon_absorption_recovery(skill_code) => {
-                self.data_storage.record_heal_tick(
+                self.data_storage.record_heal_tick_at(
                     tick.actor_id,
                     tick.target_id,
                     displayed_skill_code(skill_code),
                     amount,
+                    self.captured_at,
                 )
             }
-            MODE_DAMAGE_TICK if damage_tick_source(tick) == Some(DamageTickSource::Monster) => self
-                .data_storage
-                .record_incoming_hit(tick.target_id, tick.actor_id, skill_code, amount),
+            MODE_DAMAGE_TICK if damage_tick_source(tick) == Some(DamageTickSource::Monster) => {
+                self.data_storage.record_incoming_hit_at(
+                    tick.target_id,
+                    tick.actor_id,
+                    skill_code,
+                    amount,
+                    self.captured_at,
+                )
+            }
             _ => {}
         }
     }

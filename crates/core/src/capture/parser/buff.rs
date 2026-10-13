@@ -72,25 +72,27 @@ impl StreamProcessor {
             server_start_ms,
             duration,
         );
-        let latency_ms = buff.last_start_ms as i64 - server_start_ms as i64;
-        self.logger.debug(format!(
-            "[{}] buff detected target={} actor={} skill={} duration_ms={} server_start_ms={} local_start_ms={} local_end_ms={} latency_ms={} coverage={:.3} active={} server_time={} opcode={:02X}38 packet_len={} packet_hex={}",
-            self.port,
-            buff.target_id,
-            buff.actor_id,
-            buff.skill_code,
-            duration,
-            server_start_ms,
-            buff.last_start_ms,
-            buff.last_end_ms,
-            latency_ms,
-            buff.coverage,
-            buff.active,
-            server_time,
-            opcode,
-            packet.len(),
-            bytes_to_hex(packet)
-        ));
+        self.logger.debug(|| {
+            let latency_ms = buff.last_start_ms as i64 - server_start_ms as i64;
+            format!(
+                "[{}] buff detected target={} actor={} skill={} duration_ms={} server_start_ms={} local_start_ms={} local_end_ms={} latency_ms={} coverage={:.3} active={} server_time={} opcode={:02X}38 packet_len={} packet_hex={}",
+                self.port,
+                buff.target_id,
+                buff.actor_id,
+                buff.skill_code,
+                duration,
+                server_start_ms,
+                buff.last_start_ms,
+                buff.last_end_ms,
+                latency_ms,
+                buff.coverage,
+                buff.active,
+                server_time,
+                opcode,
+                packet.len(),
+                bytes_to_hex(packet)
+            )
+        });
         true
     }
 

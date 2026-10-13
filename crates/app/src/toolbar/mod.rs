@@ -18,6 +18,7 @@
 //! for [`PEEK_SECS`] through `DpsMeter::peek_overlay`.
 
 mod counts;
+mod on_top;
 mod prompt;
 #[cfg(test)]
 mod tests;
@@ -35,6 +36,7 @@ use crate::settings::{self, AppSettings, Section};
 use crate::update as updates;
 use update::UpdateClick;
 
+pub use on_top::restack;
 pub use prompt::{prompt_size, PromptView};
 pub use view::{Tool, ToolbarRequest, ToolbarView};
 #[cfg(feature = "probes")]
@@ -144,6 +146,10 @@ pub fn install(
     let view = toolbar.entity(cx).map_err(|error| format!("cannot reach the toolbar's view: {error:#}"))?;
     cx.subscribe(&view, |_, request: &ToolbarRequest, cx| handle(*request, cx)).detach();
     hub.update(cx, |hub, _| hub.toolbar = Some((toolbar, hwnd)));
+    if placement == Placement::Screen {
+        restack(cx);
+        on_top::start(&hub, cx);
+    }
     Ok(())
 }
 
@@ -339,10 +345,8 @@ fn sync_meter_window(hub: &Entity<Hub>, cx: &mut App) {
         return;
     };
     if shown {
-        match overlay::reveal(hwnd, placement) {
-            Ok(()) => overlay::raise_without_activating(hwnd),
-            Err(error) => crate::app_log::warn(format!("cannot show the meter: {error}")),
-        }
+        overlay::reveal_after_update(cx, hwnd, placement, "show the meter");
+        restack(cx);
     } else {
         overlay::hide(hwnd);
     }
@@ -356,6 +360,7 @@ pub fn toggle_everything(cx: &mut App) {
     };
     let (hidden, placement) = hub.update(cx, |hub, _| (hub.hidden.take(), hub.placement));
     if let Some(hidden) = hidden {
+        crate::app_log::info(format!("Alt+Shift+CapsLock: showing again the toolbar and {:?}", hidden.windows));
         show_hidden(&hidden, placement, cx);
         sync_meter_window(&hub, cx);
         return;
@@ -365,17 +370,17 @@ pub fn toggle_everything(cx: &mut App) {
         overlay::hide(hwnd);
     }
     let windows = secondary::hide_all(cx);
+    crate::app_log::info(format!("Alt+Shift+CapsLock: hid the toolbar and {windows:?}"));
     hub.update(cx, |hub, _| hub.hidden = Some(Hidden { toolbar, windows }));
     sync_meter_window(&hub, cx);
 }
 
-fn show_hidden(hidden: &Hidden, placement: Placement, cx: &App) {
+fn show_hidden(hidden: &Hidden, placement: Placement, cx: &mut App) {
     if let Some(hwnd) = hidden.toolbar {
-        if let Err(error) = overlay::reveal(hwnd, placement) {
-            crate::app_log::warn(format!("cannot show the toolbar again: {error}"));
-        }
+        overlay::reveal_after_update(cx, hwnd, placement, "show the toolbar again");
     }
     secondary::show_again(&hidden.windows, cx);
+    restack(cx);
 }
 
 /// The tray's Show toolbar, and a second launch: brings back what
@@ -386,6 +391,8 @@ pub fn show_toolbar(cx: &mut App) {
         return;
     };
     let (hidden, placement, toolbar) = hub.update(cx, |hub, _| (hub.hidden.take(), hub.placement, hub.toolbar));
+    let state = toolbar.map(|(_, hwnd)| on_top::describe(hwnd)).unwrap_or_else(|| "no toolbar window".to_string());
+    crate::app_log::info(format!("Show toolbar (tray or second launch): everything hidden by the shortcut {}; the toolbar {state}", hidden.is_some()));
     if let Some(hidden) = hidden {
         show_hidden(&hidden, placement, cx);
     }
@@ -401,7 +408,16 @@ pub fn show_toolbar(cx: &mut App) {
     }
     forward.extend(shown_meter);
     match placement {
-        Placement::Screen => forward.into_iter().for_each(overlay::bring_forward),
+        Placement::Screen => {
+            overlay::after_update(cx, move || {
+                for hwnd in forward {
+                    if let Err(error) = overlay::bring_forward(hwnd) {
+                        crate::app_log::warn(format!("cannot bring an overlay forward: {error}"));
+                    }
+                }
+            });
+            restack(cx);
+        }
         #[cfg(feature = "probes")]
         Placement::OffScreen => {}
     }

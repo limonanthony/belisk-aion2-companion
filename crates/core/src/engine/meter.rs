@@ -5,7 +5,7 @@ use std::sync::{
     Arc, Mutex, RwLock,
 };
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use sysinfo::{
     get_current_pid, CpuRefreshKind, MemoryRefreshKind, ProcessRefreshKind, ProcessesToUpdate,
@@ -113,13 +113,6 @@ impl std::error::Error for CaptureStartError {}
 struct AutoRecordState {
     active_since: Option<Instant>,
     done: bool,
-}
-
-fn now_seconds() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0)
 }
 
 pub struct DpsMeter {
@@ -398,6 +391,7 @@ impl DpsMeter {
             Arc::clone(&config),
             mobs,
         ));
+        data_storage.set_logger(Arc::clone(&logger));
         let calculator = Arc::new(DpsCalculator::new(Arc::clone(&data_storage)));
         let ping_tracker = Arc::new(PingTracker::new());
         let packet_channel = Channel::new(PACKET_CHANNEL_CAPACITY);
@@ -461,9 +455,9 @@ impl DpsMeter {
             .unwrap()
             .replace(Box::new(move |actor_id, actor_name, sid| {
                 let sid_str = sid.unwrap_or_default();
-                fight_for_cb.logger.debug(format!(
-                    "main actor detected: id={actor_id} name={actor_name} server={sid_str}"
-                ));
+                fight_for_cb.logger.debug(|| {
+                    format!("main actor detected: id={actor_id} name={actor_name} server={sid_str}")
+                });
                 fight_for_cb.reset(false);
             }));
 
@@ -536,10 +530,9 @@ impl DpsMeter {
         ));
         self.logger.set_debug_enabled(config.output_debug_log);
         self.logger.info(format!(
-            "config applied: dps_interval={}ms memory_interval={}ms stall_resync_delay={}ms full_processor_stall_resync_delay={}ms unknown_packet_stall_resync_delay={}ms capture_backend_priority={:?} boss_only={} pvp_mode_on={} pvp_overlay_position={:?} show_possible_boss={} my_muzhuang_only={} output_debug_log={}",
+            "config applied: dps_interval={}ms memory_interval={}ms full_processor_stall_resync_delay={}ms unknown_packet_stall_resync_delay={}ms capture_backend_priority={:?} boss_only={} pvp_mode_on={} pvp_overlay_position={:?} show_possible_boss={} my_muzhuang_only={} output_debug_log={}",
             config.dps_snapshot_interval_ms,
             config.memory_snapshot_interval_ms,
-            config.stall_resync_delay_ms,
             config.full_processor_stall_resync_delay_ms,
             config.unknown_packet_stall_resync_delay_ms,
             config.capture_backend_priority,
@@ -868,7 +861,7 @@ impl DpsMeter {
                 if idle_reset_secs > 0 {
                     if let Some(started) = data_storage.start_time() {
                         let activity = data_storage.activity_at();
-                        let idle_for = now_seconds() - activity.unwrap_or(started);
+                        let idle_for = data_storage.data_clock_now() - activity.unwrap_or(started);
                         if idle_for >= idle_reset_secs as f64 {
                             fight.end_fight(activity.is_some(), "idle timeout");
                         }

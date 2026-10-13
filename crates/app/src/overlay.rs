@@ -4,6 +4,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
+use std::fmt;
 use std::rc::Rc;
 
 use gpui::{
@@ -24,7 +25,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetWindow, GetWindowLongPtrW, GetWindowRect, PostMessageW, SendMessageW,
+    GetClientRect, GetWindow, GetWindowLongPtrW, GetWindowRect, IsWindowVisible, PostMessageW, SendMessageW,
     SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE,
     GWL_STYLE, GW_HWNDNEXT, HWND_NOTOPMOST, HWND_TOPMOST,
     LWA_ALPHA, MA_NOACTIVATE, SPI_GETCLIENTAREAANIMATION, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
@@ -218,6 +219,11 @@ unsafe extern "system" fn refuse_click_activation(
     }
 }
 
+/// Whether a drag is moving one of the overlay windows now.
+pub fn is_dragging() -> bool {
+    DRAGS.with_borrow(|drags| drags.dragged.is_some())
+}
+
 /// Ends the drag of `hwnd`, if it is dragged: its moves reach GPUI again at
 /// once, and [`FINISH_DRAG`] makes the move still owed and tells GPUI where
 /// the window is.
@@ -269,7 +275,7 @@ pub fn open(
         .map_err(|error| format!("cannot open the overlay window: {error:#}"))?;
 
     handle
-        .update(cx, |_, window, _| -> Result<(), String> {
+        .update(cx, |_, window, cx| -> Result<(), String> {
             let hwnd = hwnd(window)?;
             make_overlay(hwnd)?;
             let scale = window.scale_factor();
@@ -283,7 +289,7 @@ pub fn open(
                 Placement::OffScreen => off_screen::place(hwnd, width, height)?,
             }
             if shown {
-                reveal(hwnd, placement)?;
+                reveal_after_update(cx, hwnd, placement, "show the meter");
             }
             Ok(())
         })
@@ -291,24 +297,36 @@ pub fn open(
     Ok(handle)
 }
 
-pub fn show_without_activating(hwnd: HWND) {
+/// Shows the window without activating it. `ShowWindow` answers whether the
+/// window was visible before, not whether it worked, so the result is read
+/// back.
+pub fn show_without_activating(hwnd: HWND) -> Result<(), String> {
     unsafe {
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     }
+    if unsafe { IsWindowVisible(hwnd) }.as_bool() {
+        Ok(())
+    } else {
+        Err("the window is still hidden after ShowWindow".to_string())
+    }
 }
 
-/// Shows a window `placement` put in place, without activating it; off
-/// screen it is checked to be past every monitor before and after.
+/// Shows a window `placement` put in place, at the top of the topmost band,
+/// without activating it: a hidden window keeps its place in the z-order,
+/// and Windows may have put Belisk's topmost windows behind a full-screen
+/// game meanwhile (seen with a hidden soul tracker card under the game), so
+/// showing alone can leave it under the game, unseen. Off screen it is
+/// checked to be past every monitor before and after.
 pub fn reveal(hwnd: HWND, placement: Placement) -> Result<(), String> {
     match placement {
         Placement::Screen => {
-            show_without_activating(hwnd);
-            Ok(())
+            show_without_activating(hwnd)?;
+            raise_without_activating(hwnd)
         }
         #[cfg(feature = "probes")]
         Placement::OffScreen => {
             off_screen::ensure_off_screen(hwnd)?;
-            show_without_activating(hwnd);
+            show_without_activating(hwnd)?;
             off_screen::ensure_off_screen(hwnd)
         }
     }
@@ -320,11 +338,45 @@ pub fn hide(hwnd: HWND) {
     }
 }
 
+/// Runs `calls` once the update that asked for them has returned, in the
+/// order they were asked. `ShowWindow` makes Windows send `WM_SHOWWINDOW`,
+/// and GPUI draws the window inside that message, which updates it through
+/// the App; while an update holds the App that fails with "RefCell already
+/// borrowed" and the frame is lost. Every call that shows a GPUI window from
+/// inside an update goes through here.
+pub fn after_update(cx: &App, calls: impl FnOnce() + 'static) {
+    cx.spawn(async move |_| calls()).detach();
+}
+
+/// [`reveal`] after the current update; a failure is logged as "cannot
+/// {what}".
+pub fn reveal_after_update(cx: &App, hwnd: HWND, placement: Placement, what: impl fmt::Display + 'static) {
+    after_update(cx, move || {
+        if let Err(error) = reveal(hwnd, placement) {
+            crate::app_log::warn(format!("cannot {what}: {error}"));
+        }
+    });
+}
+
 /// Puts the window above every non-topmost window and above the other
 /// topmost ones, without activating it.
-pub fn raise_without_activating(hwnd: HWND) {
-    unsafe {
-        let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+pub fn raise_without_activating(hwnd: HWND) -> Result<(), String> {
+    unsafe { SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) }
+        .map_err(|error| format!("cannot put the window on top: {error}"))
+}
+
+/// Puts the windows of `order` at the top of the topmost band, the last one
+/// on top, without activating any: each is raised over the ones before it.
+/// One that cannot be raised is reported, and the others still go up.
+pub fn stack(order: &[HWND]) -> Result<(), String> {
+    let failed: Vec<String> = order
+        .iter()
+        .filter_map(|&hwnd| raise_without_activating(hwnd).err().map(|error| format!("{hwnd:?}: {error}")))
+        .collect();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(failed.join("; "))
     }
 }
 
@@ -334,27 +386,28 @@ pub fn raise_without_activating(hwnd: HWND) {
 /// rose first, so it then swaps places with `went_to` only when `went_to` is
 /// right below: a topmost window is not, nor is the desktop, which stays at
 /// the bottom, and the window must not sink under either.
-pub fn lower_behind(hwnd: HWND, went_to: Option<HWND>) {
+pub fn lower_behind(hwnd: HWND, went_to: Option<HWND>) -> Result<(), String> {
     let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
-    unsafe {
-        let _ = SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, flags);
-        let next = GetWindow(hwnd, GW_HWNDNEXT);
-        if let Some(went_to) = went_to.filter(|&went_to| next.is_ok_and(|next| next == went_to)) {
-            let _ = SetWindowPos(hwnd, Some(went_to), 0, 0, 0, 0, flags);
-        }
+    unsafe { SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, flags) }
+        .map_err(|error| format!("cannot take the window out of the topmost band: {error}"))?;
+    let next = unsafe { GetWindow(hwnd, GW_HWNDNEXT) };
+    if let Some(went_to) = went_to.filter(|&went_to| next.is_ok_and(|next| next == went_to)) {
+        unsafe { SetWindowPos(hwnd, Some(went_to), 0, 0, 0, 0, flags) }
+            .map_err(|error| format!("cannot put the window behind the one the user went to: {error}"))?;
     }
+    Ok(())
 }
 
 /// Makes the overlay visible, on top, and on a monitor, for a later launch
 /// asking the running meter to show itself. It does not take focus: the
 /// overlay is non-activating by design, and pulling focus out of the game
 /// would be worse than a meter that stays where it was.
-pub fn bring_forward(hwnd: HWND) {
-    show_without_activating(hwnd);
+pub fn bring_forward(hwnd: HWND) -> Result<(), String> {
+    show_without_activating(hwnd)?;
     if unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL) }.is_invalid() {
         move_onto_primary_monitor(hwnd);
     }
-    raise_without_activating(hwnd);
+    raise_without_activating(hwnd)
 }
 
 fn move_onto_primary_monitor(hwnd: HWND) {
@@ -791,7 +844,7 @@ pub mod off_screen {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
     use gpui::{point, px};
@@ -800,7 +853,96 @@ mod tests {
         WM_ACTIVATEAPP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_KILLFOCUS, WM_MOUSEMOVE, WM_MOVE, WM_SHOWWINDOW,
     };
 
-    use super::{ends_a_drag, pack, unpack, Drags, Ending, Grab, Move};
+    use super::{
+        after_update, ends_a_drag, pack, raise_without_activating, reveal, show_without_activating, stack, unpack, Drags, Ending, Grab, Move, Placement,
+    };
+
+    /// A hidden topmost tool window of this test's thread, never shown or
+    /// activated: the z-order holds hidden windows too, so a stack can be
+    /// read back without anything appearing on screen.
+    struct Hidden(windows::Win32::Foundation::HWND);
+
+    impl Hidden {
+        fn new() -> Self {
+            use windows::core::w;
+            use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP};
+            let hwnd = unsafe {
+                CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST, w!("STATIC"), None, WS_POPUP, -32000, -32000, 1, 1, None, None, None, None)
+            };
+            Self(hwnd.expect("a hidden test window"))
+        }
+
+        fn destroyed() -> windows::Win32::Foundation::HWND {
+            Self::new().0
+        }
+    }
+
+    impl Drop for Hidden {
+        fn drop(&mut self) {
+            let _ = unsafe { windows::Win32::UI::WindowsAndMessaging::DestroyWindow(self.0) };
+        }
+    }
+
+    fn is_above(upper: &Hidden, lower: &Hidden) -> bool {
+        use windows::Win32::UI::WindowsAndMessaging::{GetWindow, GW_HWNDNEXT};
+        let mut next = unsafe { GetWindow(upper.0, GW_HWNDNEXT) };
+        for _ in 0..4096 {
+            match next {
+                Ok(window) if window == lower.0 => return true,
+                Ok(window) => next = unsafe { GetWindow(window, GW_HWNDNEXT) },
+                Err(_) => return false,
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn a_stack_puts_the_windows_in_its_order_whatever_their_order_before() {
+        let (toolbar, tool, card) = (Hidden::new(), Hidden::new(), Hidden::new());
+        stack(&[card.0, tool.0, toolbar.0]).expect("the first stack");
+        assert!(is_above(&toolbar, &tool) && is_above(&tool, &card), "the toolbar was raised last");
+
+        stack(&[toolbar.0, tool.0, card.0]).expect("the second stack");
+        assert!(is_above(&card, &tool), "the card is on top of the tool");
+        assert!(is_above(&tool, &toolbar), "and the tool on top of the toolbar");
+    }
+
+    #[gpui::test]
+    fn win32_calls_asked_inside_an_update_run_in_order_after_it_returns(cx: &mut gpui::TestAppContext) {
+        let order = Rc::new(RefCell::new(Vec::new()));
+        cx.update(|cx| {
+            for step in ["first", "second"] {
+                let (order, outside) = (order.clone(), cx.to_async());
+                after_update(cx, move || {
+                    // Taking the App again would panic were an update still holding it.
+                    outside.update(|_| ());
+                    order.borrow_mut().push(step);
+                });
+            }
+            assert!(order.borrow().is_empty(), "nothing runs inside the update that asked");
+        });
+        cx.run_until_parked();
+        assert_eq!(*order.borrow(), ["first", "second"]);
+    }
+
+    #[test]
+    fn a_window_that_cannot_be_raised_is_reported_and_the_others_still_go_up() {
+        let (below, above) = (Hidden::new(), Hidden::new());
+        let gone = Hidden::destroyed();
+        stack(&[above.0, below.0]).expect("the first stack");
+
+        let failed = stack(&[below.0, gone, above.0]).expect_err("a destroyed window cannot be raised");
+        assert!(failed.contains(&format!("{gone:?}")), "the failure names the window: {failed}");
+        assert!(is_above(&above, &below), "the windows that could be raised were");
+        assert!(raise_without_activating(gone).is_err());
+    }
+
+    #[test]
+    fn a_window_that_cannot_be_shown_is_not_reported_as_revealed() {
+        let gone = Hidden::destroyed();
+        assert!(show_without_activating(gone).is_err(), "ShowWindow's answer is not taken for success");
+        assert!(reveal(gone, Placement::Screen).is_err());
+    }
 
     const A: isize = 0x1000;
     const B: isize = 0x2000;

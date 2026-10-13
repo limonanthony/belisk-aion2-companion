@@ -17,7 +17,8 @@ use gpui::{
 
 use crate::assets::Icon;
 use crate::changelog::{self, Release, WhatsNew};
-use crate::i18n::fl;
+use crate::i18n::{self, fl};
+use crate::meter::OverlaySettings;
 use crate::overlay::WindowDrag;
 use crate::reminders::GAP;
 use crate::secondary::chrome::{self, Look, Scale, Tone, FAINT, HOT, MUTED, TEXT};
@@ -48,6 +49,8 @@ pub struct WhatsNewView {
     drag: WindowDrag,
     root_focus: FocusHandle,
     full_changelog_focus: FocusHandle,
+    /// The look the window is drawn with, to redraw only when it changes.
+    overlay: OverlaySettings,
     _ticker: Option<Task<()>>,
 }
 
@@ -77,7 +80,17 @@ impl WhatsNewView {
         cx: &mut Context<Self>,
     ) -> Self {
         let store = settings::global(cx);
-        cx.observe(&store, |_, _, cx| cx.notify()).detach();
+        let overlay = store.read(cx).get().overlay.clone();
+        cx.observe(&store, |this, store, cx| {
+            let overlay = &store.read(cx).get().overlay;
+            if *overlay != this.overlay {
+                this.overlay = overlay.clone();
+                cx.notify();
+            }
+        })
+        .detach();
+        let locale = i18n::locale(cx);
+        cx.observe(&locale, |_, _, cx| cx.notify()).detach();
         let root_focus = cx.focus_handle();
         window.focus(&root_focus, cx);
         Self {
@@ -89,6 +102,7 @@ impl WhatsNewView {
             drag: WindowDrag::default(),
             root_focus,
             full_changelog_focus: cx.focus_handle().tab_stop(true),
+            overlay,
             _ticker: ticker,
         }
     }
@@ -264,8 +278,7 @@ fn version_block(release: &Release, first: bool, s: Scale) -> impl IntoElement {
 
 impl Render for WhatsNewView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let overlay = settings::global(cx).read(cx).get().overlay.clone();
-        let look = Look::of(&overlay);
+        let look = Look::of(&self.overlay);
         let s = look.s;
         let title = fl!("whatsnew-title");
 
@@ -351,6 +364,7 @@ mod tests {
 
     struct Opened<'a> {
         settings: Entity<Settings>,
+        view: Entity<WhatsNewView>,
         asked: Rc<RefCell<usize>>,
         cx: &'a mut VisualTestContext,
     }
@@ -386,7 +400,23 @@ mod tests {
         let asked = Rc::new(RefCell::new(0));
         let count = asked.clone();
         cx.update(|_, cx| cx.subscribe(&view, move |_, _: &OpenChangelog, _| *count.borrow_mut() += 1).detach());
-        Opened { settings, asked, cx }
+        Opened { settings, view, asked, cx }
+    }
+
+    #[gpui::test]
+    fn the_window_redraws_for_a_new_look_not_for_other_settings(cx: &mut TestAppContext) {
+        let window = open(cx, from(Some(V151), &[V160]));
+        let redraws = Rc::new(RefCell::new(0));
+        let counter = redraws.clone();
+        let view = window.view.clone();
+        window.cx.update(|_, cx| cx.observe(&view, move |_, _| *counter.borrow_mut() += 1).detach());
+
+        window.settings.update(window.cx, |settings, cx| settings.update(cx, |all| all.reminders.enabled = false));
+        window.cx.run_until_parked();
+        assert_eq!(*redraws.borrow(), 0, "a reminder switch");
+        window.settings.update(window.cx, |settings, cx| settings.update(cx, |all| all.overlay.content_scale = 1.25));
+        window.cx.run_until_parked();
+        assert_eq!(*redraws.borrow(), 1, "the window's scale");
     }
 
     const V140: Version = Version::new(1, 4, 0);

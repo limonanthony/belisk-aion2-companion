@@ -38,6 +38,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
+use crate::capture::dispatcher::is_web_flow;
 use crate::capture::capturer::CapturedPacket;
 use crate::capture::recording_queue::RecordingSink;
 
@@ -255,8 +256,8 @@ impl PacketRecorder {
 }
 
 impl RecordingSink for PacketRecorder {
-    fn wants(&self, _packet: &CapturedPacket) -> bool {
-        self.accepting.load(Ordering::Acquire)
+    fn wants(&self, packet: &CapturedPacket) -> bool {
+        self.accepting.load(Ordering::Acquire) && !is_web_flow(packet.src_port, packet.dst_port)
     }
 
     fn write(&self, packet: &CapturedPacket) {

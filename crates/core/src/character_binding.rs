@@ -24,6 +24,12 @@ struct NamedCharacter {
     seen_at: f64,
 }
 
+impl NamedCharacter {
+    fn is_assumed(&self) -> bool {
+        self.seen_at == f64::NEG_INFINITY
+    }
+}
+
 struct Waiting<Content> {
     captured_at: f64,
     content: Content,
@@ -36,11 +42,12 @@ struct Waiting<Content> {
 pub struct CharacterBinder<Content> {
     named: Option<NamedCharacter>,
     waiting: Vec<Waiting<Content>>,
+    assumed_messages: usize,
 }
 
 impl<Content> Default for CharacterBinder<Content> {
     fn default() -> Self {
-        Self { named: None, waiting: Vec::new() }
+        Self { named: None, waiting: Vec::new(), assumed_messages: 0 }
     }
 }
 
@@ -61,6 +68,7 @@ impl<Content> CharacterBinder<Content> {
             })
             .collect();
         self.named = Some(NamedCharacter { character, seen_at: captured_at });
+        self.assumed_messages = 0;
         reports
     }
 
@@ -68,10 +76,23 @@ impl<Content> CharacterBinder<Content> {
     /// not named anyone since the binder started (the meter was opened after
     /// login, and the character comes from the remembered ones). The game's own
     /// name, when it comes, replaces it; one already given is never replaced.
-    pub fn assume_character(&mut self, character: KnownCharacter) {
-        if self.named.is_none() {
+    /// Returns whether the assumption took.
+    pub fn assume_character(&mut self, character: KnownCharacter) -> bool {
+        let unnamed = self.named.is_none();
+        if unnamed {
             self.named = Some(NamedCharacter { character, seen_at: f64::NEG_INFINITY });
+            self.assumed_messages = 0;
         }
+        unnamed
+    }
+
+    /// The character taken as the player's by `assume_character` while the game
+    /// has not named anyone, and how many changes were bound to it meanwhile.
+    pub fn assumed(&self) -> Option<(&KnownCharacter, usize)> {
+        self.named
+            .as_ref()
+            .filter(|named| named.is_assumed())
+            .map(|named| (&named.character, self.assumed_messages))
     }
 
     pub fn snapshot(&mut self, content: Content, captured_at: f64) -> Option<CharacterReport<Content>> {
@@ -94,7 +115,12 @@ impl<Content> CharacterBinder<Content> {
 
     pub fn change(&mut self, content: Content, captured_at: f64) -> Option<CharacterReport<Content>> {
         match &self.named {
-            Some(named) => Some(CharacterReport { character: named.character.clone(), captured_at, content }),
+            Some(named) => {
+                if named.is_assumed() {
+                    self.assumed_messages += 1;
+                }
+                Some(CharacterReport { character: named.character.clone(), captured_at, content })
+            }
             None => {
                 self.waiting.retain(|message| captured_at - message.captured_at <= IDENTITY_AFTER_MESSAGE_SECS);
                 self.waiting.push(Waiting { captured_at, content });

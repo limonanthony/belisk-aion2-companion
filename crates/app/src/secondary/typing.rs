@@ -91,7 +91,9 @@ pub fn end(hwnd: HWND) {
         unsafe {
             let _ = ShowWindow(hwnd, SW_HIDE);
         }
-        overlay::show_without_activating(hwnd);
+        if let Err(error) = overlay::show_without_activating(hwnd) {
+            crate::app_log::warn(format!("cannot show the overlay again after the typing: {error}"));
+        }
     }
 }
 

@@ -36,7 +36,7 @@ pub fn open(
         })
         .map_err(|error| format!("cannot open the toolbar window: {error:#}"))?;
     let set_up = handle
-        .update(cx, |_, window, _| -> Result<HWND, String> {
+        .update(cx, |_, window, cx| -> Result<HWND, String> {
             let hwnd = overlay::hwnd(window)?;
             overlay::make_overlay(hwnd)?;
             let scale = window.scale_factor();
@@ -49,7 +49,7 @@ pub fn open(
                         .or_else(|| top_centre(device_width.ceil() as i32, (TOP_MARGIN * scale).round() as i32))
                         .unwrap_or((64, 64));
                     overlay::place(hwnd, x, y, device_width, device_height)?;
-                    overlay::show_without_activating(hwnd);
+                    overlay::reveal_after_update(cx, hwnd, placement, "show the toolbar");
                 }
                 #[cfg(feature = "probes")]
                 Placement::OffScreen => overlay::off_screen::show(hwnd, device_width, device_height)?,

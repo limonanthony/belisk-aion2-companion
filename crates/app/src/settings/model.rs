@@ -1,13 +1,13 @@
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use meter_core::config::{CaptureBackendPriority, DpsMeterConfig};
 use meter_core::identity::KnownCharacter;
-use gpui::{App, Context, Entity, Global, Task};
+use gpui::{App, Context, Entity, Global};
 use serde::{Deserialize, Serialize};
 
 use super::{characters, store};
+use crate::background_save::{BackgroundSave, Persisted};
 use crate::changelog::Version;
 use crate::i18n::{fl, LanguageChoice};
 use crate::meter::OverlaySettings;
@@ -16,10 +16,6 @@ use crate::reminders::ReminderSettings;
 use crate::stored_file::{LoadNotice, SaveError};
 use crate::todos::TodoSettings;
 use crate::update::UpdateSettings;
-
-/// A change is written to disk once nothing has changed for this long, so a
-/// slider drag causes one write.
-const SAVE_AFTER: Duration = Duration::from_millis(400);
 
 /// "End a fight after": the choices the page offers, in seconds, with 0 for
 /// never. Any stored value from 60 s to an hour is kept as it is.
@@ -198,16 +194,8 @@ pub fn end_fight_after_label(secs: u64) -> String {
 /// kept, and written to `settings.json` a moment later.
 pub struct Settings {
     value: AppSettings,
-    file: Option<PathBuf>,
-    save: Option<Task<()>>,
-    saved: bool,
-    save_error: Option<SaveError>,
+    save: BackgroundSave<AppSettings>,
     load_notice: Option<LoadNotice>,
-    /// Counts changes; a write carries the number of the value it holds.
-    revision: u64,
-    /// The revision last written. Writers take the lock, so an older value,
-    /// finishing late, never replaces a newer one on disk.
-    written: Arc<Mutex<u64>>,
 }
 
 struct SettingsHandle(Entity<Settings>);
@@ -231,17 +219,12 @@ impl Settings {
         }
         let mut settings = Self {
             value: loaded.settings,
-            file: Some(file),
-            save: None,
-            saved: true,
-            save_error: None,
+            save: BackgroundSave::new(Some(file), store::save),
             load_notice: loaded.notice,
-            revision: 0,
-            written: Arc::default(),
         };
         if loaded.fresh_install {
             settings.value.last_seen_version = Some(Version::current());
-            settings.saved = false;
+            settings.save.pending();
             settings.flush();
         }
         settings
@@ -251,16 +234,7 @@ impl Settings {
     /// capture modes, whose output must not depend on, or change, the user's
     /// file.
     pub fn in_memory(value: AppSettings) -> Self {
-        Self {
-            value: value.clamped(),
-            file: None,
-            save: None,
-            saved: true,
-            save_error: None,
-            load_notice: None,
-            revision: 0,
-            written: Arc::default(),
-        }
+        Self { value: value.clamped(), save: BackgroundSave::new(None, store::save), load_notice: None }
     }
 
     pub fn get(&self) -> &AppSettings {
@@ -274,12 +248,12 @@ impl Settings {
 
     /// The folder `settings.json` lives in; none for in-memory settings.
     pub fn data_dir(&self) -> Option<&Path> {
-        self.file.as_deref().and_then(Path::parent)
+        self.save.file().and_then(Path::parent)
     }
 
     /// Why the last write failed; cleared by the next one that succeeds.
     pub fn save_error(&self) -> Option<&SaveError> {
-        self.save_error.as_ref()
+        self.save.error()
     }
 
     /// Applies `change` to a copy, clamps it, and keeps it if it differs.
@@ -291,8 +265,7 @@ impl Settings {
             return;
         }
         self.value = next;
-        self.revision += 1;
-        self.schedule_save(cx);
+        self.save.changed(cx);
         cx.notify();
     }
 
@@ -308,63 +281,20 @@ impl Settings {
     /// Writes any change not yet on disk now, on this thread; used when the
     /// app quits.
     pub fn flush(&mut self) {
-        self.save = None;
-        let Some(file) = self.file.as_ref().filter(|_| !self.saved) else {
-            return;
-        };
-        match write_in_order(&self.written, self.revision, file, &self.value) {
-            Ok(()) => {
-                self.saved = true;
-                self.save_error = None;
-            }
-            Err(error) => {
-                crate::app_log::error(error.to_string());
-                self.save_error = Some(error);
-            }
-        }
-    }
-
-    fn schedule_save(&mut self, cx: &mut Context<Self>) {
-        self.saved = false;
-        let Some(file) = self.file.clone() else {
-            return;
-        };
-        self.save = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(SAVE_AFTER).await;
-            let Ok(Some((revision, value, written))) = this.update(cx, |settings, _| {
-                (!settings.saved).then(|| (settings.revision, settings.value.clone(), Arc::clone(&settings.written)))
-            }) else {
-                return;
-            };
-            let result = cx
-                .background_executor()
-                .spawn(async move { write_in_order(&written, revision, &file, &value) })
-                .await;
-            let _ = this.update(cx, |settings, cx| {
-                match result {
-                    Ok(()) => {
-                        settings.saved = settings.saved || settings.revision == revision;
-                        settings.save_error = None;
-                    }
-                    Err(error) => {
-                        crate::app_log::error(error.to_string());
-                        settings.save_error = Some(error);
-                    }
-                }
-                cx.notify();
-            });
-        }));
+        self.save.flush(&self.value);
     }
 }
 
-fn write_in_order(written: &Mutex<u64>, revision: u64, file: &Path, value: &AppSettings) -> Result<(), SaveError> {
-    let mut last = written.lock().unwrap_or_else(PoisonError::into_inner);
-    if revision < *last {
-        return Ok(());
+impl Persisted for Settings {
+    type Value = AppSettings;
+
+    fn value(&self) -> &AppSettings {
+        &self.value
     }
-    store::save(file, value)?;
-    *last = revision;
-    Ok(())
+
+    fn background_save(&mut self) -> &mut BackgroundSave<AppSettings> {
+        &mut self.save
+    }
 }
 
 /// Makes `settings` the app's settings, for [`global`].
@@ -412,6 +342,8 @@ pub fn toggle_layout(cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[test]

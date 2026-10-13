@@ -545,6 +545,7 @@ dependencies = [
  "i18n-embed",
  "i18n-embed-fl",
  "image",
+ "log",
  "meter-core",
  "parking_lot",
  "raw-window-handle",

@@ -29,7 +29,10 @@ pub fn install_deadline(cx: &mut App) {
 pub fn install_exit(cx: &mut App, exit_code: impl Fn() -> u32 + 'static) {
     cx.on_app_quit(move |_| {
         let code = exit_code();
-        async move { terminate(code) }
+        async move {
+            log::logger().flush();
+            terminate(code)
+        }
     })
     .detach();
 }

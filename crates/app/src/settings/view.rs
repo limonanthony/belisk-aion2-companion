@@ -150,6 +150,26 @@ impl Section {
             Self::About => "nav-about",
         }
     }
+
+    /// Whether the page shows something that differs between `before` and
+    /// `after`. A character's name on a page follows the overlay's masking.
+    fn shows_a_change(self, before: &AppSettings, after: &AppSettings) -> bool {
+        let meter_windows = |settings: &AppSettings| {
+            let windows = &settings.windows;
+            (windows.open_meter_at_launch, windows.hide_meter_between_fights, windows.detail_opens)
+        };
+        match self {
+            Self::Overlay => before.overlay != after.overlay || meter_windows(before) != meter_windows(after),
+            Self::Behaviour => before.behaviour != after.behaviour,
+            Self::Capture => before.capture != after.capture || before.overlay != after.overlay,
+            Self::Bests => before.overlay != after.overlay,
+            Self::Reminders => before.reminders != after.reminders,
+            Self::Todos => before.todos != after.todos || before.overlay != after.overlay,
+            Self::Pets => before.pets != after.pets,
+            Self::General => before.general != after.general,
+            Self::About => before.updates != after.updates,
+        }
+    }
 }
 
 /// Where Settings opens from outside: a section, or About's Changelog page.
@@ -399,6 +419,10 @@ pub struct SettingsView {
     /// What the To-dos page shows of the to-dos, to redraw only when it
     /// changes.
     todos_seen: TodosSeen,
+    /// The settings and the save failure at the last change, to redraw only
+    /// when the open page or its notices show what changed.
+    settings_seen: AppSettings,
+    save_error_seen: Option<crate::stored_file::SaveError>,
     /// What the Pets page shows of the collection, to redraw only when it
     /// changes.
     pets_seen: PetsSeen,
@@ -431,14 +455,30 @@ impl SettingsView {
         let updates = update::global(cx);
         let mut subscriptions = vec![
             cx.observe(&store, |this, store, cx| {
-                let overlay = preview_settings(store.read(cx).get().overlay.clone());
-                this.preview_model.update(cx, |model, cx| {
-                    if model.settings != overlay {
-                        model.set_overlay_settings(overlay);
-                        cx.notify();
-                    }
-                });
-                cx.notify();
+                let (changed_settings, save_error) = {
+                    let store = store.read(cx);
+                    let settings = store.get();
+                    ((*settings != this.settings_seen).then(|| settings.clone()), store.save_error().cloned())
+                };
+                let mut shown = false;
+                if let Some(settings) = changed_settings {
+                    let overlay = preview_settings(settings.overlay.clone());
+                    this.preview_model.update(cx, |model, cx| {
+                        if model.settings != overlay {
+                            model.set_overlay_settings(overlay);
+                            cx.notify();
+                        }
+                    });
+                    shown = this.changelog.is_none() && this.section.shows_a_change(&this.settings_seen, &settings);
+                    this.settings_seen = settings;
+                }
+                if save_error != this.save_error_seen {
+                    this.save_error_seen = save_error;
+                    shown = true;
+                }
+                if shown {
+                    cx.notify();
+                }
             }),
             cx.observe(&runtime, |_, _, cx| cx.notify()),
             cx.observe(&todos::global(cx), |this, todos, cx| {
@@ -468,6 +508,7 @@ impl SettingsView {
                 if let Some(page) = &mut this.changelog {
                     page.retell(changelog::load(i18n::language()));
                 }
+                cx.notify();
             }),
             cx.observe(&updates, |this, _, cx| {
                 if this.section != Section::About {
@@ -492,6 +533,10 @@ impl SettingsView {
             }
         }
 
+        let (settings_seen, save_error_seen) = {
+            let store = store.read(cx);
+            (store.get().clone(), store.save_error().cloned())
+        };
         let todos_seen = TodosSeen::of(todos::global(cx).read(cx));
         let pets_seen = PetsSeen::of(cx);
         let root_focus = cx.focus_handle();
@@ -522,6 +567,8 @@ impl SettingsView {
             pet_test_shown: None,
             todos_done: None,
             todos_seen,
+            settings_seen,
+            save_error_seen,
             pets_seen,
             action_error: None,
             changelog: None,
@@ -2392,7 +2439,9 @@ pub fn bring_forward(hwnd: HWND) {
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }
     }
-    crate::overlay::raise_without_activating(hwnd);
+    if let Err(error) = crate::overlay::raise_without_activating(hwnd) {
+        crate::app_log::warn(format!("cannot bring Settings in front: {error}"));
+    }
     unsafe {
         let _ = SetForegroundWindow(hwnd);
     }
@@ -3334,6 +3383,26 @@ mod tests {
         window.tab_to("auto-download");
         window.press("space");
         assert!(window.settings().updates.download_automatically, "the keyboard switches it back");
+    }
+
+    #[gpui::test]
+    fn settings_redraws_only_for_a_change_its_open_page_shows(cx: &mut TestAppContext) {
+        let mut window = open(cx, None);
+        let redraws = Rc::new(Cell::new(0));
+        let (view, store, counter) = (window.view.clone(), window.store.clone(), redraws.clone());
+        window.cx.update(|_, cx| cx.observe(&view, move |_, _| counter.set(counter.get() + 1)).detach());
+        let change = |window: &mut Opened, change: fn(&mut AppSettings)| {
+            redraws.set(0);
+            window.cx.update(|_, cx| store.update(cx, |settings, cx| settings.update(cx, change)));
+            window.cx.run_until_parked();
+            redraws.get()
+        };
+
+        assert_eq!(change(&mut window, |all| all.windows.toolbar_at = Some(crate::settings::ScreenPoint { x: 10, y: 10 })), 0, "the toolbar moved");
+        assert_eq!(change(&mut window, |all| all.reminders.enabled = false), 0, "a switch of a page that is not open");
+        assert!(change(&mut window, |all| all.overlay.background_alpha = 40) > 0, "the opacity the Overlay page shows");
+        window.show(Section::Reminders);
+        assert!(change(&mut window, |all| all.reminders.enabled = true) > 0, "the open page's own switch");
     }
 
     fn temp_dir(name: &str) -> PathBuf {

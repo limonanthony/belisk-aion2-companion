@@ -219,7 +219,7 @@ fn build_combat_snapshot(
             main_actor_name: data_storage.main_actor_name(),
             last_target_by_main_actor: data_storage.last_target_by_main_actor(),
             last_target: data_storage.last_target(),
-            time_now: current_timestamp_seconds(),
+            time_now: data_storage.data_clock_now(),
         },
         last_target_info,
         last_target_all_players_overview_stats: last_target_overview,
@@ -723,13 +723,6 @@ fn filter_nested_map<T: Clone>(data: &HashMap<u32, T>, kept: &[u32]) -> HashMap<
     kept.iter()
         .filter_map(|tid| data.get(tid).map(|v| (*tid, v.clone())))
         .collect()
-}
-
-fn current_timestamp_seconds() -> f64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or_default()
 }
 
 fn current_timestamp_millis() -> u64 {

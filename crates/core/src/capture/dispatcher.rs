@@ -58,7 +58,6 @@ struct DispatcherState {
     // unified: StreamAssembler,
     // unified1: StreamAssembler,
     assemblers: HashMap<String, TrackedAssembler>,
-    nickname_assemblers: HashMap<String, TrackedAssembler>,
     tcp_reassemblers: HashMap<TcpFlowKey, TrackedTcpReassembler>,
     magic_hits: HashMap<String, VecDeque<Instant>>,
     recent_ports: RecentPortWindow,
@@ -98,7 +97,6 @@ impl DispatcherState {
             data_storage: Arc::clone(&data_storage),
             config: Arc::clone(&config),
             assemblers: HashMap::new(),
-            nickname_assemblers: HashMap::new(),
             tcp_reassemblers: HashMap::new(),
             magic_hits: HashMap::new(),
             recent_ports: RecentPortWindow::new(Duration::from_secs(2)),
@@ -107,55 +105,25 @@ impl DispatcherState {
     }
 
     fn clear(&mut self) {
-        for assembler in self.assemblers.values() {
-            assembler.assembler.clear();
-        }
-        for assembler in self.nickname_assemblers.values() {
+        for assembler in self.assemblers.values_mut() {
             assembler.assembler.clear();
         }
         self.assemblers.clear();
-        self.nickname_assemblers.clear();
         self.tcp_reassemblers.clear();
         self.magic_hits.clear();
         self.recent_ports.entries.clear();
         self.logged_packets = 0;
     }
 
-    fn tracked_assemblers_mut(
-        &mut self,
-        key: &str,
-    ) -> impl Iterator<Item = &mut TrackedAssembler> + '_ {
-        self.assemblers
-            .get_mut(key)
-            .into_iter()
-            .chain(self.nickname_assemblers.get_mut(key))
-    }
-
-    fn ensure_candidate_assemblers(&mut self, key: &str, logger: &Arc<AppLogger>) {
-        let data_storage = Arc::clone(&self.data_storage);
-        let config = Arc::clone(&self.config);
-        self.assemblers.entry(key.to_string()).or_insert_with({
-            let key = key.to_string();
-            let data_storage = Arc::clone(&data_storage);
-            let logger = Arc::clone(logger);
-            let config = Arc::clone(&config);
-            move || TrackedAssembler::new(StreamAssembler::new(data_storage, logger, key, config))
+    fn ensure_candidate_assembler(&mut self, key: &str, logger: &Arc<AppLogger>) {
+        self.assemblers.entry(key.to_string()).or_insert_with(|| {
+            TrackedAssembler::new(StreamAssembler::new(
+                Arc::clone(&self.data_storage),
+                Arc::clone(logger),
+                key.to_string(),
+                Arc::clone(&self.config),
+            ))
         });
-
-        self.nickname_assemblers
-            .entry(key.to_string())
-            .or_insert_with({
-                let key = key.to_string();
-                let logger = Arc::clone(logger);
-                move || {
-                    TrackedAssembler::new(StreamAssembler::new_nickname_only(
-                        data_storage,
-                        logger,
-                        format!("{key}:nickname"),
-                        config,
-                    ))
-                }
-            });
     }
 }
 
@@ -262,7 +230,7 @@ impl CaptureDispatcher {
                 let retransmits = reassembler.retransmits();
                 let gap_skips = reassembler.gap_skips();
 
-                for tracked in state.tracked_assemblers_mut(&key) {
+                if let Some(tracked) = state.assemblers.get_mut(&key) {
                     tracked.mark_packet_received();
                 }
                 if let Some(gap_skip) = reassembly.gap_skip {
@@ -276,7 +244,7 @@ impl CaptureDispatcher {
                         gap_skip.waited_secs,
                         gap_skip.held_bytes
                     ));
-                    for tracked in state.tracked_assemblers_mut(&key) {
+                    if let Some(tracked) = state.assemblers.get_mut(&key) {
                         tracked.assembler.discard_buffered();
                     }
                 }
@@ -285,15 +253,17 @@ impl CaptureDispatcher {
                 }
                 packet.data = reassembly.segments.concat();
                 if retransmits != previous_retransmits || gap_skips != previous_gap_skips {
-                    logger.debug(format!(
-                        "tcp reassembly src={}:{} dst={}:{} retransmits={} gap_skips={}",
-                        format_ipv4(packet.src_ip),
-                        packet.src_port,
-                        format_ipv4(packet.dst_ip),
-                        packet.dst_port,
-                        retransmits,
-                        gap_skips
-                    ));
+                    logger.debug(|| {
+                        format!(
+                            "tcp reassembly src={}:{} dst={}:{} retransmits={} gap_skips={}",
+                            format_ipv4(packet.src_ip),
+                            packet.src_port,
+                            format_ipv4(packet.dst_ip),
+                            packet.dst_port,
+                            retransmits,
+                            gap_skips
+                        )
+                    });
                 }
                 ping_tracker.on_packet(&packet.data, packet.captured_at);
 
@@ -327,7 +297,7 @@ impl CaptureDispatcher {
                 }
 
                 let has_enough_magic_hits = if contains_magic {
-                    state.ensure_candidate_assemblers(&key, &logger);
+                    state.ensure_candidate_assembler(&key, &logger);
                     let now = Instant::now();
                     let hits = state.magic_hits.entry(key.clone()).or_default();
                     while hits.front().is_some_and(|hit_at| {
@@ -344,7 +314,7 @@ impl CaptureDispatcher {
                 if contains_magic && has_enough_magic_hits {
                     if let Some(locked) = state.recent_ports.add_and_get_locked(key.clone()) {
                         *combat_port.write().unwrap() = Some(locked.clone());
-                        state.ensure_candidate_assemblers(&locked, &logger);
+                        state.ensure_candidate_assembler(&locked, &logger);
                     }
                 }
 
@@ -361,14 +331,6 @@ impl CaptureDispatcher {
                         combat_damage_enabled,
                         packet.captured_at,
                     );
-
-                    let nickname_assembler = state
-                        .nickname_assemblers
-                        .get_mut(&key)
-                        .expect("candidate nickname assembler must exist");
-                    let _ = nickname_assembler
-                        .assembler
-                        .process_chunk(&packet.data, false, packet.captured_at);
                 }
             }
         });
@@ -423,12 +385,6 @@ impl CaptureDispatcher {
             false
         });
 
-        for key in &removed {
-            if let Some(tracked) = state.nickname_assemblers.remove(key) {
-                tracked.assembler.clear();
-            }
-        }
-
         removed
     }
 
@@ -439,10 +395,6 @@ impl CaptureDispatcher {
         for (key, assembler) in &state.assemblers {
             let size = assembler.assembler.buffer_size();
             sizes.insert(key.clone(), size);
-        }
-        for (key, assembler) in &state.nickname_assemblers {
-            let size = assembler.assembler.buffer_size();
-            sizes.insert(format!("{key}:nickname"), size);
         }
 
         sizes
@@ -510,11 +462,19 @@ mod tests {
     }
 
     fn dispatcher_recording_to(recordings: Vec<Arc<RecordingQueue>>) -> CaptureDispatcher {
+        dispatcher_with(Arc::new(Silent), recordings)
+    }
+
+    fn dispatcher_reporting_to(events: Arc<dyn EventSink>) -> CaptureDispatcher {
+        dispatcher_with(events, Vec::new())
+    }
+
+    fn dispatcher_with(events: Arc<dyn EventSink>, recordings: Vec<Arc<RecordingQueue>>) -> CaptureDispatcher {
         let dir = std::env::temp_dir().join("belisk-dispatcher-test");
         let logger = Arc::new(AppLogger::new(dir.join("test.log"), Box::new(|_| {})));
         let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
         let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
-        let storage = Arc::new(DataStorage::new(Arc::new(Silent), Arc::clone(&config), mobs));
+        let storage = Arc::new(DataStorage::new(events, Arc::clone(&config), mobs));
         storage.set_fight_tracking(true);
         CaptureDispatcher::new(
             Channel::new(1_000),
@@ -586,7 +546,63 @@ mod tests {
         let (locked, flows) = feed_then_game_flow(&dispatcher, Vec::new());
 
         assert_eq!(locked, "52.1.2.3:13328->192.168.1.20:50000");
-        assert_eq!(flows.len(), 2, "the flow and its nickname assembler: {flows:?}");
+        assert_eq!(flows.len(), 1, "one assembler for the flow: {flows:?}");
+    }
+
+    #[derive(Default)]
+    struct EventLog(Mutex<Vec<MeterEvent>>);
+    impl EventSink for EventLog {
+        fn emit(&self, event: MeterEvent) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    fn the_game_names_the_player(name: &str) -> Vec<u8> {
+        let mut payload = vec![0x33, 0x36, 100];
+        payload.extend_from_slice(&[0; 5]);
+        payload.push(u8::try_from(name.len()).expect("short name"));
+        payload.extend_from_slice(name.as_bytes());
+        payload.extend_from_slice(&1302u16.to_le_bytes());
+        payload.push(22);
+        payload.extend_from_slice(&[9, 9, 9, 9, 0x3A, 0xA5, 0x03, 0, 0, 0]);
+        payload.extend_from_slice(&1302u16.to_le_bytes());
+        payload.extend_from_slice(&[9, 9]);
+        let mut frame = vec![u8::try_from(payload.len() + 4).expect("small frame")];
+        frame.extend(payload);
+        frame
+    }
+
+    #[test]
+    fn one_identity_packet_is_reported_to_the_app_once() {
+        let events = Arc::new(EventLog::default());
+        let dispatcher = dispatcher_reporting_to(events.clone());
+        let framed_heartbeat = |sequence| {
+            let mut packet = heartbeat_from(SERVER, 13_328, sequence);
+            packet.data = vec![9, 0x0B, 0xE3, 0x0E, 0x00, 0x36];
+            packet
+        };
+        let mut identity = heartbeat_from(SERVER, 13_328, 3_012);
+        identity.data = the_game_names_the_player("Tester");
+        for packet in [framed_heartbeat(3_000), framed_heartbeat(3_006), identity] {
+            assert!(dispatcher.channel.try_send(packet));
+        }
+
+        dispatcher.start();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while events.0.lock().unwrap().is_empty() {
+            assert!(Instant::now() < deadline, "the identity packet was never reported");
+            thread::sleep(Duration::from_millis(10));
+        }
+        dispatcher.stop();
+
+        let seen = events
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| matches!(event, MeterEvent::CharacterSeen(_)))
+            .count();
+        assert_eq!(seen, 1);
     }
 
     #[test]
@@ -601,7 +617,30 @@ mod tests {
         stalled_disk.release();
 
         assert_eq!(locked, "52.1.2.3:13328->192.168.1.20:50000");
-        assert_eq!(flows.len(), 2, "the flow and its nickname assembler: {flows:?}");
+        assert_eq!(flows.len(), 1, "one assembler for the flow: {flows:?}");
         assert!(dropped >= 29, "32 packets offered to a queue of 2 behind a stalled writer: {dropped}");
+    }
+
+    #[test]
+    fn a_recording_in_progress_keeps_the_game_packets_and_no_web_packets() {
+        let dir = std::env::temp_dir().join(format!("belisk-recording-web-{}", std::process::id()));
+        let recorder = Arc::new(crate::capture::recorder::PacketRecorder::new());
+        let path = recorder.start(&dir).expect("start the recording");
+        let queue = Arc::new(RecordingQueue::new(recorder.clone(), 100));
+        let dispatcher = dispatcher_recording_to(vec![Arc::clone(&queue)]);
+        let web_packets = (0..5).map(|index| heartbeat_from(CDN, 443, 1_000 + index * 5)).collect();
+
+        feed_then_game_flow(&dispatcher, web_packets);
+        assert!(queue.flush(Instant::now() + Duration::from_secs(5)));
+        recorder.stop().expect("stop the recording");
+
+        let mut ports = Vec::new();
+        crate::capture::recorder::replay_recording(&path, |packet| {
+            ports.push((packet.src_port, packet.dst_port));
+            true
+        })
+        .expect("replay");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(ports, [(13_328, 50_000), (13_328, 50_000)]);
     }
 }

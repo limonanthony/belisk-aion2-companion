@@ -13,7 +13,8 @@
 //! player's character, and `--fights from-tickets` at the first ticket event,
 //! as if the meter were opened then.
 //! `--speed N` replays at N times the recorded pace, which the boss wipes need:
-//! the meter closes a wiped attempt on its snapshot tick (200 ms), so an
+//! the meter closes a wiped attempt on its snapshot tick (100 ms in this tool,
+//! as the core's default; the app sets 200 ms), so an
 //! unpaced replay would close every wipe at the end. The boss wipes the meter
 //! closed and the history it saved are listed at the end.
 //! `--data-dir` gives the meter a folder for its history and personal bests (a
@@ -281,7 +282,6 @@ fn run(
     };
 
     println!("packets replayed: {packets}");
-    println!("note: timestamps are taken at replay time, so durations are compressed");
 
     match &snapshot.last_target_info {
         Some(target) => {

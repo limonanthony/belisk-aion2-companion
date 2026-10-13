@@ -1,5 +1,6 @@
 mod app_log;
 mod assets;
+mod background_save;
 mod bridge;
 #[cfg(feature = "probes")]
 mod capture;
@@ -97,33 +98,29 @@ fn run_app() -> u32 {
             return 2;
         }
     };
-    let moved_folders = if args.wants_live() { data_folder::settle() } else { Vec::new() };
+    // Decided before anything of the meter starts: no window, setting, folder
+    // or live log is touched by a launch that only hands over to the running
+    // one, which logs to the temp folder like a replay.
+    let (instance, claim_failure, moved_folders) = match launch(args.wants_live(), single_instance::claim, data_folder::settle) {
+        Launch::HandOver(running) => {
+            app_log::install(false);
+            panic_log::install();
+            return match running.ask_to_come_forward() {
+                Ok(()) => 0,
+                Err(error) => {
+                    app_log::error(format!("the meter is already running: {error}"));
+                    1
+                }
+            };
+        }
+        Launch::Run { instance, claim_failure, moved_folders } => (instance, claim_failure, moved_folders),
+    };
     let logger = app_log::install(args.wants_live());
     moved_folders.iter().for_each(data_folder::Note::log);
     panic_log::install();
-
-    // Decided before anything of the meter starts: no window, settings or
-    // capture is touched by a launch that only hands over to the running one.
-    let instance = if args.wants_live() {
-        match single_instance::claim() {
-            Ok(single_instance::Claim::First(running)) => Some(running),
-            Ok(single_instance::Claim::AlreadyRunning(running)) => {
-                return match running.ask_to_come_forward() {
-                    Ok(()) => 0,
-                    Err(error) => {
-                        app_log::error(format!("the meter is already running: {error}"));
-                        1
-                    }
-                };
-            }
-            Err(error) => {
-                app_log::warn(format!("{error}; a second meter may run beside this one"));
-                None
-            }
-        }
-    } else {
-        None
-    };
+    if let Some(error) = claim_failure {
+        app_log::warn(format!("{error}; a second meter may run beside this one"));
+    }
 
     gpui_platform::application()
         .with_assets(assets::Assets)
@@ -140,6 +137,62 @@ fn run_app() -> u32 {
 
 fn exit_code() -> u32 {
     u32::from(FAILED.load(Ordering::SeqCst))
+}
+
+enum Launch {
+    HandOver(single_instance::RunningMeter),
+    Run { instance: Option<single_instance::Running>, claim_failure: Option<String>, moved_folders: Vec<data_folder::Note> },
+}
+
+/// A live launch claims the single instance first, and only the one that
+/// holds it settles the player's folders: a second launch, while the first
+/// runs from the old folders after a failed move, must not retry the move.
+fn launch(
+    live: bool,
+    claim: impl FnOnce() -> Result<single_instance::Claim, String>,
+    settle: impl FnOnce() -> Vec<data_folder::Note>,
+) -> Launch {
+    if !live {
+        return Launch::Run { instance: None, claim_failure: None, moved_folders: Vec::new() };
+    }
+    let (instance, claim_failure) = match claim() {
+        Ok(single_instance::Claim::AlreadyRunning(running)) => return Launch::HandOver(running),
+        Ok(single_instance::Claim::First(running)) => (Some(running), None),
+        Err(error) => (None, Some(error)),
+    };
+    Launch::Run { instance, claim_failure, moved_folders: settle() }
+}
+
+#[cfg(test)]
+mod launch_tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn only_the_launch_that_holds_the_instance_settles_the_folders() {
+        let name = format!("Local\\Belisk.Test.launch.{}", std::process::id());
+        let settled = Cell::new(0);
+        let settle = || {
+            settled.set(settled.get() + 1);
+            Vec::new()
+        };
+
+        let first = launch(true, || single_instance::claim_named(&name), settle);
+        assert!(matches!(first, Launch::Run { instance: Some(_), .. }));
+        assert_eq!(settled.get(), 1);
+
+        let second = launch(true, || single_instance::claim_named(&name), settle);
+        assert!(matches!(second, Launch::HandOver(_)));
+        assert_eq!(settled.get(), 1, "a second launch leaves the folders to the first");
+    }
+
+    #[test]
+    fn a_launch_that_is_not_live_claims_nothing_and_settles_nothing() {
+        let claim = || -> Result<single_instance::Claim, String> { panic!("a replay holds no lock") };
+        let settle = || -> Vec<data_folder::Note> { panic!("a replay never touches the player's folders") };
+        assert!(matches!(launch(false, claim, settle), Launch::Run { instance: None, claim_failure: None, .. }));
+    }
 }
 
 fn start(args: Args, instance: Option<single_instance::Running>, logger: Arc<AppLogger>, cx: &mut App) -> Result<(), String> {

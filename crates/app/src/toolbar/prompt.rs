@@ -16,7 +16,7 @@ use gpui::{
 };
 
 use crate::assets::Icon;
-use crate::i18n::fl;
+use crate::i18n::{self, fl};
 use crate::meter::{board_width, Layout, OverlaySettings};
 use crate::reminders::GAP;
 use crate::secondary::chrome::{self, Look, Scale, FAINT, HOT, MUTED, SOFT, TEXT};
@@ -84,6 +84,8 @@ pub struct PromptView {
     /// None in tests, where there is no meter to sit on.
     stacking: Option<Rc<Stacking>>,
     card_size: Rc<Cell<Option<Size<Pixels>>>>,
+    /// The look the card is drawn with, to redraw only when it changes.
+    overlay: OverlaySettings,
     _ticker: Option<Task<()>>,
     _leaving: Option<Task<()>>,
 }
@@ -106,8 +108,18 @@ impl PromptView {
 
     fn built(stacking: Option<Rc<Stacking>>, ticker: Option<Task<()>>, cx: &mut Context<Self>) -> Self {
         let store = settings::global(cx);
-        cx.observe(&store, |_, _, cx| cx.notify()).detach();
-        Self { answer: Answer::Waiting, stacking, card_size: Rc::default(), _ticker: ticker, _leaving: None }
+        let overlay = store.read(cx).get().overlay.clone();
+        cx.observe(&store, |this, store, cx| {
+            let overlay = &store.read(cx).get().overlay;
+            if *overlay != this.overlay {
+                this.overlay = overlay.clone();
+                cx.notify();
+            }
+        })
+        .detach();
+        let locale = i18n::locale(cx);
+        cx.observe(&locale, |_, _, cx| cx.notify()).detach();
+        Self { answer: Answer::Waiting, stacking, card_size: Rc::default(), overlay, _ticker: ticker, _leaving: None }
     }
 
     fn keep_in_place(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -185,8 +197,8 @@ impl PromptView {
 
 impl Render for PromptView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let overlay = settings::global(cx).read(cx).get().overlay.clone();
-        let look = Look::of(&overlay);
+        let look = Look::of(&self.overlay);
+        let (width, gap) = (card_width(&self.overlay), GAP * self.overlay.scale());
         let s = look.s;
         let title: SharedString = fl!("prompt-title").into();
         let head = div()
@@ -230,7 +242,7 @@ impl Render for PromptView {
         };
         let card = chrome::frame(look, 14.)
             .flex_none()
-            .w(s.px(card_width(&overlay)))
+            .w(s.px(width))
             .p(s.px(8.))
             .flex()
             .flex_col()
@@ -247,7 +259,6 @@ impl Render for PromptView {
         };
         let card_size = self.card_size.clone();
         let stacking = self.stacking.clone();
-        let gap = GAP * overlay.scale();
         chrome::surface(look)
             .on_children_prepainted(move |bounds, window, cx| {
                 let Some(card) = bounds.first() else {

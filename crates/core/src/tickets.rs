@@ -32,8 +32,12 @@ impl TicketBinder {
         self.binder.character_named(character, captured_at)
     }
 
-    pub fn assume_character(&mut self, character: KnownCharacter) {
-        self.binder.assume_character(character);
+    pub fn assume_character(&mut self, character: KnownCharacter) -> bool {
+        self.binder.assume_character(character)
+    }
+
+    pub fn assumed(&self) -> Option<(&KnownCharacter, usize)> {
+        self.binder.assumed()
     }
 
     pub fn snapshot(&mut self, records: Vec<TicketRecord>, captured_at: f64) -> Option<TicketReport> {

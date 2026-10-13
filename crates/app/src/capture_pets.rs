@@ -343,24 +343,20 @@ async fn card(meter: WindowHandle<MeterView>, pets: &Entity<pets::Pets>, dir: &P
     check_card("the test card", foreground_before, cx).await?;
     shoot_card(&[meter_hwnd], dir, "pet-card-08-test", cx).await?;
 
-    let card = card_view(cx)?;
-    card.update(cx, |view, _, cx| view.force_time_left(0.01, cx)).map_err(gone)?;
+    card_view(cx)?.update(cx, |view, _, cx| view.force_time_left(0.01, cx)).map_err(gone)?;
     pause(cx, Duration::from_secs(1)).await;
-    let parked = card.update(cx, |view, _, _| view.is_parked()).map_err(gone)?;
-    let visible = unsafe { IsWindowVisible(window_hwnd(WindowKind::PetCard, cx)?) }.as_bool();
-    println!("time-out: 1 s after the ring ran out the card went {parked}, its window visible {visible}");
-    if !parked || visible {
+    let open = cx.update(|cx| secondary::window_of(WindowKind::PetCard, cx).is_some());
+    println!("time-out: still open 1 s after the ring ran out: {open}");
+    if open {
         return Err("the soul tracker card stayed after its time ran out".to_string());
     }
-    let opened_at = std::time::Instant::now();
     record(fixtures::pet_souls(SoulSource::Loot, &[(PET_SPARKIE, 1)]), cx);
-    let back = !card.update(cx, |view, _, _| view.is_parked()).map_err(gone)?;
-    let elapsed = opened_at.elapsed();
     pause(cx, TICK).await;
     let visible = unsafe { IsWindowVisible(window_hwnd(WindowKind::PetCard, cx)?) }.as_bool();
-    println!("a gain after the card went: back {back} in {elapsed:?}, in the same window, visible {visible}");
-    if !back || !visible {
-        return Err("a gain after the card went did not show it again".to_string());
+    let pets_on = card_view(cx)?.update(cx, |view, _, _| view.shown().pets.len()).map_err(gone)?;
+    println!("a gain after the card closed: a new card, visible {visible}, {pets_on} pet on it");
+    if !visible || pets_on != 1 {
+        return Err("a gain after the card closed did not open a new card with that pet alone".to_string());
     }
     close(WindowKind::PetCard, cx).await
 }

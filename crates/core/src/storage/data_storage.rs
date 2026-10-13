@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, RwLock};
+use std::time::Instant;
 
 use serde::Serialize;
 use std::sync::Arc;
@@ -23,6 +24,7 @@ use crate::storage::boss_wipe::{BossWipe, WipeWatch};
 use crate::storage::loaders::load_healing_skill_codes;
 use crate::tickets::TicketBinder;
 use crate::pets::{PetBinder, PetContent};
+use crate::logger::AppLogger;
 
 pub(crate) struct FightLedgerInputs {
     pub events: CombatEvents,
@@ -302,6 +304,12 @@ pub struct DataStorage {
     /// with its window closed never counts a fight. Kept apart from `inner`:
     /// a reset must not change it.
     fight_tracking: AtomicBool,
+    /// Where the storage reports the identity assumptions it makes; none until
+    /// the meter gives it one.
+    logger: Mutex<Option<Arc<AppLogger>>>,
+    /// When the newest packet was captured, and when it was noted. Kept apart
+    /// from `inner`: a reset must not change it, and every packet writes it.
+    packet_clock: Mutex<Option<(f64, Instant)>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -433,6 +441,8 @@ impl DataStorage {
             tickets: Mutex::new(TicketBinder::default()),
             pets: Mutex::new(PetBinder::default()),
             fight_tracking: AtomicBool::new(false),
+            logger: Mutex::new(None),
+            packet_clock: Mutex::new(None),
         }
     }
 
@@ -520,8 +530,25 @@ impl DataStorage {
         self.resolve_own_name();
     }
 
+    /// A hit stamped with the data clock, for tests that do not care when.
+    #[cfg(test)]
     pub fn append_damage(&self, packet: ParsedDamagePacket) {
-        self.append_damage_at(packet, current_timestamp_seconds());
+        self.append_damage_at(packet, self.data_clock_now());
+    }
+
+    /// Tells the storage when the packet being parsed was captured.
+    pub fn note_packet_time(&self, captured_at: f64) {
+        *self.packet_clock.lock().unwrap() = Some((captured_at, Instant::now()));
+    }
+
+    /// "Now" on the clock the fight's timestamps use: the capture time of the
+    /// newest packet, moved on by the real time since it arrived so a quiet
+    /// connection still ages a fight. Before any packet, the PC's clock.
+    pub fn data_clock_now(&self) -> f64 {
+        match *self.packet_clock.lock().unwrap() {
+            Some((captured_at, noted_at)) => captured_at + noted_at.elapsed().as_secs_f64(),
+            None => current_timestamp_seconds(),
+        }
     }
 
     pub fn save_buff(
@@ -779,10 +806,6 @@ impl DataStorage {
 
     /// A hit a monster's skill landed on `victim_id`, by a record or a damage
     /// tick. It is not damage dealt: it moves no target and no stats.
-    pub fn record_incoming_hit(&self, victim_id: u32, source_id: u32, skill_code: u32, amount: u64) {
-        self.record_incoming_hit_at(victim_id, source_id, skill_code, amount, current_timestamp_seconds());
-    }
-
     pub fn record_incoming_hit_at(&self, victim_id: u32, source_id: u32, skill_code: u32, amount: u64, at: f64) {
         if !self.fight_tracking() {
             return;
@@ -803,10 +826,6 @@ impl DataStorage {
     }
 
     /// A tick of a heal over time.
-    pub fn record_heal_tick(&self, healer_id: u32, target_id: u32, skill_code: u32, amount: u64) {
-        self.record_heal_tick_at(healer_id, target_id, skill_code, amount, current_timestamp_seconds());
-    }
-
     pub fn record_heal_tick_at(&self, healer_id: u32, target_id: u32, skill_code: u32, amount: u64, at: f64) {
         let heal = Heal { at, healer_id, target_id, skill_code, kind: HealKind::OverTime, amount, critical: false };
         record_heal(&mut self.inner.write().unwrap(), heal);
@@ -814,17 +833,6 @@ impl DataStorage {
 
     /// The game's record of a player's death. `killer_name` is empty unless the
     /// killer is a player; `killer_mob_code` is 0 unless it names a monster.
-    pub fn record_player_death(
-        &self,
-        victim_id: u32,
-        skill_code: u32,
-        killer_id: u32,
-        killer_name: &str,
-        killer_mob_code: u32,
-    ) {
-        self.record_player_death_at(victim_id, skill_code, killer_id, killer_name, killer_mob_code, current_timestamp_seconds());
-    }
-
     pub fn record_player_death_at(
         &self,
         victim_id: u32,
@@ -1254,17 +1262,27 @@ impl DataStorage {
         }
         match remembered {
             Some(character) => {
-                let unambiguous = self
+                let same_class = self
                     .known_characters
                     .read()
                     .unwrap()
                     .iter()
                     .filter(|known| known.class == character.class)
-                    .count()
-                    == 1;
-                if unambiguous {
-                    self.tickets.lock().unwrap().assume_character(character.clone());
-                    self.pets.lock().unwrap().assume_character(character.clone());
+                    .count();
+                if same_class == 1 {
+                    let tickets_assumed = self.tickets.lock().unwrap().assume_character(character.clone());
+                    let pets_assumed = self.pets.lock().unwrap().assume_character(character.clone());
+                    if tickets_assumed || pets_assumed {
+                        self.log_info(format!(
+                            "own character assumed from the remembered ones: {} (server {}) is the only remembered {}; ticket and pet changes are bound to it until the game names the character (an alt of that class that is not remembered would be taken for it)",
+                            character.name, character.server_id, character.class
+                        ));
+                    }
+                } else {
+                    self.log_info(format!(
+                        "own character not assumed for tickets and pets: {same_class} remembered characters are a {}; they wait for the game to name the character",
+                        character.class
+                    ));
                 }
                 self.events.emit(MeterEvent::MainActorDetected(MainActorDetectedPayload {
                     actor_id,
@@ -1303,6 +1321,7 @@ impl DataStorage {
     /// Tells the app the game named the player's character, so it can be
     /// remembered, and releases the ticket and pet messages that waited for the name.
     pub fn character_seen(&self, character: KnownCharacter, captured_at: f64) {
+        self.report_assumption_outcome(&character);
         let reports = self.tickets.lock().unwrap().character_named(character.clone(), captured_at);
         let pet_reports = self.pets.lock().unwrap().character_named(character.clone(), captured_at);
         self.events.emit(MeterEvent::CharacterSeen(character));
@@ -1311,6 +1330,46 @@ impl DataStorage {
         }
         for report in pet_reports {
             self.events.emit(MeterEvent::Pets(report));
+        }
+    }
+
+    pub fn set_logger(&self, logger: Arc<AppLogger>) {
+        *self.logger.lock().unwrap() = Some(logger);
+    }
+
+    fn log_info(&self, message: String) {
+        let logger = self.logger.lock().unwrap().clone();
+        if let Some(logger) = logger {
+            logger.info(message);
+        }
+    }
+
+    fn log_warn(&self, message: String) {
+        let logger = self.logger.lock().unwrap().clone();
+        if let Some(logger) = logger {
+            logger.warn(message);
+        }
+    }
+
+    /// When the game names the character while ticket and pet changes were
+    /// bound to an assumed one, says whether the assumption held.
+    fn report_assumption_outcome(&self, named: &KnownCharacter) {
+        let assumption =
+            self.tickets.lock().unwrap().assumed().map(|(assumed, tickets)| (assumed.clone(), tickets));
+        let Some((assumed, ticket_changes)) = assumption else {
+            return;
+        };
+        let pet_changes = self.pets.lock().unwrap().assumed().map_or(0, |(_, pets)| pets);
+        if assumed.name == named.name && assumed.server_id == named.server_id {
+            self.log_info(format!(
+                "the game named {} (server {}), as assumed; {ticket_changes} ticket and {pet_changes} pet changes were bound to it meanwhile",
+                named.name, named.server_id
+            ));
+        } else {
+            self.log_warn(format!(
+                "the game named {} (server {}, {}), not the assumed {} (server {}, {}); {ticket_changes} ticket and {pet_changes} pet changes were bound to the wrong character meanwhile",
+                named.name, named.server_id, named.class, assumed.name, assumed.server_id, assumed.class
+            ));
         }
     }
 
@@ -1355,6 +1414,10 @@ impl DataStorage {
 
     pub fn actor_id_name_snapshot(&self) -> HashMap<u32, String> {
         self.inner.read().unwrap().actor_id_name_map.as_hash_map()
+    }
+
+    pub fn actor_name(&self, actor_id: u32) -> Option<String> {
+        self.inner.read().unwrap().actor_id_name_map.get(&actor_id).cloned()
     }
 
     pub fn actor_id_server_snapshot(&self) -> HashMap<u32, String> {
@@ -1746,7 +1809,7 @@ mod main_actor_tests {
 
 #[cfg(test)]
 mod bounded_map_tests {
-    use super::{BoundedMap, COMBAT_TARGET_CAPACITY};
+    use super::BoundedMap;
 
     #[test]
     fn evicts_the_oldest_key_past_capacity() {
@@ -1770,17 +1833,6 @@ mod bounded_map_tests {
 
         assert_eq!(map.get(&1), Some(&11));
         assert_eq!(map.get(&2), None, "the key untouched for longest goes first");
-    }
-
-    #[test]
-    fn combat_targets_are_bounded() {
-        // The overlay snapshot deep-clones this map several times a second, so
-        // an unbounded one makes a long session progressively more expensive.
-        let mut map: BoundedMap<u32, u32> = BoundedMap::new(COMBAT_TARGET_CAPACITY);
-        for key in 0..(COMBAT_TARGET_CAPACITY as u32 * 3) {
-            map.insert(key, key);
-        }
-        assert_eq!(map.map.len(), COMBAT_TARGET_CAPACITY);
     }
 }
 
@@ -2415,7 +2467,7 @@ mod combat_event_tests {
 mod fight_tracking_tests {
     use std::sync::{Arc, RwLock};
 
-    use super::DataStorage;
+    use super::{DataStorage, COMBAT_TARGET_CAPACITY};
     use crate::config::DpsMeterConfig;
     use crate::events::{EventSink, MeterEvent};
     use crate::identity::KnownCharacter;
@@ -2467,6 +2519,22 @@ mod fight_tracking_tests {
         storage.set_fight_tracking(true);
         storage.append_damage_at(hit(PLAYER, MOB), 11.0);
         assert_eq!(storage.get_dps_stats_snapshot().len(), 1);
+    }
+
+    #[test]
+    fn a_long_session_keeps_the_stats_of_the_most_recent_targets_only() {
+        let storage = storage();
+        storage.set_fight_tracking(true);
+        let targets = COMBAT_TARGET_CAPACITY as u32 * 3;
+        for index in 0..targets {
+            storage.append_damage_at(hit(PLAYER, MOB + index), f64::from(index));
+        }
+
+        let stats = storage.get_dps_stats_snapshot();
+
+        assert_eq!(stats.len(), COMBAT_TARGET_CAPACITY);
+        assert!(stats.contains_key(&(MOB + targets - 1)), "the newest target is kept");
+        assert!(!stats.contains_key(&MOB), "the oldest is gone");
     }
 
     #[test]

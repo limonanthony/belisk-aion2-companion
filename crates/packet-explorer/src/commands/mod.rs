@@ -2,6 +2,7 @@ pub mod boss_hp;
 pub mod diff;
 pub mod dump;
 pub mod events;
+pub mod fixture;
 pub mod flows;
 pub mod map_events;
 pub mod opcodes;
@@ -40,6 +41,7 @@ commands:
   unnamed-skills  skill ids the app shows as 'Skill <id>': hits, damage, class   [--json]
   boss-hp   each boss entity's HP (appears, falls, back at full, dead) and the wipes the core would close
   parity    the shipped StreamProcessor against this tool's framing
+  fixture   writes the anonymised replay fixture of the core's tests from a recording of a fight  --out <file.belisk>
 
 common options:
   --op       opcode selectors, comma separated: 0be3, '33 36', 8d (first byte), c2s
@@ -73,6 +75,9 @@ pub fn run(args: &Args) -> Result<(), String> {
             }
             if command == "boss-hp" {
                 return boss_hp::run(&files, args);
+            }
+            if command == "fixture" {
+                return fixture::run(&files, args);
             }
             let capture = capture::load(&files)?;
             match command {

@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use meter_core::events::MeterEvent;
@@ -15,13 +14,10 @@ use super::data::{
 use super::list::{self, CharacterSummary, FullResource, TodoList};
 use super::settings::TodoSettings;
 use super::store;
+use crate::background_save::{BackgroundSave, Persisted};
 use crate::clock::{now_ms, ClockTime, LocalZone};
 use crate::settings::Settings;
 use crate::stored_file::{LoadNotice, SaveError};
-
-/// A change is written to disk once nothing has changed for this long, so a
-/// run of taps on an arrow causes one write.
-const SAVE_AFTER: Duration = Duration::from_millis(400);
 
 /// The countdowns are read to the minute: the tick lands just after each one.
 const TICK_SLACK: Duration = Duration::from_millis(50);
@@ -76,16 +72,8 @@ pub struct Todos {
     /// The last character the game named; a different one takes the window back from a manual pick.
     last_named: Option<CharacterId>,
     picked: Option<CharacterId>,
-    file: Option<PathBuf>,
-    save: Option<Task<()>>,
-    saved: bool,
-    save_error: Option<SaveError>,
+    save: BackgroundSave<TodoData>,
     load_notice: Option<LoadNotice>,
-    /// Counts changes; a write carries the number of the value it holds.
-    revision: u64,
-    /// The revision last written. Writers take the lock, so an older value,
-    /// finishing late, never replaces a newer one on disk.
-    written: Arc<Mutex<u64>>,
     ticker: Option<Task<()>>,
     /// When this run began: what the game said since, about the character
     /// being played, is live.
@@ -138,13 +126,8 @@ impl Todos {
             playing: None,
             last_named: None,
             picked: None,
-            file,
-            save: None,
-            saved: true,
-            save_error: None,
+            save: BackgroundSave::new(file, store::save),
             load_notice,
-            revision: 0,
-            written: Arc::default(),
             ticker: None,
             run_started_ms: now_ms(),
         };
@@ -209,8 +192,7 @@ impl Todos {
     }
 
     fn changed(&mut self, cx: &mut Context<Self>) {
-        self.revision += 1;
-        self.schedule_save(cx);
+        self.save.changed(cx);
         cx.notify();
     }
 
@@ -367,7 +349,7 @@ impl Todos {
     }
 
     pub fn save_error(&self) -> Option<&SaveError> {
-        self.save_error.as_ref()
+        self.save.error()
     }
 
     // --- Changing a character's list ---
@@ -510,52 +492,7 @@ impl Todos {
 
     /// Writes any change not yet on disk now, on this thread; used when the app quits.
     pub fn flush(&mut self) {
-        self.save = None;
-        let Some(file) = self.file.as_ref().filter(|_| !self.saved) else {
-            return;
-        };
-        match write_in_order(&self.written, self.revision, file, &self.data) {
-            Ok(()) => {
-                self.saved = true;
-                self.save_error = None;
-            }
-            Err(error) => {
-                crate::app_log::error(error.to_string());
-                self.save_error = Some(error);
-            }
-        }
-    }
-
-    fn schedule_save(&mut self, cx: &mut Context<Self>) {
-        self.saved = false;
-        let Some(file) = self.file.clone() else {
-            return;
-        };
-        self.save = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(SAVE_AFTER).await;
-            let Ok(Some((revision, value, written))) = this.update(cx, |todos, _| {
-                (!todos.saved).then(|| (todos.revision, todos.data.clone(), Arc::clone(&todos.written)))
-            }) else {
-                return;
-            };
-            let result = cx
-                .background_executor()
-                .spawn(async move { write_in_order(&written, revision, &file, &value) })
-                .await;
-            let _ = this.update(cx, |todos, cx| {
-                match result {
-                    Ok(()) => {
-                        todos.saved = todos.saved || todos.revision == revision;
-                        todos.save_error = None;
-                    }
-                    Err(error) => {
-                        crate::app_log::error(error.to_string());
-                        todos.save_error = Some(error);
-                    }
-                }
-                cx.notify();
-            });
-        }));
+        self.save.flush(&self.data);
     }
 
     #[cfg(test)]
@@ -564,19 +501,21 @@ impl Todos {
     }
 }
 
+impl Persisted for Todos {
+    type Value = TodoData;
+
+    fn value(&self) -> &TodoData {
+        &self.data
+    }
+
+    fn background_save(&mut self) -> &mut BackgroundSave<TodoData> {
+        &mut self.save
+    }
+}
+
 fn until_next_minute() -> Duration {
     let into_minute = now_ms().rem_euclid(60_000) as u64;
     Duration::from_millis(60_000 - into_minute) + TICK_SLACK
-}
-
-fn write_in_order(written: &Mutex<u64>, revision: u64, file: &Path, value: &TodoData) -> Result<(), SaveError> {
-    let mut last = written.lock().unwrap_or_else(PoisonError::into_inner);
-    if revision < *last {
-        return Ok(());
-    }
-    store::save(file, value)?;
-    *last = revision;
-    Ok(())
 }
 
 /// Starts the tracker and makes it the app's, for [`global`]. `live` is a real
