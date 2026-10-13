@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-09 16:05'
+updated_date: '2026-10-12 15:05'
 labels:
   - bug
 dependencies: []
@@ -60,4 +60,6 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-09: built and reviewed (agent-tested, not yet tested by the user). History delete, delete all and reload already only touch memory since TASK-25.5. The PvP window now reads the meter on a background thread, one read at a time, and ignores a read older than a name change or a clear. A saved fight report is built on a background thread like the live one; the window opens when it is ready.
+
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Partly fixed in code: PvP polling and saved reports run off the UI thread, and history delete and reload are now memory work plus a queued save. History reload still reads the meter's history on the UI thread (memory only, no file).
 <!-- SECTION:NOTES:END -->

@@ -4,6 +4,7 @@ title: Remove or rewrite tests that defend nothing or defend bugs
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:45'
+updated_date: '2026-10-12 15:05'
 labels:
   - maintenance
 dependencies: []
@@ -92,3 +93,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #3 Rewritten tests use expected values that are independent of the code's own formula and fail when the named contract is broken.
 - [ ] #4 No test from the 'keep' list is removed, and the suite passes.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Partly done. This round replaced the tests that could not fail the contract they named: party DPS, bounded combat targets, CJK nickname characters, and the overlay reveal test that compared a constant to itself (now real Win32 tests). Not audited line by line: the registry HashMap tests, the Settings tab-order id list, a_locked_summary_card_has_no_report_button.
+<!-- SECTION:NOTES:END -->

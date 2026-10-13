@@ -3,10 +3,10 @@ id: TASK-25.9
 title: >-
   The stream buffer copies on every parse step, wipes silently at 50 MB, and
   every flow is parsed twice
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-08 12:35'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -54,3 +54,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 An overflow past the limit is logged and resets the framing state so parsing resumes on the next valid message.
 - [ ] #3 Each flow is parsed once; damage totals and detected players are the same as before on a replay.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Fixed in code. The stream assembler now owns its buffer and parses in place (no copy, no mutex); on overflow it logs a warning, discards the buffer, resets the framing and keeps the chunk that crossed the limit; there is one assembler per flow, and a test checks that one identity packet is reported once. A fixture replay (TASK-25.39) gives the same totals and players. Moved to In Progress; not tested by the user.
+<!-- SECTION:NOTES:END -->

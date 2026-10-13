@@ -4,7 +4,7 @@ title: Update the docs that say things the code no longer does
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:45'
-updated_date: '2026-10-08 12:48'
+updated_date: '2026-10-12 15:05'
 labels:
   - documentation
 dependencies: []
@@ -65,3 +65,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 AGENTS.md and the removed docs/GPUI_MIGRATION.md (git history) no longer mention aether-core, src-tauri, a tray, a Home screen or aion2_focus except as marked history.
 - [ ] #3 Test counts in the docs match a fresh count.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Partly done. This round corrected the snapshot interval text (core 100 ms, app 200 ms), the Version section (app 1.1.0, meter-core 1.0.2), the test counts, and the notes and AGENTS.md rows for the overlay stack, the deferred Win32 calls, the game-flow gate, the replay fixture, the packet-explorer fixture command, the shared background writer, the update download and the log. The rest of the drift table was not re-checked.
+<!-- SECTION:NOTES:END -->

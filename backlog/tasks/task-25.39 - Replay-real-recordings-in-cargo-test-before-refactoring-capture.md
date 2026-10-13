@@ -1,9 +1,10 @@
 ---
 id: TASK-25.39
 title: Replay real recordings in cargo test before refactoring capture
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 15:38'
+updated_date: '2026-10-12 15:05'
 labels:
   - maintenance
 dependencies: []
@@ -60,3 +61,9 @@ Found by the code review of commit 7a48824 (2026-10-08).
 - [ ] #2 The fixtures contain no other players' names
 - [ ] #3 Breaking a parser on purpose (for example dropping critical hits) makes the replay tests fail with the differing numbers
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Fixed in code. packet-explorer fixture builds crates/core/tests/fixtures/fight-anonymised.belisk (273 KB from a real 70 s session; player names replaced by placeholders, IPs by documentation addresses; the tool refuses to write if an original name remains), and crates/core/tests/replay_fixture.rs replays it through the real pipeline: total damage 2,068,011, 14 players whose rows add up to the session, own player identified; the same fight replayed at two speeds gives the same figures. The expected total is what the core makes of the frames (a regression oracle, not an independent decoder). AC #1 and #2 are met in code; AC #3 was shown for the clock (a wall-clock revert made the speed test fail), not for dropping critical hits. Moved to In Progress; not tested by the user.
+<!-- SECTION:NOTES:END -->

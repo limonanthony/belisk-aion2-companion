@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:40'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -68,3 +69,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 Settings, to-dos and mobs pass their existing corrupt-file and newer-version tests unchanged.
 - [ ] #3 The save debounce of settings and to-dos is left as it is.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Partly fixed in code. History and personal bests are set-aside, atomic and versioned (earlier). Per the services review stored_file.rs is shared by settings, to-dos and pets; the core review found the mobs store (mobs/store.rs) still a separate copy. Note on AC #3: this round settings, to-dos and pets were moved onto one shared background writer (background_save.rs), keeping the 400 ms debounce and the revision ordering; the format and versioning stay in stored_file.
+<!-- SECTION:NOTES:END -->

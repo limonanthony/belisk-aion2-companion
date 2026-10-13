@@ -4,6 +4,7 @@ title: To-dos and reminders rebuild controls the Settings kit already has
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:41'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -49,3 +50,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 The focus ring and segment track values are defined once per styling family, not copied between windows.
 - [ ] #3 Existing to-do and Settings keyboard tests pass.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Still present per the review (todos/view.rs keeps its own FOCUS_RING and SEGMENT_TRACK); not touched this round.
+<!-- SECTION:NOTES:END -->

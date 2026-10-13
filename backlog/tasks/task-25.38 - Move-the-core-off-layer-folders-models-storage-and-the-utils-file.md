@@ -4,6 +4,7 @@ title: 'Move the core off layer folders (models/, storage/) and the utils file'
 status: To Do
 assignee: []
 created_date: '2026-10-08 15:38'
+updated_date: '2026-10-12 15:05'
 labels:
   - maintenance
 dependencies: []
@@ -69,3 +70,9 @@ Found by the code review of commit 7a48824 (2026-10-08).
 - [ ] #1 crates/core/src has no models/ or storage/ folder and no utils file; moved types sit beside the module that owns them
 - [ ] #2 Behaviour is unchanged: the same recording gives the same results before and after
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Still present per the review (models/, storage/ and the utils file unchanged); not touched this round.
+<!-- SECTION:NOTES:END -->

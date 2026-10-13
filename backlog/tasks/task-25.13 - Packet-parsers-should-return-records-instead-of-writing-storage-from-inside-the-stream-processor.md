@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:38'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies:
@@ -57,3 +58,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 The stream processor only frames and dispatches; applying a record to the storage happens outside it.
 - [ ] #3 Replaying the same recording before and after gives identical totals, names and boss HP.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Partly present per the review: record readers exist, but the combat parsers still write DataStorage from the stream processor. Not touched this round. Its prerequisite TASK-25.9 is fixed in code and the real-fight replay test (TASK-25.39) now exists as a regression oracle.
+<!-- SECTION:NOTES:END -->

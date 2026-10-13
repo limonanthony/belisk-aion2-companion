@@ -4,6 +4,7 @@ title: The local time zone is read from Windows on every offset query
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:41'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -49,3 +50,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 A time-zone change on the PC is still picked up within a short, stated refresh period.
 - [ ] #3 Existing DST tests for reminders and to-dos pass.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Still present per the services review (clock/local.rs calls GetDynamicTimeZoneInformation on every query). Cheap; not touched.
+<!-- SECTION:NOTES:END -->

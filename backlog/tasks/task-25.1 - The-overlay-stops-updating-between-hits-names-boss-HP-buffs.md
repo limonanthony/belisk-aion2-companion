@@ -4,7 +4,7 @@ title: 'The overlay stops updating between hits (names, boss HP, buffs)'
 status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-09 09:48'
+updated_date: '2026-10-12 15:05'
 labels:
   - bug
 dependencies: []
@@ -63,4 +63,6 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-08: started at the user's request ('You can start 1'). Main's choice of direction, delegated by the user: send a frame whenever what it shows differs from the last frame sent (names, boss HP, deaths, buffs, damage), not only when total damage changes; identical frames are not resent every 200 ms while idle; remove the unused last_total_damage.
+
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Fixed in code, partly. The core sends a frame whenever what it shows differs from the last one (tests for a name and for boss HP arriving while nobody hits). This round also fixed the app side: a snapshot whose current target the game has not described no longer drops the whole meter frame, so the meter keeps updating during a boss fight with adds. Not changed: the first frame is still sent only once total damage is above 0.
 <!-- SECTION:NOTES:END -->

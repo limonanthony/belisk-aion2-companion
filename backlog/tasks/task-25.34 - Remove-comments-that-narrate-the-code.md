@@ -4,7 +4,7 @@ title: Remove comments that narrate the code
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:45'
-updated_date: '2026-10-08 12:48'
+updated_date: '2026-10-12 15:05'
 labels:
   - maintenance
 dependencies: []
@@ -70,3 +70,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 Every comment listed under 'What to keep' is still present.
 - [ ] #3 No code changes other than comments; the workspace builds and the tests pass unchanged.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Still present per the review (numbered // 1. to // 9. comments in calculator.rs); not touched this round. The new overlay and on_top comments are load-bearing Win32 notes.
+<!-- SECTION:NOTES:END -->

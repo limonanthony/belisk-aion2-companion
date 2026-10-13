@@ -4,6 +4,7 @@ title: Should dungeon bosses be released after 120 s without a hit?
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:35'
+updated_date: '2026-10-12 15:05'
 labels:
   - research
 dependencies: []
@@ -55,3 +56,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #1 The user's decision is recorded in this ticket.
 - [ ] #2 If the decision is to skip the quiet release for dungeon bosses: a dungeon boss that takes no damage for more than 120 s stays focused until it dies, and an open-world boss is still released.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Not reviewed by the review of this date (it is app meter focus code); unchanged. Still an open question for the user.
+<!-- SECTION:NOTES:END -->
