@@ -45,6 +45,10 @@ Sample data: every name in these is invented.
     <td valign="top"><img src="docs/images/resources.png" width="370" alt="The Resources window"><br>Resources, read from the game: what is full and about to go to waste.</td>
     <td valign="top"><img src="docs/images/todos.png" width="370" alt="The To-dos window"><br>To-dos for the day and the week, filled in from the game.</td>
   </tr>
+  <tr>
+    <td valign="top"><img src="docs/images/pets.png" width="370" alt="The Pets window listing the collection with level badges, soul counts and two pinned pets"><br>Pets, read from the game: every pet's level and souls toward the next one, with your pinned pets on top.</td>
+    <td valign="top"><img src="docs/images/pet-card.png" width="342" alt="A pet souls card below the meter: a soul gained, a level reached and a pet unlocked"><br>Pick up a soul and a card shows the pet's progress: a level reached, a new pet unlocked.</td>
+  </tr>
 </table>
 
 ## What it is
