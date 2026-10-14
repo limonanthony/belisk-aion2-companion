@@ -655,24 +655,49 @@ Other rules:
 
 - `Application::run` needs no admin rights and no activation; the overlays never
   call `cx.activate`.
-- **Win32 calls that show a window wait for the update to end.** `ShowWindow`
-  makes Windows send `WM_SHOWWINDOW`, and `gpui-pre-windows` draws the window
-  inside that message (`events.rs`, `handle_window_visibility_changed`); the draw
-  updates the window through the `App` (`AsyncApp::update_window`), which fails
-  with "RefCell already borrowed" while an update holds it, and the frame is lost.
-  belisk.log showed that error ~0.5 s after every launch, from the toolbar being
-  shown inside the update that opened it. `overlay::after_update` runs such calls
-  on the foreground executor after the update returns, in the order asked, and
-  `overlay::reveal_after_update` is `reveal` through it. It is used by the meter's
-  and the toolbar's first show and every later one (`sync_meter_window`,
-  Alt+Shift+CapsLock, the tray's Show toolbar and a second launch's
-  `bring_forward`), `secondary::show_again`, and `reveal_and_restack`; `restack`
-  itself reads the overlays on screen and raises them after the shows queued
-  before it, so the order and `SWP_NOACTIVATE` are as before. Hiding is not
-  deferred (`WM_SHOWWINDOW` with 0 only queues GPUI's visibility report). The
-  typing exception's hide and show already ran from a spawned turn. Tested with
-  `win32_calls_asked_inside_an_update_run_in_order_after_it_returns`; only a real
-  launch shows the log without the error.
+- **Win32 calls that make Windows report a show, a move, a resize or a frame
+  change wait for the update to end.** Windows sends those messages
+  synchronously from the call that causes them, and GPUI answers them through
+  the `App`: `ShowWindow` makes it send `WM_SHOWWINDOW`, and `gpui-pre-windows`
+  draws the window inside that message (`events.rs`,
+  `handle_window_visibility_changed`); `SetWindowPos` with a move or a resize
+  (or `SWP_FRAMECHANGED` over a frame that changed the client area) makes it
+  send `WM_MOVE` and `WM_SIZE`, whose callbacks run `Window::bounds_changed`
+  (`window.rs`, `on_moved` / `on_resize`). Each updates the window through
+  `AsyncApp::update_window`, which fails with "RefCell already borrowed" while
+  an update holds the `App`, and the frame or the bounds report (scale factor,
+  viewport size, display, bounds observers) is lost. belisk.log showed the
+  error after every launch, from the toolbar being shown, and from every
+  window being reframed and placed, inside the update that opened it.
+  `overlay::after_update` runs such calls on the foreground executor after the
+  update returns, in the order asked. Deferred: the first show and every later
+  one (`overlay::reveal_after_update`: the meter's and the toolbar's,
+  `sync_meter_window`, Alt+Shift+CapsLock, the tray's Show toolbar and a second
+  launch's `bring_forward`, `secondary::show_again`, `reveal_and_restack`);
+  the frame change of `make_overlay` and of a lock (`set_click_through`); the
+  place of a new window (`overlay::place_after_update`, off screen
+  `off_screen::place_after_update` and `show_after_update`: the meter, the
+  toolbar, every secondary window, Settings and the font probe off screen),
+  whose corner is asked when it runs, so a window anchored to another opened in
+  the same update sees where that one was put, and which a secondary window
+  asks while its view is built, so a place the view asks of itself later
+  (`Stacking::place`, from its first frame on) is queued after it and not
+  undone by it; the fit to the card
+  (`fit_client_size`, the toolbar's `refit`), a card's place (`Stacking::place`)
+  and a drag's moves; and Settings' foreground request. A window is queued
+  frame change, place, show, so it is placed before it is shown, and `restack`
+  reads the overlays on screen and raises them after the shows queued before
+  it, so the order and `SWP_NOACTIVATE` are as before. Stays inside an update:
+  the style bits, the DWM attributes and the click-activation subclass
+  (`make_overlay` sends no move or size message, so a failure still fails the
+  open), `SetLayeredWindowAttributes`, and hiding (`WM_SHOWWINDOW` with 0 only
+  queues GPUI's visibility report); raising or lowering in the z-order
+  (`SWP_NOMOVE | SWP_NOSIZE`) sends no move or size message. The typing
+  exception's calls already ran from a spawned turn. Tested with
+  `win32_calls_asked_inside_an_update_run_in_order_after_it_returns` and
+  `a_window_placed_after_an_update_is_anchored_to_where_the_other_one_asked_in_it_was_put`;
+  the capture log (`--capture --fixtures`) holds no "already borrowed" line,
+  and only a real launch shows belisk.log without one.
 - No drop shadow on overlay cards or menus: over a bright scene the window edge
   clips it into a faint hard-edged rectangle, and the room for it would take
   clicks while unlocked (`HTTRANSPARENT` only passes clicks to windows of the
@@ -1055,8 +1080,38 @@ What's new, to-dos, Resources, the Pets window and the soul tracker card live in
   is open (detail to its right, history below it, PvP to its left; each flips to
   the opposite side when it does not fit, then is pulled inside the work area),
   else under the toolbar (`secondary::Stacking`, `placement::Stack`). Tools do not
-  remember a place of their own and do not follow the meter when it moves, except
-  the reminder card (below).
+  follow the meter when it moves, except the reminder card (below).
+- **Remembered places.** The meter, the toolbar, History, detail, fight report,
+  PvP, to-dos, Resources, Pets and Settings each reopen where the player last
+  left them, in the same run and after a restart; the reminder, soul tracker,
+  first-open prompt and What's new cards stay attached as above. A place is
+  the window's top-left corner in device pixels, saved when a drag of it ends
+  (`overlay::remember_drags`, see "A drag does not redraw the window"; Settings,
+  which has Windows' title bar, saves at `WM_EXITSIZEMOVE` instead:
+  `remember_os_moves`) into `settings.json`'s `windows` section as `meterAt`,
+  `toolbarAt`, `historyAt`, `detailAt`, `reportAt`, `pvpAt`, `todosAt`,
+  `resourcesAt`, `petsAt` and `settingsAt` (`{"x", "y"}`; absent = never dragged,
+  which opens as before; `settings::Spot`, `WindowSettings::remembered`). At open
+  `placement::remembered` ignores a place on no monitor (unplugged, layout
+  changed: the window opens as one never dragged does) and pulls one that sticks
+  out of its monitor's work area back inside (`placement::inside`, the rule
+  `beside` ends with), with the size the window has at open. A window that can
+  grow when it first fits its card (the meter, the tool windows; not the
+  toolbar) is armed at open (`overlay::pull_after_first_fit`): the first
+  `fit_client_size` after that is followed by one more pull inside the work
+  area (`pull_inside`), and a frame that needs no fit disarms it
+  (`first_fit_not_needed`), so a card that grows later, in a fight, never slides
+  the window. The place is asked inside the deferred placement
+  (`place_after_update`), never inside an update. Settings, a normal window,
+  is opened hidden when it has a place (`settings::open_window(.., shown)`),
+  moved there and then shown with `SW_SHOWNORMAL` in one deferred call
+  (`overlay::move_then_show_after_update`), so it never appears centred first;
+  without a place it opens shown and centred as before, and a place on no
+  monitor still shows it, centred. Detail
+  opens beside the meter until first dragged, then where it was left, unless
+  Settings › Overlay › "Detail opens" is "Centred": then it is always centred
+  and its drags are not saved (the stored values stay "beside" and "centred").
+  "Reset settings" clears every place with the rest of `windows`.
 - **Entry points.** The toolbar opens tools. A press on a meter row opens the
   detail window: on the Target board, that player on the board's target (the
   engaged boss, else the one being hit); on the Session board, that player's
@@ -1222,9 +1277,10 @@ only text and caret; the PvP view draws the box around it.
 
 `crates/app/src/reminders/`. A heads-up before the game's recurring timed events
 (Shugo Festival, Dimensional Invasion, Rift portals and others, some on by
-default). A lead of 1, 2, 3 or 5 minutes (default 1), a sound switch and a master
-switch live under `settings.json` → `reminders`; events starting in the same
-minute share one reminder.
+default). A lead of 1, 2, 3 or 5 minutes (default 1), a sound switch, a start
+alert switch (off by default, below) and a master switch live under
+`settings.json` → `reminders` (`leadMinutes`, `sound`, `startAlert`, `enabled`);
+events starting in the same minute share one reminder and one start alert.
 
 - **Data source.** MetaBot's event tables (`metabot.gg/en/aion-2/events`, as
   published for game build 0.0.4387.0), kept as data in `reminders/events.rs`. Its
@@ -1242,6 +1298,19 @@ minute share one reminder.
   to draw and plays Windows' own `Media\chimes.wav` (`PlaySoundW`, asynchronous,
   nothing bundled; the "SystemNotification" sound if the file is missing). Replay,
   capture and probe runs have no schedule and no sound.
+- **Start alert** (2026-10-14, `reminders.startAlert`, option A of the request). A
+  second card of the same kind, `CardKind::StartAlert` in `ShowReminder.kind`,
+  shown when the event starts: same window, placement, 30 s ring, pointer pause,
+  click dismissal, lock rule and chime as the reminder; only the header (`Under
+  way · 21:00`, `reminder-under-way`) and the accessibility label
+  (`reminder-start-label`) differ. `Planner::step` plans both kinds per start: the
+  alert is due at the start and may be shown until 60 s after it, at most once per
+  start (`last_alerted_start_ms`, so a re-plan inside the window does not show it
+  again); a wake later than that drops it and `take_missed` reports it, written as
+  a `dropped` line saying "start alert". A start already inside its 60 s when the
+  plan is made (launch, switch turned on) shows at once. A start's reminder is
+  shown before its alert; the master switch off means neither. The test card stays
+  a reminder. The decision log's `card`, `dropped` and `next` lines name the kind.
 - **The card** (`reminders/view.rs`, approved `reminders.html`) is its own overlay
   window (`WindowKind::Reminder`): frameless, topmost, tool window,
   `WS_EX_NOACTIVATE`, shown with `SW_SHOWNOACTIVATE`, so it never takes focus.
@@ -1375,22 +1444,52 @@ it (approved `pets.html`, values in tokens.md, "Pets").
   only at login and zone entry, so a session begun in game has no name for the
   binder: its soul gains waited and were dropped (the log of 2026-10-10 19:25
   shows "named from the remembered characters" and no `33 36`, and its 4 `0D 90`
-  never reached the app; the session of 18:34 had a `33 36` at once). When the
-  meter names the player from the remembered characters (`resolve_own_name`),
-  the ticket and pet binders take that character only when exactly one remembered
-  character has the actor's class (two of one class, or one name on two servers,
-  leave the messages waiting: the meter's pick of the most recent would bind them
-  to a possibly wrong name and server) (`CharacterBinder::assume_character`); the game's own name, when it arrives,
-  replaces it, and one the game already gave is never replaced. Every assumption is
-  written to belisk.log at INFO (`own character assumed from the remembered ones:
-  <name> (server <id>) is the only remembered <CLASS>; ...`, or `own character not
-  assumed for tickets and pets: N remembered characters are a <CLASS>; ...`), and
-  when the game then names the character (`33 36`) the log says whether it was the
-  assumed one: INFO `the game named <name> (server <id>), as assumed; N ticket and
-  M pet changes were bound to it meanwhile`, or WARN `the game named <name>
+  never reached the app; the session of 18:34 had a `33 36` at once). The same
+  happened on 2026-10-14 (17:05, Belisk started in game): the class, shown by a
+  skill hit, was known only at 17:12:58, and the 2 soul gains and 14 counter
+  gains of 17:08:39 to 17:12:04 had waited 15 s and been dropped, though all three
+  remembered characters were on server 1302.
+  **Pets bind by server first.** A pet collection belongs to a server, not to a
+  character (`Pets::apply` keys it by `report.character.server_id`), so when the
+  game has not named the player and every remembered character (`knownCharacters`)
+  is on one server, `DataStorage::assume_pet_server` binds the pet changes to that
+  server at once (`CharacterBinder::assume_server`; the report carries the most
+  recent remembered character as a stand-in, only its server counts). It runs when
+  the remembered characters are handed to the core (`set_known_characters`) and
+  again when a replay resets the binders, so a meter opened mid-game shows soul
+  gains, unlocks and counter gains live, without waiting for a class. The
+  collection snapshot is excluded: it only comes with a login and waits for the
+  `33 36` as before. With remembered characters on several servers, or none, the
+  rule below applies unchanged. Tickets never use it: their counts are per
+  character. The card's counts start from the stored collection (`pets.json`,
+  the last login) until a snapshot arrives; none is invented. If the assumption
+  is wrong (a character on a server not remembered yet), its souls and unlocks are
+  written into the assumed server's `pets.json` until the next login snapshot on
+  that server repairs it; the WARN line below says how many pet changes were bound
+  meanwhile.
+  **Alt of the same class.** When the meter names the player from the remembered
+  characters (`resolve_own_name`), the ticket and pet binders take that character
+  only when exactly one remembered character has the actor's class (two of one
+  class, or one name on two servers, leave the messages waiting: the meter's pick
+  of the most recent would bind them to a possibly wrong name and server)
+  (`CharacterBinder::assume_character`); pets already bound by server keep that
+  binding. The game's own name, when it arrives, replaces either assumption, and
+  one the game already gave is never replaced. Every assumption is written to
+  belisk.log at INFO: `pets bound to server <id> from the remembered characters:
+  all N are on it; ...`, `own character assumed from the remembered ones: <name>
+  (server <id>) is the only remembered <CLASS>; ticket and pet changes are bound
+  to it ...` ("ticket", "pet" or "ticket and pet", whichever took), or `own
+  character not assumed for tickets and pets: N remembered characters are a
+  <CLASS>; ...`. When the game then names the character (`33 36`) the log says
+  whether it held: INFO `the game named <name> (server <id>), as assumed; N ticket
+  and M pet changes were bound to it meanwhile`, or WARN `the game named <name>
   (server <id>, <CLASS>), not the assumed <name> (server <id>, <CLASS>); N ticket
-  and M pet changes were bound to the wrong character meanwhile`. **What the core
-  cannot tell.** An alt of the same class that is not remembered is taken for the
+  and M pet changes were bound to the wrong character meanwhile`; for the server
+  assumption INFO `the game named <name> (server <id>), the server assumed for
+  pets; N pet changes were bound to it meanwhile`, or WARN `the game named <name>
+  (server <id>, <CLASS>), not on the server <id> assumed for pets; N pet changes
+  were bound to the wrong server meanwhile`. **What the core cannot tell.** An
+  alt of the same class that is not remembered is taken for the
   one remembered character of that class until the next `33 36`; no signal in the
   traffic before it tells them apart (checked in belisk.log and its rolled file,
   about one day: 1,168 `56 36` lines and 572 `33 36` lines of one player on one
@@ -1404,9 +1503,11 @@ it (approved `pets.html`, values in tokens.md, "Pets").
   every server. A remembered character's server is therefore not compared with
   anything. Binding by combat power would need `KnownCharacter` to carry it (the
   app's `settings.json`), and would still reject a character that gears up between
-  runs. Gains from
-  before that moment, and any session with no remembered character of the
-  class, still wait for a `33 36`.
+  runs. Tickets of a session with no remembered character of the class still wait
+  for a `33 36`, as do pet changes when the remembered characters are on several
+  servers or none and no single class matches: gains from before that moment are
+  dropped once 15 s old. A player with characters on two servers, started
+  mid-game, can still lose pet changes made before the class shows.
 - **A maxed pet's souls.** Its loot gives no `0D 90`, only a `11 90` of +1 right
   after the pickup (`1E 56` entity 37308, mob 2100453 → kind 1; entity 49184, mob
   2100454 → kind 4 in session-1791634499923). `PetContent::CounterGains` carries
@@ -1524,7 +1625,14 @@ it (approved `pets.html`, values in tokens.md, "Pets").
   one `WM_MOVE` with the final position from the message loop, outside any GPUI
   handler. Pointer moves faster than the window can follow replace the pending
   target, so at most one `SetWindowPos` waits at a time; the target names its
-  window and is dropped if that window is no longer the one dragged.
+  window and is dropped if that window is no longer the one dragged. The end is
+  also where the window's place is saved ("Remembered places"): after the move
+  and the `WM_MOVE`, `report_left_at` reads the window's rectangle and tells the
+  listener `remember_drags` registered for it. Nothing hangs on a hit-tested
+  handler: the window lags the pointer, so the release often lands outside it,
+  where GPUI never runs the window's own `on_mouse_up` (that was why the
+  toolbar did not reopen where it was left; a press with no move ends without a
+  report).
 - **The scroll thumb** is the shared `chrome::scrollbar` (Secondary windows).
 - **The menu choice** (Show and Order) is kept in `pets.json` as `list`
   (`ListChoice`, `Pets::list_choice` / `set_list_choice`), the same on every
@@ -1618,8 +1726,9 @@ click-through.
   icon is below.
 - Deviations from the approved pages: the bell dropdown's next reminders are
   plain rows; folded, the warning's tooltip hangs from its left edge; the toolbar
-  remembers its place and "Open the meter at launch", not which tools were open
-  (so tools do not reopen after a restart).
+  remembers its place (like every window, see "Remembered places") and "Open the
+  meter at launch", not which tools were open (so tools do not reopen after a
+  restart).
 
 ## Fight report window
 

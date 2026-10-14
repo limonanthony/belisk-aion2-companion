@@ -342,6 +342,16 @@ async fn reminders_page(page: &Page, dir: &Path, cx: &mut AsyncApp) -> Result<()
     shoot_window(WindowKind::Settings, dir, "settings-22-reminders-select-open", cx).await?;
     page.key(VK_ESCAPE, cx).await;
 
+    page.tab_to("reminder-start-alert", cx).await?;
+    page.key(VK_SPACE, cx).await;
+    let start_alert = cx.update(|cx| settings::global(cx).read(cx).get().reminders.start_alert);
+    println!("reminders: Space on Start alert: on {start_alert}");
+    if !start_alert {
+        return Err("Space on Start alert did not turn it on".to_string());
+    }
+    page.blur(cx).await;
+    shoot_window(WindowKind::Settings, dir, "settings-22b-reminders-start-alert", cx).await?;
+
     page.tab_to("test-reminder", cx).await?;
     let foreground_before = capture_reminders::foreground();
     page.key(VK_RETURN, cx).await;

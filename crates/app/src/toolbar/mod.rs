@@ -141,8 +141,7 @@ pub fn install(
     if meter_open {
         peek_meter(cx);
     }
-    let saved = settings::global(cx).read(cx).get().windows.toolbar_at;
-    let (toolbar, hwnd) = window::open(&hub, placement, saved, cx)?;
+    let (toolbar, hwnd) = window::open(&hub, placement, cx)?;
     let view = toolbar.entity(cx).map_err(|error| format!("cannot reach the toolbar's view: {error:#}"))?;
     cx.subscribe(&view, |_, request: &ToolbarRequest, cx| handle(*request, cx)).detach();
     hub.update(cx, |hub, _| hub.toolbar = Some((toolbar, hwnd)));
@@ -251,9 +250,6 @@ pub fn handle(request: ToolbarRequest, cx: &mut App) {
             settings::global(cx).update(cx, |settings, cx| settings.update(cx, |all| all.reminders.enabled = !paused));
         }
         ToolbarRequest::ReminderSettings => secondary::open_settings_at(&model, Section::Reminders, cx),
-        ToolbarRequest::Moved(at) => {
-            settings::global(cx).update(cx, |settings, cx| settings.update(cx, |all| all.windows.toolbar_at = Some(at)));
-        }
         ToolbarRequest::Update(UpdateClick::StartDownload) => updates::global(cx).read(cx).start_download(),
         ToolbarRequest::Update(UpdateClick::ShowDetails) => secondary::open_settings_at(&model, Section::About, cx),
         ToolbarRequest::Update(UpdateClick::Restart) => updates::global(cx).update(cx, |updates, cx| updates.restart(cx)),

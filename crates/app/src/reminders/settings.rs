@@ -15,6 +15,8 @@ pub struct ReminderSettings {
     /// [`LEAD_MINUTES_OPTIONS`].
     pub lead_minutes: u8,
     pub sound: bool,
+    /// A second card the moment an event starts, after its reminder.
+    pub start_alert: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -33,7 +35,7 @@ pub struct ReminderEvents {
 
 impl Default for ReminderSettings {
     fn default() -> Self {
-        Self { enabled: true, events: ReminderEvents::default(), lead_minutes: 1, sound: true }
+        Self { enabled: true, events: ReminderEvents::default(), lead_minutes: 1, sound: true, start_alert: false }
     }
 }
 
@@ -157,5 +159,17 @@ mod tests {
             ReminderSettings { lead_minutes: minutes, ..ReminderSettings::default() }.clamped().lead_minutes
         };
         assert_eq!([0, 1, 2, 3, 4, 5, 6, 200].map(lead), [1, 1, 2, 3, 3, 5, 5, 5]);
+    }
+
+    #[test]
+    fn the_start_alert_is_off_for_a_file_without_the_key_and_the_key_round_trips() {
+        let old: ReminderSettings = serde_json::from_str(r#"{"enabled":true,"leadMinutes":3}"#).unwrap();
+        assert!(!old.start_alert);
+        assert_eq!(old.lead_minutes, 3);
+
+        let on = ReminderSettings { start_alert: true, ..ReminderSettings::default() };
+        let json = serde_json::to_string(&on).unwrap();
+        assert!(json.contains(r#""startAlert":true"#), "{json}");
+        assert!(serde_json::from_str::<ReminderSettings>(&json).unwrap().start_alert);
     }
 }

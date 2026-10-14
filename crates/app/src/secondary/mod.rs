@@ -42,7 +42,7 @@ use gpui::{
 };
 use meter_core::report::fight_report::FightReport;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible};
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible, SW_SHOWNORMAL};
 
 use crate::changelog::WhatsNew;
 use crate::detail::{DetailModel, DetailSource, DetailView};
@@ -53,7 +53,7 @@ use crate::pets::{self, CardRequest, PetCardView, PetsView, ShowTestCard};
 use crate::pvp::{PvpModel, PvpView};
 use crate::reminders::{self, MeterLink, ReminderView, ShowReminder};
 use crate::report::{build_off_thread, ReportModel, ReportRequest, ReportView};
-use crate::settings::{self, DetailPlacement, Page, RuntimeModel, Section, SettingsView};
+use crate::settings::{self, DetailPlacement, Page, RuntimeModel, ScreenPoint, Section, SettingsView, Spot};
 use crate::todos::{Contents, TodoView};
 use crate::toolbar::{self, PromptView};
 use crate::whats_new::{self, OpenChangelog, WhatsNewView};
@@ -429,7 +429,7 @@ fn open_todo_view(kind: WindowKind, contents: Contents, side: Side, meter_model:
 pub fn open_detail(meter_model: &Entity<MeterModel>, source: DetailSource, cx: &mut App) {
     let registry = registry(cx);
     let anchor = match settings::global(cx).read(cx).get().windows.detail_opens {
-        DetailPlacement::Beside => Anchor::Beside(Side::Right),
+        DetailPlacement::WhereLeft => Anchor::Beside(Side::Right),
         DetailPlacement::Centred => Anchor::Centre,
     };
     let place = tool_anchor(anchor, cx);
@@ -479,12 +479,18 @@ pub fn open_changelog(meter_model: &Entity<MeterModel>, cx: &mut App) {
 fn open_settings_now(meter_model: &Entity<MeterModel>, page: Option<Page>, cx: &mut App) {
     let registry = registry(cx);
     let placement = cx.global::<Secondary>().placement;
+    let saved = match placement {
+        Placement::Screen => settings::global(cx).read(cx).get().windows.remembered(Spot::Settings),
+        #[cfg(feature = "probes")]
+        Placement::OffScreen => None,
+    };
     let opened = open_once(&registry, WindowKind::Settings, || {
         let runtime = cx.new(|cx| RuntimeModel::new(meter_model.clone(), cx));
         let meter_window = meter::window(cx);
         let view_runtime = runtime.clone();
         let handle = settings::open_window(
             placement,
+            saved.is_none(),
             move |window, cx| cx.new(|cx| SettingsView::new(view_runtime, Some(meter_window), window, cx)),
             cx,
         )?;
@@ -501,6 +507,16 @@ fn open_settings_now(meter_model: &Entity<MeterModel>, page: Option<Page>, cx: &
         })
         .detach();
         let hwnd = handle.update(cx, |_, window, _| overlay::hwnd(window).ok()).ok().flatten();
+        if placement == Placement::Screen {
+            match hwnd {
+                Some(hwnd) => remember_settings_place(hwnd, saved, cx),
+                None if saved.is_some() => {
+                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                    return Err("cannot place the Settings window where it was left: its handle is unreadable".to_string());
+                }
+                None => {}
+            }
+        }
         Ok(Open { window: handle.into(), hwnd, model: Some(runtime.into()) })
     });
     if let (Some(page), Ok(_)) = (page, &opened) {
@@ -510,6 +526,20 @@ fn open_settings_now(meter_model: &Entity<MeterModel>, page: Option<Page>, cx: &
         }
     }
     finish(WindowKind::Settings, opened, cx);
+}
+
+/// Settings has Windows' own title bar, so the player's moves are Windows': the
+/// place is saved when a move ends. A window opened hidden for a place saved
+/// is moved there and then shown, once the update that opened it has returned,
+/// so it never appears in the middle first; shown as GPUI shows it
+/// (`SW_SHOWNORMAL`), and brought forward by [`finish`] after.
+fn remember_settings_place(hwnd: HWND, saved: Option<ScreenPoint>, cx: &App) {
+    if let Err(error) = overlay::remember_os_moves(cx, hwnd, Spot::Settings) {
+        crate::app_log::warn(error);
+    }
+    if let Some(saved) = saved {
+        overlay::move_then_show_after_update(cx, hwnd, SW_SHOWNORMAL, move |size| reopen_corner(saved, size));
+    }
 }
 
 /// Settings is in front of everything, the game included, while it is the
@@ -620,7 +650,7 @@ pub fn show_reminder(request: &ShowReminder, cx: &mut App) {
 }
 
 fn log_card(request: &ShowReminder, outcome: &str, cx: &App) {
-    reminders::global(cx).read(cx).log_card(|| format!("{:?} at {}: {outcome}", request.events, request.starts_at));
+    reminders::global(cx).read(cx).log_card(|| format!("{} {:?} at {}: {outcome}", request.kind.name(), request.events, request.starts_at));
 }
 
 /// Shows the soul tracker card, or puts the pets on the one up and brings
@@ -834,7 +864,7 @@ fn finish(kind: WindowKind, opened: Result<Opened, String>, cx: &mut App) {
         Forward::OnScreen => bring_up(kind, cx),
         Forward::Foreground => {
             if let Some(hwnd) = hwnd_of(kind, cx) {
-                settings::bring_forward(hwnd);
+                overlay::after_update(cx, move || settings::bring_forward(hwnd));
             }
         }
         #[cfg(feature = "probes")]
@@ -881,10 +911,42 @@ fn reveal_and_restack(kind: WindowKind, cx: &mut App) {
     toolbar::restack(cx);
 }
 
+/// The remembered spot a window of `kind` has: the overlay tools and Settings,
+/// not the cards, which stay attached to the meter or the toolbar.
+fn spot_of(kind: WindowKind) -> Option<Spot> {
+    match kind {
+        WindowKind::History => Some(Spot::History),
+        WindowKind::Detail => Some(Spot::Detail),
+        WindowKind::Report => Some(Spot::Report),
+        WindowKind::Pvp => Some(Spot::Pvp),
+        WindowKind::Todos => Some(Spot::Todos),
+        WindowKind::Resources => Some(Spot::Resources),
+        WindowKind::Pets => Some(Spot::Pets),
+        WindowKind::Settings => Some(Spot::Settings),
+        WindowKind::Prompt | WindowKind::Reminder | WindowKind::PetCard | WindowKind::WhatsNew => None,
+    }
+}
+
+/// Where a window of `size` (device pixels) left at `at` reopens, or none
+/// when `at` is on no monitor; see [`placement::remembered`].
+pub(crate) fn reopen_corner(at: ScreenPoint, size: (i32, i32)) -> Option<(i32, i32)> {
+    placement::remembered((at.x, at.y), size, monitor::work_area_at)
+}
+
+/// Where a window already open would sit pulled inside the work area of its
+/// monitor, or none when it already is inside.
+pub(crate) fn corner_inside_work_area(hwnd: HWND) -> Option<(i32, i32)> {
+    let (window, work) = monitor::window_and_work_area(hwnd)?;
+    let at = (window.left, window.top);
+    let corner = placement::inside(at, (window.right - window.left, window.bottom - window.top), work);
+    (corner != at).then_some(corner)
+}
+
 /// Opens a transparent pop-up like the meter's, hidden, places it against
 /// the window `against` as `anchor` says, and forgets it in the registry
 /// when its view is released (however the window ends). It comes on screen
-/// once registered ([`bring_up`]).
+/// once registered ([`bring_up`]). The first place is asked while the view is
+/// built, ahead of any place the view asks of itself ([`Stacking::place`]).
 fn create_window<V: Render + 'static>(
     kind: WindowKind,
     (width, height): (f32, f32),
@@ -897,28 +959,26 @@ fn create_window<V: Render + 'static>(
         let secondary = cx.global::<Secondary>();
         (secondary.placement, secondary.registry.clone())
     };
+    let spot = spot_of(kind);
+    let saved = spot.and_then(|spot| settings::global(cx).read(cx).get().windows.remembered(spot));
     let handle = cx
-        .open_window(overlay::popup_options(width, height), build)
+        .open_window(overlay::popup_options(width, height), move |window, cx| {
+            if let Ok(hwnd) = overlay::hwnd(window) {
+                place_first(hwnd, (width, height), window.scale_factor(), (against, anchor), saved, placement, cx);
+            }
+            build(window, cx)
+        })
         .map_err(|error| format!("cannot open the window: {error:#}"))?;
     let set_up = handle
         .entity(cx)
         .map_err(|error| format!("cannot reach the window's view: {error:#}"))
         .and_then(|view| {
             handle
-                .update(cx, |_, window, _| -> Result<HWND, String> {
+                .update(cx, |_, window, cx| -> Result<HWND, String> {
                     let hwnd = overlay::hwnd(window)?;
                     overlay::make_overlay(hwnd)?;
-                    let scale = window.scale_factor();
-                    let (device_width, device_height) = (width * scale, height * scale);
-                    match placement {
-                        Placement::Screen => {
-                            let size = (device_width.ceil() as i32, device_height.ceil() as i32);
-                            let (x, y) = monitor::window_and_work_area(against)
-                                .map_or((64, 64), |(against, work)| anchor.corner(against, size, work, scale));
-                            overlay::place(hwnd, x, y, device_width, device_height)?;
-                        }
-                        #[cfg(feature = "probes")]
-                        Placement::OffScreen => overlay::off_screen::place(hwnd, device_width, device_height)?,
+                    if let Some(spot) = spot {
+                        overlay::remember_drags(cx, hwnd, spot);
                     }
                     Ok(hwnd)
                 })
@@ -943,9 +1003,58 @@ fn create_window<V: Render + 'static>(
     Ok((handle.into(), hwnd))
 }
 
+/// Asks for a new window's first place: against `against` as `anchor` says,
+/// read once the update that opens the window has returned, so a window that
+/// was opened or moved in it is where it ends up.
+fn place_first(
+    hwnd: HWND,
+    (width, height): (f32, f32),
+    scale: f32,
+    (against, anchor): (HWND, Anchor),
+    saved: Option<ScreenPoint>,
+    placement: Placement,
+    cx: &App,
+) {
+    let (device_width, device_height) = (width * scale, height * scale);
+    match placement {
+        Placement::Screen => {
+            let size = (device_width.ceil() as i32, device_height.ceil() as i32);
+            overlay::place_after_update(cx, hwnd, device_width, device_height, move || {
+                let corner = saved.and_then(|at| reopen_corner(at, size)).inspect(|_| overlay::pull_after_first_fit(hwnd));
+                corner.unwrap_or_else(|| {
+                    monitor::window_and_work_area(against)
+                        .map_or((64, 64), |(against, work)| anchor.corner(against, size, work, scale))
+                })
+            });
+        }
+        #[cfg(feature = "probes")]
+        Placement::OffScreen => overlay::off_screen::place_after_update(cx, hwnd, device_width, device_height),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_tool_and_settings_remember_a_spot_and_the_cards_stay_attached() {
+        let tools = [
+            (WindowKind::History, Spot::History),
+            (WindowKind::Detail, Spot::Detail),
+            (WindowKind::Report, Spot::Report),
+            (WindowKind::Pvp, Spot::Pvp),
+            (WindowKind::Todos, Spot::Todos),
+            (WindowKind::Resources, Spot::Resources),
+            (WindowKind::Pets, Spot::Pets),
+            (WindowKind::Settings, Spot::Settings),
+        ];
+        for (kind, spot) in tools {
+            assert_eq!(spot_of(kind), Some(spot), "{kind:?}");
+        }
+        for card in [WindowKind::Prompt, WindowKind::Reminder, WindowKind::PetCard, WindowKind::WhatsNew] {
+            assert_eq!(spot_of(card), None, "{card:?}");
+        }
+    }
 
     #[test]
     fn showing_everything_again_shows_only_the_windows_still_open() {
@@ -1005,6 +1114,7 @@ mod tests {
             events: vec![reminders::EventId::ShugoFestival],
             start_ms: crate::clock::now_ms() + 60_000,
             starts_at: crate::clock::ClockTime { hour, minute: 30 },
+            kind: reminders::CardKind::Reminder,
             is_test: false,
         }
     }
@@ -1125,6 +1235,7 @@ mod tests {
                 events: vec![reminders::EventId::ShugoFestival],
                 start_ms: crate::clock::now_ms() + 60_000,
                 starts_at: crate::clock::ClockTime { hour: 22, minute: 30 },
+                kind: reminders::CardKind::Reminder,
                 is_test: false,
             };
             open_once(&registry, WindowKind::Reminder, || {

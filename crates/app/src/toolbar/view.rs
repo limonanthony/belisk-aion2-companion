@@ -32,7 +32,7 @@ use crate::overlay::WindowDrag;
 use crate::reminders::{self, ReminderSettings};
 use crate::secondary::chrome::{self, Look, Scale, FAINT, GAUGE_EMPTY, GOOD, HOT, MUTED, SOFT, TEXT, WARN};
 use crate::secondary::{self, WindowKind};
-use crate::settings::{self, ScreenPoint};
+use crate::settings;
 use crate::todos;
 use crate::update;
 
@@ -161,8 +161,6 @@ pub enum ToolbarRequest {
     OpenResources,
     PauseReminders(bool),
     ReminderSettings,
-    /// The toolbar was dragged here: its top-left corner, device pixels.
-    Moved(ScreenPoint),
     Update(UpdateClick),
     Quit,
 }
@@ -231,8 +229,6 @@ pub struct ToolbarView {
     /// The pointer is on the toolbar's window, its dropdown included.
     pointer_over: bool,
     drag: WindowDrag,
-    /// A press on the grip or the bar's empty space started a drag.
-    dragging: bool,
     /// Dev captures cannot put the toolbar low on a real screen, so they say
     /// where dropdowns and tooltips open.
     #[cfg(any(test, feature = "probes"))]
@@ -291,7 +287,6 @@ impl ToolbarView {
             bar_bounds: Rc::default(),
             pointer_over: false,
             drag: WindowDrag::default(),
-            dragging: false,
             #[cfg(any(test, feature = "probes"))]
             forced_up: None,
             #[cfg(any(test, feature = "probes"))]
@@ -540,22 +535,6 @@ impl ToolbarView {
         }
         cx.stop_propagation();
         cx.notify();
-    }
-
-    fn end_drag(&mut self, window: &Window, cx: &mut Context<Self>) {
-        if !std::mem::take(&mut self.dragging) {
-            return;
-        }
-        // The last move is placed after the frame it came in: read the
-        // window's corner once it has been.
-        let window_handle = window.window_handle();
-        cx.spawn(async move |this, cx| {
-            let at = cx.update_window(window_handle, |_, window, _| window::position(window)).ok().flatten();
-            if let Some(at) = at {
-                let _ = this.update(cx, |_, cx| cx.emit(ToolbarRequest::Moved(at)));
-            }
-        })
-        .detach();
     }
 
     // --- Sizes the window must make room for ---
@@ -884,10 +863,7 @@ impl ToolbarView {
             .role(Role::Toolbar)
             .aria_label(fl!("toolbar-label"))
             .children(children.into_iter().map(|(_, child)| child));
-        let view = cx.entity().downgrade();
-        self.drag.handle_around_controls(bar, move |_, cx| {
-            let _ = view.update(cx, |this, _| this.dragging = true);
-        })
+        self.drag.handle_around_controls(bar)
     }
 
     fn slot_bounds(&self, slot: Slot) -> Option<Bounds<Pixels>> {
@@ -1229,7 +1205,6 @@ impl Render for ToolbarView {
             .id("toolbar-root")
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key))
-            .on_mouse_up(MouseButton::Left, cx.listener(|this, _, window, cx| this.end_drag(window, cx)))
             .child(bar)
             .children(scrim)
             .children(hanging)

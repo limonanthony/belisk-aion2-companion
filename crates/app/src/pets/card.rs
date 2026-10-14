@@ -273,7 +273,7 @@ impl PetCardView {
 
     fn set_locked(&mut self, locked: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.meter.is_some() {
-            if let Err(error) = overlay::set_click_through(window, locked) {
+            if let Err(error) = overlay::set_click_through(window, cx, locked) {
                 crate::app_log::warn(format!("cannot {} the soul tracker card: {error}", if locked { "lock" } else { "unlock" }));
                 return;
             }

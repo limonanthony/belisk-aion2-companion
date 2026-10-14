@@ -3,6 +3,7 @@
 //! exactly as large as the card it shows.
 
 use std::cell::{Cell, RefCell};
+use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::fmt;
 use std::rc::Rc;
@@ -25,23 +26,25 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetWindow, GetWindowLongPtrW, GetWindowRect, IsWindowVisible, PostMessageW, SendMessageW,
+    GetClientRect, GetWindow, GetWindowLongPtrW, GetWindowRect, IsIconic, IsWindowVisible, PostMessageW, SendMessageW,
     SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE,
     GWL_STYLE, GW_HWNDNEXT, HWND_NOTOPMOST, HWND_TOPMOST,
     LWA_ALPHA, MA_NOACTIVATE, SPI_GETCLIENTAREAANIMATION, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    WINDOW_STYLE, WM_ACTIVATEAPP, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_KILLFOCUS, WM_MOUSEACTIVATE, WM_MOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SHOW_WINDOW_CMD, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    WINDOW_STYLE, WM_ACTIVATEAPP, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_EXITSIZEMOVE, WM_KILLFOCUS, WM_MOUSEACTIVATE, WM_MOVE,
     WM_NCDESTROY, WM_SHOWWINDOW, WS_CAPTION, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT, WS_MAXIMIZEBOX,
     WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use crate::meter::{MeterModel, MeterView};
+use crate::settings::{self, ScreenPoint, Spot};
 
 /// The first frame fits the window to the card; this only has to be close.
 const INITIAL_WIDTH: f32 = 310.0;
 const INITIAL_HEIGHT: f32 = 280.0;
 const OVERLAY_MARGIN: f32 = 64.0;
 const NO_CLICK_ACTIVATION_SUBCLASS: usize = 1;
+const OS_MOVE_SUBCLASS: usize = 2;
 
 /// Posted to a window whose drag ended, so its last move and the report of
 /// its place to GPUI happen from the message loop, outside any GPUI handler.
@@ -51,6 +54,10 @@ const FINISH_DRAG: u32 = WM_APP + 0x100;
 thread_local! {
     /// Windows run their messages on the UI thread, as GPUI does.
     static DRAGS: RefCell<Drags> = RefCell::new(Drags::default());
+    /// What to tell of a window's place once the player leaves it there.
+    static LEFT_LISTENERS: RefCell<HashMap<isize, Rc<dyn Fn(ScreenPoint)>>> = RefCell::new(HashMap::new());
+    /// The windows to pull inside the work area after their first fit.
+    static FIRST_FIT: RefCell<HashSet<isize>> = RefCell::new(HashSet::new());
 }
 
 /// The overlay window a drag is moving, and the move it still has to make.
@@ -170,10 +177,12 @@ pub fn popup_options(width: f32, height: f32) -> WindowOptions {
 }
 
 /// Strips the frame and makes the window non-activating: clicking it never
-/// takes focus from the game.
+/// takes focus from the game. The style bits and the subclass send Windows'
+/// move and size messages nowhere, so a failure here still fails the open;
+/// [`place_after_update`] makes Windows apply them.
 pub fn make_overlay(hwnd: HWND) -> Result<(), String> {
     remove_frame(hwnd);
-    update_ex_style(hwnd, |style| style | WS_EX_NOACTIVATE.0);
+    set_ex_style(hwnd, |style| style | WS_EX_NOACTIVATE.0);
     unsafe { SetWindowSubclass(hwnd, Some(refuse_click_activation), NO_CLICK_ACTIVATION_SUBCLASS, 0) }
         .as_bool()
         .then_some(())
@@ -207,6 +216,8 @@ unsafe extern "system" fn refuse_click_activation(
         }
         WM_NCDESTROY => unsafe {
             DRAGS.with_borrow_mut(|drags| drags.end(hwnd.0 as isize));
+            LEFT_LISTENERS.with_borrow_mut(|listeners| listeners.remove(&(hwnd.0 as isize)));
+            take_first_fit(hwnd);
             let _ = RemoveWindowSubclass(hwnd, Some(refuse_click_activation), subclass);
             DefSubclassProc(hwnd, message, wparam, lparam)
         },
@@ -260,6 +271,118 @@ fn finish_drag(hwnd: HWND, wparam: WPARAM, lparam: LPARAM) {
             let _ = SendMessageW(hwnd, WM_MOVE, Some(WPARAM(0)), Some(LPARAM(pack(origin.x, origin.y))));
         }
     }
+    report_left_at(hwnd);
+}
+
+/// Saves `spot` as the place of the overlay window `hwnd` each time a drag of
+/// it ends: once the last move is made, so the place is the one the window
+/// ended up at, wherever the pointer was released.
+pub fn remember_drags(cx: &App, hwnd: HWND, spot: Spot) {
+    listen_for_left(cx, hwnd, spot);
+}
+
+/// [`remember_drags`] for a window with its own title bar, whose moves Windows
+/// runs: its place is saved when the move ends.
+pub fn remember_os_moves(cx: &App, hwnd: HWND, spot: Spot) -> Result<(), String> {
+    listen_for_left(cx, hwnd, spot);
+    unsafe { SetWindowSubclass(hwnd, Some(report_os_move), OS_MOVE_SUBCLASS, 0) }
+        .as_bool()
+        .then_some(())
+        .ok_or_else(|| "cannot remember where the window is left: SetWindowSubclass failed".to_string())
+}
+
+fn listen_for_left(cx: &App, hwnd: HWND, spot: Spot) {
+    let outside = cx.to_async();
+    let listener = move |at: ScreenPoint| {
+        outside.spawn(async move |cx| cx.update(|cx| settings::leave_window_at(spot, at, cx))).detach();
+    };
+    LEFT_LISTENERS.with_borrow_mut(|listeners| listeners.insert(hwnd.0 as isize, Rc::new(listener)));
+}
+
+unsafe extern "system" fn report_os_move(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    subclass: usize,
+    _: usize,
+) -> LRESULT {
+    match message {
+        WM_EXITSIZEMOVE => report_left_at(hwnd),
+        WM_NCDESTROY => unsafe {
+            LEFT_LISTENERS.with_borrow_mut(|listeners| listeners.remove(&(hwnd.0 as isize)));
+            let _ = RemoveWindowSubclass(hwnd, Some(report_os_move), subclass);
+        },
+        _ => {}
+    }
+    unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
+}
+
+/// Tells the window's listener where the window is, unless it is minimized.
+fn report_left_at(hwnd: HWND) {
+    let listener = LEFT_LISTENERS.with_borrow(|listeners| listeners.get(&(hwnd.0 as isize)).cloned());
+    let Some(listener) = listener else {
+        return;
+    };
+    let mut rect = RECT::default();
+    if unsafe { IsIconic(hwnd) }.as_bool() || unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
+        return;
+    }
+    listener(ScreenPoint { x: rect.left, y: rect.top });
+}
+
+/// Moves the window to the corner `corner` gives for the window's size in
+/// device pixels, if it gives one, then shows it as `show` says, in one go
+/// once the update that asked has returned: a window opened hidden is never
+/// seen at the place it was created at.
+pub fn move_then_show_after_update(
+    cx: &App,
+    hwnd: HWND,
+    show: SHOW_WINDOW_CMD,
+    corner: impl FnOnce((i32, i32)) -> Option<(i32, i32)> + 'static,
+) {
+    after_update(cx, move || {
+        let mut rect = RECT::default();
+        if unsafe { GetWindowRect(hwnd, &mut rect) }.is_ok() {
+            if let Some((x, y)) = corner((rect.right - rect.left, rect.bottom - rect.top)) {
+                if let Err(error) = unsafe { SetWindowPos(hwnd, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) } {
+                    crate::app_log::warn(format!("cannot move the window: {error}"));
+                }
+            }
+        }
+        unsafe {
+            let _ = ShowWindow(hwnd, show);
+        }
+    });
+}
+
+/// Windows opened at a place the player left are pulled inside the work area
+/// once more after their first fit to the card, which can have grown them
+/// past the edge ([`fit_client_size`]); a window that is not armed is never
+/// moved by a fit, so a card growing during a fight never slides the meter.
+pub(crate) fn pull_after_first_fit(hwnd: HWND) {
+    FIRST_FIT.with_borrow_mut(|armed| armed.insert(hwnd.0 as isize));
+}
+
+fn take_first_fit(hwnd: HWND) -> bool {
+    FIRST_FIT.with_borrow_mut(|armed| armed.remove(&(hwnd.0 as isize)))
+}
+
+/// A frame needed no fit: the window kept the size it was placed with, so
+/// nothing is left to pull.
+pub fn first_fit_not_needed(window: &Window) {
+    if let Ok(hwnd) = hwnd(window) {
+        take_first_fit(hwnd);
+    }
+}
+
+fn pull_inside(hwnd: HWND) {
+    let Some((x, y)) = crate::secondary::corner_inside_work_area(hwnd) else {
+        return;
+    };
+    if let Err(error) = unsafe { SetWindowPos(hwnd, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) } {
+        crate::app_log::warn(format!("cannot pull the window inside the work area: {error}"));
+    }
 }
 
 /// Opens the meter's window, shown or not: a closed meter keeps its window,
@@ -280,13 +403,24 @@ pub fn open(
             make_overlay(hwnd)?;
             let scale = window.scale_factor();
             let (width, height) = (INITIAL_WIDTH * scale, INITIAL_HEIGHT * scale);
+            remember_drags(cx, hwnd, Spot::Meter);
             match placement {
                 Placement::Screen => {
                     let margin = (OVERLAY_MARGIN * scale).round() as i32;
-                    place(hwnd, margin, margin, width, height)?;
+                    let saved = settings::global(cx).read(cx).get().windows.remembered(Spot::Meter);
+                    let size = (width.ceil() as i32, height.ceil() as i32);
+                    place_after_update(cx, hwnd, width, height, move || {
+                        match saved.and_then(|at| crate::secondary::reopen_corner(at, size)) {
+                            Some(corner) => {
+                                pull_after_first_fit(hwnd);
+                                corner
+                            }
+                            None => (margin, margin),
+                        }
+                    });
                 }
                 #[cfg(feature = "probes")]
-                Placement::OffScreen => off_screen::place(hwnd, width, height)?,
+                Placement::OffScreen => off_screen::place_after_update(cx, hwnd, width, height),
             }
             if shown {
                 reveal_after_update(cx, hwnd, placement, "show the meter");
@@ -339,11 +473,13 @@ pub fn hide(hwnd: HWND) {
 }
 
 /// Runs `calls` once the update that asked for them has returned, in the
-/// order they were asked. `ShowWindow` makes Windows send `WM_SHOWWINDOW`,
-/// and GPUI draws the window inside that message, which updates it through
-/// the App; while an update holds the App that fails with "RefCell already
-/// borrowed" and the frame is lost. Every call that shows a GPUI window from
-/// inside an update goes through here.
+/// order they were asked. Windows sends its messages for a window call
+/// synchronously: `WM_SHOWWINDOW` for a show (GPUI draws the window inside
+/// it), `WM_MOVE` and `WM_SIZE` for a move, a resize or a frame change. GPUI
+/// answers them through the App (`bounds_changed`, the frame), which fails
+/// with "RefCell already borrowed" while an update holds it, and the report
+/// or the frame is lost. Every call that shows, moves, resizes or reframes a
+/// GPUI window from inside an update goes through here.
 pub fn after_update(cx: &App, calls: impl FnOnce() + 'static) {
     cx.spawn(async move |_| calls()).detach();
 }
@@ -442,6 +578,8 @@ pub fn fit_to_children(children: &[Bounds<Pixels>], window: &Window, cx: &mut Ap
     let current = window.viewport_size();
     if (wanted.width - current.width).abs() >= px(0.5) || (wanted.height - current.height).abs() >= px(0.5) {
         fit_client_size(window, wanted, cx);
+    } else {
+        first_fit_not_needed(window);
     }
 }
 
@@ -489,6 +627,21 @@ pub(crate) fn place(hwnd: HWND, x: i32, y: i32, width: f32, height: f32) -> Resu
     }
 }
 
+/// Applies a frame [`make_overlay`] removed, then [`place`]s the window, once
+/// the update that opened it has returned. `corner` is asked then, not
+/// before, so a window anchored to another one opened in the same update
+/// sees where that one was put. A window's first place is asked before any
+/// other, so a later one of it (a card's `Stacking::place`) is not undone.
+pub fn place_after_update(cx: &App, hwnd: HWND, width: f32, height: f32, corner: impl FnOnce() -> (i32, i32) + 'static) {
+    after_update(cx, move || {
+        refresh_frame(hwnd);
+        let (x, y) = corner();
+        if let Err(error) = place(hwnd, x, y, width, height) {
+            crate::app_log::warn(error);
+        }
+    });
+}
+
 /// The native handle behind a GPUI window, through `raw-window-handle`.
 pub fn hwnd(window: &Window) -> Result<HWND, String> {
     let handle = HasWindowHandle::window_handle(window)
@@ -501,16 +654,18 @@ pub fn hwnd(window: &Window) -> Result<HWND, String> {
 
 /// Locked means click-through: every mouse event goes to whatever is behind.
 /// Windows only skips a window in hit testing when it is both transparent and
-/// layered.
-pub fn set_click_through(window: &Window, click_through: bool) -> Result<(), String> {
+/// layered. The frame change that makes Windows read the style again is asked
+/// through [`after_update`]: the lock is pressed inside an update.
+pub fn set_click_through(window: &Window, cx: &App, click_through: bool) -> Result<(), String> {
     let hwnd = hwnd(window)?;
-    update_ex_style(hwnd, |style| {
+    set_ex_style(hwnd, |style| {
         if click_through {
             style | WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0
         } else {
             style & !WS_EX_TRANSPARENT.0
         }
     });
+    after_update(cx, move || refresh_frame(hwnd));
     unsafe {
         SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA)
             .map_err(|error| format!("SetLayeredWindowAttributes failed: {error}"))
@@ -536,6 +691,9 @@ pub fn fit_client_size(window: &Window, content: Size<Pixels>, cx: &mut App) {
     cx.spawn(async move |_| {
         if let Err(error) = set_client_size(hwnd, width, height) {
             crate::app_log::warn(format!("cannot fit the overlay to its card: {error}"));
+        }
+        if take_first_fit(hwnd) {
+            pull_inside(hwnd);
         }
     })
     .detach();
@@ -664,21 +822,15 @@ impl WindowDrag {
 
     /// [`handle`](Self::handle) for an area holding controls: a press a
     /// control already took (`prevent_default`) does not drag, and a press
-    /// that drags is taken, so no element focuses on it. `grabbed` hears of
-    /// each drag that starts.
-    pub fn handle_around_controls<E: InteractiveElement>(
-        &self,
-        area: E,
-        grabbed: impl Fn(&mut Window, &mut App) + 'static,
-    ) -> E {
+    /// that drags is taken, so no element focuses on it.
+    pub fn handle_around_controls<E: InteractiveElement>(&self, area: E) -> E {
         let grab = self.0.clone();
-        area.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+        area.on_mouse_down(MouseButton::Left, move |event, window, _| {
             if window.default_prevented() {
                 return;
             }
             grab.set(Some(Grab::at(window, event.position)));
             window.prevent_default();
-            grabbed(window, cx);
         })
     }
 
@@ -740,9 +892,23 @@ pub fn system_animates() -> bool {
     queried.is_err() || enabled.as_bool()
 }
 
+/// Changes the extended style and has Windows read it again.
 pub(crate) fn update_ex_style(hwnd: HWND, change: impl FnOnce(u32) -> u32) {
+    set_ex_style(hwnd, change);
+    refresh_frame(hwnd);
+}
+
+pub(crate) fn set_ex_style(hwnd: HWND, change: impl FnOnce(u32) -> u32) {
     unsafe {
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, change(ex_style(hwnd)) as isize);
+    }
+}
+
+/// `SWP_FRAMECHANGED` without a move or a resize: Windows recomputes the
+/// frame and, when the client area changed with it, tells the window of a
+/// move and a resize.
+pub(crate) fn refresh_frame(hwnd: HWND) {
+    unsafe {
         let _ = SetWindowPos(
             hwnd,
             None,
@@ -763,6 +929,7 @@ pub(crate) fn update_ex_style(hwnd: HWND, change: impl FnOnce(u32) -> u32) {
 pub mod off_screen {
     use std::ffi::c_void;
 
+    use gpui::App;
     use windows::Win32::Foundation::{HWND, RECT};
     use windows::Win32::Graphics::Dwm::{
         DwmGetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_NCRENDERING_ENABLED,
@@ -772,27 +939,31 @@ pub mod off_screen {
     use windows::Win32::UI::WindowsAndMessaging::{
         GetClientRect, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, ShowWindow,
         GWL_STYLE, SM_CXVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE,
-        SW_SHOWNOACTIVATE,
     };
 
     /// Room to the left of the virtual screen, well beyond any card.
     const CLEARANCE: i32 = 4_000;
 
-    /// Moves the window past the left edge of the virtual screen, without
-    /// showing it. `width` and `height` are device pixels.
-    pub fn place(hwnd: HWND, width: f32, height: f32) -> Result<(), String> {
-        let (left, top) = unsafe { (GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN)) };
-        super::place(hwnd, left - CLEARANCE, top, width, height)?;
-        ensure_off_screen(hwnd)
+    /// [`super::place_after_update`] past the left edge of the virtual
+    /// screen, then checked to be off every monitor, without showing the
+    /// window. `width` and `height` are device pixels.
+    pub fn place_after_update(cx: &App, hwnd: HWND, width: f32, height: f32) {
+        super::place_after_update(cx, hwnd, width, height, || {
+            let (left, top) = unsafe { (GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN)) };
+            (left - CLEARANCE, top)
+        });
+        super::after_update(cx, move || {
+            if let Err(error) = ensure_off_screen(hwnd) {
+                crate::app_log::warn(error);
+            }
+        });
     }
 
-    /// [`place`], then shows the window. `width` and `height` are device pixels.
-    pub fn show(hwnd: HWND, width: f32, height: f32) -> Result<(), String> {
-        place(hwnd, width, height)?;
-        unsafe {
-            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        }
-        ensure_off_screen(hwnd)
+    /// [`place_after_update`], then shows the window as [`super::reveal`]
+    /// does off screen. `width` and `height` are device pixels.
+    pub fn show_after_update(cx: &App, hwnd: HWND, width: f32, height: f32) {
+        place_after_update(cx, hwnd, width, height);
+        super::reveal_after_update(cx, hwnd, super::Placement::OffScreen, "show the window off screen");
     }
 
     /// The window's frame as Windows and DWM report it, for the captures' log.
@@ -854,8 +1025,12 @@ mod tests {
     };
 
     use super::{
-        after_update, ends_a_drag, pack, raise_without_activating, reveal, show_without_activating, stack, unpack, Drags, Ending, Grab, Move, Placement,
+        after_update, end_drag, ends_a_drag, make_overlay, move_then_show_after_update, pack, place_after_update, pull_after_first_fit,
+        pull_inside, raise_without_activating, remember_drags, remember_os_moves, reveal, show_without_activating, stack, take_first_fit,
+        unpack, Drags, Ending, Grab, Move, Placement, DRAGS,
     };
+    use crate::settings::{self, AppSettings, ScreenPoint, Settings, Spot};
+    use gpui::AppContext as _;
 
     /// A hidden topmost tool window of this test's thread, never shown or
     /// activated: the z-order holds hidden windows too, so a stack can be
@@ -925,6 +1100,32 @@ mod tests {
         assert_eq!(*order.borrow(), ["first", "second"]);
     }
 
+    #[gpui::test]
+    fn a_window_placed_after_an_update_is_anchored_to_where_the_other_one_asked_in_it_was_put(cx: &mut gpui::TestAppContext) {
+        use windows::Win32::Foundation::RECT;
+        use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+        let (base, anchored) = (Hidden::new(), Hidden::new());
+        let (base_hwnd, anchored_hwnd) = (base.0, anchored.0);
+        let corner_of = move |hwnd| {
+            let mut rect = RECT::default();
+            unsafe { GetWindowRect(hwnd, &mut rect) }.expect("a window rect");
+            (rect.left, rect.top)
+        };
+        let before = corner_of(base_hwnd);
+        cx.update(|cx| {
+            place_after_update(cx, base_hwnd, 40.0, 20.0, || (100, 120));
+            place_after_update(cx, anchored_hwnd, 40.0, 20.0, move || {
+                let (left, top) = corner_of(base_hwnd);
+                (left + 10, top + 10)
+            });
+            assert_eq!(corner_of(base_hwnd), before, "nothing is placed inside the update that asked");
+        });
+        cx.run_until_parked();
+        assert_eq!(corner_of(base_hwnd), (100, 120));
+        assert_eq!(corner_of(anchored_hwnd), (110, 130), "the anchor was read once the first window was in place");
+    }
+
     #[test]
     fn a_window_that_cannot_be_raised_is_reported_and_the_others_still_go_up() {
         let (below, above) = (Hidden::new(), Hidden::new());
@@ -953,6 +1154,173 @@ mod tests {
 
     fn to(hwnd: isize, x: i32, y: i32) -> Move {
         Move { hwnd, x, y }
+    }
+
+    fn corner_of(hwnd: windows::Win32::Foundation::HWND) -> (i32, i32) {
+        use windows::Win32::Foundation::RECT;
+        use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+        let mut rect = RECT::default();
+        unsafe { GetWindowRect(hwnd, &mut rect) }.expect("a window rect");
+        (rect.left, rect.top)
+    }
+
+    /// Handles the messages posted to `hwnd`, as the message loop does.
+    fn dispatch_posted(hwnd: windows::Win32::Foundation::HWND) {
+        use windows::Win32::UI::WindowsAndMessaging::{DispatchMessageW, PeekMessageW, MSG, PM_REMOVE};
+        let mut message = MSG::default();
+        while unsafe { PeekMessageW(&mut message, Some(hwnd), 0, 0, PM_REMOVE) }.as_bool() {
+            unsafe { DispatchMessageW(&message) };
+        }
+    }
+
+    fn spot_of_window(store: &gpui::Entity<Settings>, spot: Spot, cx: &mut gpui::TestAppContext) -> Option<ScreenPoint> {
+        store.read_with(cx, |settings, _| settings.get().windows.remembered(spot))
+    }
+
+    fn in_memory_settings(cx: &mut gpui::TestAppContext) -> gpui::Entity<Settings> {
+        cx.update(|cx| {
+            let store = cx.new(|_| Settings::in_memory(AppSettings::default()));
+            settings::install(&store, cx);
+            store
+        })
+    }
+
+    #[gpui::test]
+    fn a_drag_released_away_from_its_window_is_remembered_at_the_place_the_window_ended_up(cx: &mut gpui::TestAppContext) {
+        let store = in_memory_settings(cx);
+        let toolbar = Hidden::new();
+        make_overlay(toolbar.0).expect("an overlay window");
+        cx.update(|cx| remember_drags(cx, toolbar.0, Spot::Toolbar));
+
+        // The pointer outran the window: the last move is still owed when the
+        // button is released, far from the window, where no element of it hears it.
+        DRAGS.with_borrow_mut(|drags| drags.ask(to(toolbar.0.0 as isize, 300, 200), &held()));
+        end_drag(toolbar.0);
+        assert_eq!(spot_of_window(&store, Spot::Toolbar, cx), None, "nothing is saved before the drag's last move is made");
+        dispatch_posted(toolbar.0);
+        cx.run_until_parked();
+
+        assert_eq!(corner_of(toolbar.0), (300, 200));
+        assert_eq!(spot_of_window(&store, Spot::Toolbar, cx), Some(ScreenPoint { x: 300, y: 200 }));
+    }
+
+    #[gpui::test]
+    fn a_press_that_never_moved_the_window_remembers_nothing(cx: &mut gpui::TestAppContext) {
+        let store = in_memory_settings(cx);
+        let pets = Hidden::new();
+        make_overlay(pets.0).expect("an overlay window");
+        cx.update(|cx| remember_drags(cx, pets.0, Spot::Pets));
+
+        end_drag(pets.0);
+        dispatch_posted(pets.0);
+        cx.run_until_parked();
+
+        assert_eq!(spot_of_window(&store, Spot::Pets, cx), None);
+    }
+
+    #[gpui::test]
+    fn each_window_remembers_its_own_spot(cx: &mut gpui::TestAppContext) {
+        let store = in_memory_settings(cx);
+        let (history, todos) = (Hidden::new(), Hidden::new());
+        for (window, spot) in [(&history, Spot::History), (&todos, Spot::Todos)] {
+            make_overlay(window.0).expect("an overlay window");
+            cx.update(|cx| remember_drags(cx, window.0, spot));
+        }
+
+        for (window, x) in [(&history, 100), (&todos, 700)] {
+            DRAGS.with_borrow_mut(|drags| drags.ask(to(window.0.0 as isize, x, 50), &held()));
+            end_drag(window.0);
+            dispatch_posted(window.0);
+        }
+        cx.run_until_parked();
+
+        assert_eq!(spot_of_window(&store, Spot::History, cx), Some(ScreenPoint { x: 100, y: 50 }));
+        assert_eq!(spot_of_window(&store, Spot::Todos, cx), Some(ScreenPoint { x: 700, y: 50 }));
+        assert_eq!(spot_of_window(&store, Spot::Pets, cx), None);
+    }
+
+    #[gpui::test]
+    fn a_window_with_a_title_bar_is_remembered_when_windows_ends_its_move(cx: &mut gpui::TestAppContext) {
+        use windows::Win32::UI::WindowsAndMessaging::{SendMessageW, SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, WM_EXITSIZEMOVE};
+
+        let store = in_memory_settings(cx);
+        let window = Hidden::new();
+        cx.update(|cx| remember_os_moves(cx, window.0, Spot::Settings)).expect("the move is watched");
+        unsafe { SetWindowPos(window.0, None, 420, 130, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) }.expect("moved");
+        cx.run_until_parked();
+        assert_eq!(spot_of_window(&store, Spot::Settings, cx), None, "a move in progress saves nothing");
+
+        unsafe { SendMessageW(window.0, WM_EXITSIZEMOVE, None, None) };
+        cx.run_until_parked();
+
+        assert_eq!(spot_of_window(&store, Spot::Settings, cx), Some(ScreenPoint { x: 420, y: 130 }));
+    }
+
+    thread_local! {
+        static SHOWN_AT: Cell<Option<(i32, i32)>> = const { Cell::new(None) };
+    }
+
+    /// Notes where the window was when Windows showed it.
+    unsafe extern "system" fn note_where_shown(
+        hwnd: windows::Win32::Foundation::HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+        _: usize,
+        _: usize,
+    ) -> windows::Win32::Foundation::LRESULT {
+        if message == WM_SHOWWINDOW && wparam.0 == 1 {
+            SHOWN_AT.set(Some(corner_of(hwnd)));
+        }
+        unsafe { windows::Win32::UI::Shell::DefSubclassProc(hwnd, message, wparam, lparam) }
+    }
+
+    #[gpui::test]
+    fn a_hidden_window_is_moved_after_the_update_and_only_then_shown(cx: &mut gpui::TestAppContext) {
+        use windows::Win32::UI::WindowsAndMessaging::{IsWindowVisible, SW_SHOWNOACTIVATE};
+
+        let window = Hidden::new();
+        let hwnd = window.0;
+        assert!(unsafe { windows::Win32::UI::Shell::SetWindowSubclass(hwnd, Some(note_where_shown), 77, 0) }.as_bool());
+        SHOWN_AT.set(None);
+        cx.update(|cx| {
+            move_then_show_after_update(cx, hwnd, SW_SHOWNOACTIVATE, |size| {
+                assert_eq!(size, (1, 1));
+                Some((-30000, 400))
+            });
+            assert!(!unsafe { IsWindowVisible(hwnd) }.as_bool(), "nothing is shown inside the update that asked");
+        });
+        cx.run_until_parked();
+        assert_eq!(SHOWN_AT.get(), Some((-30000, 400)), "Windows showed the window where it had been moved to");
+        assert!(unsafe { IsWindowVisible(hwnd) }.as_bool());
+    }
+
+    #[gpui::test]
+    fn a_window_that_gets_no_corner_is_still_shown(cx: &mut gpui::TestAppContext) {
+        use windows::Win32::UI::WindowsAndMessaging::{IsWindowVisible, SW_SHOWNOACTIVATE};
+
+        let window = Hidden::new();
+        let before = corner_of(window.0);
+        cx.update(|cx| move_then_show_after_update(cx, window.0, SW_SHOWNOACTIVATE, |_| None));
+        cx.run_until_parked();
+        assert_eq!(corner_of(window.0), before, "the spot was on no monitor: the window stays where it opened");
+        assert!(unsafe { IsWindowVisible(window.0) }.as_bool(), "and it is shown, not left hidden for good");
+    }
+
+    #[test]
+    fn a_window_sticking_out_after_its_first_fit_is_pulled_inside_once() {
+        let (window, other) = (Hidden::new(), Hidden::new());
+        pull_after_first_fit(window.0);
+        assert!(!take_first_fit(other.0), "another window is not armed");
+        assert!(take_first_fit(window.0), "the first fit pulls");
+        assert!(!take_first_fit(window.0), "a later fit, in the middle of a fight, never does");
+
+        let outside = (-32000, -32000);
+        assert_eq!(corner_of(window.0), outside);
+        pull_inside(window.0);
+        let pulled = corner_of(window.0);
+        let on_a_monitor = crate::secondary::reopen_corner(ScreenPoint { x: pulled.0, y: pulled.1 }, (1, 1)).is_some();
+        assert!(on_a_monitor, "the window was pulled onto a monitor's work area: {pulled:?}");
     }
 
     #[test]

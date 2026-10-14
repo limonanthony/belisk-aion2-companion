@@ -1,6 +1,6 @@
 [package]
 name = "belisk"
-version = "1.1.0"
+version = "1.2.0"
 license = "GPL-3.0-only"
 description = "Belisk, a combat meter and companion for AION 2"
 edition = "2021"

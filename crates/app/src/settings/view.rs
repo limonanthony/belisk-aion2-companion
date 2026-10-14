@@ -1080,10 +1080,10 @@ impl SettingsView {
             fl!("settings-overlay-detail-opens"),
             fl!("settings-overlay-detail-opens"),
             Some(description(fl!("settings-overlay-detail-opens-text"))),
-            [fl!("settings-overlay-beside").into(), fl!("settings-overlay-centred").into()],
+            [fl!("settings-overlay-where-left").into(), fl!("settings-overlay-centred").into()],
             usize::from(settings.windows.detail_opens == DetailPlacement::Centred),
             |all, index| {
-                all.windows.detail_opens = if index == 0 { DetailPlacement::Beside } else { DetailPlacement::Centred }
+                all.windows.detail_opens = if index == 0 { DetailPlacement::WhereLeft } else { DetailPlacement::Centred }
             },
             window,
             cx,
@@ -1763,6 +1763,15 @@ impl SettingsView {
             cx,
         );
         let lead = self.select_control(Select::LeadTime, settings, on, window, cx);
+        let start_alert_focus = self.focus_of("reminder-start-alert", true, window, cx);
+        let start_alert_toggle = on.then(|| self.set(|all: &mut AppSettings, on| all.reminders.start_alert = on));
+        let start_alert = switch(
+            "reminder-start-alert",
+            fl!("settings-reminders-start-alert"),
+            reminders.start_alert,
+            &start_alert_focus,
+            start_alert_toggle,
+        );
         let sound_focus = self.focus_of("reminder-sound", true, window, cx);
         let sound_toggle = on.then(|| self.set(|all: &mut AppSettings, on| all.reminders.sound = on));
         let sound = switch("reminder-sound", fl!("settings-reminders-sound"), reminders.sound, &sound_focus, sound_toggle);
@@ -1770,6 +1779,7 @@ impl SettingsView {
         let how = group(vec![
             master,
             reminder_row(on, fl!("settings-reminders-lead-time"), fl!("settings-reminders-lead-time-text"), lead),
+            reminder_row(on, fl!("settings-reminders-start-alert"), fl!("settings-reminders-start-alert-text"), start_alert),
             reminder_row(on, fl!("settings-reminders-sound"), fl!("settings-reminders-sound-text"), sound),
             reminder_row(on, fl!("reminder-test-title"), fl!("settings-reminders-test-text"), test),
         ]);
@@ -2451,9 +2461,11 @@ pub fn bring_forward(hwnd: HWND) {
 /// middle of the primary screen, activated. GPUI shows it with
 /// `SetWindowPlacement` (`SW_SHOWNORMAL`), never through its `activate`.
 /// Off screen (dev captures) it is shown past every monitor, unactivated and
-/// out of the taskbar.
+/// out of the taskbar. `shown` false (on screen) leaves it hidden for the
+/// caller to place and then show, so it never appears in the middle first.
 pub fn open_window(
     placement: Placement,
+    shown: bool,
     build: impl FnOnce(&mut Window, &mut App) -> Entity<SettingsView>,
     cx: &mut App,
 ) -> Result<WindowHandle<SettingsView>, String> {
@@ -2466,8 +2478,8 @@ pub fn open_window(
             appears_transparent: true,
             traffic_light_position: None,
         }),
-        focus: on_screen,
-        show: on_screen,
+        focus: on_screen && shown,
+        show: on_screen && shown,
         kind: WindowKind::Normal,
         is_movable: true,
         is_resizable: false,
@@ -2479,17 +2491,17 @@ pub fn open_window(
     #[cfg(feature = "probes")]
     if placement == Placement::OffScreen {
         let shown = handle
-            .update(cx, |_, window, _| -> Result<(), String> {
+            .update(cx, |_, window, cx| -> Result<(), String> {
                 use windows::Win32::UI::WindowsAndMessaging::{WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW};
                 let hwnd = crate::overlay::hwnd(window)?;
-                crate::overlay::update_ex_style(hwnd, |style| {
+                crate::overlay::set_ex_style(hwnd, |style| {
                     (style & !WS_EX_APPWINDOW.0) | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0
                 });
                 let scale = window.scale_factor();
-                // GPUI keeps the size it created the hidden window with until
-                // it resizes the window itself.
-                window.resize(size(px(width), px(height)));
-                crate::overlay::off_screen::show(hwnd, width * scale, height * scale)
+                crate::overlay::off_screen::place_after_update(cx, hwnd, width * scale, height * scale);
+                crate::overlay::fit_client_size(window, size(px(width), px(height)), cx);
+                crate::overlay::reveal_after_update(cx, hwnd, Placement::OffScreen, "show the Settings window off screen");
+                Ok(())
             })
             .map_err(|error| format!("cannot reach the Settings window: {error:#}"))
             .and_then(|shown| shown);
@@ -2880,6 +2892,7 @@ mod tests {
         let expected = [
             "reminders",
             "lead-time",
+            "reminder-start-alert",
             "reminder-sound",
             "test-reminder",
             "event-shugo",
@@ -2909,6 +2922,11 @@ mod tests {
         assert!(!window.select_open());
         assert_eq!(window.settings().reminders.lead_minutes, 5, "End lights the last option");
         assert_eq!(window.focused().as_deref(), Some("lead-time"));
+
+        window.tab_to("reminder-start-alert");
+        assert!(!window.settings().reminders.start_alert, "off by default");
+        window.press("space");
+        assert!(window.settings().reminders.start_alert);
 
         window.tab_to("event-kaira");
         window.press("space");

@@ -1,6 +1,7 @@
-//! What the reminders service does at a given moment: show a reminder, sleep,
-//! or stand idle. Pure and driven by the clock reading it is given, so a PC
-//! that slept or a clock that jumped is handled by reading the clock again.
+//! What the reminders service does at a given moment: show a card (the
+//! reminder before an event, or the start alert when it starts), sleep, or
+//! stand idle. Pure and driven by the clock reading it is given, so a PC that
+//! slept or a clock that jumped is handled by reading the clock again.
 
 use std::time::Duration;
 
@@ -15,10 +16,40 @@ pub const MAX_NAP: Duration = Duration::from_secs(30);
 
 const LONGEST_LEAD_MS: i64 = LEAD_MINUTES_OPTIONS[LEAD_MINUTES_OPTIONS.len() - 1] as i64 * 60_000;
 
+/// How long after its start a start alert may still be shown; a later wake
+/// drops it.
+const ALERT_WINDOW_MS: i64 = 60_000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CardKind {
+    /// Shown the lead time before the event starts.
+    Reminder,
+    /// Shown when the event starts.
+    StartAlert,
+}
+
+impl CardKind {
+    /// How the decision log names the card.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Reminder => "reminder",
+            Self::StartAlert => "start alert",
+        }
+    }
+}
+
+/// A card of one kind for the events starting at `reminder.start_ms`; for a
+/// start alert `reminder.notify_ms` is the start itself.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Due {
+    pub kind: CardKind,
+    pub reminder: Reminder,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Step {
-    /// Show this reminder now; step again for the next.
-    Show(Reminder),
+    /// Show this card now; step again for the next.
+    Show(Due),
     /// Nothing is due; read the clock again after this long.
     Wait(Duration),
     /// Nothing is scheduled (the master switch is off or no event is on); a
@@ -31,12 +62,18 @@ pub struct Planner {
     /// The start of the last reminder shown, so a replan within the lead time
     /// does not show the same one again.
     last_shown_start_ms: Option<i64>,
+    /// The start of the last start alert shown, so a replan within its window
+    /// does not show the same one again.
+    last_alerted_start_ms: Option<i64>,
     /// The reminder the last step waited for; none once it was shown or when
     /// nothing is scheduled.
     upcoming: Option<Reminder>,
-    /// The reminder the last step waited for whose event had started by the
-    /// time of the next step, so it was never shown.
-    missed: Option<Reminder>,
+    /// The start alert the last step waited for, under the same rules.
+    upcoming_alert: Option<Reminder>,
+    /// The cards the last step waited for that were never shown: a reminder
+    /// whose event had started by the time of the next step, a start alert
+    /// more than its window past its start.
+    missed: Vec<Due>,
 }
 
 impl Planner {
@@ -44,21 +81,34 @@ impl Planner {
         self.upcoming.as_ref()
     }
 
-    /// The reminder the last step found already started without having shown
-    /// it, once.
-    pub fn take_missed(&mut self) -> Option<Reminder> {
-        self.missed.take()
+    pub fn upcoming_alert(&self) -> Option<&Reminder> {
+        self.upcoming_alert.as_ref()
+    }
+
+    /// The cards the last step found past their time without having shown
+    /// them, once.
+    pub fn take_missed(&mut self) -> Vec<Due> {
+        std::mem::take(&mut self.missed)
     }
 
     /// A reminder is shown when its time has come and its event has not started
-    /// yet: one whose start has passed (the PC slept through it) is dropped.
+    /// yet: one whose start has passed (the PC slept through it) is dropped. A
+    /// start alert is shown from the start until [`ALERT_WINDOW_MS`] after it,
+    /// at most once per start.
     pub fn step(&mut self, zone: &impl Zone, settings: &ReminderSettings, now_ms: i64) -> Step {
         let events = settings.scheduled_events();
-        self.missed = self
-            .upcoming
-            .take()
-            .filter(|waited_for| waited_for.start_ms <= now_ms && waited_for.events.iter().any(|id| events.contains(id)));
-        let after_ms = match self.last_shown_start_ms {
+        let still_on = |waited_for: &Reminder| waited_for.events.iter().any(|id| events.contains(id));
+        self.missed.clear();
+        if let Some(reminder) = self.upcoming.take().filter(|waited_for| waited_for.start_ms <= now_ms && still_on(waited_for)) {
+            self.missed.push(Due { kind: CardKind::Reminder, reminder });
+        }
+        if let Some(reminder) =
+            self.upcoming_alert.take().filter(|waited_for| now_ms - waited_for.start_ms > ALERT_WINDOW_MS && still_on(waited_for))
+        {
+            self.missed.push(Due { kind: CardKind::StartAlert, reminder });
+        }
+
+        let reminder_after_ms = match self.last_shown_start_ms {
             Some(shown) if shown - now_ms > LONGEST_LEAD_MS => {
                 self.last_shown_start_ms = None;
                 now_ms
@@ -66,18 +116,53 @@ impl Planner {
             Some(shown) => shown.max(now_ms),
             None => now_ms,
         };
-        let Some(reminder) = next_reminder(zone, &events, settings.lead_minutes, after_ms) else {
-            self.upcoming = None;
-            return Step::Idle;
+        let reminder = next_reminder(zone, &events, settings.lead_minutes, reminder_after_ms);
+
+        let oldest_alertable_after_ms = now_ms - ALERT_WINDOW_MS - 1;
+        let alert_after_ms = match self.last_alerted_start_ms {
+            Some(alerted) if alerted - now_ms > ALERT_WINDOW_MS => {
+                self.last_alerted_start_ms = None;
+                oldest_alertable_after_ms
+            }
+            Some(alerted) => alerted.max(oldest_alertable_after_ms),
+            None => oldest_alertable_after_ms,
         };
-        if reminder.notify_ms > now_ms {
-            let remaining = Duration::from_millis((reminder.notify_ms - now_ms) as u64);
-            self.upcoming = Some(reminder);
-            return Step::Wait(remaining.min(MAX_NAP));
+        let alert = settings.start_alert.then(|| next_reminder(zone, &events, 0, alert_after_ms)).flatten();
+
+        let reminder_due_ms = reminder.as_ref().map(|reminder| reminder.notify_ms);
+        let alert_due_ms = alert.as_ref().map(|alert| alert.start_ms);
+        let first_due = match (reminder_due_ms, alert_due_ms) {
+            (None, None) => {
+                return Step::Idle;
+            }
+            (Some(reminder_due), Some(alert_due)) if reminder_due <= now_ms && alert_due <= now_ms => {
+                Some(if reminder_due <= alert_due { CardKind::Reminder } else { CardKind::StartAlert })
+            }
+            (Some(reminder_due), _) if reminder_due <= now_ms => Some(CardKind::Reminder),
+            (_, Some(alert_due)) if alert_due <= now_ms => Some(CardKind::StartAlert),
+            _ => None,
+        };
+
+        match first_due {
+            Some(CardKind::Reminder) => {
+                let reminder = reminder.expect("a reminder is due");
+                self.last_shown_start_ms = Some(reminder.start_ms);
+                self.upcoming_alert = alert;
+                Step::Show(Due { kind: CardKind::Reminder, reminder })
+            }
+            Some(CardKind::StartAlert) => {
+                let alert = alert.expect("a start alert is due");
+                self.last_alerted_start_ms = Some(alert.start_ms);
+                self.upcoming = reminder;
+                Step::Show(Due { kind: CardKind::StartAlert, reminder: alert })
+            }
+            None => {
+                let wake_ms = reminder_due_ms.into_iter().chain(alert_due_ms).min().expect("a card is pending");
+                self.upcoming = reminder;
+                self.upcoming_alert = alert;
+                Step::Wait(Duration::from_millis((wake_ms - now_ms) as u64).min(MAX_NAP))
+            }
         }
-        self.upcoming = None;
-        self.last_shown_start_ms = Some(reminder.start_ms);
-        Step::Show(reminder)
     }
 }
 
@@ -120,9 +205,10 @@ mod tests {
         let settings = ReminderSettings::default();
         let mut planner = Planner::default();
 
-        let Step::Show(reminder) = step(&mut planner, &settings, at(10, 29, 0)) else {
+        let Step::Show(Due { kind, reminder }) = step(&mut planner, &settings, at(10, 29, 0)) else {
             panic!("the reminder is due");
         };
+        assert_eq!(kind, CardKind::Reminder);
         assert_eq!((reminder.events, reminder.start_ms), (vec![DimensionalInvasion], at(10, 30, 0)));
 
         assert_eq!(step(&mut planner, &settings, at(10, 29, 1)), Step::Wait(MAX_NAP), "next is 11:00 at 10:59");
@@ -140,7 +226,7 @@ mod tests {
         let mut planner = Planner::default();
         let settings = ReminderSettings::default();
         assert_eq!(step(&mut planner, &settings, at(10, 30, 5)), Step::Wait(MAX_NAP), "10:30 is gone, 11:00 is next");
-        let Step::Show(reminder) = step(&mut planner, &settings, at(10, 59, 0)) else {
+        let Step::Show(Due { reminder, .. }) = step(&mut planner, &settings, at(10, 59, 0)) else {
             panic!("11:00 is due");
         };
         assert_eq!(reminder.events, vec![ShugoFestival, RiftPortals]);
@@ -199,7 +285,7 @@ mod tests {
         let mut now = from;
         while now < until {
             match planner.step(zone, settings, now) {
-                Step::Show(reminder) => shown.push((now, reminder.start_ms)),
+                Step::Show(card) => shown.push((now, card.reminder.start_ms)),
                 Step::Wait(wait) => now += wait.as_millis() as i64,
                 Step::Idle => break,
             }
@@ -238,15 +324,16 @@ mod tests {
         let mut planner = Planner::default();
         let settings = ReminderSettings::default();
         assert_eq!(step(&mut planner, &settings, at(10, 20, 0)), Step::Wait(MAX_NAP));
-        assert_eq!(planner.take_missed(), None);
+        assert_eq!(planner.take_missed(), vec![]);
 
         assert_eq!(step(&mut planner, &settings, at(10, 30, 5)), Step::Wait(MAX_NAP));
-        let missed = planner.take_missed().expect("the 10:30 Invasion went by unannounced");
-        assert_eq!((missed.events, missed.start_ms), (vec![DimensionalInvasion], at(10, 30, 0)));
-        assert_eq!(planner.take_missed(), None);
+        let [missed] = planner.take_missed().try_into().expect("the 10:30 Invasion went by unannounced");
+        assert_eq!(missed.kind, CardKind::Reminder);
+        assert_eq!((missed.reminder.events, missed.reminder.start_ms), (vec![DimensionalInvasion], at(10, 30, 0)));
+        assert_eq!(planner.take_missed(), vec![]);
 
         assert_eq!(step(&mut planner, &settings, at(10, 30, 35)), Step::Wait(MAX_NAP));
-        assert_eq!(planner.take_missed(), None, "11:00 is still ahead");
+        assert_eq!(planner.take_missed(), vec![], "11:00 is still ahead");
     }
 
     #[test]
@@ -256,6 +343,123 @@ mod tests {
         assert_eq!(step(&mut planner, &settings, at(10, 20, 0)), Step::Wait(MAX_NAP));
         assert!(matches!(step(&mut planner, &settings, at(10, 29, 10)), Step::Show(_)));
         assert_eq!(step(&mut planner, &settings, at(10, 31, 0)), Step::Wait(MAX_NAP));
-        assert_eq!(planner.take_missed(), None);
+        assert_eq!(planner.take_missed(), vec![]);
+    }
+
+    fn with_start_alert() -> ReminderSettings {
+        ReminderSettings { start_alert: true, ..ReminderSettings::default() }
+    }
+
+    fn shown_kind(planner: &mut Planner, settings: &ReminderSettings, now: i64) -> Option<(CardKind, i64)> {
+        match step(planner, settings, now) {
+            Step::Show(card) => Some((card.kind, card.reminder.start_ms)),
+            Step::Wait(_) | Step::Idle => None,
+        }
+    }
+
+    #[test]
+    fn the_start_alert_follows_the_reminder_and_is_shown_at_the_start() {
+        let settings = with_start_alert();
+        let mut planner = Planner::default();
+        assert_eq!(shown_kind(&mut planner, &settings, at(10, 29, 0)), Some((CardKind::Reminder, at(10, 30, 0))));
+        assert_eq!(step(&mut planner, &settings, at(10, 29, 1)), Step::Wait(MAX_NAP));
+        assert_eq!(step(&mut planner, &settings, at(10, 29, 50)), Step::Wait(Duration::from_secs(10)), "the alert is the next thing due");
+        assert_eq!(shown_kind(&mut planner, &settings, at(10, 30, 0)), Some((CardKind::StartAlert, at(10, 30, 0))));
+        assert_eq!(step(&mut planner, &settings, at(10, 30, 1)), Step::Wait(MAX_NAP), "11:00's reminder is next");
+    }
+
+    #[test]
+    fn a_start_alert_is_never_shown_twice_for_one_start_even_after_a_replan() {
+        let settings = with_start_alert();
+        let mut planner = Planner::default();
+        assert_eq!(shown_kind(&mut planner, &settings, at(10, 30, 0)), Some((CardKind::StartAlert, at(10, 30, 0))));
+        let louder = ReminderSettings { sound: false, lead_minutes: 2, ..with_start_alert() };
+        for second in [1, 20, 59] {
+            assert_eq!(shown_kind(&mut planner, &louder, at(10, 30, second)), None, "{second} s after the start");
+        }
+        assert_eq!(planner.take_missed(), vec![]);
+    }
+
+    #[test]
+    fn a_start_alert_found_within_a_minute_of_the_start_is_shown_at_once() {
+        let mut planner = Planner::default();
+        assert_eq!(shown_kind(&mut planner, &with_start_alert(), at(10, 31, 0)), Some((CardKind::StartAlert, at(10, 30, 0))));
+
+        let mut late = Planner::default();
+        assert_eq!(shown_kind(&mut late, &with_start_alert(), at(10, 31, 1)), None, "a second past the window");
+    }
+
+    #[test]
+    fn turning_the_start_alert_on_inside_the_window_shows_it() {
+        let mut planner = Planner::default();
+        assert_eq!(shown_kind(&mut planner, &ReminderSettings::default(), at(10, 30, 20)), None);
+        assert_eq!(shown_kind(&mut planner, &with_start_alert(), at(10, 30, 30)), Some((CardKind::StartAlert, at(10, 30, 0))));
+    }
+
+    #[test]
+    fn a_start_alert_slept_through_is_reported_missed_once_alongside_its_reminder() {
+        let settings = with_start_alert();
+        let mut planner = Planner::default();
+        assert_eq!(step(&mut planner, &settings, at(10, 20, 0)), Step::Wait(MAX_NAP));
+        assert_eq!(planner.take_missed(), vec![]);
+
+        assert_eq!(step(&mut planner, &settings, at(10, 31, 30)), Step::Wait(MAX_NAP), "11:00 is next");
+        let kinds: Vec<CardKind> = planner.take_missed().iter().map(|missed| missed.kind).collect();
+        assert_eq!(kinds, vec![CardKind::Reminder, CardKind::StartAlert]);
+        assert_eq!(planner.take_missed(), vec![]);
+        assert_eq!(step(&mut planner, &settings, at(10, 31, 40)), Step::Wait(MAX_NAP));
+        assert_eq!(planner.take_missed(), vec![], "reported once");
+    }
+
+    #[test]
+    fn a_start_alert_slept_through_within_its_window_is_shown_not_dropped() {
+        let settings = with_start_alert();
+        let mut planner = Planner::default();
+        assert_eq!(shown_kind(&mut planner, &settings, at(10, 29, 30)), Some((CardKind::Reminder, at(10, 30, 0))));
+        assert_eq!(shown_kind(&mut planner, &settings, at(10, 30, 40)), Some((CardKind::StartAlert, at(10, 30, 0))));
+        assert_eq!(planner.take_missed(), vec![]);
+    }
+
+    #[test]
+    fn with_the_start_alert_off_or_the_master_switch_off_only_reminders_come() {
+        let mut off = Planner::default();
+        let settings = ReminderSettings::default();
+        assert!(!settings.start_alert, "off by default");
+        assert_eq!(shown_kind(&mut off, &settings, at(10, 29, 0)), Some((CardKind::Reminder, at(10, 30, 0))));
+        assert_eq!(shown_kind(&mut off, &settings, at(10, 30, 0)), None);
+        assert_eq!(step(&mut off, &settings, at(10, 30, 30)), Step::Wait(MAX_NAP));
+        assert_eq!(off.take_missed(), vec![]);
+
+        let mut paused = Planner::default();
+        let master_off = ReminderSettings { enabled: false, ..with_start_alert() };
+        assert_eq!(step(&mut paused, &master_off, at(10, 30, 0)), Step::Idle);
+    }
+
+    #[test]
+    fn events_sharing_a_start_make_one_start_alert() {
+        let settings = with_start_alert();
+        let mut planner = Planner::default();
+        let Step::Show(Due { kind, reminder }) = step(&mut planner, &settings, at(11, 0, 0)) else {
+            panic!("the 11:00 start alert is due");
+        };
+        assert_eq!((kind, reminder.events), (CardKind::StartAlert, vec![ShugoFestival, RiftPortals]));
+        assert_eq!(shown_kind(&mut planner, &settings, at(11, 0, 1)), None);
+    }
+
+    #[test]
+    fn a_start_alert_follows_the_reminder_of_the_same_start_and_each_is_shown_once() {
+        let settings = with_start_alert();
+        let mut planner = Planner::default();
+        assert_eq!(shown_kind(&mut planner, &settings, at(10, 59, 59)), Some((CardKind::Reminder, at(11, 0, 0))));
+        assert_eq!(shown_kind(&mut planner, &settings, at(11, 0, 0)), Some((CardKind::StartAlert, at(11, 0, 0))));
+        assert_eq!(shown_kind(&mut planner, &settings, at(11, 0, 0)), None);
+    }
+
+    #[test]
+    fn a_clock_set_back_shows_the_start_alerts_of_the_new_time() {
+        let settings = with_start_alert();
+        let mut planner = Planner::default();
+        assert_eq!(shown_kind(&mut planner, &settings, at(10, 30, 0)), Some((CardKind::StartAlert, at(10, 30, 0))));
+        assert_eq!(shown_kind(&mut planner, &settings, at(8, 30, 10)), Some((CardKind::StartAlert, at(8, 30, 0))));
     }
 }

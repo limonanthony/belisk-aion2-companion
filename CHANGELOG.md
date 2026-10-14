@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0] - 2026-10-14
+
+Start alerts for timed events, windows that remember where you put them, and soul tracker cards from the first soul.
+
+- **Start alerts**: a second card can now appear when a timed event starts, after the reminder before it, so a Shugo Festival or an invasion is not forgotten during a boss fight. Turn it on in **Settings › Reminders**.
+- **Window positions**: the meter, the toolbar and every tool window now open where you last put them, also after a restart. This fixes the toolbar, which did not always remember where you left it. In **Settings › Overlay**, the player detail's "Beside" choice is now "Where you left it".
+- **Soul tracker**: the card now also appears when you start Belisk while already playing, as long as your remembered characters are all on one server. Before, the souls you picked up before Belisk knew who you were were lost.
+
 ## [1.1.0] - 2026-10-11
 
 Pet tracking, and smoother windows.

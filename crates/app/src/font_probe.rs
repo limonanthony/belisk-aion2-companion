@@ -246,10 +246,10 @@ pub fn open(cx: &mut App, capture: Option<PathBuf>) -> Result<(), String> {
         return Ok(());
     };
     let hwnd = handle
-        .update(cx, |_, window, _| -> Result<_, String> {
+        .update(cx, |_, window, cx| -> Result<_, String> {
             let hwnd = crate::overlay::hwnd(window)?;
             let scale = window.scale_factor();
-            crate::overlay::off_screen::show(hwnd, SHEET_WIDTH * scale, SHEET_HEIGHT * scale)?;
+            crate::overlay::off_screen::show_after_update(cx, hwnd, SHEET_WIDTH * scale, SHEET_HEIGHT * scale);
             Ok(hwnd)
         })
         .map_err(|error| format!("cannot reach the font probe window: {error:#}"))??;

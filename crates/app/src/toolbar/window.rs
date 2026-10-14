@@ -7,27 +7,22 @@
 use gpui::{px, size, App, AppContext as _, Entity, Pixels, Size, Window, WindowHandle};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONULL, MONITOR_DEFAULTTOPRIMARY,
+    GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
 
 use super::view::ToolbarView;
 use super::Hub;
 use crate::overlay::{self, Placement};
-use crate::secondary::Rect;
-use crate::settings::ScreenPoint;
+use crate::secondary::{self, Rect};
+use crate::settings::{self, Spot};
 
 /// The bar at 100% with no warning; the first frame fits the window to it.
 const INITIAL_SIZE: (f32, f32) = (468.0, 34.0);
 /// Between the top of the work area and a toolbar placed for the first time.
 const TOP_MARGIN: f32 = 8.0;
 
-pub fn open(
-    hub: &Entity<Hub>,
-    placement: Placement,
-    saved: Option<ScreenPoint>,
-    cx: &mut App,
-) -> Result<(WindowHandle<ToolbarView>, HWND), String> {
+pub fn open(hub: &Entity<Hub>, placement: Placement, cx: &mut App) -> Result<(WindowHandle<ToolbarView>, HWND), String> {
     let (width, height) = INITIAL_SIZE;
     let hub = hub.clone();
     let handle = cx
@@ -39,20 +34,24 @@ pub fn open(
         .update(cx, |_, window, cx| -> Result<HWND, String> {
             let hwnd = overlay::hwnd(window)?;
             overlay::make_overlay(hwnd)?;
+            overlay::remember_drags(cx, hwnd, Spot::Toolbar);
             let scale = window.scale_factor();
             let (device_width, device_height) = (width * scale, height * scale);
             match placement {
                 Placement::Screen => {
-                    let (x, y) = saved
-                        .filter(|at| on_a_monitor(*at))
-                        .map(|at| (at.x, at.y))
-                        .or_else(|| top_centre(device_width.ceil() as i32, (TOP_MARGIN * scale).round() as i32))
-                        .unwrap_or((64, 64));
-                    overlay::place(hwnd, x, y, device_width, device_height)?;
+                    let size = (device_width.ceil() as i32, device_height.ceil() as i32);
+                    let saved = settings::global(cx).read(cx).get().windows.remembered(Spot::Toolbar);
+                    let margin = (TOP_MARGIN * scale).round() as i32;
+                    overlay::place_after_update(cx, hwnd, device_width, device_height, move || {
+                        saved
+                            .and_then(|at| secondary::reopen_corner(at, size))
+                            .or_else(|| top_centre(size.0, margin))
+                            .unwrap_or((64, 64))
+                    });
                     overlay::reveal_after_update(cx, hwnd, placement, "show the toolbar");
                 }
                 #[cfg(feature = "probes")]
-                Placement::OffScreen => overlay::off_screen::show(hwnd, device_width, device_height)?,
+                Placement::OffScreen => overlay::off_screen::show_after_update(cx, hwnd, device_width, device_height),
             }
             Ok(hwnd)
         })
@@ -64,10 +63,6 @@ pub fn open(
             Err(error)
         }
     }
-}
-
-fn on_a_monitor(at: ScreenPoint) -> bool {
-    !unsafe { MonitorFromPoint(POINT { x: at.x, y: at.y }, MONITOR_DEFAULTTONULL) }.is_invalid()
 }
 
 fn top_centre(width: i32, margin: i32) -> Option<(i32, i32)> {
@@ -123,14 +118,6 @@ pub fn refit(window: &Window, wanted: Size<Pixels>, bar_shift: Pixels, cx: &mut 
         }
     })
     .detach();
-}
-
-/// The window's top-left corner in device pixels, where it was left.
-pub fn position(window: &Window) -> Option<ScreenPoint> {
-    let hwnd = overlay::hwnd(window).ok()?;
-    let mut rect = RECT::default();
-    unsafe { GetWindowRect(hwnd, &mut rect) }.ok()?;
-    Some(ScreenPoint { x: rect.left, y: rect.top })
 }
 
 /// The bar's bottom edge and its monitor's work area bottom, in device pixels.

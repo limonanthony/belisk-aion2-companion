@@ -46,10 +46,22 @@ pub fn beside(anchor: Rect, (width, height): (i32, i32), work: Rect, preferred: 
         .map(corner)
         .find(|corner| fits(*corner))
         .unwrap_or_else(|| corner(preferred));
-    (
-        x.min(work.right - width).max(work.left),
-        y.min(work.bottom - height).max(work.top),
-    )
+    inside((x, y), (width, height), work)
+}
+
+/// `corner` moved the least that puts a window of `size` inside `work`; one
+/// larger than `work` keeps its top-left corner in.
+pub fn inside((x, y): (i32, i32), (width, height): (i32, i32), work: Rect) -> (i32, i32) {
+    (x.min(work.right - width).max(work.left), y.min(work.bottom - height).max(work.top))
+}
+
+/// Where a window left at `at` (its top-left corner) reopens: there, pulled
+/// inside the work area of the monitor it was left on. None when `at` is on
+/// no monitor (it was unplugged, or the layout changed), so the window opens
+/// as one never dragged does. `work_at` is the work area of the monitor under
+/// a point.
+pub fn remembered(at: (i32, i32), size: (i32, i32), work_at: impl FnOnce((i32, i32)) -> Option<Rect>) -> Option<(i32, i32)> {
+    work_at(at).map(|work| inside(at, size, work))
 }
 
 /// Which side of its anchor a stacked window takes when both have room.
@@ -183,5 +195,31 @@ mod tests {
         assert_eq!(stacked(toolbar, (310, 84), WORK, 6, Stack::Below), (800, 48));
         let low = Rect { left: 800, top: 990, right: 1230, bottom: 1024 };
         assert_eq!(stacked(low, (310, 84), WORK, 6, Stack::Below), (800, 900));
+    }
+
+    /// Two monitors side by side: the left one, 1920 wide, and the right one,
+    /// 1280 wide, whose work area starts under a top bar.
+    fn monitors(at: (i32, i32)) -> Option<Rect> {
+        let left = Rect { left: 0, top: 0, right: 1920, bottom: 1040 };
+        let right = Rect { left: 1920, top: 30, right: 3200, bottom: 1024 };
+        [left, right].into_iter().find(|work| at.0 >= work.left && at.0 < work.right && at.1 >= 0 && at.1 < 1080)
+    }
+
+    #[test]
+    fn a_window_reopens_where_it_was_left() {
+        assert_eq!(remembered((74, 48), (468, 34), monitors), Some((74, 48)));
+        assert_eq!(remembered((2500, 400), (370, 420), monitors), Some((2500, 400)));
+    }
+
+    #[test]
+    fn a_spot_on_no_monitor_any_more_is_ignored() {
+        assert_eq!(remembered((4000, 100), (370, 420), monitors), None, "the monitor on the right was unplugged");
+        assert_eq!(remembered((-300, 100), (370, 420), monitors), None);
+    }
+
+    #[test]
+    fn a_window_left_sticking_out_of_the_work_area_comes_back_inside_it() {
+        assert_eq!(remembered((1800, 900), (370, 420), monitors), Some((1550, 620)), "past the right and bottom edges");
+        assert_eq!(remembered((2000, 5), (370, 420), monitors), Some((2000, 30)), "under the top bar of the other monitor");
     }
 }

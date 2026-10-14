@@ -1,5 +1,13 @@
 # Journal des modifications
 
+## [1.2.0] - 2026-10-14
+
+Des alertes au début des événements, des fenêtres qui retiennent leur place, et le suivi des âmes dès la première âme.
+
+- **Alertes au début** : une deuxième carte peut maintenant apparaître au début d'un événement chronométré, après le rappel qui le précède, pour ne pas oublier un Shugo Festival ou une Dimensional Invasion pendant un combat de boss. Activez-la dans **Paramètres › Rappels**.
+- **Position des fenêtres** : le compteur, la barre d'outils et chaque fenêtre d'outil s'ouvrent maintenant là où vous les avez laissés, même après un redémarrage. Cela corrige la barre d'outils, qui ne retenait pas toujours sa place. Dans **Paramètres › Overlay**, le choix « À côté » du détail joueur devient « Là où vous l'avez laissée ».
+- **Suivi des âmes** : la carte apparaît maintenant aussi quand vous lancez Belisk en jouant déjà, tant que vos personnages connus sont tous sur le même serveur. Avant, les âmes ramassées avant que Belisk sache qui vous êtes étaient perdues.
+
 ## [1.1.0] - 2026-10-11
 
 Le suivi des familiers, et des fenêtres plus fluides.

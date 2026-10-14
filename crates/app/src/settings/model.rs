@@ -106,13 +106,30 @@ impl Default for CaptureSettings {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum DetailPlacement {
-    /// Next to the overlay.
+    /// Beside the overlay until the player first drags the window, then where
+    /// it was left. Stored as "beside" since before windows were remembered.
     #[default]
-    Beside,
-    /// In the middle of the screen.
+    #[serde(rename = "beside")]
+    WhereLeft,
+    /// In the middle of the screen, always.
+    #[serde(rename = "centred")]
     Centred,
+}
+
+/// A window whose dragged-to place is remembered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Spot {
+    Meter,
+    Toolbar,
+    History,
+    Detail,
+    Report,
+    Pvp,
+    Todos,
+    Resources,
+    Pets,
+    Settings,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -129,6 +146,68 @@ pub struct WindowSettings {
     /// The toolbar's top-left corner in device pixels, where it was left; none
     /// opens it at the top centre of the primary monitor.
     pub toolbar_at: Option<ScreenPoint>,
+    /// The windows' top-left corners in device pixels, where they were left;
+    /// none opens a window as it opens before it is ever dragged.
+    pub meter_at: Option<ScreenPoint>,
+    pub history_at: Option<ScreenPoint>,
+    pub detail_at: Option<ScreenPoint>,
+    pub report_at: Option<ScreenPoint>,
+    pub pvp_at: Option<ScreenPoint>,
+    pub todos_at: Option<ScreenPoint>,
+    pub resources_at: Option<ScreenPoint>,
+    pub pets_at: Option<ScreenPoint>,
+    pub settings_at: Option<ScreenPoint>,
+}
+
+impl WindowSettings {
+    /// Where `spot` was left, as a window about to open uses it.
+    pub fn remembered(&self, spot: Spot) -> Option<ScreenPoint> {
+        if !self.remembers(spot) {
+            return None;
+        }
+        match spot {
+            Spot::Meter => self.meter_at,
+            Spot::Toolbar => self.toolbar_at,
+            Spot::History => self.history_at,
+            Spot::Detail => self.detail_at,
+            Spot::Report => self.report_at,
+            Spot::Pvp => self.pvp_at,
+            Spot::Todos => self.todos_at,
+            Spot::Resources => self.resources_at,
+            Spot::Pets => self.pets_at,
+            Spot::Settings => self.settings_at,
+        }
+    }
+
+    /// The detail window is the only one that does not always: it opens
+    /// centred when the player chose that.
+    fn remembers(&self, spot: Spot) -> bool {
+        spot != Spot::Detail || self.detail_opens == DetailPlacement::WhereLeft
+    }
+
+    fn leave(&mut self, spot: Spot, at: ScreenPoint) {
+        if !self.remembers(spot) {
+            return;
+        }
+        let slot = match spot {
+            Spot::Meter => &mut self.meter_at,
+            Spot::Toolbar => &mut self.toolbar_at,
+            Spot::History => &mut self.history_at,
+            Spot::Detail => &mut self.detail_at,
+            Spot::Report => &mut self.report_at,
+            Spot::Pvp => &mut self.pvp_at,
+            Spot::Todos => &mut self.todos_at,
+            Spot::Resources => &mut self.resources_at,
+            Spot::Pets => &mut self.pets_at,
+            Spot::Settings => &mut self.settings_at,
+        };
+        *slot = Some(at);
+    }
+}
+
+/// The player left `spot` at `at`: it opens there from now on.
+pub fn leave_window_at(spot: Spot, at: ScreenPoint, cx: &mut App) {
+    global(cx).update(cx, |settings, cx| settings.update(cx, |all| all.windows.leave(spot, at)));
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -344,7 +423,72 @@ pub fn toggle_layout(cx: &mut App) {
 mod tests {
     use std::path::PathBuf;
 
+    use gpui::AppContext as _;
+
     use super::*;
+
+    fn at(x: i32, y: i32) -> Option<ScreenPoint> {
+        Some(ScreenPoint { x, y })
+    }
+
+    #[test]
+    fn settings_written_before_windows_were_remembered_load_as_never_dragged() {
+        let old = r#"{"windows": {"toolbarAt": {"x": 74, "y": 48}, "openMeterAtLaunch": true, "detailOpens": "beside"}}"#;
+
+        let settings: AppSettings = serde_json::from_str(old).expect("an older settings.json");
+
+        assert_eq!(settings.windows.remembered(Spot::Toolbar), at(74, 48));
+        for spot in [Spot::Meter, Spot::History, Spot::Detail, Spot::Report, Spot::Pvp, Spot::Todos, Spot::Resources, Spot::Pets, Spot::Settings] {
+            assert_eq!(settings.windows.remembered(spot), None, "{spot:?}");
+        }
+        assert_eq!(settings.windows.detail_opens, DetailPlacement::WhereLeft, "\"beside\" reads as where it was left");
+    }
+
+    #[test]
+    fn a_remembered_spot_is_stored_camel_case_and_comes_back() {
+        let mut settings = AppSettings::default();
+        settings.windows.leave(Spot::Meter, ScreenPoint { x: 10, y: 20 });
+        settings.windows.leave(Spot::Pets, ScreenPoint { x: -1900, y: 30 });
+
+        let stored = serde_json::to_value(&settings).expect("serialises");
+
+        assert_eq!(stored["windows"]["meterAt"], serde_json::json!({"x": 10, "y": 20}));
+        assert_eq!(stored["windows"]["petsAt"], serde_json::json!({"x": -1900, "y": 30}));
+        assert!(stored["windows"]["historyAt"].is_null(), "a window never dragged has no spot");
+        let loaded: AppSettings = serde_json::from_value(stored).expect("reads back");
+        assert_eq!(loaded, settings);
+        assert_eq!(serde_json::to_value(DetailPlacement::WhereLeft).unwrap(), "beside");
+        assert_eq!(serde_json::to_value(DetailPlacement::Centred).unwrap(), "centred");
+    }
+
+    #[test]
+    fn the_detail_window_remembers_its_spot_only_while_it_opens_where_it_was_left() {
+        let mut windows = WindowSettings::default();
+        windows.leave(Spot::Detail, ScreenPoint { x: 5, y: 6 });
+        assert_eq!(windows.remembered(Spot::Detail), at(5, 6));
+
+        windows.detail_opens = DetailPlacement::Centred;
+        assert_eq!(windows.remembered(Spot::Detail), None, "centred: the spot saved earlier is not used");
+        windows.leave(Spot::Detail, ScreenPoint { x: 50, y: 60 });
+        windows.detail_opens = DetailPlacement::WhereLeft;
+        assert_eq!(windows.remembered(Spot::Detail), at(5, 6), "a drag while centred is not remembered");
+    }
+
+    #[gpui::test]
+    fn reset_settings_forgets_where_the_windows_were_left(cx: &mut gpui::TestAppContext) {
+        let store = cx.update(|cx| cx.new(|_| Settings::in_memory(AppSettings::default())));
+        cx.update(|cx| {
+            install(&store, cx);
+            leave_window_at(Spot::Toolbar, ScreenPoint { x: 74, y: 48 }, cx);
+            leave_window_at(Spot::Todos, ScreenPoint { x: 300, y: 90 }, cx);
+        });
+        assert_eq!(store.read_with(cx, |settings, _| settings.get().windows.remembered(Spot::Todos)), at(300, 90));
+
+        cx.update(|cx| store.update(cx, |settings, cx| settings.reset(cx)));
+
+        let windows = store.read_with(cx, |settings, _| settings.get().windows.clone());
+        assert_eq!((windows.remembered(Spot::Toolbar), windows.remembered(Spot::Todos)), (None, None));
+    }
 
     #[test]
     fn the_core_gets_the_counting_options_and_keeps_the_rest() {
