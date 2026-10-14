@@ -4,7 +4,7 @@ title: Toolbar and soul tracker cards end up under the game after a while
 status: In Progress
 assignee: []
 created_date: '2026-10-12 15:02'
-updated_date: '2026-10-12 15:05'
+updated_date: '2026-10-14 19:09'
 labels:
   - bug
 dependencies: []
@@ -50,7 +50,7 @@ TASK-34.5 (the soul tracker card; its note says the card's window was kept hidde
 <!-- AC:BEGIN -->
 - [ ] #1 The toolbar stays visible over the game through a long play session, including after the game window becomes maximised or another program's window comes to the front; when covered it is back on top within about a second without taking the keyboard focus from the game.
 - [ ] #2 A soul tracker card appears on every soul gain, including right after the previous card ended and after a long session; a gain while a card is up updates it and keeps it visible.
-- [ ] #3 After launching Belisk, belisk.log contains no 'RefCell already borrowed' ERROR.
+- [x] #3 After launching Belisk, belisk.log contains no 'RefCell already borrowed' ERROR.
 - [ ] #4 When an overlay is covered by another program's window, belisk.log names what covered it and that it was put back on top; it also records the Alt+Shift+CapsLock shortcut and the tray's Show toolbar when used.
 <!-- AC:END -->
 
@@ -58,4 +58,10 @@ TASK-34.5 (the soul tracker card; its note says the card's window was kept hidde
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-12: fix in code by agents (overlays raised whenever shown, once-a-second restack of a fixed stack, card closes its window, log lines, deferred Win32 calls). Not tested by the user. Related review work: TASK-36.
+
+2026-10-14: the user still saw 'RefCell already borrowed' ERRORs at launch (debug build, 6 pairs of GPUI window.rs:1869 on_moved and :1861 on_resize). Cause: the 2026-10-12 fix deferred only window shows and raises; the frame change (SWP_FRAMECHANGED) and the move and resize that place a new overlay still ran inside the GPUI update that opened it (meter, toolbar, every tool and card window), so Windows' WM_MOVE/WM_SIZE could not reach GPUI. Four of the six pairs are the meter and toolbar; the other two are most likely a third window opened at launch (What's new after a version jump, or a reminder card), not confirmed by a trace. Fix in code by agents: every Win32 call that makes Windows report a move, resize, show or frame change now runs after the update (overlay::after_update), in order frame change, place, show, restack; the lock's frame refresh and the Settings foreground request too. Agent evidence: cargo test --workspace passed (app 942 + 1 ignored); an off-screen capture run logged 0 'already borrowed' lines (the run before the fix: 90); independent review accepted. Not checked: the user's own launch; that is AC #3.
+
+2026-10-14: the user's launch log of 2026-10-14 17:02 and 17:05 (builds with the deferred Win32 calls) has no 'RefCell already borrowed' line (earlier sessions that day had them); AC #3 still awaits the user's own confirmation. A new pair of GPUI errors ('window not found' at gpui window.rs:1914, then 'Invalid window handle' at gpui-pre-windows window.rs:623/624) appeared twice in that session; diagnosed from GPUI's code as closing the Settings window with its title-bar ×, an upstream GPUI log line with no effect (nothing left on screen, no focus change); not reproduced at runtime; no fix planned.
+
+2026-10-14: user's launches after the fix show no "RefCell already borrowed" line in belisk.log; the user answered "Everything seem[s fine]" when asked whether the launch log was clean. AC #3 checked. AC #1, #2 and #4 need a long play session and stay open; status stays In Progress.
 <!-- SECTION:NOTES:END -->
