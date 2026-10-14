@@ -14,6 +14,7 @@ use serde::Serialize;
 use crate::capture::channel::Channel;
 use crate::capture::dispatcher::is_web_flow;
 use crate::capture::game_connections::{query_game_connections, GameConnection};
+use crate::capture::game_flow_gate::GameFlowGate;
 use crate::logger::AppLogger;
 
 #[derive(Debug, Clone, Serialize)]
@@ -598,10 +599,19 @@ fn start_capture_thread(
             }
         };
 
+        let mut gate = GameFlowGate::new(Instant::now());
         while running.load(Ordering::SeqCst) {
             match next_captured_packet(&npcap, capture_handle) {
                 CaptureRead::Packet(packet) => {
-                    let _ = channel.try_send(packet);
+                    let admitted = gate.admits(&packet, Instant::now(), |connection| {
+                        logger.info(format!(
+                            "Npcap capture candidate detected on {device_name}: {}-{}",
+                            connection.0, connection.1
+                        ));
+                    });
+                    if admitted {
+                        let _ = channel.try_send(packet);
+                    }
                 }
                 CaptureRead::Timeout => continue,
                 CaptureRead::End => break,

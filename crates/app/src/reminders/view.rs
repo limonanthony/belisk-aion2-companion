@@ -16,6 +16,7 @@ use gpui::{
 };
 
 use super::events::{EventId, Rule};
+use super::planner::CardKind;
 use super::schedule::next_reminder;
 use super::service::ShowReminder;
 use super::settings::ReminderSettings;
@@ -103,6 +104,7 @@ impl Countdown {
 
 /// What the card says, fixed when it is shown.
 struct Card {
+    kind: CardKind,
     when: SharedString,
     /// The start on the clock; none on the test card.
     at: Option<SharedString>,
@@ -114,14 +116,21 @@ impl Card {
     fn of(request: &ShowReminder, settings: &ReminderSettings) -> Self {
         if request.is_test {
             return Self {
+                kind: CardKind::Reminder,
                 when: fl!("reminder-test-title").into(),
                 at: None,
                 events: vec![(fl!("reminder-test-event").into(), next_line(settings).into())],
             };
         }
-        let minutes = request.starts_in().as_millis().div_ceil(60_000) as i64;
-        let when = if minutes == 0 { fl!("reminder-starting-now") } else { fl!("reminder-in-minutes", minutes = minutes) };
+        let when = match request.kind {
+            CardKind::StartAlert => fl!("reminder-under-way"),
+            CardKind::Reminder => {
+                let minutes = request.starts_in().as_millis().div_ceil(60_000) as i64;
+                if minutes == 0 { fl!("reminder-starting-now") } else { fl!("reminder-in-minutes", minutes = minutes) }
+            }
+        };
         Self {
+            kind: request.kind,
             when: when.into(),
             at: Some(request.starts_at.to_string().into()),
             events: rarest_first(&request.events)
@@ -132,7 +141,11 @@ impl Card {
     }
 
     fn label(&self) -> SharedString {
-        let mut label = fl!("reminder-label", when = self.when.to_string());
+        let when = self.when.to_string();
+        let mut label = match self.kind {
+            CardKind::Reminder => fl!("reminder-label", when = when),
+            CardKind::StartAlert => fl!("reminder-start-label", when = when),
+        };
         if let Some(at) = &self.at {
             label.push_str(&format!(", {at}"));
         }
@@ -329,7 +342,7 @@ impl ReminderView {
 
     fn set_locked(&mut self, locked: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.meter.is_some() {
-            if let Err(error) = overlay::set_click_through(window, locked) {
+            if let Err(error) = overlay::set_click_through(window, cx, locked) {
                 crate::app_log::warn(format!("cannot {} the reminder: {error}", if locked { "lock" } else { "unlock" }));
                 return;
             }
@@ -626,7 +639,13 @@ mod tests {
     use crate::settings::{install, AppSettings, Settings};
 
     fn request(events: Vec<EventId>, hour: u8) -> ShowReminder {
-        ShowReminder { events, start_ms: now_ms() + 60_000, starts_at: ClockTime { hour, minute: 0 }, is_test: false }
+        ShowReminder {
+            events,
+            start_ms: now_ms() + 60_000,
+            starts_at: ClockTime { hour, minute: 0 },
+            kind: CardKind::Reminder,
+            is_test: false,
+        }
     }
 
     fn open(cx: &mut TestAppContext, first: ShowReminder) -> (Entity<ReminderView>, &mut VisualTestContext) {
@@ -671,6 +690,19 @@ mod tests {
         let card = Card::of(&soon, &ReminderSettings::default());
         assert_eq!(card.when.as_ref(), fl!("reminder-in-minutes", minutes = 2));
         assert_eq!(card.at.as_deref(), Some("16:00"));
+    }
+
+    #[test]
+    fn a_start_alert_says_under_way_with_the_start_time_and_has_its_own_label() {
+        let started = ShowReminder { kind: CardKind::StartAlert, start_ms: now_ms() - 5_000, ..request(vec![EventId::ShugoFestival], 16) };
+        let alert = Card::of(&started, &ReminderSettings::default());
+        assert_eq!(alert.when.as_ref(), fl!("reminder-under-way"));
+        assert_eq!(alert.at.as_deref(), Some("16:00"));
+        assert_eq!(alert.events.len(), 1);
+
+        let reminder = Card::of(&request(vec![EventId::ShugoFestival], 16), &ReminderSettings::default());
+        assert_ne!(alert.when, reminder.when);
+        assert_ne!(alert.label(), reminder.label());
     }
 
     #[test]

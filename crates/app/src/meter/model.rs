@@ -644,12 +644,6 @@ impl MeterModel {
             }
         }
         let emptied = snapshot.total_damage == 0 && snapshot.session.players.is_empty();
-        let target = live::target_of(&snapshot);
-        // A target the game has not described yet never replaces a known
-        // one, so a half-known fight cannot take over the card.
-        if target.is_some_and(|target| target.target_mob_code.is_none()) {
-            return false;
-        }
         if emptied {
             self.shades.clear();
             // A dungeon boss held after a wipe stays locked until it is killed.
@@ -682,16 +676,20 @@ impl MeterModel {
     /// death is its summary), else the current target.
     fn settle_focus(&mut self, now: Instant) -> Option<u32> {
         let snapshot = self.snapshot.as_ref()?;
-        let current = live::target_of(snapshot).map(|target| target.id);
+        let target = live::target_of(snapshot);
+        let current = target.map(|target| target.id);
+        // A target the game has not described yet never takes the focus, so a
+        // half-known fight cannot take over the card.
+        let undescribed = target.filter(|target| target.target_mob_code.is_none()).map(|target| target.id);
         let bosses: Vec<u32> = snapshot
             .combat_infos
             .target_infos
             .values()
-            .filter(|target| target.is_boss)
+            .filter(|target| target.is_boss && Some(target.id) != undescribed)
             .map(|target| target.id)
             .collect();
         let change = self.focus.observe(
-            current,
+            current.filter(|id| Some(*id) != undescribed),
             &bosses,
             |id| facts_of(snapshot, id),
             |id| involvement_of(snapshot, id),
@@ -1215,10 +1213,34 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_target_without_a_mob_code_is_skipped() {
+    fn an_add_the_game_has_not_described_keeps_the_meter_updating_on_the_boss() {
+        let start = Instant::now();
+        let mut model = boss_fight_with_adds(start);
+        let mobs = [mob(BOSS_ID, true, 600, 45.0, boss_party()), mob(TRASH_ID, false, 100, 8.0, trash_party())];
+        let mut add_hit_last = world(TRASH_ID, &mobs, Some((2, "You")));
+        undescribe(&mut add_hit_last, TRASH_ID);
+
+        assert!(model.apply(MeterEvent::DpsSnapshot(add_hit_last), at(start, 5)), "the frame is drawn");
+        assert_eq!(model.focused_boss(), Some(BOSS_ID));
+        let boss_hp = model.live().and_then(|live| live.boss_hp.as_ref().map(|gauge| gauge.fraction));
+        assert_eq!(boss_hp, Some(0.6), "the boss's health of this frame, not the last one before the add");
+    }
+
+    #[test]
+    fn a_boss_the_game_has_not_described_does_not_take_the_focus() {
         let mut model = MeterModel::new(OverlaySettings::default(), None);
-        assert!(!model.apply(MeterEvent::DpsSnapshot(snapshot(500, None, 30.0)), Instant::now()));
-        assert!(model.live().is_none());
+        let mut undescribed = world(BOSS_ID, &[mob(BOSS_ID, true, 800, 40.0, boss_party())], Some((2, "You")));
+        undescribe(&mut undescribed, BOSS_ID);
+
+        assert!(model.apply(MeterEvent::DpsSnapshot(undescribed), Instant::now()));
+        assert_eq!(model.focused_boss(), None);
+        assert!(model.live().is_some(), "the frame is drawn all the same");
+    }
+
+    fn undescribe(snapshot: &mut CombatSnapshot, id: u32) {
+        for target in snapshot.combat_infos.target_infos.get_mut(&id).into_iter().chain(snapshot.last_target_info.as_mut().filter(|target| target.id == id)) {
+            target.target_mob_code = None;
+        }
     }
 
     #[test]

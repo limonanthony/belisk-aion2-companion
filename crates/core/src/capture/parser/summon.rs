@@ -32,10 +32,12 @@ impl StreamProcessor {
                 self.port, spawn.entity_id, spawn.mob_code, boss_name, spawn.current_hp, spawn.max_hp
             ));
         } else {
-            self.logger.debug(format!(
-                "[{}] 4136 spawn target={} mob_code={}",
-                self.port, spawn.entity_id, spawn.mob_code
-            ));
+            self.logger.debug(|| {
+                format!(
+                    "[{}] 4136 spawn target={} mob_code={}",
+                    self.port, spawn.entity_id, spawn.mob_code
+                )
+            });
         }
 
         if is_boss || !self.config.read().unwrap().boss_only {
@@ -47,17 +49,15 @@ impl StreamProcessor {
             SpawnOwner::Unknown => {}
             SpawnOwner::Entity(owner_id) => {
                 self.data_storage.append_summon(owner_id, spawn.entity_id);
-                self.logger.info(format!(
-                    "[{}] summon owner={} owner_name={} summon={}",
-                    self.port,
-                    owner_id,
-                    self.data_storage
-                        .actor_id_name_snapshot()
-                        .get(&owner_id)
-                        .cloned()
-                        .unwrap_or_else(|| "Unknown".to_string()),
-                    spawn.entity_id
-                ));
+                self.logger.debug(|| {
+                    format!(
+                        "[{}] summon owner={} owner_name={} summon={}",
+                        self.port,
+                        owner_id,
+                        self.data_storage.actor_name(owner_id).unwrap_or_else(|| "Unknown".to_string()),
+                        spawn.entity_id
+                    )
+                });
             }
             SpawnOwner::None => self.data_storage.forget_summon_owner(spawn.entity_id),
         }
@@ -105,11 +105,7 @@ impl StreamProcessor {
             }
         }
 
-        let is_target_player = self
-            .data_storage
-            .actor_id_name_snapshot()
-            .contains_key(&target_id)
-            && self.data_storage.get_mob_code(target_id).is_none();
+        let is_target_player = self.data_storage.is_player(target_id);
 
         if is_target_player {
             if !self.config.read().unwrap().pvp_mode_on {
@@ -142,16 +138,16 @@ impl StreamProcessor {
                 return true;
             }
             self.data_storage.set_player_hp(target_id, current_hp, max_hp);
-            let actor_name = self
-                .data_storage
-                .actor_id_name_snapshot()
-                .get(&target_id)
-                .cloned()
-                .unwrap_or_else(|| "Unknown".to_string());
-            self.logger.info(format!(
-                "[{}] player remain hp actor={} name={} current_hp={:?} max_hp={:?}",
-                self.port, target_id, actor_name, current_hp, max_hp
-            ));
+            self.logger.debug(|| {
+                format!(
+                    "[{}] player remain hp actor={} name={} current_hp={:?} max_hp={:?}",
+                    self.port,
+                    target_id,
+                    self.data_storage.actor_name(target_id).unwrap_or_else(|| "Unknown".to_string()),
+                    current_hp,
+                    max_hp
+                )
+            });
             return true;
         }
 
@@ -186,12 +182,13 @@ impl StreamProcessor {
         let Some(record) = read_char_die_record(packet) else {
             return false;
         };
-        self.data_storage.record_player_death(
+        self.data_storage.record_player_death_at(
             record.victim_id,
             displayed_skill_code(record.skill_code),
             record.killer_id,
             &record.killer_name,
             record.killer_mob_code,
+            self.captured_at,
         );
         true
     }

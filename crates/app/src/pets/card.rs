@@ -6,8 +6,8 @@
 //! and its souls toward the next one, and goes 10 s after its last update, as
 //! the timer ring beside the × shows; the pointer over it pauses that time
 //! and a click dismisses it. While the meter is locked the card is
-//! click-through and shows no ×. A card that went keeps its window, hidden,
-//! so the next gain shows it again without the time a new window takes.
+//! click-through and shows no ×. When it goes it closes its window, as the
+//! reminder card does; the next gain opens a new card.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -174,10 +174,8 @@ pub struct PetCardView {
     countdown: Countdown,
     /// Counts the fades out, so one after the card came back runs anew.
     leaves: u64,
-    /// The fade out is under way; the window hides when it ends.
+    /// The fade out is under way; the window goes when it ends.
     leaving: Option<Task<()>>,
-    /// The card went: its window is hidden until the next gain.
-    parked: bool,
     locked: bool,
     pointer_over: bool,
     look: Look,
@@ -190,8 +188,7 @@ pub struct PetCardView {
     /// Tests and dev captures cannot move a real pointer, so they set it here.
     #[cfg(any(test, feature = "probes"))]
     forced_pointer: Option<bool>,
-    /// Runs while the card is up.
-    _ticker: Option<Task<()>>,
+    _ticker: Task<()>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -218,7 +215,15 @@ impl PetCardView {
                 }));
             }
         }
-        let ticker = Self::ticker(window, cx);
+        let ticker = cx.spawn_in(window, async move |this, cx| loop {
+            let Ok(wait) = this.read_with(cx, |this, cx| this.countdown.next_tick(cx.background_executor().now(), TICK)) else {
+                break;
+            };
+            cx.background_executor().timer(wait).await;
+            if this.update_in(cx, |this, window, cx| this.tick(window, cx)).is_err() {
+                break;
+            }
+        });
         let mut shown = Shown::default();
         shown.apply(request);
         let mut view = Self {
@@ -226,7 +231,6 @@ impl PetCardView {
             countdown: Countdown::started(SHOWN_FOR, cx.background_executor().now()),
             leaves: 0,
             leaving: None,
-            parked: false,
             locked: false,
             pointer_over: false,
             look: Look::of(&store.read(cx).get().overlay),
@@ -235,7 +239,7 @@ impl PetCardView {
             card_size: Rc::new(Cell::new(None)),
             #[cfg(any(test, feature = "probes"))]
             forced_pointer: None,
-            _ticker: Some(ticker),
+            _ticker: ticker,
             _subscriptions: subscriptions,
         };
         if locked {
@@ -244,31 +248,9 @@ impl PetCardView {
         view
     }
 
-    /// Ticks the time and the place until the card goes.
-    fn ticker(window: &mut Window, cx: &mut Context<Self>) -> Task<()> {
-        cx.spawn_in(window, async move |this, cx| loop {
-            let next = this.read_with(cx, |this, cx| (!this.parked).then(|| this.countdown.next_tick(cx.background_executor().now(), TICK)));
-            let Ok(Some(wait)) = next else {
-                break;
-            };
-            cx.background_executor().timer(wait).await;
-            if this.update_in(cx, |this, window, cx| this.tick(window, cx)).is_err() {
-                break;
-            }
-        })
-    }
-
     /// More souls, or the test card: the card takes them and its 10 s start
-    /// again. A card that went comes back with these alone.
-    pub fn show(&mut self, request: &CardRequest, window: &mut Window, cx: &mut Context<Self>) {
-        if self.parked {
-            self.parked = false;
-            self.shown = Shown::default();
-            self._ticker = Some(Self::ticker(window, cx));
-            if let Some(link) = &self.meter {
-                link.placement.reveal(window);
-            }
-        }
+    /// again, a fade under way included.
+    pub fn show(&mut self, request: &CardRequest, cx: &mut Context<Self>) {
         self.shown.apply(request);
         let now = cx.background_executor().now();
         self.countdown = Countdown::started(SHOWN_FOR, now);
@@ -277,11 +259,6 @@ impl PetCardView {
         }
         self.leaving = None;
         cx.notify();
-    }
-
-    #[cfg(any(test, feature = "probes"))]
-    pub fn is_parked(&self) -> bool {
-        self.parked
     }
 
     #[cfg(any(test, feature = "probes"))]
@@ -296,7 +273,7 @@ impl PetCardView {
 
     fn set_locked(&mut self, locked: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.meter.is_some() {
-            if let Err(error) = overlay::set_click_through(window, locked) {
+            if let Err(error) = overlay::set_click_through(window, cx, locked) {
                 crate::app_log::warn(format!("cannot {} the soul tracker card: {error}", if locked { "lock" } else { "unlock" }));
                 return;
             }
@@ -357,7 +334,7 @@ impl PetCardView {
         if let (Some(link), Some(card)) = (&self.meter, self.card_size.get()) {
             link.placement.place(card, self.gap(), window, cx);
         }
-        if self.parked || self.leaving.is_some() || !self.countdown.is_running() {
+        if self.leaving.is_some() || !self.countdown.is_running() {
             return;
         }
         if self.countdown.left(cx.background_executor().now()).is_zero() {
@@ -368,41 +345,20 @@ impl PetCardView {
     }
 
     fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.leaving.is_some() || self.parked {
+        if self.leaving.is_some() {
             return;
         }
         if cx.reduce_motion() {
-            self.park(window, cx);
+            self.leaving = Some(Task::ready(()));
+            window.remove_window();
             return;
         }
         self.leaves += 1;
         self.leaving = Some(cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(FADE).await;
-            let _ = this.update_in(cx, |this, window, cx| this.park(window, cx));
+            let _ = this.update_in(cx, |_, window, _| window.remove_window());
         }));
         cx.notify();
-    }
-
-    /// The card went: its window hides and waits for the next gain, and its
-    /// ticker ends. The fade that called this stays until [`Self::show`]
-    /// clears it, so a task is never dropped from inside itself.
-    fn park(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.parked = true;
-        if let Some(link) = &self.meter {
-            link.placement.hide(window);
-        }
-        cx.notify();
-    }
-
-    /// Alt+Shift+CapsLock hides everything: the card goes at once, without
-    /// its fade, and is not brought back when everything shows again; the
-    /// next gain shows it, hidden everything or not.
-    pub fn put_away(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.parked {
-            return;
-        }
-        self.leaving = None;
-        self.park(window, cx);
     }
 
     fn title(&self) -> String {
@@ -604,7 +560,7 @@ impl Render for PetCardView {
 mod tests {
     use std::cell::RefCell;
 
-    use gpui::{AppContext as _, Entity, TestAppContext, VisualTestContext};
+    use gpui::{AppContext as _, Entity, TestAppContext, VisualTestContext, WindowHandle, WindowOptions};
     use meter_core::capture::parser::pet_record::{PetLevel, PetProgress, PetSnapshot, SoulGain};
     use meter_core::identity::KnownCharacter;
     use meter_core::pet_sources::SoulSource;
@@ -651,9 +607,8 @@ mod tests {
         cx.add_window_view(|window, cx| PetCardView::new(&request, None, window, cx))
     }
 
-    /// The card is up: its window open and not waiting hidden.
-    fn is_up(view: &Entity<PetCardView>, cx: &mut VisualTestContext) -> bool {
-        !cx.windows().is_empty() && !cx.update(|_, cx| view.read(cx).is_parked())
+    fn is_open(cx: &VisualTestContext) -> bool {
+        !cx.windows().is_empty()
     }
 
     fn wait(cx: &mut VisualTestContext, duration: Duration) {
@@ -665,15 +620,34 @@ mod tests {
         cx.update(|_, cx| view.read(cx).shown().pets.iter().map(|pet| (pet.pet_id, pet.state, pet.change)).collect())
     }
 
-    /// The gains Settings › Pets lets through reach the card in its window,
-    /// as `secondary::show_pet_card` hands them over.
-    fn deliver_to(cx: &mut VisualTestContext) -> Subscription {
-        let window = cx.window_handle().downcast::<PetCardView>().expect("the card's window");
-        cx.update(|_, cx| {
+    /// Gains reach the card as `secondary::show_pet_card` hands them over:
+    /// the open card takes them; once it has closed, a new card opens with
+    /// them. The cell holds the card now open, or the one that closed.
+    fn deliver_to(cx: &mut VisualTestContext) -> (Subscription, Rc<Cell<WindowHandle<PetCardView>>>) {
+        let card = Rc::new(Cell::new(cx.window_handle().downcast::<PetCardView>().expect("the card's window")));
+        let current = card.clone();
+        let watch = cx.cx.update(|cx| {
             watch_gains(cx, move |gains, cx| {
-                window.update(cx, |card, window, cx| card.show(&CardRequest::Gains(gains), window, cx)).expect("the card's window is open");
+                let request = CardRequest::Gains(gains);
+                if current.get().update(cx, |card, _, cx| card.show(&request, cx)).is_err() {
+                    let opened = cx
+                        .open_window(WindowOptions::default(), |window, cx| cx.new(|cx| PetCardView::new(&request, None, window, cx)))
+                        .expect("a new card's window");
+                    current.set(opened);
+                }
             })
-        })
+        });
+        (watch, card)
+    }
+
+    /// Whether `card`'s window is open, and the pets on it.
+    fn card_state(card: WindowHandle<PetCardView>, cx: &mut VisualTestContext) -> Option<Vec<u32>> {
+        card.update(&mut cx.cx, |card, _, _| card.shown().pets.iter().map(|pet| pet.pet_id).collect()).ok()
+    }
+
+    fn record_now(reports: Vec<PetReport>, cx: &mut VisualTestContext) {
+        cx.cx.update(|cx| crate::pets::record(cx, reports));
+        cx.run_until_parked();
     }
 
     fn report(content: PetContent) -> PetReport {
@@ -722,14 +696,14 @@ mod tests {
     fn the_card_goes_10_s_after_its_last_update_and_a_new_gain_starts_the_10_s_again(cx: &mut TestAppContext) {
         let (view, cx) = open(CardRequest::Gains(vec![gain(FOSSA, 2, 2, 27)]), cx);
         wait(cx, Duration::from_secs(8));
-        cx.update(|window, cx| view.update(cx, |view, cx| view.show(&CardRequest::Gains(vec![gain(FOSSA, 2, 2, 28)]), window, cx)));
+        cx.update(|_, cx| view.update(cx, |view, cx| view.show(&CardRequest::Gains(vec![gain(FOSSA, 2, 2, 28)]), cx)));
         assert_eq!(pets_on(&view, cx), vec![(FOSSA, PetState { level: 2, souls: 28 }, None)]);
 
         wait(cx, Duration::from_secs(9));
-        assert!(is_up(&view, cx), "the gain started the 10 s again");
+        assert!(is_open(cx), "the gain started the 10 s again");
         wait(cx, Duration::from_secs(1) + TICK);
         wait(cx, FADE);
-        assert!(!is_up(&view, cx), "10 s after the last gain, then the fade");
+        assert!(!is_open(cx), "10 s after the last gain, then the fade, its window closed");
     }
 
     #[gpui::test]
@@ -738,24 +712,24 @@ mod tests {
         wait(cx, Duration::from_secs(6));
         cx.update(|window, cx| view.update(cx, |view, cx| view.force_pointer(Some(true), window, cx)));
         wait(cx, Duration::from_secs(30));
-        assert!(is_up(&view, cx), "paused under the pointer");
+        assert!(is_open(cx), "paused under the pointer");
 
         cx.update(|window, cx| view.update(cx, |view, cx| view.force_pointer(Some(false), window, cx)));
         wait(cx, Duration::from_secs(3));
-        assert!(is_up(&view, cx), "4 s were left when the pointer came");
+        assert!(is_open(cx), "4 s were left when the pointer came");
         wait(cx, Duration::from_secs(1) + TICK);
         wait(cx, FADE);
-        assert!(!is_up(&view, cx));
+        assert!(!is_open(cx));
     }
 
     #[gpui::test]
     fn a_click_on_the_card_dismisses_it(cx: &mut TestAppContext) {
-        let (view, cx) = open(CardRequest::Gains(vec![gain(FOSSA, 2, 2, 27)]), cx);
+        let (_, cx) = open(CardRequest::Gains(vec![gain(FOSSA, 2, 2, 27)]), cx);
         let card = cx.debug_bounds("pet-card").expect("the card is drawn");
         cx.simulate_click(card.center(), gpui::Modifiers::none());
-        assert!(is_up(&view, cx), "it fades out first");
+        assert!(is_open(cx), "it fades out first");
         wait(cx, FADE);
-        assert!(!is_up(&view, cx));
+        assert!(!is_open(cx));
     }
 
     #[gpui::test]
@@ -814,7 +788,7 @@ mod tests {
     #[gpui::test]
     fn gains_reaching_an_open_card_add_their_pets_and_restart_its_time(cx: &mut TestAppContext) {
         let (view, cx) = open(CardRequest::Gains(vec![gain(FOSSA, 2, 2, 27)]), cx);
-        let _watch = deliver_to(cx);
+        let (_watch, _) = deliver_to(cx);
         wait(cx, Duration::from_secs(7));
         cx.update(|_, cx| {
             let snapshot = PetSnapshot { levels: vec![PetLevel { pet_id: SPARKIE, level: 1 }], progress: vec![PetProgress { pet_id: SPARKIE, progress: 24 }], counters: Vec::new() };
@@ -825,7 +799,7 @@ mod tests {
             vec![(FOSSA, PetState { level: 2, souls: 27 }, None), (SPARKIE, PetState { level: 2, souls: 1 }, Some(Change::Reached(2)))]
         );
         wait(cx, Duration::from_secs(9));
-        assert!(is_up(&view, cx), "the new gain restarted the 10 s");
+        assert!(is_open(cx), "the new gain restarted the 10 s");
     }
 
     #[gpui::test]
@@ -840,7 +814,7 @@ mod tests {
 
         wait(cx, Duration::from_secs(5));
         assert!((ring(&view, cx).left - 0.5).abs() < 0.01, "half of the 10 s");
-        cx.update(|window, cx| view.update(cx, |view, cx| view.show(&CardRequest::Gains(vec![gain(FOSSA, 2, 2, 28)]), window, cx)));
+        cx.update(|_, cx| view.update(cx, |view, cx| view.show(&CardRequest::Gains(vec![gain(FOSSA, 2, 2, 28)]), cx)));
         assert!((ring(&view, cx).left - 1.).abs() < 1e-3, "a gain refills it at once");
 
         cx.update(|window, cx| view.update(cx, |view, cx| view.force_pointer(Some(true), window, cx)));
@@ -849,69 +823,60 @@ mod tests {
         assert!(paused.paused && (paused.left - 1.).abs() < 1e-3, "{paused:?}");
     }
 
-    /// A gain shows its pet at once whenever it comes: in the card's last
-    /// moments, during its fade, as it has just gone and long after; always
-    /// in the same window, a card that went coming back with that pet alone.
-    #[gpui::test]
-    fn every_gain_shows_the_card_at_once_whenever_it_comes(cx: &mut TestAppContext) {
-        let (view, cx) = open(CardRequest::Gains(vec![gain(FOSSA, 2, 2, 27)]), cx);
-        let _watch = deliver_to(cx);
+    fn snapshot_of_three(cx: &mut VisualTestContext) {
         let snapshot = PetSnapshot {
             levels: vec![PetLevel { pet_id: FOSSA, level: 2 }, PetLevel { pet_id: SPARKIE, level: 1 }, PetLevel { pet_id: FUNGEN, level: 1 }],
             progress: Vec::new(),
             counters: Vec::new(),
         };
-        cx.update(|_, cx| crate::pets::record(cx, vec![report(PetContent::Snapshot(snapshot))]));
-        let gain_of = |pet_id: u32, cx: &mut VisualTestContext| {
-            cx.update(|_, cx| crate::pets::record(cx, vec![souls(SoulSource::Loot, &[(pet_id, 1)])]));
-        };
-        let shown_ids = |cx: &mut VisualTestContext| pets_on(&view, cx).iter().map(|(pet_id, ..)| *pet_id).collect::<Vec<_>>();
-
-        wait(cx, Duration::from_millis(9_900));
-        gain_of(SPARKIE, cx);
-        assert!(is_up(&view, cx) && shown_ids(cx).contains(&SPARKIE), "at 9.9 s");
-        wait(cx, Duration::from_secs(9));
-        assert!(is_up(&view, cx), "and its 10 s started again");
-
-        wait(cx, Duration::from_secs(1) + TICK * 2);
-        assert!(cx.update(|_, cx| view.read(cx).leaving.is_some()), "fading");
-        gain_of(FUNGEN, cx);
-        wait(cx, FADE * 2);
-        assert!(is_up(&view, cx) && shown_ids(cx).contains(&FUNGEN), "a gain during the fade keeps the card up");
-
-        wait(cx, SHOWN_FOR + TICK * 2 + FADE);
-        assert!(!is_up(&view, cx), "10 s later the card went");
-        gain_of(SPARKIE, cx);
-        assert!(is_up(&view, cx), "as it has just gone");
-        assert_eq!(shown_ids(cx), vec![SPARKIE], "with that pet alone");
-
-        wait(cx, SHOWN_FOR + TICK * 2 + FADE + Duration::from_secs(60));
-        assert!(!is_up(&view, cx));
-        gain_of(FOSSA, cx);
-        assert!(is_up(&view, cx), "long after");
-        assert_eq!(shown_ids(cx), vec![FOSSA]);
-        assert_eq!(cx.windows().len(), 1, "one window all along");
-        wait(cx, SHOWN_FOR - TICK * 4);
-        assert!(is_up(&view, cx), "its ticker runs again: the full 10 s");
-        wait(cx, TICK * 6 + FADE);
-        assert!(!is_up(&view, cx), "and it goes again");
+        record_now(vec![report(PetContent::Snapshot(snapshot))], cx);
     }
 
-    /// Alt+Shift+CapsLock with the card up: it goes at once and nothing
-    /// brings it back but a gain, which shows it even while everything is
-    /// hidden.
+    /// The card closes 10 s after its last gain and the fade; a gain in its
+    /// last moments or during the fade keeps it, with the pet added.
     #[gpui::test]
-    fn hiding_everything_puts_the_card_away_and_only_a_gain_brings_it_back(cx: &mut TestAppContext) {
-        let (view, cx) = open(CardRequest::Gains(vec![gain(FOSSA, 2, 2, 27)]), cx);
-        let _watch = deliver_to(cx);
-        wait(cx, Duration::from_secs(3));
-        cx.update(|window, cx| view.update(cx, |view, cx| view.put_away(window, cx)));
-        assert!(!is_up(&view, cx), "it goes at once, no fade");
-        wait(cx, SHOWN_FOR * 3);
-        assert!(!is_up(&view, cx), "and stays gone past its 10 s");
+    fn a_gain_in_the_last_moments_or_during_the_fade_keeps_the_card(cx: &mut TestAppContext) {
+        let (_, cx) = open(CardRequest::Gains(vec![gain(FOSSA, 2, 2, 27)]), cx);
+        let (_watch, card) = deliver_to(cx);
+        snapshot_of_three(cx);
 
-        cx.update(|_, cx| crate::pets::record(cx, vec![souls(SoulSource::Loot, &[(SPARKIE, 1)])]));
-        assert!(is_up(&view, cx), "a gain shows it");
-        assert_eq!(pets_on(&view, cx).iter().map(|(pet_id, ..)| *pet_id).collect::<Vec<_>>(), vec![SPARKIE]);
+        wait(cx, Duration::from_millis(9_900));
+        record_now(vec![souls(SoulSource::Loot, &[(SPARKIE, 1)])], cx);
+        assert!(card_state(card.get(), cx).is_some_and(|pets| pets.contains(&SPARKIE)), "at 9.9 s");
+        wait(cx, Duration::from_secs(9));
+        assert!(card_state(card.get(), cx).is_some(), "and its 10 s started again");
+
+        wait(cx, Duration::from_secs(1) + TICK * 2);
+        let fading = card.get().update(&mut cx.cx, |card, _, _| card.leaving.is_some()).unwrap_or(false);
+        assert!(fading, "fading");
+        record_now(vec![souls(SoulSource::Loot, &[(FUNGEN, 1)])], cx);
+        wait(cx, FADE * 2);
+        assert!(card_state(card.get(), cx).is_some_and(|pets| pets.contains(&FUNGEN)), "a gain during the fade keeps the card");
+
+        wait(cx, SHOWN_FOR + TICK * 2 + FADE);
+        assert_eq!(card_state(card.get(), cx), None, "10 s after the last gain and the fade, its window closed");
+        assert!(cx.windows().is_empty());
+    }
+
+    /// After the card closed, the next gain opens a new card, at once, with
+    /// that pet alone; that card closes in its turn 10 s later.
+    #[gpui::test]
+    fn a_gain_after_the_card_closed_opens_a_new_card_with_that_pet_alone(cx: &mut TestAppContext) {
+        let (_, cx) = open(CardRequest::Gains(vec![gain(FOSSA, 2, 2, 27)]), cx);
+        let (_watch, card) = deliver_to(cx);
+        snapshot_of_three(cx);
+        let first = card.get();
+        wait(cx, SHOWN_FOR + TICK * 2 + FADE);
+        assert_eq!(card_state(first, cx), None, "the first card closed");
+
+        record_now(vec![souls(SoulSource::Loot, &[(SPARKIE, 1)])], cx);
+        assert_ne!(card.get(), first, "a new window");
+        assert_eq!(card_state(card.get(), cx), Some(vec![SPARKIE]), "with that pet alone, at once");
+        assert_eq!(cx.windows().len(), 1);
+
+        wait(cx, SHOWN_FOR - TICK * 4);
+        assert!(card_state(card.get(), cx).is_some(), "its full 10 s");
+        wait(cx, TICK * 6 + FADE);
+        assert_eq!(card_state(card.get(), cx), None, "then it closes too");
     }
 }

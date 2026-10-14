@@ -42,7 +42,7 @@ use gpui::{
 };
 use meter_core::report::fight_report::FightReport;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible};
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible, SW_SHOWNORMAL};
 
 use crate::changelog::WhatsNew;
 use crate::detail::{DetailModel, DetailSource, DetailView};
@@ -53,7 +53,7 @@ use crate::pets::{self, CardRequest, PetCardView, PetsView, ShowTestCard};
 use crate::pvp::{PvpModel, PvpView};
 use crate::reminders::{self, MeterLink, ReminderView, ShowReminder};
 use crate::report::{build_off_thread, ReportModel, ReportRequest, ReportView};
-use crate::settings::{self, DetailPlacement, Page, RuntimeModel, Section, SettingsView};
+use crate::settings::{self, DetailPlacement, Page, RuntimeModel, ScreenPoint, Section, SettingsView, Spot};
 use crate::todos::{Contents, TodoView};
 use crate::toolbar::{self, PromptView};
 use crate::whats_new::{self, OpenChangelog, WhatsNewView};
@@ -87,6 +87,10 @@ struct Secondary {
     meter_hwnd: HWND,
     placement: Placement,
     changes: Entity<OpenWindows>,
+    /// Puts an open window on screen at its place in Belisk's stack
+    /// ([`reveal_and_restack`]); tests, whose windows have no native handle,
+    /// note the kinds instead.
+    on_screen: Rc<dyn Fn(WindowKind, &mut App)>,
 }
 
 impl Global for Secondary {}
@@ -111,7 +115,7 @@ pub fn init(
     text_input::bind_keys(cx);
     let registry = Rc::new(RefCell::new(Registry::default()));
     let changes = cx.new(|_| OpenWindows);
-    cx.set_global(Secondary { registry: registry.clone(), meter_hwnd, placement, changes });
+    cx.set_global(Secondary { registry: registry.clone(), meter_hwnd, placement, changes, on_screen: Rc::new(reveal_and_restack) });
     cx.subscribe(&reminders::global(cx), |_, request: &ShowReminder, cx| show_reminder(request, cx)).detach();
     pets::watch_gains(cx, |gains, cx| show_pet_card(&CardRequest::Gains(gains), cx)).detach();
     cx.subscribe(&pets::global(cx), |_, request: &ShowTestCard, cx| show_pet_card(&CardRequest::Test(*request), cx)).detach();
@@ -156,30 +160,15 @@ pub fn hwnd_of(kind: WindowKind, cx: &App) -> Option<HWND> {
 }
 
 /// Alt+Shift+CapsLock: takes every window of this layer that is on screen
-/// off it, and returns the kinds to bring back. A soul tracker card that is
-/// up goes, as when its time is up: hidden, its time would run out unseen, and
-/// the next gain shows it again at once, everything hidden or not.
+/// off it, and returns the kinds to bring back. A card keeps counting down
+/// while hidden and closes when its time is up, so showing everything again
+/// does not find it.
 pub fn hide_all(cx: &mut App) -> Vec<WindowKind> {
-    let Some(secondary) = cx.try_global::<Secondary>() else {
-        return Vec::new();
-    };
-    let visible = |hwnd: HWND| unsafe { IsWindowVisible(hwnd) }.as_bool();
-    let shown: Vec<(WindowKind, AnyWindowHandle, HWND)> = secondary
-        .registry
-        .borrow()
-        .entries()
-        .filter_map(|(kind, open)| open.hwnd.filter(|hwnd| visible(*hwnd)).map(|hwnd| (kind, open.window, hwnd)))
-        .collect();
-    let mut hidden = Vec::new();
-    for (kind, window, hwnd) in shown {
-        if let Some(card) = window.downcast::<PetCardView>().filter(|_| kind == WindowKind::PetCard) {
-            let _ = card.update(cx, |card, window, cx| card.put_away(window, cx));
-            continue;
-        }
-        overlay::hide(hwnd);
-        hidden.push(kind);
+    let shown = windows_on_screen(cx);
+    for (_, hwnd) in &shown {
+        overlay::hide(*hwnd);
     }
-    hidden
+    shown.into_iter().map(|(kind, _)| kind).collect()
 }
 
 /// Brings back the windows [`hide_all`] took off screen that are still open;
@@ -189,14 +178,26 @@ pub fn show_again(kinds: &[WindowKind], cx: &App) {
         return;
     };
     for hwnd in still_open(kinds, |kind| secondary.registry.borrow().get(kind).and_then(|open| open.hwnd)) {
-        if let Err(error) = overlay::reveal(hwnd, secondary.placement) {
-            crate::app_log::warn(format!("cannot show a window again: {error}"));
-        }
+        overlay::reveal_after_update(cx, hwnd, secondary.placement, "show a window again");
     }
 }
 
 fn still_open(kinds: &[WindowKind], hwnd_of: impl Fn(WindowKind) -> Option<HWND>) -> Vec<HWND> {
     kinds.iter().filter_map(|kind| hwnd_of(*kind)).collect()
+}
+
+/// The windows of this layer on screen, Settings included.
+pub fn windows_on_screen(cx: &App) -> Vec<(WindowKind, HWND)> {
+    let Some(secondary) = cx.try_global::<Secondary>() else {
+        return Vec::new();
+    };
+    let visible = |hwnd: HWND| unsafe { IsWindowVisible(hwnd) }.as_bool();
+    secondary
+        .registry
+        .borrow()
+        .entries()
+        .filter_map(|(kind, open)| open.hwnd.filter(|hwnd| visible(*hwnd)).map(|hwnd| (kind, hwnd)))
+        .collect()
 }
 
 fn changed(cx: &mut App) {
@@ -428,7 +429,7 @@ fn open_todo_view(kind: WindowKind, contents: Contents, side: Side, meter_model:
 pub fn open_detail(meter_model: &Entity<MeterModel>, source: DetailSource, cx: &mut App) {
     let registry = registry(cx);
     let anchor = match settings::global(cx).read(cx).get().windows.detail_opens {
-        DetailPlacement::Beside => Anchor::Beside(Side::Right),
+        DetailPlacement::WhereLeft => Anchor::Beside(Side::Right),
         DetailPlacement::Centred => Anchor::Centre,
     };
     let place = tool_anchor(anchor, cx);
@@ -478,12 +479,18 @@ pub fn open_changelog(meter_model: &Entity<MeterModel>, cx: &mut App) {
 fn open_settings_now(meter_model: &Entity<MeterModel>, page: Option<Page>, cx: &mut App) {
     let registry = registry(cx);
     let placement = cx.global::<Secondary>().placement;
+    let saved = match placement {
+        Placement::Screen => settings::global(cx).read(cx).get().windows.remembered(Spot::Settings),
+        #[cfg(feature = "probes")]
+        Placement::OffScreen => None,
+    };
     let opened = open_once(&registry, WindowKind::Settings, || {
         let runtime = cx.new(|cx| RuntimeModel::new(meter_model.clone(), cx));
         let meter_window = meter::window(cx);
         let view_runtime = runtime.clone();
         let handle = settings::open_window(
             placement,
+            saved.is_none(),
             move |window, cx| cx.new(|cx| SettingsView::new(view_runtime, Some(meter_window), window, cx)),
             cx,
         )?;
@@ -500,6 +507,16 @@ fn open_settings_now(meter_model: &Entity<MeterModel>, page: Option<Page>, cx: &
         })
         .detach();
         let hwnd = handle.update(cx, |_, window, _| overlay::hwnd(window).ok()).ok().flatten();
+        if placement == Placement::Screen {
+            match hwnd {
+                Some(hwnd) => remember_settings_place(hwnd, saved, cx),
+                None if saved.is_some() => {
+                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                    return Err("cannot place the Settings window where it was left: its handle is unreadable".to_string());
+                }
+                None => {}
+            }
+        }
         Ok(Open { window: handle.into(), hwnd, model: Some(runtime.into()) })
     });
     if let (Some(page), Ok(_)) = (page, &opened) {
@@ -511,16 +528,33 @@ fn open_settings_now(meter_model: &Entity<MeterModel>, page: Option<Page>, cx: &
     finish(WindowKind::Settings, opened, cx);
 }
 
+/// Settings has Windows' own title bar, so the player's moves are Windows': the
+/// place is saved when a move ends. A window opened hidden for a place saved
+/// is moved there and then shown, once the update that opened it has returned,
+/// so it never appears in the middle first; shown as GPUI shows it
+/// (`SW_SHOWNORMAL`), and brought forward by [`finish`] after.
+fn remember_settings_place(hwnd: HWND, saved: Option<ScreenPoint>, cx: &App) {
+    if let Err(error) = overlay::remember_os_moves(cx, hwnd, Spot::Settings) {
+        crate::app_log::warn(error);
+    }
+    if let Some(saved) = saved {
+        overlay::move_then_show_after_update(cx, hwnd, SW_SHOWNORMAL, move |size| reopen_corner(saved, size));
+    }
+}
+
 /// Settings is in front of everything, the game included, while it is the
 /// active window, and goes back among the normal windows once the user goes
 /// to another program.
 fn follow_activation(window: &mut Window, cx: &mut Context<SettingsView>) {
     cx.observe_window_activation(window, |_, window, _| {
         let Ok(hwnd) = overlay::hwnd(window) else { return };
-        match settings_band(window.is_window_active(), foreground()) {
+        let moved = match settings_band(window.is_window_active(), foreground()) {
             SettingsBand::Topmost => overlay::raise_without_activating(hwnd),
             SettingsBand::Normal(went_to) => overlay::lower_behind(hwnd, went_to),
-            SettingsBand::Unchanged => {}
+            SettingsBand::Unchanged => Ok(()),
+        };
+        if let Err(error) = moved {
+            crate::app_log::warn(format!("Settings did not follow the activation: {error}"));
         }
     })
     .detach();
@@ -566,12 +600,14 @@ fn foreground() -> Foreground {
     }
 }
 
-/// Shows a reminder on the meter, or puts it in place of the one up.
+/// Shows a reminder on the meter, or puts it in place of the one up and
+/// brings that one up: it may be covered.
 pub fn show_reminder(request: &ShowReminder, cx: &mut App) {
     let registry = registry(cx);
     let open = registry.borrow().get(WindowKind::Reminder).and_then(|open| open.window.downcast::<ReminderView>());
     if let Some(window) = open {
         if window.update(cx, |view, _, cx| view.show(request, cx)).is_ok() {
+            bring_up(WindowKind::Reminder, cx);
             log_card(request, "put on the card window already open", cx);
             return;
         }
@@ -601,7 +637,10 @@ pub fn show_reminder(request: &ShowReminder, cx: &mut App) {
         Ok(Open { window, hwnd: Some(hwnd), model: None })
     });
     match opened {
-        Ok(Opened::Created) => log_card(request, "opened a card window", cx),
+        Ok(Opened::Created) => {
+            bring_up(WindowKind::Reminder, cx);
+            log_card(request, "opened a card window", cx);
+        }
         Ok(Opened::Existing) => log_card(request, "a card window was already registered, nothing opened", cx),
         Err(error) => {
             crate::app_log::error(format!("cannot open the Reminder window: {error}"));
@@ -611,17 +650,18 @@ pub fn show_reminder(request: &ShowReminder, cx: &mut App) {
 }
 
 fn log_card(request: &ShowReminder, outcome: &str, cx: &App) {
-    reminders::global(cx).read(cx).log_card(|| format!("{:?} at {}: {outcome}", request.events, request.starts_at));
+    reminders::global(cx).read(cx).log_card(|| format!("{} {:?} at {}: {outcome}", request.kind.name(), request.events, request.starts_at));
 }
 
-/// Shows the soul tracker card, or puts the pets on the one up. The card's
-/// window outlives the card: once its time is up it waits hidden, and the
-/// next gain shows it again at once (opening a window takes 0.2 to 0.4 s).
+/// Shows the soul tracker card, or puts the pets on the one up and brings
+/// that one up: it may be covered, or hidden with everything else by
+/// Alt+Shift+CapsLock. A notification is never held back.
 pub fn show_pet_card(request: &CardRequest, cx: &mut App) {
     let registry = registry(cx);
-    let open = registry.borrow().get(WindowKind::PetCard).and_then(|open| open.window.downcast::<PetCardView>());
+    let open = registry.borrow().get(WindowKind::PetCard).map(|open| open.window.downcast::<PetCardView>());
     if let Some(window) = open {
-        if window.update(cx, |view, window, cx| view.show(request, window, cx)).is_ok() {
+        if window.is_some_and(|window| window.update(cx, |view, _, cx| view.show(request, cx)).is_ok()) {
+            bring_up(WindowKind::PetCard, cx);
             return;
         }
         registry.borrow_mut().remove(WindowKind::PetCard);
@@ -647,8 +687,10 @@ pub fn show_pet_card(request: &CardRequest, cx: &mut App) {
         )?;
         Ok(Open { window, hwnd: Some(hwnd), model: None })
     });
-    if let Err(error) = opened {
-        crate::app_log::error(format!("cannot open the soul tracker card's window: {error}"));
+    match opened {
+        Ok(Opened::Created) => bring_up(WindowKind::PetCard, cx),
+        Ok(Opened::Existing) => {}
+        Err(error) => crate::app_log::error(format!("cannot open the soul tracker card's window: {error}")),
     }
 }
 
@@ -768,22 +810,6 @@ impl Stacking {
         })
         .detach();
     }
-
-    /// Puts the card's window back on screen where it was, without the focus.
-    pub fn reveal(&self, window: &Window) {
-        match overlay::hwnd(window).and_then(|hwnd| overlay::reveal(hwnd, self.placement)) {
-            Ok(()) => {}
-            Err(error) => crate::app_log::warn(format!("cannot show the {:?} card again: {error}", self.card)),
-        }
-    }
-
-    /// Takes the card's window off screen; the window stays, ready to show again.
-    pub fn hide(&self, window: &Window) {
-        match overlay::hwnd(window) {
-            Ok(hwnd) => overlay::hide(hwnd),
-            Err(error) => crate::app_log::warn(format!("cannot hide the {:?} card: {error}", self.card)),
-        }
-    }
 }
 
 /// The meter saved a fight: the history window, if open, lists it.
@@ -821,7 +847,7 @@ fn registry(cx: &App) -> Rc<RefCell<Registry<Open>>> {
     cx.global::<Secondary>().registry.clone()
 }
 
-/// Brings the window forward as [`forward`] decides; a failed open is
+/// Puts the window on screen as [`forward`] decides; a failed open is
 /// reported.
 fn finish(kind: WindowKind, opened: Result<Opened, String>, cx: &mut App) {
     let opened = match opened {
@@ -834,44 +860,93 @@ fn finish(kind: WindowKind, opened: Result<Opened, String>, cx: &mut App) {
     if opened == Opened::Created {
         changed(cx);
     }
-    let action = forward(kind, opened, cx.global::<Secondary>().placement);
-    if action == Forward::Nothing {
-        return;
-    }
-    let Some(open) = registry(cx).borrow().get(kind).cloned() else {
-        return;
-    };
-    let _ = open.window.update(cx, |_, window, _| {
-        let Ok(hwnd) = overlay::hwnd(window) else { return };
-        match action {
-            Forward::Foreground => settings::bring_forward(hwnd),
-            Forward::Raise => overlay::raise_without_activating(hwnd),
-            Forward::Nothing => {}
+    match forward(kind, cx.global::<Secondary>().placement) {
+        Forward::OnScreen => bring_up(kind, cx),
+        Forward::Foreground => {
+            if let Some(hwnd) = hwnd_of(kind, cx) {
+                overlay::after_update(cx, move || settings::bring_forward(hwnd));
+            }
         }
-    });
+        #[cfg(feature = "probes")]
+        Forward::Nothing => {}
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Forward {
-    Nothing,
-    Raise,
+    OnScreen,
     Foreground,
+    #[cfg(feature = "probes")]
+    Nothing,
 }
 
+/// A window opened, or opened again, comes on screen above the others of
+/// its layer without focus ([`bring_up`]); a new one is created hidden.
 /// Settings on screen is brought to the foreground also when it was just
-/// created: GPUI's own activation leaves it under every topmost window, which
-/// a game can be. The overlays are never given focus.
-fn forward(kind: WindowKind, opened: Opened, placement: Placement) -> Forward {
-    match (kind, placement, opened) {
-        (WindowKind::Settings, Placement::Screen, _) => Forward::Foreground,
-        (_, _, Opened::Created) => Forward::Nothing,
-        (_, _, Opened::Existing) => Forward::Raise,
+/// created: GPUI's own activation leaves it under every topmost window,
+/// which a game can be. Off screen (dev captures) Settings stays as opened.
+fn forward(kind: WindowKind, placement: Placement) -> Forward {
+    match (kind, placement) {
+        (WindowKind::Settings, Placement::Screen) => Forward::Foreground,
+        #[cfg(feature = "probes")]
+        (WindowKind::Settings, Placement::OffScreen) => Forward::Nothing,
+        _ => Forward::OnScreen,
     }
 }
 
-/// Opens a transparent pop-up like the meter's, places it against the window
-/// `against` as `anchor` says, shows it without activating it, and forgets it
-/// in the registry when its view is released (however the window ends).
+/// Puts the open window of `kind` on screen, above Belisk's other overlays
+/// as far as its layer goes, without activating it.
+fn bring_up(kind: WindowKind, cx: &mut App) {
+    let on_screen = cx.global::<Secondary>().on_screen.clone();
+    on_screen(kind, cx);
+}
+
+/// Shows the window at the top of the topmost band, then puts Belisk's
+/// overlays back in their stack, the window with them.
+fn reveal_and_restack(kind: WindowKind, cx: &mut App) {
+    let Some(hwnd) = hwnd_of(kind, cx) else {
+        return;
+    };
+    overlay::reveal_after_update(cx, hwnd, cx.global::<Secondary>().placement, format!("show the {kind:?} window"));
+    toolbar::restack(cx);
+}
+
+/// The remembered spot a window of `kind` has: the overlay tools and Settings,
+/// not the cards, which stay attached to the meter or the toolbar.
+fn spot_of(kind: WindowKind) -> Option<Spot> {
+    match kind {
+        WindowKind::History => Some(Spot::History),
+        WindowKind::Detail => Some(Spot::Detail),
+        WindowKind::Report => Some(Spot::Report),
+        WindowKind::Pvp => Some(Spot::Pvp),
+        WindowKind::Todos => Some(Spot::Todos),
+        WindowKind::Resources => Some(Spot::Resources),
+        WindowKind::Pets => Some(Spot::Pets),
+        WindowKind::Settings => Some(Spot::Settings),
+        WindowKind::Prompt | WindowKind::Reminder | WindowKind::PetCard | WindowKind::WhatsNew => None,
+    }
+}
+
+/// Where a window of `size` (device pixels) left at `at` reopens, or none
+/// when `at` is on no monitor; see [`placement::remembered`].
+pub(crate) fn reopen_corner(at: ScreenPoint, size: (i32, i32)) -> Option<(i32, i32)> {
+    placement::remembered((at.x, at.y), size, monitor::work_area_at)
+}
+
+/// Where a window already open would sit pulled inside the work area of its
+/// monitor, or none when it already is inside.
+pub(crate) fn corner_inside_work_area(hwnd: HWND) -> Option<(i32, i32)> {
+    let (window, work) = monitor::window_and_work_area(hwnd)?;
+    let at = (window.left, window.top);
+    let corner = placement::inside(at, (window.right - window.left, window.bottom - window.top), work);
+    (corner != at).then_some(corner)
+}
+
+/// Opens a transparent pop-up like the meter's, hidden, places it against
+/// the window `against` as `anchor` says, and forgets it in the registry
+/// when its view is released (however the window ends). It comes on screen
+/// once registered ([`bring_up`]). The first place is asked while the view is
+/// built, ahead of any place the view asks of itself ([`Stacking::place`]).
 fn create_window<V: Render + 'static>(
     kind: WindowKind,
     (width, height): (f32, f32),
@@ -884,29 +959,26 @@ fn create_window<V: Render + 'static>(
         let secondary = cx.global::<Secondary>();
         (secondary.placement, secondary.registry.clone())
     };
+    let spot = spot_of(kind);
+    let saved = spot.and_then(|spot| settings::global(cx).read(cx).get().windows.remembered(spot));
     let handle = cx
-        .open_window(overlay::popup_options(width, height), build)
+        .open_window(overlay::popup_options(width, height), move |window, cx| {
+            if let Ok(hwnd) = overlay::hwnd(window) {
+                place_first(hwnd, (width, height), window.scale_factor(), (against, anchor), saved, placement, cx);
+            }
+            build(window, cx)
+        })
         .map_err(|error| format!("cannot open the window: {error:#}"))?;
     let set_up = handle
         .entity(cx)
         .map_err(|error| format!("cannot reach the window's view: {error:#}"))
         .and_then(|view| {
             handle
-                .update(cx, |_, window, _| -> Result<HWND, String> {
+                .update(cx, |_, window, cx| -> Result<HWND, String> {
                     let hwnd = overlay::hwnd(window)?;
                     overlay::make_overlay(hwnd)?;
-                    let scale = window.scale_factor();
-                    let (device_width, device_height) = (width * scale, height * scale);
-                    match placement {
-                        Placement::Screen => {
-                            let size = (device_width.ceil() as i32, device_height.ceil() as i32);
-                            let (x, y) = monitor::window_and_work_area(against)
-                                .map_or((64, 64), |(against, work)| anchor.corner(against, size, work, scale));
-                            overlay::place(hwnd, x, y, device_width, device_height)?;
-                            overlay::show_without_activating(hwnd);
-                        }
-                        #[cfg(feature = "probes")]
-                        Placement::OffScreen => overlay::off_screen::show(hwnd, device_width, device_height)?,
+                    if let Some(spot) = spot {
+                        overlay::remember_drags(cx, hwnd, spot);
                     }
                     Ok(hwnd)
                 })
@@ -931,14 +1003,57 @@ fn create_window<V: Render + 'static>(
     Ok((handle.into(), hwnd))
 }
 
+/// Asks for a new window's first place: against `against` as `anchor` says,
+/// read once the update that opens the window has returned, so a window that
+/// was opened or moved in it is where it ends up.
+fn place_first(
+    hwnd: HWND,
+    (width, height): (f32, f32),
+    scale: f32,
+    (against, anchor): (HWND, Anchor),
+    saved: Option<ScreenPoint>,
+    placement: Placement,
+    cx: &App,
+) {
+    let (device_width, device_height) = (width * scale, height * scale);
+    match placement {
+        Placement::Screen => {
+            let size = (device_width.ceil() as i32, device_height.ceil() as i32);
+            overlay::place_after_update(cx, hwnd, device_width, device_height, move || {
+                let corner = saved.and_then(|at| reopen_corner(at, size)).inspect(|_| overlay::pull_after_first_fit(hwnd));
+                corner.unwrap_or_else(|| {
+                    monitor::window_and_work_area(against)
+                        .map_or((64, 64), |(against, work)| anchor.corner(against, size, work, scale))
+                })
+            });
+        }
+        #[cfg(feature = "probes")]
+        Placement::OffScreen => overlay::off_screen::place_after_update(cx, hwnd, device_width, device_height),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn settings_comes_to_the_foreground_when_opened_and_when_opened_again() {
-        assert_eq!(forward(WindowKind::Settings, Opened::Created, Placement::Screen), Forward::Foreground);
-        assert_eq!(forward(WindowKind::Settings, Opened::Existing, Placement::Screen), Forward::Foreground);
+    fn every_tool_and_settings_remember_a_spot_and_the_cards_stay_attached() {
+        let tools = [
+            (WindowKind::History, Spot::History),
+            (WindowKind::Detail, Spot::Detail),
+            (WindowKind::Report, Spot::Report),
+            (WindowKind::Pvp, Spot::Pvp),
+            (WindowKind::Todos, Spot::Todos),
+            (WindowKind::Resources, Spot::Resources),
+            (WindowKind::Pets, Spot::Pets),
+            (WindowKind::Settings, Spot::Settings),
+        ];
+        for (kind, spot) in tools {
+            assert_eq!(spot_of(kind), Some(spot), "{kind:?}");
+        }
+        for card in [WindowKind::Prompt, WindowKind::Reminder, WindowKind::PetCard, WindowKind::WhatsNew] {
+            assert_eq!(spot_of(card), None, "{card:?}");
+        }
     }
 
     #[test]
@@ -954,21 +1069,67 @@ mod tests {
         assert_eq!(still_open(&hidden, open), vec![history, pets], "the PvP window closed while everything was hidden");
     }
 
-    #[test]
-    fn an_overlay_opened_again_is_raised_without_focus() {
-        let overlays = [
-            WindowKind::History,
-            WindowKind::Detail,
-            WindowKind::Report,
-            WindowKind::Pvp,
-            WindowKind::Todos,
-            WindowKind::Resources,
-            WindowKind::WhatsNew,
-        ];
-        for kind in overlays {
-            assert_eq!(forward(kind, Opened::Created, Placement::Screen), Forward::Nothing, "{kind:?}");
-            assert_eq!(forward(kind, Opened::Existing, Placement::Screen), Forward::Raise, "{kind:?}");
+    #[gpui::test]
+    fn a_window_opened_or_opened_again_comes_on_screen_and_settings_comes_forward_instead(cx: &mut gpui::TestAppContext) {
+        let (_, _, brought_up) = meter_scene(cx);
+        cx.update(|cx| {
+            finish(WindowKind::Pets, Ok(Opened::Created), cx);
+            finish(WindowKind::History, Ok(Opened::Existing), cx);
+            finish(WindowKind::Settings, Ok(Opened::Created), cx);
+            finish(WindowKind::Settings, Ok(Opened::Existing), cx);
+            finish(WindowKind::Pvp, Err("no window".to_string()), cx);
+        });
+        assert_eq!(
+            *brought_up.borrow(),
+            vec![WindowKind::Pets, WindowKind::History],
+            "a new window and one opened again; Settings goes to the foreground, never into the overlays' stack"
+        );
+    }
+
+    #[gpui::test]
+    fn a_gain_on_the_soul_tracker_card_up_brings_the_card_up(cx: &mut gpui::TestAppContext) {
+        let (_, registry, brought_up) = meter_scene(cx);
+        cx.update(crate::pets::install);
+        let request = CardRequest::Test(ShowTestCard { pet_id: 1006, state: Default::default() });
+        let for_window = request.clone();
+        register(&registry, WindowKind::PetCard, cx, move |window, cx| cx.new(|cx| PetCardView::new(&for_window, None, window, cx)));
+
+        cx.update(|cx| show_pet_card(&request, cx));
+        assert_eq!(*brought_up.borrow(), vec![WindowKind::PetCard], "shown and on top or not, the card up may be covered");
+    }
+
+    #[gpui::test]
+    fn a_reminder_put_on_the_card_up_brings_the_card_up(cx: &mut gpui::TestAppContext) {
+        let (_, registry, brought_up) = meter_scene(cx);
+        cx.update(|cx| reminders::install(&settings::global(cx), false, cx));
+        let first = shugo_festival(22);
+        register(&registry, WindowKind::Reminder, cx, move |window, cx| cx.new(|cx| ReminderView::new(&first, None, window, cx)));
+
+        cx.update(|cx| show_reminder(&shugo_festival(23), cx));
+        assert_eq!(*brought_up.borrow(), vec![WindowKind::Reminder]);
+    }
+
+    fn shugo_festival(hour: u8) -> ShowReminder {
+        ShowReminder {
+            events: vec![reminders::EventId::ShugoFestival],
+            start_ms: crate::clock::now_ms() + 60_000,
+            starts_at: crate::clock::ClockTime { hour, minute: 30 },
+            kind: reminders::CardKind::Reminder,
+            is_test: false,
         }
+    }
+
+    /// A window of `kind` this layer keeps, opened on the test platform: no
+    /// native handle, and nothing of it is shown.
+    fn register<V: Render + 'static>(
+        registry: &Rc<RefCell<Registry<Open>>>,
+        kind: WindowKind,
+        cx: &mut gpui::TestAppContext,
+        build: impl FnOnce(&mut Window, &mut App) -> Entity<V> + 'static,
+    ) {
+        let window = cx.update(|cx| cx.open_window(Default::default(), build).expect("a test window"));
+        let opened = open_once(registry, kind, || Ok::<_, String>(Open { window: window.into(), hwnd: None, model: None }));
+        assert_eq!(opened, Ok(Opened::Created));
     }
 
     #[test]
@@ -996,17 +1157,21 @@ mod tests {
     const METER: HWND = HWND(0x5678 as *mut _);
 
     /// The meter's model and the hub, and this layer with a made-up handle
-    /// for the meter, since the test platform's windows have none.
-    fn meter_scene(cx: &mut gpui::TestAppContext) -> (Entity<MeterModel>, Rc<RefCell<Registry<Open>>>) {
+    /// for the meter, since the test platform's windows have none; the kinds
+    /// it puts on screen are noted in the order asked.
+    fn meter_scene(cx: &mut gpui::TestAppContext) -> (Entity<MeterModel>, Rc<RefCell<Registry<Open>>>, Rc<RefCell<Vec<WindowKind>>>) {
         use gpui::AppContext as _;
 
         let registry: Rc<RefCell<Registry<Open>>> = Rc::default();
+        let brought_up: Rc<RefCell<Vec<WindowKind>>> = Rc::default();
+        let noted = brought_up.clone();
         let model = cx.update(|cx| {
             let store = cx.new(|_| settings::Settings::in_memory(settings::AppSettings::default()));
             settings::install(&store, cx);
             let model = cx.new(|_| MeterModel::new(crate::meter::OverlaySettings::default(), None));
             let changes = cx.new(|_| OpenWindows);
-            cx.set_global(Secondary { registry: registry.clone(), meter_hwnd: METER, placement: Placement::Screen, changes });
+            let on_screen = Rc::new(move |kind: WindowKind, _: &mut App| noted.borrow_mut().push(kind));
+            cx.set_global(Secondary { registry: registry.clone(), meter_hwnd: METER, placement: Placement::Screen, changes, on_screen });
             let meter_window = cx
                 .open_window(Default::default(), |_, cx| cx.new(|cx| MeterView::new(model.clone(), cx)))
                 .expect("the meter's window");
@@ -1015,7 +1180,7 @@ mod tests {
             toolbar::open_meter(cx);
             model
         });
-        (model, registry)
+        (model, registry, brought_up)
     }
 
     /// The core's word, folded in as the bridge does.
@@ -1034,7 +1199,7 @@ mod tests {
 
     #[gpui::test]
     fn the_reminder_card_sits_under_the_toolbar_while_the_meter_steps_aside(cx: &mut gpui::TestAppContext) {
-        let (model, _registry) = meter_scene(cx);
+        let (model, _, _) = meter_scene(cx);
         let reminder = |cx: &mut gpui::TestAppContext| cx.update(|cx| card_anchor(Card::Reminder, cx));
         assert_eq!(reminder(cx), Some((METER, Stack::Above)), "on the meter");
 
@@ -1056,7 +1221,7 @@ mod tests {
 
     #[gpui::test]
     fn a_reminder_card_opens_while_the_meter_steps_aside_between_fights(cx: &mut gpui::TestAppContext) {
-        let (model, registry) = meter_scene(cx);
+        let (model, registry, _) = meter_scene(cx);
         core_says_idle(&model, true, cx);
         assert!(cx.update(|cx| toolbar::meter_is_aside(cx)), "the meter is open and stepped aside");
 
@@ -1070,6 +1235,7 @@ mod tests {
                 events: vec![reminders::EventId::ShugoFestival],
                 start_ms: crate::clock::now_ms() + 60_000,
                 starts_at: crate::clock::ClockTime { hour: 22, minute: 30 },
+                kind: reminders::CardKind::Reminder,
                 is_test: false,
             };
             open_once(&registry, WindowKind::Reminder, || {
@@ -1092,7 +1258,7 @@ mod tests {
     fn the_first_open_prompt_keeps_the_meter_on_screen_until_it_is_answered(cx: &mut gpui::TestAppContext) {
         use gpui::Modifiers;
 
-        let (model, registry) = meter_scene(cx);
+        let (model, registry, _) = meter_scene(cx);
         // What `open_prompt` does, but on a test window: the real one needs a
         // native handle.
         let (prompt, vcx) = cx.add_window_view(|_, cx| PromptView::unplaced(cx));

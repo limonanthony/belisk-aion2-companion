@@ -6,7 +6,6 @@ use crate::region::RegionId;
 
 pub const DEFAULT_DPS_SNAPSHOT_INTERVAL_MS: u64 = 100;
 pub const DEFAULT_MEMORY_SNAPSHOT_INTERVAL_MS: u64 = 2000;
-pub const DEFAULT_STALL_RESYNC_DELAY_MS: u64 = 1000;
 pub const DEFAULT_FULL_PROCESSOR_STALL_RESYNC_DELAY_MS: u64 = 200;
 pub const DEFAULT_UNKNOWN_PACKET_STALL_RESYNC_DELAY_MS: u64 = 10;
 pub const TRAINING_DUMMY_MOB_CODE: [u32; 2] = [2_400_032, 2_400_035];
@@ -50,8 +49,6 @@ pub struct DpsMeterConfig {
     pub dps_snapshot_interval_ms: u64,
     #[serde(default = "default_memory_snapshot_interval_ms")]
     pub memory_snapshot_interval_ms: u64,
-    #[serde(default = "default_stall_resync_delay_ms")]
-    pub stall_resync_delay_ms: u64,
     #[serde(default = "default_full_processor_stall_resync_delay_ms")]
     pub full_processor_stall_resync_delay_ms: u64,
     #[serde(default = "default_unknown_packet_stall_resync_delay_ms")]
@@ -106,7 +103,6 @@ impl Default for DpsMeterConfig {
         Self {
             dps_snapshot_interval_ms: DEFAULT_DPS_SNAPSHOT_INTERVAL_MS,
             memory_snapshot_interval_ms: DEFAULT_MEMORY_SNAPSHOT_INTERVAL_MS,
-            stall_resync_delay_ms: DEFAULT_STALL_RESYNC_DELAY_MS,
             full_processor_stall_resync_delay_ms: DEFAULT_FULL_PROCESSOR_STALL_RESYNC_DELAY_MS,
             unknown_packet_stall_resync_delay_ms: DEFAULT_UNKNOWN_PACKET_STALL_RESYNC_DELAY_MS,
             boss_only: false,
@@ -138,7 +134,6 @@ impl DpsMeterConfig {
         }
         self.dps_snapshot_interval_ms = self.dps_snapshot_interval_ms.clamp(50, 10_000);
         self.memory_snapshot_interval_ms = self.memory_snapshot_interval_ms.clamp(100, 10_000);
-        self.stall_resync_delay_ms = self.stall_resync_delay_ms.clamp(50, 2000);
         self.full_processor_stall_resync_delay_ms =
             self.full_processor_stall_resync_delay_ms.min(2000);
         self.unknown_packet_stall_resync_delay_ms =
@@ -161,10 +156,6 @@ fn default_dps_snapshot_interval_ms() -> u64 {
 
 fn default_memory_snapshot_interval_ms() -> u64 {
     DEFAULT_MEMORY_SNAPSHOT_INTERVAL_MS
-}
-
-fn default_stall_resync_delay_ms() -> u64 {
-    DEFAULT_STALL_RESYNC_DELAY_MS
 }
 
 fn default_full_processor_stall_resync_delay_ms() -> u64 {

@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:40'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -51,3 +52,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 The region is passed to the parsers instead of read from a process-wide global.
 - [ ] #3 Recordings from each supported region replay with the same results as before.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Still present per the review (the effective region profile is the configured one only; spawn parsing uses the resolved one). Impact on Global is low because the profile is always Auto. Not touched this round.
+<!-- SECTION:NOTES:END -->

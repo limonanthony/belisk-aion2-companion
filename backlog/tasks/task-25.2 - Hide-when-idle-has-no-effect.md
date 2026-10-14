@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-09 20:59'
+updated_date: '2026-10-12 15:05'
 labels:
   - feature
 dependencies: []
@@ -88,4 +88,6 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 2026-10-09 decisions (user, answering Main's questions): a switch 'Hide between fights' in Settings → Overlay, off by default; the meter comes back at your first hit; it stays visible while the boss summary card shows and for a few seconds after it is opened from the toolbar; between fights the toolbar's meter icon shows it (10 s); no shortcut. Main's defaults: opening at launch also shows it 10 s; clicking the meter icon while it is hidden this way shows it instead of closing it; reminder cards go under the toolbar meanwhile; it also stays visible while the first-open prompt waits for an answer; mockup waived for one standard switch row. Built and reviewed (agent-tested, not yet tested by the user). In-game check left: the meter hides after a fight, returns at the first hit, stays up during the boss summary, the toolbar icon shows it 10 s, reminder cards appear under the toolbar.
 
 2026-10-09 22:25: the user's meter crashed live ('Did an agent kill my dps meter ? If not it crashed on me') when a Dimensional Invasion reminder card opened with 'Hide between fights' on and the meter open and idle. Cause (this ticket's work): the app checked whether the meter was stepping aside while the list of open windows was still locked during the card window's creation, which panicked inside Windows' drawing and ended the process. Fixed for every window kind; a test reproduces the user's state; panics are now written to aether.log with where they happened. Reviewed; release exe rebuilt; not yet tested by the user.
+
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Fixed in code (the core emits the idle-hidden event, default off; the app hides and shows the meter). Waiting for the in-game check of this ticket's boxes.
 <!-- SECTION:NOTES:END -->

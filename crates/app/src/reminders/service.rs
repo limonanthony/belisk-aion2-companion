@@ -5,7 +5,7 @@ use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
 use meter_core::logger::AppLogger;
 
 use super::events::EventId;
-use super::planner::{Planner, Step};
+use super::planner::{CardKind, Due, Planner, Step};
 use super::schedule::Reminder;
 use super::settings::ReminderSettings;
 use super::sound;
@@ -16,14 +16,16 @@ use crate::settings::Settings;
 /// A wake later than this after it was due is written to the decision log.
 const LATE_WAKE_MS: i64 = 5_000;
 
-/// Asks the view to show a reminder window. Sent on the UI thread; the sound
-/// has already been started when it is sent.
+/// Asks the view to show a reminder window: the reminder before an event or
+/// its start alert. Sent on the UI thread; the sound has already been started
+/// when it is sent.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShowReminder {
     /// What starts, in catalogue order; never empty.
     pub events: Vec<EventId>,
     pub start_ms: i64,
     pub starts_at: ClockTime,
+    pub kind: CardKind,
     pub is_test: bool,
 }
 
@@ -114,7 +116,7 @@ impl Reminders {
     /// after the chosen lead time, whatever the switches say.
     pub fn test_reminder(&mut self, cx: &mut Context<Self>) {
         let start_ms = (self.now_ms)() + i64::from(self.config.lead_minutes) * 60_000;
-        self.send(vec![EventId::ShugoFestival], start_ms, true, cx);
+        self.send(vec![EventId::ShugoFestival], start_ms, CardKind::Reminder, true, cx);
     }
 
     fn replan(&mut self, cx: &mut Context<Self>) {
@@ -141,7 +143,10 @@ impl Reminders {
             if events.is_empty() {
                 return "stopped: the master switch is off or no event is on".to_string();
             }
-            format!("started: {events:?}, {} min ahead, sound {}", self.config.lead_minutes, self.config.sound)
+            format!(
+                "started: {events:?}, {} min ahead, sound {}, start alert {}",
+                self.config.lead_minutes, self.config.sound, self.config.start_alert
+            )
         });
     }
 
@@ -157,31 +162,34 @@ impl Reminders {
         loop {
             let now = (self.now_ms)();
             let step = self.planner.step(&LocalZone, &self.config, now);
-            if let Some(missed) = self.planner.take_missed() {
-                self.log.event("dropped", || {
-                    format!(
-                        "{:?} starting at {} ({} ms) had started when the clock was read at {} ({now} ms); its reminder was due {}",
-                        missed.events,
-                        clock_time(&LocalZone, missed.start_ms),
-                        missed.start_ms,
-                        clock_time(&LocalZone, now),
-                        clock_time(&LocalZone, missed.notify_ms),
-                    )
-                });
+            for missed in self.planner.take_missed() {
+                self.log_dropped(&missed, now);
             }
             match step {
-                Step::Show(Reminder { events, start_ms, .. }) => self.send(events, start_ms, false, cx),
+                Step::Show(Due { kind, reminder: Reminder { events, start_ms, .. } }) => self.send(events, start_ms, kind, false, cx),
                 Step::Wait(wait) => {
                     let upcoming = self.planner.upcoming();
-                    self.log.on_change("next", || match upcoming {
-                        Some(next) => format!(
-                            "{:?} at {} ({} ms), reminder due {}",
-                            next.events,
-                            clock_time(&LocalZone, next.start_ms),
-                            next.start_ms,
-                            clock_time(&LocalZone, next.notify_ms),
-                        ),
-                        None => "none".to_string(),
+                    let upcoming_alert = self.planner.upcoming_alert();
+                    self.log.on_change("next", || {
+                        let mut next = Vec::new();
+                        if let Some(reminder) = upcoming {
+                            next.push(format!(
+                                "{:?} at {} ({} ms), reminder due {}",
+                                reminder.events,
+                                clock_time(&LocalZone, reminder.start_ms),
+                                reminder.start_ms,
+                                clock_time(&LocalZone, reminder.notify_ms),
+                            ));
+                        }
+                        if let Some(alert) = upcoming_alert {
+                            next.push(format!(
+                                "start alert for {:?} at {} ({} ms)",
+                                alert.events,
+                                clock_time(&LocalZone, alert.start_ms),
+                                alert.start_ms,
+                            ));
+                        }
+                        if next.is_empty() { "none".to_string() } else { next.join("; ") }
                     });
                     self.wake_due_ms = Some(now + wait.as_millis() as i64);
                     return Some(wait);
@@ -194,15 +202,38 @@ impl Reminders {
         }
     }
 
-    fn send(&self, events: Vec<EventId>, start_ms: i64, is_test: bool, cx: &mut Context<Self>) {
+    fn log_dropped(&self, missed: &Due, now: i64) {
+        let Due { kind, reminder } = missed;
+        self.log.event("dropped", || {
+            let when = match kind {
+                CardKind::Reminder => "had started when",
+                CardKind::StartAlert => "had started over a minute before",
+            };
+            format!(
+                "{:?} starting at {} ({} ms) {when} the clock was read at {} ({now} ms); its {} was due {}",
+                reminder.events,
+                clock_time(&LocalZone, reminder.start_ms),
+                reminder.start_ms,
+                clock_time(&LocalZone, now),
+                kind.name(),
+                clock_time(&LocalZone, reminder.notify_ms),
+            )
+        });
+    }
+
+    fn send(&self, events: Vec<EventId>, start_ms: i64, kind: CardKind, is_test: bool, cx: &mut Context<Self>) {
         let starts_at = clock_time(&LocalZone, start_ms);
         self.log.event("card", || {
-            format!("due for {events:?} starting at {starts_at} ({start_ms} ms), test {is_test}, sound {}", self.config.sound)
+            format!(
+                "due for {events:?} starting at {starts_at} ({start_ms} ms), {}, test {is_test}, sound {}",
+                kind.name(),
+                self.config.sound
+            )
         });
         if self.config.sound {
             (self.play_sound)(cx);
         }
-        cx.emit(ShowReminder { events, start_ms, starts_at, is_test });
+        cx.emit(ShowReminder { events, start_ms, starts_at, kind, is_test });
     }
 }
 
@@ -386,13 +417,14 @@ mod tests {
 
     /// Reminders on the fake clock, started before a logger exists, then given
     /// one, with the decision log on.
-    fn logging_reminders(cx: &mut TestAppContext, name: &str) -> (Entity<Reminders>, Lines) {
+    fn logging_reminders(cx: &mut TestAppContext, name: &str, start_alert: bool) -> (Entity<Reminders>, Lines) {
         let settings = settings(cx);
         cx.update(|cx| {
             settings.update(cx, |settings, cx| {
                 settings.update(cx, |all| {
                     all.capture.decision_log = true;
                     all.reminders.lead_minutes = 5;
+                    all.reminders.start_alert = start_alert;
                 })
             })
         });
@@ -409,12 +441,12 @@ mod tests {
     #[gpui::test]
     fn the_decision_log_gets_the_start_line_even_though_the_logger_came_later(cx: &mut TestAppContext) {
         CLOCK.set(next_local_midnight(now_ms()) - 12 * MINUTE);
-        let (_reminders, lines) = logging_reminders(cx, "start");
+        let (_reminders, lines) = logging_reminders(cx, "start", false);
 
         let lines = lines.lock().unwrap();
         assert_eq!(
             lines[0],
-            "[reminders] service: started: [ShugoFestival, DimensionalInvasion, RiftPortals], 5 min ahead, sound true"
+            "[reminders] service: started: [ShugoFestival, DimensionalInvasion, RiftPortals], 5 min ahead, sound true, start alert false"
         );
         assert!(lines[1].starts_with("[reminders] next: [ShugoFestival] at 00:00"), "{lines:?}");
         assert!(lines[1].ends_with("reminder due 23:55"), "{lines:?}");
@@ -424,7 +456,7 @@ mod tests {
     fn a_card_that_is_due_and_a_reminder_that_was_slept_through_are_both_written(cx: &mut TestAppContext) {
         let midnight = next_local_midnight(now_ms());
         CLOCK.set(midnight - 12 * MINUTE);
-        let (_reminders, lines) = logging_reminders(cx, "late");
+        let (_reminders, lines) = logging_reminders(cx, "late", false);
 
         CLOCK.set(midnight - 5 * MINUTE + 1_000);
         cx.executor().advance_clock(Duration::from_secs(30));
@@ -438,5 +470,66 @@ mod tests {
         assert!(lines.contains("[reminders] late wake: expected 23:48"), "{lines}");
         assert!(lines.contains("[reminders] late wake: expected 23:55"), "{lines}");
         assert!(lines.contains("[reminders] dropped: [DimensionalInvasion] starting at 00:30"), "{lines}");
+    }
+
+    #[gpui::test]
+    fn with_the_start_alert_on_each_start_gets_its_reminder_then_one_alert(cx: &mut TestAppContext) {
+        let midnight = next_local_midnight(now_ms());
+        CLOCK.set(midnight - 12 * MINUTE);
+        let settings = settings(cx);
+        change(cx, &settings, |reminders| {
+            reminders.lead_minutes = 5;
+            reminders.start_alert = true;
+        });
+        let reminders = cx.update(|cx| cx.new(|cx| Reminders::new(&settings, true, |_| {}, fake_now, cx)));
+        let shown = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = shown.clone();
+        cx.update(|cx| {
+            cx.subscribe(&reminders, move |_, event: &ShowReminder, _| sink.borrow_mut().push((fake_now(), event.clone())))
+                .detach();
+        });
+        cx.run_until_parked();
+
+        for step in 0..90 {
+            if step == 30 {
+                change(cx, &settings, |reminders| reminders.sound = false);
+            }
+            CLOCK.set(CLOCK.get() + 30_000);
+            cx.executor().advance_clock(Duration::from_secs(30));
+            cx.run_until_parked();
+        }
+
+        let shown: Vec<(CardKind, i64)> = shown.borrow().iter().map(|(_, request)| (request.kind, request.start_ms)).collect();
+        assert_eq!(
+            shown,
+            vec![
+                (CardKind::Reminder, midnight),
+                (CardKind::StartAlert, midnight),
+                (CardKind::Reminder, midnight + 30 * MINUTE),
+                (CardKind::StartAlert, midnight + 30 * MINUTE),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn a_start_alert_slept_through_is_written_as_dropped_naming_its_kind(cx: &mut TestAppContext) {
+        let midnight = next_local_midnight(now_ms());
+        CLOCK.set(midnight - 12 * MINUTE);
+        let (_reminders, lines) = logging_reminders(cx, "alert-dropped", true);
+
+        CLOCK.set(midnight - 5 * MINUTE + 1_000);
+        cx.executor().advance_clock(Duration::from_secs(30));
+        cx.run_until_parked();
+        CLOCK.set(midnight + 2 * MINUTE);
+        cx.executor().advance_clock(Duration::from_secs(30));
+        cx.run_until_parked();
+
+        let lines = lines.lock().unwrap();
+        let dropped: Vec<&String> = lines.iter().filter(|line| line.starts_with("[reminders] dropped:")).collect();
+        assert_eq!(dropped.len(), 1, "{lines:?}");
+        assert!(dropped[0].starts_with("[reminders] dropped: [ShugoFestival] starting at 00:00"), "{dropped:?}");
+        assert!(dropped[0].contains("its start alert was due 00:00"), "{dropped:?}");
+        assert!(lines.iter().any(|line| line.starts_with("[reminders] card: due for [ShugoFestival] starting at 00:00") && line.contains(", reminder,")), "{lines:?}");
+        assert!(!lines.iter().any(|line| line.contains(", start alert,")), "no alert card was due: {lines:?}");
     }
 }

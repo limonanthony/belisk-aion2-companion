@@ -4,6 +4,7 @@ title: The dist build does not fail on incompatible licences and its tests are t
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:41'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -49,3 +50,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 A test fails if the checked WinDivert files no longer match their recorded checksums.
 - [ ] #3 A normal dist build with only compatible licences is unchanged.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Per the services review AC #1 is fixed in code (xtask spdx.rs rejects incompatible and unknown licences; test rejects_incompatible_and_unknown_licences). AC #2 (WinDivert checksum test) and AC #3 were not checked. Not changed by this round.
+<!-- SECTION:NOTES:END -->

@@ -218,7 +218,7 @@ async fn probe(window: WindowHandle<MeterView>, foreground_before_open: HWND, ha
         "WindowFromPoint over the overlay returns the overlay",
     );
 
-    let locked = window.update(cx, |_, window, _| overlay::set_click_through(window, true));
+    let locked = window.update(cx, |_, window, cx| overlay::set_click_through(window, cx, true));
     pause(cx, MESSAGE_SETTLE).await;
     let style = overlay::ex_style(hwnd);
     println!("PHASE locked {}", window_rect_text(hwnd));
@@ -235,7 +235,7 @@ async fn probe(window: WindowHandle<MeterView>, foreground_before_open: HWND, ha
         ),
     );
 
-    let unlocked = window.update(cx, |_, window, _| overlay::set_click_through(window, false));
+    let unlocked = window.update(cx, |_, window, cx| overlay::set_click_through(window, cx, false));
     pause(cx, MESSAGE_SETTLE).await;
     let style = overlay::ex_style(hwnd);
     report(

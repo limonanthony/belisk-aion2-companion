@@ -16,7 +16,8 @@ mod widgets;
 
 pub use effects::connect;
 pub use model::{
-    global, install, mark_version_seen, remember_characters, toggle_layout, AppSettings, DetailPlacement, ScreenPoint, Settings,
+    global, install, leave_window_at, mark_version_seen, remember_characters, toggle_layout, AppSettings, DetailPlacement, ScreenPoint,
+    Settings, Spot,
 };
 pub use runtime::RuntimeModel;
 pub use view::{bring_forward, open_window, Page, Section, SettingsView};

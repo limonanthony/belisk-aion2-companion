@@ -4,7 +4,7 @@ title: Audit results that are silently ignored (let _ =)
 status: To Do
 assignee: []
 created_date: '2026-10-08 15:38'
-updated_date: '2026-10-08 15:38'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -61,3 +61,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Counts refer to that co
 - [ ] #1 Every production let _ = is either self-evidently harmless or states why its failure does not matter
 - [ ] #2 Failures that matter (file writes, folder creation, dropped packets) are logged, returned to the caller or counted
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Partly fixed. Capture try_send drops are counted inside the channel, and this round the Win32 show, raise and stack results in the overlay path are checked and logged. Remaining: handle.join results, logger create_dir_all and writeln!, recorder flush. Not a full audit.
+<!-- SECTION:NOTES:END -->

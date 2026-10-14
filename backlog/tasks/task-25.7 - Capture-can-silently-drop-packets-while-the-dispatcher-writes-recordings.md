@@ -4,7 +4,7 @@ title: Capture can silently drop packets while the dispatcher writes recordings
 status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-09 16:05'
+updated_date: '2026-10-12 15:05'
 labels:
   - bug
 dependencies: []
@@ -57,4 +57,6 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-09: built and reviewed (agent-tested, not yet tested by the user). The session and rolling recordings are written by their own threads through bounded queues; rotation and pruning of the recordings folder happen there, so the thread that reads the game never waits on the disk. If a recording queue is full, whole packets are left out of the recording (the file stays valid) and counted; packets dropped before the dispatcher reads them are counted too. Both counts go to aether.log at most once every 30 s when something was dropped. The capture queue is now 8,192 packets (was 2,000,000): about 55 s of game traffic at the peak seen in the recordings. A replay of the compared fight recorded all 88,184 packets with none dropped and the same damage.
+
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Fixed in code. The recording queues, drop counters and the 8,192-packet cap were already in. This round: a game-flow gate (game_flow_gate.rs) keeps web flows, and flows that have not shown the game heartbeat, out of the capture queue for both Npcap and WinDivert, and the session and automatic recorders refuse web flows. Not exercised: a live Npcap capture during a large download.
 <!-- SECTION:NOTES:END -->

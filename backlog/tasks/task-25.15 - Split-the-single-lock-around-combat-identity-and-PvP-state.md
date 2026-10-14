@@ -4,6 +4,7 @@ title: 'Split the single lock around combat, identity and PvP state'
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:38'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies:
@@ -52,3 +53,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 A snapshot is built from one consistent read of the data it uses.
 - [ ] #3 Replaying the same recording gives identical totals and names.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Still present per the review (one lock around combat, identity and PvP); not touched this round. TASK-25.5 and TASK-25.7 are now fixed in code; TASK-25.6 is partly fixed.
+<!-- SECTION:NOTES:END -->

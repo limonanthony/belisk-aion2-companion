@@ -1,4 +1,3 @@
-pub mod accumulator;
 pub mod assembler;
 #[cfg(windows)]
 pub mod capturer;
@@ -8,6 +7,8 @@ pub mod dispatcher;
 pub mod drop_report;
 #[cfg(windows)]
 pub mod game_connections;
+#[cfg(windows)]
+pub mod game_flow_gate;
 pub mod parser;
 pub mod ping_tracker;
 pub mod processor;

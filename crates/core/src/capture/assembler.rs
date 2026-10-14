@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
-use crate::capture::accumulator::PacketAccumulator;
 use crate::capture::processor::StreamProcessor;
 use crate::config::SharedDpsMeterConfig;
 use crate::storage::data_storage::DataStorage;
 use crate::logger::AppLogger;
 
+const MAX_BUFFER_SIZE: usize = 50 * 1024 * 1024;
+const INITIAL_CAPACITY: usize = 1024 * 1024;
+
 pub struct StreamAssembler {
-    accumulator: PacketAccumulator,
+    buffer: Vec<u8>,
+    buffer_limit: usize,
     processor: StreamProcessor,
 }
 
@@ -19,20 +22,9 @@ impl StreamAssembler {
         config: SharedDpsMeterConfig,
     ) -> Self {
         Self {
-            accumulator: PacketAccumulator::new(),
+            buffer: Vec::with_capacity(INITIAL_CAPACITY),
+            buffer_limit: MAX_BUFFER_SIZE,
             processor: StreamProcessor::new(data_storage, logger, port, config),
-        }
-    }
-
-    pub fn new_nickname_only(
-        data_storage: Arc<DataStorage>,
-        logger: Arc<AppLogger>,
-        port: String,
-        config: SharedDpsMeterConfig,
-    ) -> Self {
-        Self {
-            accumulator: PacketAccumulator::new(),
-            processor: StreamProcessor::new_nickname_only(data_storage, logger, port, config),
         }
     }
 
@@ -40,32 +32,46 @@ impl StreamAssembler {
         self.processor.set_captured_at(captured_at);
         self.processor
             .set_combat_damage_enabled(combat_damage_enabled);
-        self.accumulator.append(data);
-        let mut parsed_any = false;
+        if self.buffer.len() + data.len() > self.buffer_limit {
+            self.processor.logger.warn(format!(
+                "[{}] stream buffer over {} bytes without a complete packet; discarding {} buffered bytes and re-framing",
+                self.processor.port,
+                self.buffer_limit,
+                self.buffer.len()
+            ));
+            self.discard_buffered();
+        }
+        self.buffer.extend_from_slice(data);
 
-        while self.accumulator.size() > 0 {
-            let snapshot = self.accumulator.snapshot();
-            let consumed = self.processor.consume_stream(&snapshot);
+        let mut consumed_total = 0;
+        while consumed_total < self.buffer.len() {
+            let consumed = self.processor.consume_stream(&self.buffer[consumed_total..]);
             if consumed == 0 {
                 break;
             }
-            self.accumulator.discard_bytes(consumed);
-            parsed_any = true;
+            consumed_total += consumed;
         }
+        self.buffer.drain(..consumed_total);
 
-        parsed_any
+        consumed_total > 0
     }
 
-    pub fn clear(&self) {
-        self.accumulator.clear();
+    pub fn clear(&mut self) {
+        self.buffer = Vec::with_capacity(INITIAL_CAPACITY);
     }
 
     pub fn discard_buffered(&mut self) {
-        self.accumulator.clear();
+        self.buffer.clear();
         self.processor.reset_framing();
     }
 
     pub fn buffer_size(&self) -> usize {
-        self.accumulator.size()
+        self.buffer.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_buffer_limit(mut self, buffer_limit: usize) -> Self {
+        self.buffer_limit = buffer_limit;
+        self
     }
 }

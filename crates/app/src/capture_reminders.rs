@@ -25,7 +25,7 @@ use crate::clock::ClockTime;
 use crate::fixtures;
 use crate::meter::{Layout, MeterModel, MeterView};
 use crate::overlay::{self, off_screen};
-use crate::reminders::{EventId, ReminderView, ShowReminder, GAP};
+use crate::reminders::{CardKind, EventId, ReminderView, ShowReminder, GAP};
 use crate::secondary::{self, Rect, WindowKind};
 use crate::settings;
 
@@ -121,6 +121,10 @@ pub async fn from_fixtures(
         return Err("the card did not follow the meter".to_string());
     }
 
+    show_start_alert(vec![EventId::ShugoFestival, EventId::RiftPortals], (2, 0), cx);
+    check_card("start alert", meter_hwnd, foreground_before, cx).await?;
+    shoot_stack(meter_hwnd, dir, "reminder-09-start-alert", cx).await?;
+
     let card_hwnd = window_hwnd(WindowKind::Reminder, cx)?;
     let centre = {
         let rect = window_rect(card_hwnd)?;
@@ -159,9 +163,18 @@ enum Side {
 }
 
 /// A reminder starting a minute from now at `hour`:`minute` on the clock.
-pub(crate) fn show(events: Vec<EventId>, (hour, minute): (u8, u8), cx: &mut AsyncApp) {
+pub(crate) fn show(events: Vec<EventId>, time: (u8, u8), cx: &mut AsyncApp) {
+    show_card(CardKind::Reminder, events, time, 60_000, cx);
+}
+
+/// A start alert for events that started just now, at `hour`:`minute` on the clock.
+fn show_start_alert(events: Vec<EventId>, time: (u8, u8), cx: &mut AsyncApp) {
+    show_card(CardKind::StartAlert, events, time, 0, cx);
+}
+
+fn show_card(kind: CardKind, events: Vec<EventId>, (hour, minute): (u8, u8), starts_in_ms: i64, cx: &mut AsyncApp) {
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_millis() as i64);
-    let request = ShowReminder { events, start_ms: now_ms + 60_000, starts_at: ClockTime { hour, minute }, is_test: false };
+    let request = ShowReminder { events, start_ms: now_ms + starts_in_ms, starts_at: ClockTime { hour, minute }, kind, is_test: false };
     cx.update(|cx| secondary::show_reminder(&request, cx));
 }
 

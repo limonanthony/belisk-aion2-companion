@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:41'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -58,3 +59,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #3 Overlay colour tokens exist once, and weekday is computed with one convention by the to-do resets and the reminders.
 - [ ] #4 Existing to-do reset and reminder schedule tests pass.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Still present per the review: PvP shows ID:{id} with no You; history duration_secs duplicates live::fight_secs; the colour tokens are copied in meter/view.rs and secondary/chrome.rs. Not touched this round.
+<!-- SECTION:NOTES:END -->

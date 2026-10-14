@@ -4,7 +4,7 @@ title: 'English text reaches the UI, clipboard and accessibility labels'
 status: In Progress
 assignee: []
 created_date: '2026-10-08 12:41'
-updated_date: '2026-10-09 15:13'
+updated_date: '2026-10-12 15:05'
 labels:
   - bug
 dependencies: []
@@ -72,4 +72,6 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 2026-10-09 re-check against the current code: most of the listed text now goes through translations. Still open: the product name hard-coded in English in copied reports (meter/live.rs, meter/summary.rs) and three 'DPS Meter' fallbacks on the meter (meter/view.rs); the reset, capsule, lock and copy buttons have no accessible name; the core's 'no capture backend' error reaches the meter in English; class names in the to-do window are not translated. Units such as '/s' and 24-hour times are the same in French and need no change.
 
 2026-10-09: user: 'So TASK-25.26 is still needed correct ? If yes you can do it now'. Built and reviewed (agent-tested, not yet tested by the user): the copied reports end with the product name in the language in force; the meter's fallback title, waiting card and idle capsule read 'DPS meter' / 'Compteur DPS'; every icon-only button on the meter and in the other windows has a screen-reader name in both languages; the 'no capture backend' message is translated (driver error details stay as the system wrote them); to-do class names follow the language; '/s' and '--' go through translations; also translated, found while checking: Settings notices about a set-aside or unsaved file, folder-opening errors, the recording-error note and the 'Skill <id>' fallback ('Compétence <id>'). Left as is on purpose: 24-hour times, Npcap/WinDivert, CPU, ms, and the core recorder's own sentences inside the recording/replay messages. Open questions for the user: 'DPS meter' vs 'DPS Meter'; the name of the 'fighter' class (Brawler on Global per QuestLog; French name unknown; the About credit says Fighter); a French suffix for billions ('B' today).
+
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Mostly fixed in code per the review (meter tools, waiting card, clipboard sign-off and capture-failure text go through fl!). What remains is the PvP ID:{n} format, which is TASK-25.28.
 <!-- SECTION:NOTES:END -->

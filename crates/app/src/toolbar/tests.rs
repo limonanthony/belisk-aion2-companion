@@ -379,6 +379,21 @@ fn not_now_answers_without_turning_the_setting_on(cx: &mut TestAppContext) {
     assert!(!store.read_with(cx, |settings, _| launch_prompt_due(settings.get())));
 }
 
+#[gpui::test]
+fn the_prompt_redraws_for_a_new_look_not_for_other_settings(cx: &mut TestAppContext) {
+    let (store, view, cx) = open_prompt(cx);
+    let redraws = Rc::new(std::cell::Cell::new(0));
+    let counter = redraws.clone();
+    cx.update(|_, cx| cx.observe(&view, move |_, _| counter.set(counter.get() + 1)).detach());
+
+    store.update(cx, |settings, cx| settings.update(cx, |all| all.windows.toolbar_at = Some(crate::settings::ScreenPoint { x: 5, y: 5 })));
+    cx.run_until_parked();
+    assert_eq!(redraws.get(), 0, "the toolbar moved");
+    store.update(cx, |settings, cx| settings.update(cx, |all| all.overlay.background_alpha = 40));
+    cx.run_until_parked();
+    assert_eq!(redraws.get(), 1, "the card's look changed");
+}
+
 const NEXT: crate::changelog::Version = crate::changelog::Version::new(9, 0, 0);
 
 fn updates_at(state: UpdateState) -> Snapshot {

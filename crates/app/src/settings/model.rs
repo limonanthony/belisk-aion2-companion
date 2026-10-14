@@ -1,13 +1,13 @@
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use meter_core::config::{CaptureBackendPriority, DpsMeterConfig};
 use meter_core::identity::KnownCharacter;
-use gpui::{App, Context, Entity, Global, Task};
+use gpui::{App, Context, Entity, Global};
 use serde::{Deserialize, Serialize};
 
 use super::{characters, store};
+use crate::background_save::{BackgroundSave, Persisted};
 use crate::changelog::Version;
 use crate::i18n::{fl, LanguageChoice};
 use crate::meter::OverlaySettings;
@@ -16,10 +16,6 @@ use crate::reminders::ReminderSettings;
 use crate::stored_file::{LoadNotice, SaveError};
 use crate::todos::TodoSettings;
 use crate::update::UpdateSettings;
-
-/// A change is written to disk once nothing has changed for this long, so a
-/// slider drag causes one write.
-const SAVE_AFTER: Duration = Duration::from_millis(400);
 
 /// "End a fight after": the choices the page offers, in seconds, with 0 for
 /// never. Any stored value from 60 s to an hour is kept as it is.
@@ -110,13 +106,30 @@ impl Default for CaptureSettings {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum DetailPlacement {
-    /// Next to the overlay.
+    /// Beside the overlay until the player first drags the window, then where
+    /// it was left. Stored as "beside" since before windows were remembered.
     #[default]
-    Beside,
-    /// In the middle of the screen.
+    #[serde(rename = "beside")]
+    WhereLeft,
+    /// In the middle of the screen, always.
+    #[serde(rename = "centred")]
     Centred,
+}
+
+/// A window whose dragged-to place is remembered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Spot {
+    Meter,
+    Toolbar,
+    History,
+    Detail,
+    Report,
+    Pvp,
+    Todos,
+    Resources,
+    Pets,
+    Settings,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -133,6 +146,68 @@ pub struct WindowSettings {
     /// The toolbar's top-left corner in device pixels, where it was left; none
     /// opens it at the top centre of the primary monitor.
     pub toolbar_at: Option<ScreenPoint>,
+    /// The windows' top-left corners in device pixels, where they were left;
+    /// none opens a window as it opens before it is ever dragged.
+    pub meter_at: Option<ScreenPoint>,
+    pub history_at: Option<ScreenPoint>,
+    pub detail_at: Option<ScreenPoint>,
+    pub report_at: Option<ScreenPoint>,
+    pub pvp_at: Option<ScreenPoint>,
+    pub todos_at: Option<ScreenPoint>,
+    pub resources_at: Option<ScreenPoint>,
+    pub pets_at: Option<ScreenPoint>,
+    pub settings_at: Option<ScreenPoint>,
+}
+
+impl WindowSettings {
+    /// Where `spot` was left, as a window about to open uses it.
+    pub fn remembered(&self, spot: Spot) -> Option<ScreenPoint> {
+        if !self.remembers(spot) {
+            return None;
+        }
+        match spot {
+            Spot::Meter => self.meter_at,
+            Spot::Toolbar => self.toolbar_at,
+            Spot::History => self.history_at,
+            Spot::Detail => self.detail_at,
+            Spot::Report => self.report_at,
+            Spot::Pvp => self.pvp_at,
+            Spot::Todos => self.todos_at,
+            Spot::Resources => self.resources_at,
+            Spot::Pets => self.pets_at,
+            Spot::Settings => self.settings_at,
+        }
+    }
+
+    /// The detail window is the only one that does not always: it opens
+    /// centred when the player chose that.
+    fn remembers(&self, spot: Spot) -> bool {
+        spot != Spot::Detail || self.detail_opens == DetailPlacement::WhereLeft
+    }
+
+    fn leave(&mut self, spot: Spot, at: ScreenPoint) {
+        if !self.remembers(spot) {
+            return;
+        }
+        let slot = match spot {
+            Spot::Meter => &mut self.meter_at,
+            Spot::Toolbar => &mut self.toolbar_at,
+            Spot::History => &mut self.history_at,
+            Spot::Detail => &mut self.detail_at,
+            Spot::Report => &mut self.report_at,
+            Spot::Pvp => &mut self.pvp_at,
+            Spot::Todos => &mut self.todos_at,
+            Spot::Resources => &mut self.resources_at,
+            Spot::Pets => &mut self.pets_at,
+            Spot::Settings => &mut self.settings_at,
+        };
+        *slot = Some(at);
+    }
+}
+
+/// The player left `spot` at `at`: it opens there from now on.
+pub fn leave_window_at(spot: Spot, at: ScreenPoint, cx: &mut App) {
+    global(cx).update(cx, |settings, cx| settings.update(cx, |all| all.windows.leave(spot, at)));
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,16 +273,8 @@ pub fn end_fight_after_label(secs: u64) -> String {
 /// kept, and written to `settings.json` a moment later.
 pub struct Settings {
     value: AppSettings,
-    file: Option<PathBuf>,
-    save: Option<Task<()>>,
-    saved: bool,
-    save_error: Option<SaveError>,
+    save: BackgroundSave<AppSettings>,
     load_notice: Option<LoadNotice>,
-    /// Counts changes; a write carries the number of the value it holds.
-    revision: u64,
-    /// The revision last written. Writers take the lock, so an older value,
-    /// finishing late, never replaces a newer one on disk.
-    written: Arc<Mutex<u64>>,
 }
 
 struct SettingsHandle(Entity<Settings>);
@@ -231,17 +298,12 @@ impl Settings {
         }
         let mut settings = Self {
             value: loaded.settings,
-            file: Some(file),
-            save: None,
-            saved: true,
-            save_error: None,
+            save: BackgroundSave::new(Some(file), store::save),
             load_notice: loaded.notice,
-            revision: 0,
-            written: Arc::default(),
         };
         if loaded.fresh_install {
             settings.value.last_seen_version = Some(Version::current());
-            settings.saved = false;
+            settings.save.pending();
             settings.flush();
         }
         settings
@@ -251,16 +313,7 @@ impl Settings {
     /// capture modes, whose output must not depend on, or change, the user's
     /// file.
     pub fn in_memory(value: AppSettings) -> Self {
-        Self {
-            value: value.clamped(),
-            file: None,
-            save: None,
-            saved: true,
-            save_error: None,
-            load_notice: None,
-            revision: 0,
-            written: Arc::default(),
-        }
+        Self { value: value.clamped(), save: BackgroundSave::new(None, store::save), load_notice: None }
     }
 
     pub fn get(&self) -> &AppSettings {
@@ -274,12 +327,12 @@ impl Settings {
 
     /// The folder `settings.json` lives in; none for in-memory settings.
     pub fn data_dir(&self) -> Option<&Path> {
-        self.file.as_deref().and_then(Path::parent)
+        self.save.file().and_then(Path::parent)
     }
 
     /// Why the last write failed; cleared by the next one that succeeds.
     pub fn save_error(&self) -> Option<&SaveError> {
-        self.save_error.as_ref()
+        self.save.error()
     }
 
     /// Applies `change` to a copy, clamps it, and keeps it if it differs.
@@ -291,8 +344,7 @@ impl Settings {
             return;
         }
         self.value = next;
-        self.revision += 1;
-        self.schedule_save(cx);
+        self.save.changed(cx);
         cx.notify();
     }
 
@@ -308,63 +360,20 @@ impl Settings {
     /// Writes any change not yet on disk now, on this thread; used when the
     /// app quits.
     pub fn flush(&mut self) {
-        self.save = None;
-        let Some(file) = self.file.as_ref().filter(|_| !self.saved) else {
-            return;
-        };
-        match write_in_order(&self.written, self.revision, file, &self.value) {
-            Ok(()) => {
-                self.saved = true;
-                self.save_error = None;
-            }
-            Err(error) => {
-                crate::app_log::error(error.to_string());
-                self.save_error = Some(error);
-            }
-        }
-    }
-
-    fn schedule_save(&mut self, cx: &mut Context<Self>) {
-        self.saved = false;
-        let Some(file) = self.file.clone() else {
-            return;
-        };
-        self.save = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(SAVE_AFTER).await;
-            let Ok(Some((revision, value, written))) = this.update(cx, |settings, _| {
-                (!settings.saved).then(|| (settings.revision, settings.value.clone(), Arc::clone(&settings.written)))
-            }) else {
-                return;
-            };
-            let result = cx
-                .background_executor()
-                .spawn(async move { write_in_order(&written, revision, &file, &value) })
-                .await;
-            let _ = this.update(cx, |settings, cx| {
-                match result {
-                    Ok(()) => {
-                        settings.saved = settings.saved || settings.revision == revision;
-                        settings.save_error = None;
-                    }
-                    Err(error) => {
-                        crate::app_log::error(error.to_string());
-                        settings.save_error = Some(error);
-                    }
-                }
-                cx.notify();
-            });
-        }));
+        self.save.flush(&self.value);
     }
 }
 
-fn write_in_order(written: &Mutex<u64>, revision: u64, file: &Path, value: &AppSettings) -> Result<(), SaveError> {
-    let mut last = written.lock().unwrap_or_else(PoisonError::into_inner);
-    if revision < *last {
-        return Ok(());
+impl Persisted for Settings {
+    type Value = AppSettings;
+
+    fn value(&self) -> &AppSettings {
+        &self.value
     }
-    store::save(file, value)?;
-    *last = revision;
-    Ok(())
+
+    fn background_save(&mut self) -> &mut BackgroundSave<AppSettings> {
+        &mut self.save
+    }
 }
 
 /// Makes `settings` the app's settings, for [`global`].
@@ -412,7 +421,74 @@ pub fn toggle_layout(cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use gpui::AppContext as _;
+
     use super::*;
+
+    fn at(x: i32, y: i32) -> Option<ScreenPoint> {
+        Some(ScreenPoint { x, y })
+    }
+
+    #[test]
+    fn settings_written_before_windows_were_remembered_load_as_never_dragged() {
+        let old = r#"{"windows": {"toolbarAt": {"x": 74, "y": 48}, "openMeterAtLaunch": true, "detailOpens": "beside"}}"#;
+
+        let settings: AppSettings = serde_json::from_str(old).expect("an older settings.json");
+
+        assert_eq!(settings.windows.remembered(Spot::Toolbar), at(74, 48));
+        for spot in [Spot::Meter, Spot::History, Spot::Detail, Spot::Report, Spot::Pvp, Spot::Todos, Spot::Resources, Spot::Pets, Spot::Settings] {
+            assert_eq!(settings.windows.remembered(spot), None, "{spot:?}");
+        }
+        assert_eq!(settings.windows.detail_opens, DetailPlacement::WhereLeft, "\"beside\" reads as where it was left");
+    }
+
+    #[test]
+    fn a_remembered_spot_is_stored_camel_case_and_comes_back() {
+        let mut settings = AppSettings::default();
+        settings.windows.leave(Spot::Meter, ScreenPoint { x: 10, y: 20 });
+        settings.windows.leave(Spot::Pets, ScreenPoint { x: -1900, y: 30 });
+
+        let stored = serde_json::to_value(&settings).expect("serialises");
+
+        assert_eq!(stored["windows"]["meterAt"], serde_json::json!({"x": 10, "y": 20}));
+        assert_eq!(stored["windows"]["petsAt"], serde_json::json!({"x": -1900, "y": 30}));
+        assert!(stored["windows"]["historyAt"].is_null(), "a window never dragged has no spot");
+        let loaded: AppSettings = serde_json::from_value(stored).expect("reads back");
+        assert_eq!(loaded, settings);
+        assert_eq!(serde_json::to_value(DetailPlacement::WhereLeft).unwrap(), "beside");
+        assert_eq!(serde_json::to_value(DetailPlacement::Centred).unwrap(), "centred");
+    }
+
+    #[test]
+    fn the_detail_window_remembers_its_spot_only_while_it_opens_where_it_was_left() {
+        let mut windows = WindowSettings::default();
+        windows.leave(Spot::Detail, ScreenPoint { x: 5, y: 6 });
+        assert_eq!(windows.remembered(Spot::Detail), at(5, 6));
+
+        windows.detail_opens = DetailPlacement::Centred;
+        assert_eq!(windows.remembered(Spot::Detail), None, "centred: the spot saved earlier is not used");
+        windows.leave(Spot::Detail, ScreenPoint { x: 50, y: 60 });
+        windows.detail_opens = DetailPlacement::WhereLeft;
+        assert_eq!(windows.remembered(Spot::Detail), at(5, 6), "a drag while centred is not remembered");
+    }
+
+    #[gpui::test]
+    fn reset_settings_forgets_where_the_windows_were_left(cx: &mut gpui::TestAppContext) {
+        let store = cx.update(|cx| cx.new(|_| Settings::in_memory(AppSettings::default())));
+        cx.update(|cx| {
+            install(&store, cx);
+            leave_window_at(Spot::Toolbar, ScreenPoint { x: 74, y: 48 }, cx);
+            leave_window_at(Spot::Todos, ScreenPoint { x: 300, y: 90 }, cx);
+        });
+        assert_eq!(store.read_with(cx, |settings, _| settings.get().windows.remembered(Spot::Todos)), at(300, 90));
+
+        cx.update(|cx| store.update(cx, |settings, cx| settings.reset(cx)));
+
+        let windows = store.read_with(cx, |settings, _| settings.get().windows.clone());
+        assert_eq!((windows.remembered(Spot::Toolbar), windows.remembered(Spot::Todos)), (None, None));
+    }
 
     #[test]
     fn the_core_gets_the_counting_options_and_keeps_the_rest() {

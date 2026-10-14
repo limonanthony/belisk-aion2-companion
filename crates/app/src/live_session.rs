@@ -54,7 +54,6 @@ mod tests {
         let config = default_backend_config();
         assert_eq!(config.dps_snapshot_interval_ms, 200);
         assert_eq!(config.memory_snapshot_interval_ms, 2000);
-        assert_eq!(config.stall_resync_delay_ms, 1000);
         assert_eq!(config.full_processor_stall_resync_delay_ms, 200);
         assert_eq!(config.unknown_packet_stall_resync_delay_ms, 50);
         assert!(!config.boss_only && !config.pvp_mode_on && !config.show_possible_boss);

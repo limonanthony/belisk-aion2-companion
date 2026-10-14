@@ -965,11 +965,10 @@ mod tests {
     }
 
     #[test]
-    fn the_party_dps_adds_the_players_up() {
+    fn the_party_dps_is_the_damage_the_party_dealt_in_a_minute_per_second() {
         let report = FightReport::from_record(&record_saved_before_the_ledger()).unwrap();
 
-        let expected: f64 = report.players.iter().map(|player| player.dps).sum();
-        assert_eq!(report.totals.party_dps, expected);
-        assert!(expected > 0.0);
+        assert_eq!(report.totals.damage, 1_680_000);
+        assert!((report.totals.party_dps - 28_000.0).abs() < 0.001, "{}", report.totals.party_dps);
     }
 }

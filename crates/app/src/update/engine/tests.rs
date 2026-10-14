@@ -1,4 +1,5 @@
 use std::io::{self, Cursor, Read};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
 
@@ -67,6 +68,9 @@ struct World {
     api_size_override: Option<u64>,
     append_to_archive_body: Vec<u8>,
     refuse_archive_host: bool,
+    archive_timeouts: Vec<Duration>,
+    small_body_timeouts: Vec<Duration>,
+    open_bodies: Arc<AtomicUsize>,
 }
 
 struct FakeHttp {
@@ -105,6 +109,24 @@ impl<R: Read> Read for Hooked<R> {
     }
 }
 
+/// An archive connection, counted as open until it is dropped.
+struct Counted<R> {
+    inner: R,
+    open: Arc<AtomicUsize>,
+}
+
+impl<R: Read> Read for Counted<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl<R> Drop for Counted<R> {
+    fn drop(&mut self) {
+        self.open.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 fn answer(status: u16, headers: Vec<(String, String)>, body: Box<dyn Read + Send>) -> Result<Response, HttpError> {
     Ok(Response { status, headers, body })
 }
@@ -114,10 +136,11 @@ fn text(body: &str) -> Result<Response, HttpError> {
 }
 
 impl Http for FakeHttp {
-    fn get(&self, url: &str, _accept: &str, range_from: Option<u64>) -> Result<Response, HttpError> {
+    fn get(&self, url: &str, _accept: &str, range_from: Option<u64>, body_timeout: Duration) -> Result<Response, HttpError> {
         let mut world = self.world.lock();
         if url == API {
             world.api_requests += 1;
+            world.small_body_timeouts.push(body_timeout);
             return match &world.api {
                 Api::Unreachable => Err(HttpError("dns error".to_owned())),
                 Api::Panics => panic!("the transport is broken"),
@@ -132,18 +155,21 @@ impl Http for FakeHttp {
             };
         }
         if url.ends_with(".sha256") {
+            world.small_body_timeouts.push(body_timeout);
             return match world.checksum.clone() {
                 Some(text_) => text(&text_),
                 None => answer(404, vec![], Box::new(Cursor::new(vec![]))),
             };
         }
         if url.ends_with(".sig") {
+            world.small_body_timeouts.push(body_timeout);
             return match world.signature.clone() {
                 Some(text_) => text(&text_),
                 None => answer(404, vec![], Box::new(Cursor::new(vec![]))),
             };
         }
         world.archive_requests.push(range_from);
+        world.archive_timeouts.push(body_timeout);
         if world.refuse_archive_host {
             return Err(HttpError(format!("{url} is not an address updates may use: that host is not one of GitHub's")));
         }
@@ -158,6 +184,8 @@ impl Http for FakeHttp {
         if let Some(hook) = world.on_archive_read.clone() {
             body = Box::new(Hooked { inner: body, total: 0, hook });
         }
+        world.open_bodies.fetch_add(1, Ordering::SeqCst);
+        body = Box::new(Counted { inner: body, open: world.open_bodies.clone() });
         let status = if range_from.is_some() { 206 } else { 200 };
         answer(status, vec![], body)
     }
@@ -199,6 +227,8 @@ struct Rig {
     commands: Sender<Command>,
     layout: Layout,
     fight: Arc<Mutex<Option<(Duration, Duration)>>>,
+    /// How many archive connections were open at each check made during the fight.
+    open_during_fight: Arc<Mutex<Vec<usize>>>,
     _dir: TempDir,
 }
 
@@ -222,13 +252,24 @@ impl Rig {
             api_size_override: None,
             append_to_archive_body: vec![],
             refuse_archive_host: false,
+            archive_timeouts: vec![],
+            small_body_timeouts: vec![],
+            open_bodies: Arc::default(),
         }));
         let shown = Arc::new(Mutex::new(Vec::new()));
         let (commands, receiver) = channel();
         let fight: Arc<Mutex<Option<(Duration, Duration)>>> = Arc::new(Mutex::new(None));
+        let open_during_fight = Arc::new(Mutex::new(Vec::new()));
         let in_fight = {
-            let (clock, fight) = (clock.clone(), fight.clone());
-            move || fight.lock().is_some_and(|(from, until)| (from..until).contains(&clock.since_launch()))
+            let (clock, fight, open) = (clock.clone(), fight.clone(), open_during_fight.clone());
+            let bodies = world.lock().open_bodies.clone();
+            move || {
+                let fighting = fight.lock().is_some_and(|(from, until)| (from..until).contains(&clock.since_launch()));
+                if fighting {
+                    open.lock().push(bodies.load(Ordering::SeqCst));
+                }
+                fighting
+            }
         };
         let publish = {
             let shown = shown.clone();
@@ -246,7 +287,7 @@ impl Rig {
             commands: receiver,
             auto_download,
         });
-        let rig = Self { engine, clock, world, shown, commands, layout, fight, _dir: dir };
+        let rig = Self { engine, clock, world, shown, commands, layout, fight, open_during_fight, _dir: dir };
         rig.publish_release(Version::new(1, 1, 0));
         rig
     }
@@ -589,6 +630,50 @@ fn the_download_pauses_during_a_fight_reads_nothing_and_resumes_after_it() {
     assert_eq!(paused.len(), 1, "the window is told once when it pauses");
     let resumed = rig.shown_states().iter().rposition(|state| matches!(state, UpdateState::Downloading { paused_for_fight: false, .. }));
     assert!(resumed.is_some());
+}
+
+#[test]
+fn no_connection_is_held_during_a_fight_and_a_range_request_reopens_it_after() {
+    let mut rig = Rig::new("engine-fight-drops-body", true);
+    *rig.fight.lock() = Some((Duration::from_secs(1), Duration::from_secs(61)));
+
+    rig.launch_check();
+
+    assert!(matches!(rig.state(), UpdateState::Ready { .. }));
+    let held = rig.open_during_fight.lock().clone();
+    assert!(held.len() > 1 && held[1..].iter().all(|open| *open == 0), "connections open at each check after the first of the fight: {held:?}");
+    let requests = rig.archive_requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests[0], None);
+    assert!(requests[1].is_some_and(|from| from > 0), "the second request asks for the rest: {requests:?}");
+    assert_eq!(rig.ready_archive().unwrap(), rig.world.lock().archive, "the file is whole");
+}
+
+#[test]
+fn a_fight_before_the_first_byte_opens_the_connection_only_after_it() {
+    let mut rig = Rig::new("engine-fight-first", true);
+    *rig.fight.lock() = Some((Duration::ZERO, Duration::from_secs(30)));
+
+    rig.launch_check();
+
+    assert_eq!(rig.archive_requests(), vec![None], "nothing was opened to wait in");
+    assert!(matches!(rig.state(), UpdateState::Ready { .. }));
+}
+
+#[test]
+fn each_archive_request_may_take_what_is_left_at_the_cap_plus_a_margin() {
+    let mut rig = Rig::new("engine-body-timeout", true);
+    rig.world.lock().break_first_request_at = Some(300_000);
+
+    rig.launch_check();
+
+    let size = rig.world.lock().archive.len() as u64;
+    assert_eq!(
+        rig.world.lock().archive_timeouts,
+        vec![archive_body_timeout(size), archive_body_timeout(size - 300_000)],
+    );
+    assert!(archive_body_timeout(size) > Duration::from_secs(size / MAX_BYTES_PER_SECOND), "with a margin on top");
+    assert!(rig.world.lock().small_body_timeouts.iter().all(|timeout| *timeout == SMALL_BODY_TIMEOUT));
 }
 
 #[test]

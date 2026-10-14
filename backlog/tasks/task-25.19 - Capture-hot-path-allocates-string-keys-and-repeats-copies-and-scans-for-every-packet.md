@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:40'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -59,3 +60,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #3 After a fight reset the overlay's ping value is cleared, or the owner confirms it should persist.
 - [ ] #4 Replay totals are unchanged and per-packet cost is measured no worse.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Partly fixed in code this round: the remaining-HP parser no longer copies the actor-name map (AC #2); a fight reset clears the overlay ping and the unread ping history is gone (AC #3); debug log lines are no longer built when debug logging is off. Still present: string flow keys in the dispatcher (AC #1) and per-packet cost not measured (AC #4).
+<!-- SECTION:NOTES:END -->

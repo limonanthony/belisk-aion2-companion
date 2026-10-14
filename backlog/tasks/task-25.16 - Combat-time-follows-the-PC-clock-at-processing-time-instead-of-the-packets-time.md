@@ -3,10 +3,10 @@ id: TASK-25.16
 title: >-
   Combat time follows the PC clock at processing time instead of the packet's
   time
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:39'
-updated_date: '2026-10-08 12:42'
+updated_date: '2026-10-12 15:05'
 labels:
   - bug
 dependencies: []
@@ -54,3 +54,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 Idle timeout and buff coverage can be tested with a controlled clock.
 - [ ] #3 Time bookkeeping for targets does not grow without limit over a long session of many distinct targets.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Fixed in code, mostly. Hits, heals, deaths and the idle timeout now use the packet's capture time (plus real time elapsed since the newest packet, so a quiet live connection still ages); a fixture test replays a real fight at 50x and 200x and gets the same combat time, DPS and rows (AC #1), and the clock is a data clock a test can control (AC #2). Not changed or not checked: the time bookkeeping per target (AC #3) was reported unbounded by the review and no fix for it was reported; buff apply still uses the PC clock; the data clock follows the last packet, not the newest capture time, so out-of-order flows can rewind it briefly. Moved to In Progress; not tested by the user.
+<!-- SECTION:NOTES:END -->

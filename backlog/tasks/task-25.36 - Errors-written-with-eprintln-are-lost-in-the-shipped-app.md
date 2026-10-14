@@ -4,7 +4,7 @@ title: Errors written with eprintln! are lost in the shipped app
 status: In Progress
 assignee: []
 created_date: '2026-10-08 15:38'
-updated_date: '2026-10-09 16:05'
+updated_date: '2026-10-12 15:05'
 labels:
   - bug
 dependencies: []
@@ -75,4 +75,6 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers and counts
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-09: built and reviewed (agent-tested, not yet tested by the user). The 49 messages the shipped app wrote to a console it doesn't have now go to aether.log (errors and warnings: failed loads and saves with the file and reason, windows that could not open, startup, quit, shortcuts, tray, capture device). Pure narration was moved to debug or removed. Nothing is written per packet. Replays and screenshot captures log to a temporary file instead of aether.log.
+
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Fixed in code: errors go to belisk.log through app_log, and GPUI's own warnings and errors are forwarded with file and line. Remaining eprintln! calls are under the probes feature and in the replay example (a console tool). The log file is belisk.log, not aether.log as the ticket text says.
 <!-- SECTION:NOTES:END -->

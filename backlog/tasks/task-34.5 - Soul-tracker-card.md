@@ -4,7 +4,7 @@ title: Soul tracker card
 status: Done
 assignee: []
 created_date: '2026-10-10 12:46'
-updated_date: '2026-10-10 22:23'
+updated_date: '2026-10-12 15:05'
 labels:
   - feature
 dependencies:
@@ -47,4 +47,6 @@ Depends on the pet data, the name list and the approved mockups.
 2026-10-11: tested in game and accepted by the user.
 
 Final card: timer ring left of the × (both cards), 14 px padding on all sides, bodies aligned with the header icon, name / Lv line / bar 8 px apart as seen; the card's window is kept hidden between cards so it reappears at once.
+
+2026-10-12: the card now closes its window on dismissal like the reminder card (user decision); the hidden-and-reused window described above is gone, because a reused window came back under the game (TASK-35). Accepted behaviour on 2026-10-11 is unchanged. Not tested by the user.
 <!-- SECTION:NOTES:END -->

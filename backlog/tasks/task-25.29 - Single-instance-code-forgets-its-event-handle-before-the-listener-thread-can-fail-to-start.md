@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-08 12:41'
-updated_date: '2026-10-09 14:03'
+updated_date: '2026-10-12 15:05'
 labels:
   - bug
 dependencies: []
@@ -56,4 +56,6 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-09: fixed: the event handle is forgotten only after the listener thread has started; if the thread cannot start, it is closed with the lock. Also a second launch (and the tray's Show toolbar) now brings the meter forward too when it is open and on screen. Reviewed, not yet tested by the user.
+
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Fixed in code: the event handle is forgotten only after the listener thread has started. This round also: the single instance is claimed before the one-time data-folder move, so a second launch no longer retries the move.
 <!-- SECTION:NOTES:END -->

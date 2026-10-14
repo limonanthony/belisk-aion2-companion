@@ -7,7 +7,10 @@ pub trait Http: Send + Sync {
     /// `GET url`. A status of any kind is an answer, not an error; only a
     /// failure to get one (DNS, connection, TLS, timeout, an address that is not
     /// allowed) is. `range_from` asks for the bytes from that offset on.
-    fn get(&self, url: &str, accept: &str, range_from: Option<u64>) -> Result<Response, HttpError>;
+    /// Reading the body takes at most `body_timeout` in all, counted from the
+    /// headers: a connection that stalls half-open ends in a read error
+    /// instead of blocking the worker for ever.
+    fn get(&self, url: &str, accept: &str, range_from: Option<u64>, body_timeout: Duration) -> Result<Response, HttpError>;
 }
 
 pub struct Response {
@@ -130,7 +133,7 @@ impl UreqHttp {
 }
 
 impl Http for UreqHttp {
-    fn get(&self, url: &str, accept: &str, range_from: Option<u64>) -> Result<Response, HttpError> {
+    fn get(&self, url: &str, accept: &str, range_from: Option<u64>, body_timeout: Duration) -> Result<Response, HttpError> {
         let mut current = url.to_owned();
         for _ in 0..=MAX_REDIRECTS {
             self.policy.check(&current)?;
@@ -138,7 +141,12 @@ impl Http for UreqHttp {
             if let Some(offset) = range_from {
                 request = request.header("Range", format!("bytes={offset}-"));
             }
-            let response = request.call().map_err(|error| HttpError(error.to_string()))?;
+            let response = request
+                .config()
+                .timeout_recv_body(Some(body_timeout))
+                .build()
+                .call()
+                .map_err(|error| HttpError(error.to_string()))?;
             let status = response.status().as_u16();
             let headers: Vec<(String, String)> = response
                 .headers()
@@ -179,6 +187,7 @@ mod tests {
     use super::*;
 
     const LOOPBACK: Policy = Policy { https_only: false, any_port: true, hosts: &["127.0.0.1"] };
+    const BODY: Duration = Duration::from_secs(5);
 
     fn serve_once(reply: String) -> (String, thread::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -193,6 +202,30 @@ mod tests {
         (format!("http://{address}/releases/latest"), server)
     }
 
+    #[test]
+    fn a_body_that_stalls_ends_in_a_read_error_at_the_timeout_instead_of_blocking() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/asset.zip", listener.local_addr().unwrap());
+        let (done, released) = std::sync::mpsc::channel::<()>();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = vec![0u8; 4096];
+            stream.read(&mut request).unwrap();
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nabc").unwrap();
+            let _ = released.recv();
+        });
+
+        let started = std::time::Instant::now();
+        let response = UreqHttp::with_policy(LOOPBACK).get(&url, "*/*", None, Duration::from_millis(300)).unwrap();
+        let error = response.read_limited(100).expect_err("the rest of the body never comes");
+
+        let waited = started.elapsed();
+        done.send(()).unwrap();
+        server.join().unwrap();
+        assert!(error.contains("reading the answer failed"), "{error}");
+        assert!(waited < Duration::from_secs(10), "the stall ended at the timeout, not at the server's pleasure: {waited:?}");
+    }
+
     fn redirect_to(location: &str) -> String {
         format!("HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
     }
@@ -203,7 +236,7 @@ mod tests {
             "HTTP/1.1 403 Forbidden\r\nx-ratelimit-reset: 1700000000\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_owned(),
         );
 
-        let response = UreqHttp::with_policy(LOOPBACK).get(&url, "application/vnd.github+json", None).unwrap();
+        let response = UreqHttp::with_policy(LOOPBACK).get(&url, "application/vnd.github+json", None, BODY).unwrap();
         let request = server.join().unwrap().to_ascii_lowercase();
 
         assert_eq!(response.status, 403);
@@ -217,7 +250,7 @@ mod tests {
     fn a_range_request_asks_for_the_bytes_from_the_offset() {
         let (url, server) = serve_once("HTTP/1.1 206 Partial Content\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc".to_owned());
 
-        let response = UreqHttp::with_policy(LOOPBACK).get(&url, "application/octet-stream", Some(1024)).unwrap();
+        let response = UreqHttp::with_policy(LOOPBACK).get(&url, "application/octet-stream", Some(1024), BODY).unwrap();
 
         assert_eq!(response.status, 206);
         assert!(server.join().unwrap().to_ascii_lowercase().contains("range: bytes=1024-"));
@@ -229,7 +262,7 @@ mod tests {
         let url = format!("http://{}/", listener.local_addr().unwrap());
         drop(listener);
 
-        assert!(UreqHttp::with_policy(LOOPBACK).get(&url, "*/*", None).is_err());
+        assert!(UreqHttp::with_policy(LOOPBACK).get(&url, "*/*", None, BODY).is_err());
     }
 
     #[test]
@@ -243,7 +276,7 @@ mod tests {
         let (target, target_server) = serve_once("HTTP/1.1 206 Partial Content\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc".to_owned());
         let (url, first_server) = serve_once(redirect_to(&target));
 
-        let response = UreqHttp::with_policy(LOOPBACK).get(&url, "application/octet-stream", Some(7)).unwrap();
+        let response = UreqHttp::with_policy(LOOPBACK).get(&url, "application/octet-stream", Some(7), BODY).unwrap();
 
         assert_eq!(response.status, 206);
         first_server.join().unwrap();
@@ -255,7 +288,7 @@ mod tests {
         for location in ["http://evil.test/payload", "https://127.0.0.1.evil.test/x", "ftp://127.0.0.1/x"] {
             let (url, server) = serve_once(redirect_to(location));
 
-            let error = UreqHttp::with_policy(LOOPBACK).get(&url, "*/*", None).err().expect("the address is refused");
+            let error = UreqHttp::with_policy(LOOPBACK).get(&url, "*/*", None, BODY).err().expect("the address is refused");
 
             server.join().unwrap();
             assert!(error.0.contains("not an address updates may use"), "{location}: {error}");
@@ -266,7 +299,7 @@ mod tests {
     fn a_redirect_without_a_location_is_an_error() {
         let (url, server) = serve_once("HTTP/1.1 302 Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned());
 
-        assert!(UreqHttp::with_policy(LOOPBACK).get(&url, "*/*", None).is_err());
+        assert!(UreqHttp::with_policy(LOOPBACK).get(&url, "*/*", None, BODY).is_err());
         server.join().unwrap();
     }
 
@@ -315,7 +348,7 @@ mod tests {
 
     #[test]
     fn the_real_client_refuses_an_address_before_it_sends_anything() {
-        let error = UreqHttp::new().get("http://api.github.com/repos/o/r/releases/latest", "*/*", None).err().expect("the address is refused");
+        let error = UreqHttp::new().get("http://api.github.com/repos/o/r/releases/latest", "*/*", None, BODY).err().expect("the address is refused");
 
         assert!(error.0.contains("not https"), "{error}");
     }
@@ -331,7 +364,7 @@ mod tests {
     fn an_https_request_runs_the_tls_handshake_and_a_failed_one_is_an_error() {
         let (address, server) = accept_one_connection_and_hang_up();
 
-        let error = UreqHttp::with_policy(LOOPBACK).get(&format!("https://{address}/"), "*/*", None).err().expect("a failed handshake is an error");
+        let error = UreqHttp::with_policy(LOOPBACK).get(&format!("https://{address}/"), "*/*", None, BODY).err().expect("a failed handshake is an error");
 
         server.join().unwrap();
         assert!(!error.0.is_empty());
@@ -342,7 +375,7 @@ mod tests {
         let (address, tls_server) = accept_one_connection_and_hang_up();
         let (url, first_server) = serve_once(redirect_to(&format!("https://{address}/asset.zip")));
 
-        let error = UreqHttp::with_policy(LOOPBACK).get(&url, "*/*", None).err().expect("a failed handshake is an error");
+        let error = UreqHttp::with_policy(LOOPBACK).get(&url, "*/*", None, BODY).err().expect("a failed handshake is an error");
 
         first_server.join().unwrap();
         tls_server.join().unwrap();
@@ -354,7 +387,7 @@ mod tests {
     fn github_answers_the_latest_release_over_schannel() {
         let url = "https://api.github.com/repos/limonanthony/belisk-aion2-companion/releases/latest";
 
-        let response = UreqHttp::new().get(url, "application/vnd.github+json", None).expect("TLS to api.github.com works");
+        let response = UreqHttp::new().get(url, "application/vnd.github+json", None, BODY).expect("TLS to api.github.com works");
         let status = response.status;
         let body = String::from_utf8(response.read_limited(1024 * 1024).expect("the body is read")).expect("the body is UTF-8");
         let release: serde_json::Value = serde_json::from_str(&body).expect("the answer is JSON");

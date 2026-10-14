@@ -98,18 +98,6 @@ fn inspect_stall_candidate(buffer: &[u8]) -> StallCandidate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProcessorMode {
-    Full,
-    NicknameOnly,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum StallResyncMode {
-    Immediate,
-    Delayed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct StallCandidate {
     declared_packet_len: Option<usize>,
     opcode: Option<(u8, u8)>,
@@ -140,8 +128,6 @@ pub struct StreamProcessor {
     pub(super) logger: Arc<AppLogger>,
     pub(super) port: String,
     pub(super) config: SharedDpsMeterConfig,
-    mode: ProcessorMode,
-    stall_resync_mode: StallResyncMode,
     stalled_since: Option<Instant>,
     stalled_candidate: Option<StallCandidate>,
     stall_began: Option<Instant>,
@@ -165,33 +151,6 @@ impl StreamProcessor {
             logger,
             port,
             config,
-            mode: ProcessorMode::Full,
-            stall_resync_mode: StallResyncMode::Immediate,
-            stalled_since: None,
-            stalled_candidate: None,
-            stall_began: None,
-            stalled_buffer_len: 0,
-            hunting_packet_start: false,
-            combat_damage_enabled: false,
-            own_actor: OwnActor::Unsettled,
-            captured_at: 0.0,
-            soul_sources: SoulSourceTracker::default(),
-        }
-    }
-
-    pub fn new_nickname_only(
-        data_storage: Arc<DataStorage>,
-        logger: Arc<AppLogger>,
-        port: String,
-        config: SharedDpsMeterConfig,
-    ) -> Self {
-        Self {
-            data_storage,
-            logger,
-            port,
-            config,
-            mode: ProcessorMode::NicknameOnly,
-            stall_resync_mode: StallResyncMode::Delayed,
             stalled_since: None,
             stalled_candidate: None,
             stall_began: None,
@@ -210,6 +169,7 @@ impl StreamProcessor {
 
     pub fn set_captured_at(&mut self, captured_at: f64) {
         self.captured_at = captured_at;
+        self.data_storage.note_packet_time(captured_at);
     }
 
     pub fn reset_framing(&mut self) {
@@ -277,11 +237,7 @@ impl StreamProcessor {
                 .opcode
                 .is_none_or(|opcode| KNOWN_PACKET_HEADERS.contains(&opcode));
             let delay_ms = if is_known_or_undetermined {
-                let config = self.config.read().unwrap();
-                match self.stall_resync_mode {
-                    StallResyncMode::Immediate => config.full_processor_stall_resync_delay_ms,
-                    StallResyncMode::Delayed => config.stall_resync_delay_ms,
-                }
+                self.config.read().unwrap().full_processor_stall_resync_delay_ms
             } else {
                 self.config
                     .read()
@@ -454,69 +410,49 @@ impl StreamProcessor {
         let opcode = (payload[0], payload[1]);
         census::observe(opcode, payload.len(), KNOWN_PACKET_HEADERS.contains(&opcode));
 
-        match self.mode {
-            ProcessorMode::Full => match (payload[0], payload[1]) {
-                (0x33, 0x36) => {
-                    let parsed =
-                        nickname::parse_main(&self.parser_context(), payload, is_compressed_bundle);
-                    if parsed {
-                        self.own_actor.settle();
-                    }
-                    parsed
+        match (payload[0], payload[1]) {
+            (0x33, 0x36) => {
+                let parsed = nickname::parse_main(&self.parser_context(), payload, is_compressed_bundle);
+                if parsed {
+                    self.own_actor.settle();
                 }
-                (0x45, 0x36) => {
-                    nickname::parse_other(&self.parser_context(), payload, is_compressed_bundle)
-                }
-                (0x56, 0x36) => {
-                    nickname::parse_main_combat_power(&self.parser_context(), payload, is_compressed_bundle)
-                }
-                (0x41, 0x36) => self.parse_summon_packet(payload, is_compressed_bundle),
-                (0x04, 0x38) if self.combat_damage_enabled && self.data_storage.wants_damage_packets() => {
-                    self.parse_damage_packet(payload, is_compressed_bundle)
-                }
-                (0x05, 0x38) if self.combat_damage_enabled && self.data_storage.fight_tracking() => {
-                    self.parse_dot_packet(payload, is_compressed_bundle)
-                }
-                (0x04, 0x8D) if self.combat_damage_enabled && self.data_storage.fight_tracking() => {
-                    self.parse_char_die_packet(payload, is_compressed_bundle)
-                }
-                (0x2A, 0x38) | (0x2B, 0x38) if self.data_storage.fight_tracking() => {
-                    self.parse_buff_packet(payload, is_compressed_bundle)
-                }
-                (0x2C, 0x38) if self.data_storage.fight_tracking() => {
-                    self.parse_buff_removal_packet(payload, is_compressed_bundle)
-                }
-                (0x42, 0x36) => self.parse_death_packet(payload, is_compressed_bundle),
-                (0x0B, 0x61) => self.parse_ticket_snapshot_packet(payload, is_compressed_bundle),
-                (0x0C, 0x61) => self.parse_ticket_update_packet(payload, is_compressed_bundle),
-                (0x00, 0x90) => self.parse_pet_snapshot_packet(payload, is_compressed_bundle),
-                (0x09, 0x90) => self.parse_pet_unlock_packet(payload, is_compressed_bundle),
-                (0x0D, 0x90) => self.parse_pet_soul_gains_packet(payload, is_compressed_bundle),
-                (0x11, 0x90) => self.parse_pet_counter_gains_packet(payload, is_compressed_bundle),
-                (0x1E, 0x56) => self.parse_loot_spawn_packet(payload, is_compressed_bundle),
-                (0x21, 0x56) => self.parse_loot_pickup_packet(payload, is_compressed_bundle),
-                (0x95, 0x56) => {
-                    self.soul_sources.purchased(self.captured_at);
-                    true
-                }
-                (0x00, 0x8D) => self.parse_remain_hp_packet(payload, is_compressed_bundle),
-                _ => false,
-            },
-            ProcessorMode::NicknameOnly => match (payload[0], payload[1]) {
-                (0x33, 0x36) => {
-                    nickname::parse_main(&self.parser_context(), payload, is_compressed_bundle)
-                }
-                (0x45, 0x36) => {
-                    nickname::parse_other(&self.parser_context(), payload, is_compressed_bundle)
-                }
-                (0x56, 0x36) => nickname::parse_main_combat_power(
-                    &self.parser_context(),
-                    payload,
-                    is_compressed_bundle,
-                ),
-                (0x41, 0x36) => self.parse_summon_packet(payload, is_compressed_bundle),
-                _ => false,
-            },
+                parsed
+            }
+            (0x45, 0x36) => nickname::parse_other(&self.parser_context(), payload, is_compressed_bundle),
+            (0x56, 0x36) => {
+                nickname::parse_main_combat_power(&self.parser_context(), payload, is_compressed_bundle)
+            }
+            (0x41, 0x36) => self.parse_summon_packet(payload, is_compressed_bundle),
+            (0x04, 0x38) if self.combat_damage_enabled && self.data_storage.wants_damage_packets() => {
+                self.parse_damage_packet(payload, is_compressed_bundle)
+            }
+            (0x05, 0x38) if self.combat_damage_enabled && self.data_storage.fight_tracking() => {
+                self.parse_dot_packet(payload, is_compressed_bundle)
+            }
+            (0x04, 0x8D) if self.combat_damage_enabled && self.data_storage.fight_tracking() => {
+                self.parse_char_die_packet(payload, is_compressed_bundle)
+            }
+            (0x2A, 0x38) | (0x2B, 0x38) if self.data_storage.fight_tracking() => {
+                self.parse_buff_packet(payload, is_compressed_bundle)
+            }
+            (0x2C, 0x38) if self.data_storage.fight_tracking() => {
+                self.parse_buff_removal_packet(payload, is_compressed_bundle)
+            }
+            (0x42, 0x36) => self.parse_death_packet(payload, is_compressed_bundle),
+            (0x0B, 0x61) => self.parse_ticket_snapshot_packet(payload, is_compressed_bundle),
+            (0x0C, 0x61) => self.parse_ticket_update_packet(payload, is_compressed_bundle),
+            (0x00, 0x90) => self.parse_pet_snapshot_packet(payload, is_compressed_bundle),
+            (0x09, 0x90) => self.parse_pet_unlock_packet(payload, is_compressed_bundle),
+            (0x0D, 0x90) => self.parse_pet_soul_gains_packet(payload, is_compressed_bundle),
+            (0x11, 0x90) => self.parse_pet_counter_gains_packet(payload, is_compressed_bundle),
+            (0x1E, 0x56) => self.parse_loot_spawn_packet(payload, is_compressed_bundle),
+            (0x21, 0x56) => self.parse_loot_pickup_packet(payload, is_compressed_bundle),
+            (0x95, 0x56) => {
+                self.soul_sources.purchased(self.captured_at);
+                true
+            }
+            (0x00, 0x8D) => self.parse_remain_hp_packet(payload, is_compressed_bundle),
+            _ => false,
         }
     }
 
@@ -1759,6 +1695,89 @@ mod own_actor_tests {
 
         assert_eq!(connection.storage.main_actor_name().as_deref(), Some("Newcomer"));
     }
+
+    fn lines_logged_by(connection: &Connection) -> Arc<Mutex<Vec<(String, String)>>> {
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        let collected = Arc::clone(&lines);
+        let log = std::env::temp_dir().join("belisk-own-actor-tests").join("assumed.log");
+        let logger = AppLogger::new(
+            log,
+            Box::new(move |event| collected.lock().unwrap().push((event.level, event.message))),
+        );
+        connection.storage.set_logger(Arc::new(logger));
+        lines
+    }
+
+    fn the_one_remembered_ranger() -> KnownCharacter {
+        KnownCharacter { name: "Remembered".to_string(), server_id: 1302, class: "RANGER".to_string(), key: None }
+    }
+
+    fn ticket_spent_at(connection: &mut Connection, captured_at: f64) {
+        feed_at(connection, captured_at, &update(0, record(60000001, None, None, Some(245)), 3, None));
+    }
+
+    #[test]
+    fn assuming_the_only_remembered_character_of_the_class_is_logged() {
+        let mut connection = connection();
+        let lines = lines_logged_by(&connection);
+        connection.storage.set_known_characters(vec![the_one_remembered_ranger()]);
+        feed(&mut connection, &[own_hp(AFTER_ZONE_CHANGE)]);
+
+        hit(&connection.storage, AFTER_ZONE_CHANGE, RANGER_SKILL);
+
+        let lines = lines.lock().unwrap();
+        let assumed: Vec<_> = lines.iter().filter(|(_, message)| message.contains("assumed from the remembered")).collect();
+        assert_eq!(assumed.len(), 1, "{lines:?}");
+        assert_eq!(assumed[0].0, "INFO");
+        assert!(assumed[0].1.contains("Remembered") && assumed[0].1.contains("RANGER"), "{}", assumed[0].1);
+    }
+
+    #[test]
+    fn a_character_the_game_already_named_is_not_logged_as_assumed() {
+        let mut connection = connection();
+        let lines = lines_logged_by(&connection);
+        named_on_a_first_connection(&mut connection, vec![character("Other", "RANGER")]);
+
+        hit(&connection.storage, AFTER_ZONE_CHANGE, RANGER_SKILL);
+
+        let lines = lines.lock().unwrap();
+        assert!(lines.iter().all(|(_, message)| !message.contains("assumed from the remembered")), "{lines:?}");
+    }
+
+    #[test]
+    fn the_game_naming_another_character_than_the_assumed_one_is_warned_about_with_what_was_bound_to_it() {
+        let mut connection = connection();
+        let lines = lines_logged_by(&connection);
+        connection.storage.set_known_characters(vec![the_one_remembered_ranger()]);
+        feed(&mut connection, &[own_hp(AFTER_ZONE_CHANGE)]);
+        hit(&connection.storage, AFTER_ZONE_CHANGE, RANGER_SKILL);
+        ticket_spent_at(&mut connection, 500.0);
+        assert_eq!(ticket_reports(&connection)[0].character.name, "Remembered", "bound to the assumed character");
+
+        feed(&mut connection, &[named_by_the_game(AFTER_ZONE_CHANGE, "Newcomer", None)]);
+
+        let lines = lines.lock().unwrap();
+        let warnings: Vec<_> = lines.iter().filter(|(level, _)| level == "WARN").collect();
+        assert_eq!(warnings.len(), 1, "{lines:?}");
+        let message = &warnings[0].1;
+        assert!(message.contains("Newcomer") && message.contains("not the assumed Remembered"), "{message}");
+        assert!(message.contains("1 ticket and 0 pet changes"), "{message}");
+    }
+
+    #[test]
+    fn the_game_naming_the_assumed_character_is_logged_as_confirmed_and_not_warned_about() {
+        let mut connection = connection();
+        let lines = lines_logged_by(&connection);
+        connection.storage.set_known_characters(vec![the_one_remembered_ranger()]);
+        feed(&mut connection, &[own_hp(AFTER_ZONE_CHANGE)]);
+        hit(&connection.storage, AFTER_ZONE_CHANGE, RANGER_SKILL);
+
+        feed(&mut connection, &[named_by_the_game(AFTER_ZONE_CHANGE, "Remembered", None)]);
+
+        let lines = lines.lock().unwrap();
+        assert!(lines.iter().all(|(level, _)| level != "WARN"), "{lines:?}");
+        assert!(lines.iter().any(|(_, message)| message.contains("as assumed")), "{lines:?}");
+    }
 }
 
 #[cfg(test)]
@@ -1933,5 +1952,34 @@ mod framing_tests {
         assembler.process_chunk(&unknown_packet(20), false, 0.0);
 
         assert_eq!(assembler.buffer_size(), 0, "the frame after the gap was framed on its own");
+    }
+
+    #[test]
+    fn a_stream_that_outgrows_the_buffer_is_discarded_with_a_warning_and_the_next_frame_is_kept() {
+        let warnings = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let collected = Arc::clone(&warnings);
+        let log = std::env::temp_dir().join("belisk-framing-tests").join("overflow.log");
+        let logger = Arc::new(AppLogger::new(
+            log,
+            Box::new(move |event| {
+                if event.level == "WARN" {
+                    collected.lock().unwrap().push(event.message);
+                }
+            }),
+        ));
+        let config = Arc::new(RwLock::new(DpsMeterConfig::default()));
+        let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
+        let storage = Arc::new(DataStorage::new(Arc::new(Discard), Arc::clone(&config), mobs));
+        let mut assembler = StreamAssembler::new(storage, logger, "overflow".to_string(), config).with_buffer_limit(64);
+        assembler.process_chunk(&unknown_packet(4_000)[..40], false, 0.0);
+        assert_eq!(assembler.buffer_size(), 40);
+
+        let framed = assembler.process_chunk(&unknown_packet(30), false, 0.0);
+
+        assert!(framed, "the chunk that crossed the limit is parsed, not dropped");
+        assert_eq!(assembler.buffer_size(), 0);
+        let warnings = warnings.lock().unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("overflow") && warnings[0].contains("40 buffered bytes"), "{}", warnings[0]);
     }
 }

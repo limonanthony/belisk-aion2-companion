@@ -31,6 +31,10 @@ const IDLE_POLL: Duration = Duration::from_secs(30);
 const PAUSE_POLL: Duration = Duration::from_millis(250);
 const READ_CHUNK: usize = 64 * 1024;
 const MAX_RECONNECTS: u32 = 3;
+/// A release's answer and the checksum and signature files are a few
+/// kilobytes; one that takes longer than this has stalled.
+const SMALL_BODY_TIMEOUT: Duration = Duration::from_secs(30);
+const ARCHIVE_STALL_MARGIN: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
 pub enum Command {
@@ -230,7 +234,7 @@ impl Engine {
 
     fn ask_github(&self, now: SystemTime) -> Answer {
         let url = self.parts.repo.latest_release_url();
-        let response = match self.parts.http.get(&url, "application/vnd.github+json", None) {
+        let response = match self.parts.http.get(&url, "application/vnd.github+json", None, SMALL_BODY_TIMEOUT) {
             Ok(response) => response,
             Err(error) => return Answer::Unreachable(error.to_string()),
         };
@@ -391,7 +395,7 @@ impl Engine {
         let response = self
             .parts
             .http
-            .get(url, "application/octet-stream", None)
+            .get(url, "application/octet-stream", None, SMALL_BODY_TIMEOUT)
             .map_err(|error| Interrupt::Failed(Failure::Download(error.to_string())))?;
         if response.status != 200 {
             return Err(Interrupt::Failed(Failure::Download(format!("GitHub answered {}", response.status))));
@@ -401,14 +405,17 @@ impl Engine {
     }
 
     /// Streams the archive into `archive.zip.part`: never faster than
-    /// [`MAX_BYTES_PER_SECOND`], not at all while the player fights, and given
-    /// up at once when the player cancels or turns automatic download off.
+    /// [`MAX_BYTES_PER_SECOND`], not at all while the player fights (no
+    /// connection is held then, and a Range request opens one again when the
+    /// fight ends), and given up when the player cancels or turns automatic
+    /// download off, which is seen after at most the read in progress: a read
+    /// that stalls fails at [`archive_body_timeout`].
     fn fetch_archive(&mut self, release: &Release) -> Result<(), Interrupt> {
         let (version, total) = (release.info.version, release.info.size);
         let part = self.parts.layout.archive_part();
         let mut file = File::create(&part).map_err(|error| download_error(format!("cannot write {}: {error}", part.display())))?;
 
-        let mut body = self.open_archive(release, None)?.body;
+        let mut body: Option<Box<dyn Read + Send>> = None;
         let mut pacer = Pacer::new(MAX_BYTES_PER_SECOND, self.parts.clock.now());
         let mut buffer = vec![0u8; READ_CHUNK];
         let mut downloaded = 0u64;
@@ -418,13 +425,18 @@ impl Engine {
         while downloaded < total {
             self.poll_commands()?;
             if (self.parts.in_fight)() {
+                body = None;
                 self.show_progress(&mut shown, version, downloaded, total, true);
                 self.parts.clock.sleep(PAUSE_POLL);
                 continue;
             }
             self.show_progress(&mut shown, version, downloaded, total, false);
 
-            let read = match body.read(&mut buffer) {
+            let mut stream = match body.take() {
+                Some(stream) => stream,
+                None => self.open_archive(release, (downloaded > 0).then_some(downloaded), total - downloaded)?.body,
+            };
+            let read = match stream.read(&mut buffer) {
                 Ok(0) => Err("the connection ended before the whole archive arrived".to_owned()),
                 Ok(read) => Ok(read),
                 Err(error) => Err(error.to_string()),
@@ -437,6 +449,7 @@ impl Engine {
                     file.write_all(&buffer[..read])
                         .map_err(|error| download_error(format!("cannot write {}: {error}", part.display())))?;
                     downloaded += read as u64;
+                    body = Some(stream);
                     let wait = pacer.after_read(read, self.parts.clock.now());
                     self.parts.clock.sleep(wait);
                 }
@@ -446,24 +459,23 @@ impl Engine {
                         return Err(download_error(reason));
                     }
                     crate::app_log::warn(format!("update download: {reason}; asking again from byte {downloaded}"));
-                    body = self.open_archive(release, Some(downloaded))?.body;
                 }
             }
         }
         file.flush().map_err(|error| download_error(format!("cannot write {}: {error}", part.display())))?;
         drop(file);
-        if body.read(&mut [0u8; 1]).is_ok_and(|more| more > 0) {
+        if body.as_mut().is_some_and(|stream| stream.read(&mut [0u8; 1]).is_ok_and(|more| more > 0)) {
             return Err(download_error("the server sent more bytes than the release says the archive has".to_owned()));
         }
         self.show_progress(&mut shown, version, downloaded, total, false);
         Ok(())
     }
 
-    fn open_archive(&self, release: &Release, from: Option<u64>) -> Result<Response, Interrupt> {
+    fn open_archive(&self, release: &Release, from: Option<u64>, remaining: u64) -> Result<Response, Interrupt> {
         let response = self
             .parts
             .http
-            .get(&release.archive_url, "application/octet-stream", from)
+            .get(&release.archive_url, "application/octet-stream", from, archive_body_timeout(remaining))
             .map_err(|error| download_error(error.to_string()))?;
         let expected = if from.is_some() { 206 } else { 200 };
         if response.status != expected {
@@ -531,6 +543,15 @@ fn percent(downloaded: u64, total: u64) -> u8 {
 
 fn download_error(detail: String) -> Interrupt {
     Interrupt::Failed(Failure::Download(detail))
+}
+
+/// What a connection asked for `remaining` bytes of the archive may take to
+/// deliver them: the time the throttle itself needs, and a generous margin
+/// for a link slower than the throttle. A body that takes longer has
+/// stalled (a half-open connection never fails by itself): the read errors
+/// and the download resumes from where it stopped.
+fn archive_body_timeout(remaining: u64) -> Duration {
+    Duration::from_secs(remaining.div_ceil(MAX_BYTES_PER_SECOND)) + ARCHIVE_STALL_MARGIN
 }
 
 /// `retry-after` (seconds) when GitHub sends one, else `x-ratelimit-reset`

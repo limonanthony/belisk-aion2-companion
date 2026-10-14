@@ -4,6 +4,7 @@ title: The meter rebuilds both boards and reformats every row on every snapshot
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:40'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -49,3 +50,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 Only the board that is shown (and any window that subscribes to the other) is rebuilt per snapshot.
 - [ ] #3 Frame preparation cost on a replay of a long fight is measured before and after and is lower.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Still present per the review (accept_snapshot always rebuilds the session and target boards); not touched this round.
+<!-- SECTION:NOTES:END -->

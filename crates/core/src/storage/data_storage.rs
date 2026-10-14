@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, RwLock};
+use std::time::Instant;
 
 use serde::Serialize;
 use std::sync::Arc;
@@ -23,6 +24,7 @@ use crate::storage::boss_wipe::{BossWipe, WipeWatch};
 use crate::storage::loaders::load_healing_skill_codes;
 use crate::tickets::TicketBinder;
 use crate::pets::{PetBinder, PetContent};
+use crate::logger::AppLogger;
 
 pub(crate) struct FightLedgerInputs {
     pub events: CombatEvents,
@@ -302,6 +304,12 @@ pub struct DataStorage {
     /// with its window closed never counts a fight. Kept apart from `inner`:
     /// a reset must not change it.
     fight_tracking: AtomicBool,
+    /// Where the storage reports the identity assumptions it makes; none until
+    /// the meter gives it one.
+    logger: Mutex<Option<Arc<AppLogger>>>,
+    /// When the newest packet was captured, and when it was noted. Kept apart
+    /// from `inner`: a reset must not change it, and every packet writes it.
+    packet_clock: Mutex<Option<(f64, Instant)>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -433,6 +441,8 @@ impl DataStorage {
             tickets: Mutex::new(TicketBinder::default()),
             pets: Mutex::new(PetBinder::default()),
             fight_tracking: AtomicBool::new(false),
+            logger: Mutex::new(None),
+            packet_clock: Mutex::new(None),
         }
     }
 
@@ -520,8 +530,25 @@ impl DataStorage {
         self.resolve_own_name();
     }
 
+    /// A hit stamped with the data clock, for tests that do not care when.
+    #[cfg(test)]
     pub fn append_damage(&self, packet: ParsedDamagePacket) {
-        self.append_damage_at(packet, current_timestamp_seconds());
+        self.append_damage_at(packet, self.data_clock_now());
+    }
+
+    /// Tells the storage when the packet being parsed was captured.
+    pub fn note_packet_time(&self, captured_at: f64) {
+        *self.packet_clock.lock().unwrap() = Some((captured_at, Instant::now()));
+    }
+
+    /// "Now" on the clock the fight's timestamps use: the capture time of the
+    /// newest packet, moved on by the real time since it arrived so a quiet
+    /// connection still ages a fight. Before any packet, the PC's clock.
+    pub fn data_clock_now(&self) -> f64 {
+        match *self.packet_clock.lock().unwrap() {
+            Some((captured_at, noted_at)) => captured_at + noted_at.elapsed().as_secs_f64(),
+            None => current_timestamp_seconds(),
+        }
     }
 
     pub fn save_buff(
@@ -779,10 +806,6 @@ impl DataStorage {
 
     /// A hit a monster's skill landed on `victim_id`, by a record or a damage
     /// tick. It is not damage dealt: it moves no target and no stats.
-    pub fn record_incoming_hit(&self, victim_id: u32, source_id: u32, skill_code: u32, amount: u64) {
-        self.record_incoming_hit_at(victim_id, source_id, skill_code, amount, current_timestamp_seconds());
-    }
-
     pub fn record_incoming_hit_at(&self, victim_id: u32, source_id: u32, skill_code: u32, amount: u64, at: f64) {
         if !self.fight_tracking() {
             return;
@@ -803,10 +826,6 @@ impl DataStorage {
     }
 
     /// A tick of a heal over time.
-    pub fn record_heal_tick(&self, healer_id: u32, target_id: u32, skill_code: u32, amount: u64) {
-        self.record_heal_tick_at(healer_id, target_id, skill_code, amount, current_timestamp_seconds());
-    }
-
     pub fn record_heal_tick_at(&self, healer_id: u32, target_id: u32, skill_code: u32, amount: u64, at: f64) {
         let heal = Heal { at, healer_id, target_id, skill_code, kind: HealKind::OverTime, amount, critical: false };
         record_heal(&mut self.inner.write().unwrap(), heal);
@@ -814,17 +833,6 @@ impl DataStorage {
 
     /// The game's record of a player's death. `killer_name` is empty unless the
     /// killer is a player; `killer_mob_code` is 0 unless it names a monster.
-    pub fn record_player_death(
-        &self,
-        victim_id: u32,
-        skill_code: u32,
-        killer_id: u32,
-        killer_name: &str,
-        killer_mob_code: u32,
-    ) {
-        self.record_player_death_at(victim_id, skill_code, killer_id, killer_name, killer_mob_code, current_timestamp_seconds());
-    }
-
     pub fn record_player_death_at(
         &self,
         victim_id: u32,
@@ -1254,17 +1262,33 @@ impl DataStorage {
         }
         match remembered {
             Some(character) => {
-                let unambiguous = self
+                let same_class = self
                     .known_characters
                     .read()
                     .unwrap()
                     .iter()
                     .filter(|known| known.class == character.class)
-                    .count()
-                    == 1;
-                if unambiguous {
-                    self.tickets.lock().unwrap().assume_character(character.clone());
-                    self.pets.lock().unwrap().assume_character(character.clone());
+                    .count();
+                if same_class == 1 {
+                    let tickets_assumed = self.tickets.lock().unwrap().assume_character(character.clone());
+                    let pets_assumed = self.pets.lock().unwrap().assume_character(character.clone());
+                    let changes = match (tickets_assumed, pets_assumed) {
+                        (true, true) => Some("ticket and pet"),
+                        (true, false) => Some("ticket"),
+                        (false, true) => Some("pet"),
+                        (false, false) => None,
+                    };
+                    if let Some(changes) = changes {
+                        self.log_info(format!(
+                            "own character assumed from the remembered ones: {} (server {}) is the only remembered {}; {changes} changes are bound to it until the game names the character (an alt of that class that is not remembered would be taken for it)",
+                            character.name, character.server_id, character.class
+                        ));
+                    }
+                } else {
+                    self.log_info(format!(
+                        "own character not assumed for tickets and pets: {same_class} remembered characters are a {}; they wait for the game to name the character",
+                        character.class
+                    ));
                 }
                 self.events.emit(MeterEvent::MainActorDetected(MainActorDetectedPayload {
                     actor_id,
@@ -1297,12 +1321,38 @@ impl DataStorage {
     /// The characters earlier runs saw the player as, most recent first.
     pub fn set_known_characters(&self, characters: Vec<KnownCharacter>) {
         *self.known_characters.write().unwrap() = characters;
+        self.assume_pet_server();
         self.resolve_own_name();
+    }
+
+    /// A pet collection belongs to a server, not to a character: when every
+    /// remembered character is on one server and the game has not named the
+    /// player (the meter was opened after login), pet changes are bound to
+    /// that server at once instead of waiting for the game's name, which does
+    /// not come again until the next login.
+    fn assume_pet_server(&self) {
+        let (stand_in, remembered) = {
+            let known = self.known_characters.read().unwrap();
+            let Some(first) = known.first() else {
+                return;
+            };
+            if known.iter().any(|character| character.server_id != first.server_id) {
+                return;
+            }
+            (first.clone(), known.len())
+        };
+        let server_id = stand_in.server_id;
+        if self.pets.lock().unwrap().assume_server(stand_in) {
+            self.log_info(format!(
+                "pets bound to server {server_id} from the remembered characters: all {remembered} are on it; pet changes are bound to it until the game names the character"
+            ));
+        }
     }
 
     /// Tells the app the game named the player's character, so it can be
     /// remembered, and releases the ticket and pet messages that waited for the name.
     pub fn character_seen(&self, character: KnownCharacter, captured_at: f64) {
+        self.report_assumption_outcome(&character);
         let reports = self.tickets.lock().unwrap().character_named(character.clone(), captured_at);
         let pet_reports = self.pets.lock().unwrap().character_named(character.clone(), captured_at);
         self.events.emit(MeterEvent::CharacterSeen(character));
@@ -1311,6 +1361,59 @@ impl DataStorage {
         }
         for report in pet_reports {
             self.events.emit(MeterEvent::Pets(report));
+        }
+    }
+
+    pub fn set_logger(&self, logger: Arc<AppLogger>) {
+        *self.logger.lock().unwrap() = Some(logger);
+    }
+
+    fn log_info(&self, message: String) {
+        let logger = self.logger.lock().unwrap().clone();
+        if let Some(logger) = logger {
+            logger.info(message);
+        }
+    }
+
+    fn log_warn(&self, message: String) {
+        let logger = self.logger.lock().unwrap().clone();
+        if let Some(logger) = logger {
+            logger.warn(message);
+        }
+    }
+
+    /// When the game names the character while ticket and pet changes were
+    /// bound to an assumed one, says whether the assumption held.
+    fn report_assumption_outcome(&self, named: &KnownCharacter) {
+        let ticket_assumption =
+            self.tickets.lock().unwrap().assumed().map(|(assumed, tickets)| (assumed.clone(), tickets));
+        if let Some((assumed, ticket_changes)) = ticket_assumption {
+            let pet_changes = self.pets.lock().unwrap().assumed().map_or(0, |(_, pets)| pets);
+            if assumed.name == named.name && assumed.server_id == named.server_id {
+                self.log_info(format!(
+                    "the game named {} (server {}), as assumed; {ticket_changes} ticket and {pet_changes} pet changes were bound to it meanwhile",
+                    named.name, named.server_id
+                ));
+            } else {
+                self.log_warn(format!(
+                    "the game named {} (server {}, {}), not the assumed {} (server {}, {}); {ticket_changes} ticket and {pet_changes} pet changes were bound to the wrong character meanwhile",
+                    named.name, named.server_id, named.class, assumed.name, assumed.server_id, assumed.class
+                ));
+            }
+        }
+        let pet_server_assumption = self.pets.lock().unwrap().assumed_server();
+        if let Some((assumed_server, pet_changes)) = pet_server_assumption {
+            if assumed_server == named.server_id {
+                self.log_info(format!(
+                    "the game named {} (server {}), the server assumed for pets; {pet_changes} pet changes were bound to it meanwhile",
+                    named.name, named.server_id
+                ));
+            } else {
+                self.log_warn(format!(
+                    "the game named {} (server {}, {}), not on the server {assumed_server} assumed for pets; {pet_changes} pet changes were bound to the wrong server meanwhile",
+                    named.name, named.server_id, named.class
+                ));
+            }
         }
     }
 
@@ -1347,6 +1450,7 @@ impl DataStorage {
     pub fn reset_ticket_binding(&self) {
         self.tickets.lock().unwrap().reset();
         self.pets.lock().unwrap().reset();
+        self.assume_pet_server();
     }
 
     pub fn get_dps_stats_snapshot(&self) -> HashMap<u32, HashMap<u32, HashMap<u32, SkillStats>>> {
@@ -1355,6 +1459,10 @@ impl DataStorage {
 
     pub fn actor_id_name_snapshot(&self) -> HashMap<u32, String> {
         self.inner.read().unwrap().actor_id_name_map.as_hash_map()
+    }
+
+    pub fn actor_name(&self, actor_id: u32) -> Option<String> {
+        self.inner.read().unwrap().actor_id_name_map.get(&actor_id).cloned()
     }
 
     pub fn actor_id_server_snapshot(&self) -> HashMap<u32, String> {
@@ -1746,7 +1854,7 @@ mod main_actor_tests {
 
 #[cfg(test)]
 mod bounded_map_tests {
-    use super::{BoundedMap, COMBAT_TARGET_CAPACITY};
+    use super::BoundedMap;
 
     #[test]
     fn evicts_the_oldest_key_past_capacity() {
@@ -1770,17 +1878,6 @@ mod bounded_map_tests {
 
         assert_eq!(map.get(&1), Some(&11));
         assert_eq!(map.get(&2), None, "the key untouched for longest goes first");
-    }
-
-    #[test]
-    fn combat_targets_are_bounded() {
-        // The overlay snapshot deep-clones this map several times a second, so
-        // an unbounded one makes a long session progressively more expensive.
-        let mut map: BoundedMap<u32, u32> = BoundedMap::new(COMBAT_TARGET_CAPACITY);
-        for key in 0..(COMBAT_TARGET_CAPACITY as u32 * 3) {
-            map.insert(key, key);
-        }
-        assert_eq!(map.map.len(), COMBAT_TARGET_CAPACITY);
     }
 }
 
@@ -2415,7 +2512,7 @@ mod combat_event_tests {
 mod fight_tracking_tests {
     use std::sync::{Arc, RwLock};
 
-    use super::DataStorage;
+    use super::{DataStorage, COMBAT_TARGET_CAPACITY};
     use crate::config::DpsMeterConfig;
     use crate::events::{EventSink, MeterEvent};
     use crate::identity::KnownCharacter;
@@ -2467,6 +2564,22 @@ mod fight_tracking_tests {
         storage.set_fight_tracking(true);
         storage.append_damage_at(hit(PLAYER, MOB), 11.0);
         assert_eq!(storage.get_dps_stats_snapshot().len(), 1);
+    }
+
+    #[test]
+    fn a_long_session_keeps_the_stats_of_the_most_recent_targets_only() {
+        let storage = storage();
+        storage.set_fight_tracking(true);
+        let targets = COMBAT_TARGET_CAPACITY as u32 * 3;
+        for index in 0..targets {
+            storage.append_damage_at(hit(PLAYER, MOB + index), f64::from(index));
+        }
+
+        let stats = storage.get_dps_stats_snapshot();
+
+        assert_eq!(stats.len(), COMBAT_TARGET_CAPACITY);
+        assert!(stats.contains_key(&(MOB + targets - 1)), "the newest target is kept");
+        assert!(!stats.contains_key(&MOB), "the oldest is gone");
     }
 
     #[test]
@@ -2649,10 +2762,11 @@ mod pets_before_the_game_names_the_player_tests {
     use std::sync::{Arc, Mutex, RwLock};
 
     use super::DataStorage;
-    use crate::capture::parser::pet_record::SoulGain;
+    use crate::capture::parser::pet_record::{PetSnapshot, SoulGain};
     use crate::config::DpsMeterConfig;
     use crate::events::{EventSink, MeterEvent};
     use crate::identity::KnownCharacter;
+    use crate::logger::AppLogger;
     use crate::mobs::catalog::MobCatalog;
     use crate::pet_sources::SoulSource;
     use crate::pets::{PetContent, PetReport};
@@ -2676,13 +2790,26 @@ mod pets_before_the_game_names_the_player_tests {
         let mobs = Arc::new(MobCatalog::open(Arc::clone(&config), None));
         let events = Arc::new(Collected::default());
         let storage = DataStorage::new(events.clone(), config, mobs);
-        storage.set_known_characters(vec![KnownCharacter {
-            name: "Aelene".to_string(),
-            server_id: 1302,
-            class: "ELEMENTALIST".to_string(),
-            key: None,
-        }]);
         (storage, events)
+    }
+
+    fn character(name: &str, server_id: u32, class: &str) -> KnownCharacter {
+        KnownCharacter { name: name.to_string(), server_id, class: class.to_string(), key: None }
+    }
+
+    fn setup_remembering(remembered: Vec<KnownCharacter>) -> (DataStorage, Arc<Collected>) {
+        let (storage, events) = setup();
+        storage.set_known_characters(remembered);
+        (storage, events)
+    }
+
+    fn lines_logged_by(storage: &DataStorage) -> Arc<Mutex<Vec<(String, String)>>> {
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        let collected = Arc::clone(&lines);
+        let log = std::env::temp_dir().join("belisk-pet-binding-tests").join("assumed.log");
+        let logger = AppLogger::new(log, Box::new(move |event| collected.lock().unwrap().push((event.level, event.message))));
+        storage.set_logger(Arc::new(logger));
+        lines
     }
 
     fn pet_reports(events: &Collected) -> Vec<PetReport> {
@@ -2700,7 +2827,7 @@ mod pets_before_the_game_names_the_player_tests {
 
     #[test]
     fn a_soul_gain_is_tied_to_the_remembered_character_when_the_meter_started_after_login() {
-        let (storage, events) = setup();
+        let (storage, events) = setup_remembering(vec![character("Aelene", 1302, "ELEMENTALIST"), character("Brisa", 1001, "CLERIC")]);
         storage.bind_own_actor(PLAYER);
         storage.set_actor_class(PLAYER, "ELEMENTALIST");
         storage.resolve_own_name();
@@ -2712,19 +2839,8 @@ mod pets_before_the_game_names_the_player_tests {
         assert_eq!((reports[0].character.name.as_str(), reports[0].character.server_id), ("Aelene", 1302));
     }
 
-    fn gain_after_identifying_with(remembered: Vec<(&str, u32)>) -> Vec<PetReport> {
-        let (storage, events) = setup();
-        storage.set_known_characters(
-            remembered
-                .into_iter()
-                .map(|(name, server_id)| KnownCharacter {
-                    name: name.to_string(),
-                    server_id,
-                    class: "ELEMENTALIST".to_string(),
-                    key: None,
-                })
-                .collect(),
-        );
+    fn gain_after_identifying_with(remembered: Vec<KnownCharacter>) -> Vec<PetReport> {
+        let (storage, events) = setup_remembering(remembered);
         storage.bind_own_actor(PLAYER);
         storage.set_actor_class(PLAYER, "ELEMENTALIST");
         storage.resolve_own_name();
@@ -2733,24 +2849,28 @@ mod pets_before_the_game_names_the_player_tests {
     }
 
     #[test]
-    fn two_remembered_characters_of_the_class_leave_the_gain_waiting() {
-        assert!(gain_after_identifying_with(vec![("Aelene", 1302), ("Brisa", 1302)]).is_empty());
+    fn two_remembered_characters_of_the_class_on_two_servers_leave_the_gain_waiting() {
+        let reports = gain_after_identifying_with(vec![
+            character("Aelene", 1302, "ELEMENTALIST"),
+            character("Brisa", 1001, "ELEMENTALIST"),
+        ]);
+
+        assert!(reports.is_empty());
     }
 
     #[test]
     fn the_same_name_on_two_servers_leaves_the_gain_waiting() {
-        assert!(gain_after_identifying_with(vec![("Aelene", 1302), ("Aelene", 1001)]).is_empty());
-    }
+        let reports = gain_after_identifying_with(vec![
+            character("Aelene", 1302, "ELEMENTALIST"),
+            character("Aelene", 1001, "ELEMENTALIST"),
+        ]);
 
-    #[test]
-    fn one_remembered_character_of_the_class_is_assumed() {
-        assert_eq!(gain_after_identifying_with(vec![("Aelene", 1302)]).len(), 1);
+        assert!(reports.is_empty());
     }
 
     #[test]
     fn without_a_remembered_character_a_soul_gain_waits_for_the_game_to_name_one() {
-        let (storage, events) = setup();
-        storage.set_known_characters(Vec::new());
+        let (storage, events) = setup_remembering(Vec::new());
         storage.bind_own_actor(PLAYER);
         storage.set_actor_class(PLAYER, "ELEMENTALIST");
         storage.resolve_own_name();
@@ -2761,16 +2881,134 @@ mod pets_before_the_game_names_the_player_tests {
     }
 
     #[test]
+    fn remembered_characters_on_several_servers_leave_a_gain_before_any_class_waiting() {
+        let (storage, events) = setup_remembering(vec![character("Aelene", 1302, "ELEMENTALIST"), character("Brisa", 1001, "CLERIC")]);
+
+        storage.pets_changed(soul_gain(), 100.0);
+
+        assert!(pet_reports(&events).is_empty());
+    }
+
+    #[test]
+    fn a_soul_gain_before_any_name_or_class_is_bound_to_the_server_all_remembered_characters_share() {
+        let (storage, events) = setup_remembering(vec![
+            character("Lyvara", 1302, "CHANTER"),
+            character("Aelene", 1302, "ELEMENTALIST"),
+            character("Sylvara", 1302, "CLERIC"),
+        ]);
+
+        storage.pets_changed(soul_gain(), 100.0);
+
+        let reports = pet_reports(&events);
+        assert_eq!(reports.len(), 1, "reported at once, not waiting for the game's name");
+        assert_eq!((reports[0].character.server_id, reports[0].captured_at, &reports[0].content), (1302, 100.0, &soul_gain()));
+    }
+
+    #[test]
+    fn two_remembered_characters_of_one_class_on_one_server_do_not_hold_a_gain_back() {
+        let reports = gain_after_identifying_with(vec![
+            character("Aelene", 1302, "ELEMENTALIST"),
+            character("Brisa", 1302, "ELEMENTALIST"),
+        ]);
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].character.server_id, 1302);
+    }
+
+    #[test]
+    fn every_kind_of_pet_change_but_the_snapshot_is_bound_to_the_assumed_server() {
+        let (storage, events) = setup_remembering(vec![character("Aelene", 1302, "ELEMENTALIST")]);
+
+        storage.pets_changed(PetContent::CounterGains { gains: Vec::new(), looted_mobs: vec![2100288] }, 100.0);
+        storage.pets_snapshot(PetContent::Snapshot(PetSnapshot { levels: Vec::new(), progress: Vec::new(), counters: Vec::new() }), 101.0);
+
+        let reports = pet_reports(&events);
+        assert_eq!(reports.len(), 1, "the snapshot comes with a login and waits for the name");
+        assert!(matches!(reports[0].content, PetContent::CounterGains { .. }));
+    }
+
+    #[test]
+    fn a_replay_starts_from_the_assumed_server_again() {
+        let (storage, events) = setup_remembering(vec![character("Aelene", 1302, "ELEMENTALIST")]);
+        storage.reset_ticket_binding();
+
+        storage.pets_changed(soul_gain(), 100.0);
+
+        assert_eq!(pet_reports(&events).len(), 1);
+    }
+
+    #[test]
+    fn the_server_assumption_is_logged() {
+        let (storage, _events) = setup();
+        let lines = lines_logged_by(&storage);
+
+        storage.set_known_characters(vec![character("Aelene", 1302, "ELEMENTALIST"), character("Brisa", 1302, "CLERIC")]);
+
+        let lines = lines.lock().unwrap();
+        let assumed: Vec<_> = lines.iter().filter(|(_, message)| message.contains("pets bound to server")).collect();
+        assert_eq!(assumed.len(), 1, "{lines:?}");
+        assert_eq!(assumed[0].0, "INFO");
+        assert!(assumed[0].1.contains("server 1302") && assumed[0].1.contains("all 2"), "{}", assumed[0].1);
+    }
+
+    #[test]
     fn the_games_own_name_replaces_the_remembered_one() {
-        let (storage, events) = setup();
+        let (storage, events) = setup_remembering(vec![character("Aelene", 1302, "ELEMENTALIST"), character("Brisa", 1001, "CLERIC")]);
         storage.bind_own_actor(PLAYER);
         storage.set_actor_class(PLAYER, "ELEMENTALIST");
         storage.resolve_own_name();
-        let named = KnownCharacter { name: "Other".to_string(), server_id: 1001, class: "CLERIC".to_string(), key: None };
+        let named = character("Other", 1001, "CLERIC");
 
         storage.character_seen(named, 101.0);
         storage.pets_changed(soul_gain(), 102.0);
 
         assert_eq!(pet_reports(&events)[0].character.name, "Other");
+    }
+
+    #[test]
+    fn the_games_own_name_replaces_the_assumed_server() {
+        let (storage, events) = setup_remembering(vec![character("Aelene", 1302, "ELEMENTALIST")]);
+        storage.pets_changed(soul_gain(), 100.0);
+
+        storage.character_seen(character("Other", 1001, "CLERIC"), 101.0);
+        storage.pets_changed(soul_gain(), 102.0);
+
+        let reports = pet_reports(&events);
+        assert_eq!(reports.len(), 2);
+        assert_eq!(reports[0].character.server_id, 1302, "bound to the assumed server, not held until the name");
+        assert_eq!((reports[1].character.name.as_str(), reports[1].character.server_id), ("Other", 1001));
+    }
+
+    #[test]
+    fn the_game_naming_a_character_on_the_assumed_server_is_logged_as_confirmed() {
+        let (storage, _events) = setup_remembering(vec![character("Aelene", 1302, "ELEMENTALIST")]);
+        let lines = lines_logged_by(&storage);
+        storage.pets_changed(soul_gain(), 100.0);
+
+        storage.character_seen(character("Brisa", 1302, "CLERIC"), 101.0);
+
+        let lines = lines.lock().unwrap();
+        assert!(lines.iter().all(|(level, _)| level != "WARN"), "{lines:?}");
+        assert!(
+            lines.iter().any(|(_, message)| message.contains("the server assumed for pets") && message.contains("1 pet changes")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn the_game_naming_a_character_on_another_server_is_warned_about_with_what_was_bound_to_the_assumed_one() {
+        let (storage, _events) = setup_remembering(vec![character("Aelene", 1302, "ELEMENTALIST")]);
+        let lines = lines_logged_by(&storage);
+        storage.pets_changed(soul_gain(), 100.0);
+        storage.pets_changed(soul_gain(), 101.0);
+
+        storage.character_seen(character("Other", 1001, "CLERIC"), 102.0);
+
+        let lines = lines.lock().unwrap();
+        let warnings: Vec<_> = lines.iter().filter(|(level, _)| level == "WARN").collect();
+        assert_eq!(warnings.len(), 1, "{lines:?}");
+        let message = &warnings[0].1;
+        assert!(message.contains("Other") && message.contains("server 1001") && message.contains("server 1302"), "{message}");
+        assert!(message.contains("2 pet changes"), "{message}");
     }
 }

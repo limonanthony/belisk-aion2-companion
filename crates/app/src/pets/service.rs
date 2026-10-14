@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
+use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global};
 use meter_core::pets::{PetCollection, PetContent, PetReport, PetState, MAX_LEVEL};
 
 use super::data::PetData;
@@ -10,11 +10,8 @@ use super::gain::{GainSource, LatestGain};
 use super::list::ListChoice;
 use super::settings::PetsSettings;
 use super::store;
+use crate::background_save::{BackgroundSave, Persisted};
 use crate::game_data;
-
-/// A change is written to disk once nothing has changed for this long, so a
-/// run of pickups causes one write.
-const SAVE_AFTER: Duration = Duration::from_millis(400);
 
 /// How many gains are kept for the card to catch up on: a message can carry
 /// several (a batch of seven was seen), and the card reads them after the
@@ -26,9 +23,7 @@ const REMEMBERED_GAINS: usize = 16;
 /// on the UI thread; windows observe it.
 pub struct Pets {
     data: PetData,
-    file: Option<PathBuf>,
-    save: Option<Task<()>>,
-    saved: bool,
+    save: BackgroundSave<PetData>,
     recent_gains: VecDeque<LatestGain>,
     /// When this run began, in seconds since the Unix epoch: a snapshot from
     /// before it was read at an earlier login.
@@ -44,6 +39,18 @@ pub struct ShowTestCard {
 }
 
 impl EventEmitter<ShowTestCard> for Pets {}
+
+impl Persisted for Pets {
+    type Value = PetData;
+
+    fn value(&self) -> &PetData {
+        &self.data
+    }
+
+    fn background_save(&mut self) -> &mut BackgroundSave<PetData> {
+        &mut self.save
+    }
+}
 
 struct PetsHandle(Entity<Pets>);
 
@@ -66,9 +73,7 @@ impl Pets {
         };
         Self {
             data: loaded.data,
-            file,
-            save: None,
-            saved: true,
+            save: BackgroundSave::new(file, store::save),
             recent_gains: VecDeque::new(),
             opened_at: unix_secs(),
         }
@@ -100,8 +105,7 @@ impl Pets {
             return;
         }
         self.data.list = choice;
-        self.saved = false;
-        self.schedule_save(cx);
+        self.save.changed(cx);
         cx.notify();
     }
 
@@ -161,8 +165,7 @@ impl Pets {
         if !change(&mut self.data, server_id) {
             return false;
         }
-        self.saved = false;
-        self.schedule_save(cx);
+        self.save.changed(cx);
         cx.notify();
         true
     }
@@ -234,8 +237,7 @@ impl Pets {
             }
         }
         if save_needed {
-            self.saved = false;
-            self.schedule_save(cx);
+            self.save.changed(cx);
         }
         if save_needed || gained {
             cx.notify();
@@ -244,28 +246,7 @@ impl Pets {
 
     /// Writes any change not yet on disk now, on this thread; used when the app quits.
     pub fn flush(&mut self) {
-        self.save = None;
-        self.write();
-    }
-
-    fn write(&mut self) {
-        let Some(file) = self.file.as_ref().filter(|_| !self.saved) else {
-            return;
-        };
-        match store::save(file, &self.data) {
-            Ok(()) => self.saved = true,
-            Err(error) => crate::app_log::error(error.to_string()),
-        }
-    }
-
-    fn schedule_save(&mut self, cx: &mut Context<Self>) {
-        if self.file.is_none() {
-            return;
-        }
-        self.save = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(SAVE_AFTER).await;
-            let _ = this.update(cx, |pets, _| pets.write());
-        }));
+        self.save.flush(&self.data);
     }
 }
 
@@ -316,15 +297,18 @@ pub fn record(cx: &mut App, reports: Vec<PetReport>) {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use gpui::TestAppContext;
     use meter_core::capture::parser::pet_record::{
         CounterGain, PetLevel, PetProgress, PetSnapshot, PetUnlock, SoulGain,
     };
     use meter_core::pet_sources::SoulSource;
     use meter_core::identity::KnownCharacter;
+    use meter_core::pets::PetState;
 
     use super::*;
-    use meter_core::pets::PetState;
+    use crate::background_save::SAVE_AFTER;
 
     fn report(server_id: u32, captured_at: f64, content: PetContent) -> PetReport {
         PetReport {

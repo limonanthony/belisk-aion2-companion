@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-08 12:35'
-updated_date: '2026-10-09 09:48'
+updated_date: '2026-10-12 15:05'
 labels:
   - bug
 dependencies: []
@@ -73,4 +73,6 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-08: started at the user's request ('You can start 1'). Main's choice of direction, delegated by the user: Option A: a dedicated writer thread, as MobCatalog does; the records lock is never held during disk I/O; pending saves are flushed on quit.
+
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Fixed in code: history and bests are written by a background writer and the records lock is free while the file is written. This round the same shared background writer (background_save.rs) also saves pets, to-dos and settings off the UI thread and retries a failed write after 10 s.
 <!-- SECTION:NOTES:END -->

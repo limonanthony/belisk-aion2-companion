@@ -267,7 +267,7 @@ impl MeterView {
     }
 
     pub fn set_locked(&mut self, locked: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if let Err(error) = overlay::set_click_through(window, locked) {
+        if let Err(error) = overlay::set_click_through(window, cx, locked) {
             crate::app_log::warn(format!("{} failed: {error}", if locked { "lock" } else { "unlock" }));
             return;
         }
@@ -1346,6 +1346,8 @@ impl Render for MeterView {
                     || (wanted.height - current.height).abs() >= px(0.5)
                 {
                     overlay::fit_client_size(window, wanted, cx);
+                } else {
+                    overlay::first_fit_not_needed(window);
                 }
             })
             .child(card)

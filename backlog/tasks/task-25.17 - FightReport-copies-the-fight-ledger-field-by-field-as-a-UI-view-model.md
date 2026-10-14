@@ -4,6 +4,7 @@ title: FightReport copies the fight ledger field by field as a UI view-model
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:40'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -49,3 +50,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 There is one set of types for healing, damage taken, deaths and killers, not a ledger copy and a report copy.
 - [ ] #3 party_dps is either removed or defined as total damage divided by the fight duration.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Still present per the review (report/fight_report.rs against ledger.rs; app report/data.rs formats the copy). The tautological party-DPS test it had is replaced by one with an independent oracle (see TASK-25.33). Not otherwise touched.
+<!-- SECTION:NOTES:END -->

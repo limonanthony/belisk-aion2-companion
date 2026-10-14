@@ -1,9 +1,10 @@
 ---
 id: TASK-25.25
 title: Every Settings change wakes every consumer
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 12:41'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -57,3 +58,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 The Settings window refreshes its preview only when a preview input changed.
 - [ ] #3 The existing settings effects tests pass and to-do and reminder behaviour is unchanged.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Fixed in code. Every long-lived Settings observer compares before notifying; the Settings window now redraws only for a change its open page shows (and for the save error), the prompt and What's new windows only for a new overlay look, and the store observer compares before cloning the settings. Moved to In Progress; the Settings opacity slider smoothness is for the user to check in game.
+<!-- SECTION:NOTES:END -->

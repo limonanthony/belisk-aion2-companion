@@ -59,9 +59,10 @@ fn forget_the_old_default_reset_hour(stored: &mut serde_json::Value) {
 /// setting, so one unknown or mistyped value (an option name from another
 /// build, say) costs that setting only.
 fn keep_valid_fields(stored: &serde_json::Value) -> AppSettings {
+    let defaults = serde_json::to_value(AppSettings::default()).unwrap_or_default();
     let mut leaves = Vec::new();
-    collect_leaves(stored, &mut Vec::new(), &mut leaves);
-    let mut merged = serde_json::to_value(AppSettings::default()).unwrap_or_default();
+    collect_leaves(stored, Some(&defaults), &mut Vec::new(), &mut leaves);
+    let mut merged = defaults;
     for (path, leaf) in leaves {
         let mut trial = merged.clone();
         if set_path(&mut trial, &path, leaf) && serde_json::from_value::<AppSettings>(trial.clone()).is_ok() {
@@ -71,16 +72,23 @@ fn keep_valid_fields(stored: &serde_json::Value) -> AppSettings {
     serde_json::from_value(merged).unwrap_or_default()
 }
 
+/// The stored values one by one, by path. An object is split into its fields
+/// unless the default there is not an object: an optional setting that is a
+/// whole value (a window's place, none by default) is kept or dropped as one,
+/// since its parts mean nothing alone and its default has no object to put
+/// them in.
 fn collect_leaves(
     value: &serde_json::Value,
+    defaults: Option<&serde_json::Value>,
     path: &mut Vec<String>,
     leaves: &mut Vec<(Vec<String>, serde_json::Value)>,
 ) {
-    match value.as_object() {
+    let splits = defaults.is_none_or(serde_json::Value::is_object);
+    match value.as_object().filter(|_| splits) {
         Some(object) => {
             for (key, inner) in object {
                 path.push(key.clone());
-                collect_leaves(inner, path, leaves);
+                collect_leaves(inner, defaults.and_then(|defaults| defaults.get(key)), path, leaves);
                 path.pop();
             }
         }
@@ -122,6 +130,42 @@ mod tests {
 
     use super::*;
     use crate::meter::{Layout, PctMode};
+
+    #[test]
+    fn windows_left_where_the_player_put_them_are_there_again_after_a_restart() {
+        use crate::settings::{ScreenPoint, Spot};
+        let dir = TestDir::new("window-places");
+        fs::write(
+            dir.file(),
+            r#"{"version":2,"windows":{"detailOpens":"beside","openMeterAtLaunch":true,"hideMeterBetweenFights":true,
+            "toolbarAt":{"x":53,"y":40},"meterAt":{"x":11,"y":817},"historyAt":null,"petsAt":null,"settingsAt":null}}"#,
+        )
+        .unwrap();
+
+        let windows = load(&dir.file(), 7).settings.windows;
+
+        assert_eq!(windows.remembered(Spot::Toolbar), Some(ScreenPoint { x: 53, y: 40 }));
+        assert_eq!(windows.remembered(Spot::Meter), Some(ScreenPoint { x: 11, y: 817 }));
+        assert_eq!(windows.remembered(Spot::History), None, "an explicit null is a window never dragged");
+        assert!(windows.open_meter_at_launch && windows.hide_meter_between_fights, "the rest of the section is kept");
+    }
+
+    #[test]
+    fn a_window_place_that_is_not_a_place_costs_that_window_only() {
+        use crate::settings::{ScreenPoint, Spot};
+        let dir = TestDir::new("window-place-bad");
+        fs::write(
+            dir.file(),
+            r#"{"version":2,"windows":{"toolbarAt":{"x":"left","y":4},"meterAt":{"x":9},"todosAt":{"x":7,"y":8}}}"#,
+        )
+        .unwrap();
+
+        let windows = load(&dir.file(), 7).settings.windows;
+
+        assert_eq!(windows.remembered(Spot::Toolbar), None);
+        assert_eq!(windows.remembered(Spot::Meter), None, "half a place is no place");
+        assert_eq!(windows.remembered(Spot::Todos), Some(ScreenPoint { x: 7, y: 8 }));
+    }
 
     struct TestDir(PathBuf);
 

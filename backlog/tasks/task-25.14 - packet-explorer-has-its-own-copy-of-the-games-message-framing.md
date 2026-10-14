@@ -4,6 +4,7 @@ title: packet-explorer has its own copy of the game's message framing
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:38'
+updated_date: '2026-10-12 15:05'
 labels:
   - improvement
 dependencies: []
@@ -49,3 +50,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 The heartbeat marker and the TLS check each exist once.
 - [ ] #3 packet-explorer's parity command gives the same result as the meter on the same recording.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Still present per the review (packet-explorer framer: fixed 5 s stall against the core's 1 s cap, heartbeat and TLS checks copied); not touched this round.
+<!-- SECTION:NOTES:END -->

@@ -21,7 +21,24 @@ pub struct CharacterReport<Content> {
 
 struct NamedCharacter {
     character: KnownCharacter,
-    seen_at: f64,
+    naming: Naming,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Naming {
+    /// The game named the character, when it was captured.
+    Game { seen_at: f64 },
+    /// Taken from the remembered characters by `assume_character`.
+    Character,
+    /// Only the server was taken from the remembered characters by
+    /// `assume_server`; `character` stands in for whoever the player is.
+    Server,
+}
+
+impl NamedCharacter {
+    fn is_assumed(&self) -> bool {
+        !matches!(self.naming, Naming::Game { .. })
+    }
 }
 
 struct Waiting<Content> {
@@ -36,11 +53,12 @@ struct Waiting<Content> {
 pub struct CharacterBinder<Content> {
     named: Option<NamedCharacter>,
     waiting: Vec<Waiting<Content>>,
+    assumed_messages: usize,
 }
 
 impl<Content> Default for CharacterBinder<Content> {
     fn default() -> Self {
-        Self { named: None, waiting: Vec::new() }
+        Self { named: None, waiting: Vec::new(), assumed_messages: 0 }
     }
 }
 
@@ -60,7 +78,8 @@ impl<Content> CharacterBinder<Content> {
                 content: message.content,
             })
             .collect();
-        self.named = Some(NamedCharacter { character, seen_at: captured_at });
+        self.named = Some(NamedCharacter { character, naming: Naming::Game { seen_at: captured_at } });
+        self.assumed_messages = 0;
         reports
     }
 
@@ -68,16 +87,54 @@ impl<Content> CharacterBinder<Content> {
     /// not named anyone since the binder started (the meter was opened after
     /// login, and the character comes from the remembered ones). The game's own
     /// name, when it comes, replaces it; one already given is never replaced.
-    pub fn assume_character(&mut self, character: KnownCharacter) {
-        if self.named.is_none() {
-            self.named = Some(NamedCharacter { character, seen_at: f64::NEG_INFINITY });
+    /// Returns whether the assumption took.
+    pub fn assume_character(&mut self, character: KnownCharacter) -> bool {
+        let unnamed = self.named.is_none();
+        if unnamed {
+            self.named = Some(NamedCharacter { character, naming: Naming::Character });
+            self.assumed_messages = 0;
         }
+        unnamed
+    }
+
+    /// Takes the server of `stand_in` as the one the messages belong to when
+    /// the game has not named anyone since the binder started; for messages
+    /// that matter per server, not per character. `stand_in` is whoever of
+    /// the remembered characters the report carries meanwhile. The game's own
+    /// name, when it comes, replaces it; one already given is never replaced.
+    /// Returns whether the assumption took.
+    pub fn assume_server(&mut self, stand_in: KnownCharacter) -> bool {
+        let unnamed = self.named.is_none();
+        if unnamed {
+            self.named = Some(NamedCharacter { character: stand_in, naming: Naming::Server });
+            self.assumed_messages = 0;
+        }
+        unnamed
+    }
+
+    /// The character taken as the player's by `assume_character` while the game
+    /// has not named anyone, and how many changes were bound to it meanwhile.
+    pub fn assumed(&self) -> Option<(&KnownCharacter, usize)> {
+        self.named
+            .as_ref()
+            .filter(|named| named.naming == Naming::Character)
+            .map(|named| (&named.character, self.assumed_messages))
+    }
+
+    /// The server taken by `assume_server` while the game has not named
+    /// anyone, and how many changes were bound to it meanwhile.
+    pub fn assumed_server(&self) -> Option<(u32, usize)> {
+        self.named
+            .as_ref()
+            .filter(|named| named.naming == Naming::Server)
+            .map(|named| (named.character.server_id, self.assumed_messages))
     }
 
     pub fn snapshot(&mut self, content: Content, captured_at: f64) -> Option<CharacterReport<Content>> {
         self.waiting.clear();
-        let named_just_before = self.named.take().filter(|named| {
-            (0.0..=IDENTITY_BEFORE_SNAPSHOT_SECS).contains(&(captured_at - named.seen_at))
+        let named_just_before = self.named.take().filter(|named| match named.naming {
+            Naming::Game { seen_at } => (0.0..=IDENTITY_BEFORE_SNAPSHOT_SECS).contains(&(captured_at - seen_at)),
+            Naming::Character | Naming::Server => false,
         });
         match named_just_before {
             Some(named) => {
@@ -94,7 +151,12 @@ impl<Content> CharacterBinder<Content> {
 
     pub fn change(&mut self, content: Content, captured_at: f64) -> Option<CharacterReport<Content>> {
         match &self.named {
-            Some(named) => Some(CharacterReport { character: named.character.clone(), captured_at, content }),
+            Some(named) => {
+                if named.is_assumed() {
+                    self.assumed_messages += 1;
+                }
+                Some(CharacterReport { character: named.character.clone(), captured_at, content })
+            }
             None => {
                 self.waiting.retain(|message| captured_at - message.captured_at <= IDENTITY_AFTER_MESSAGE_SECS);
                 self.waiting.push(Waiting { captured_at, content });

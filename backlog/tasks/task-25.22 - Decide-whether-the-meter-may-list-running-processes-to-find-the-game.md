@@ -4,6 +4,7 @@ title: Decide whether the meter may list running processes to find the game
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:41'
+updated_date: '2026-10-12 15:05'
 labels:
   - research
 dependencies: []
@@ -56,3 +57,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #2 AGENTS.md, the removed FORK.md (git history) and the removed docs/GPUI_MIGRATION.md (git history) agree with it.
 - [ ] #3 If the listing is removed: the Npcap adapter hint and the rolling recorder still select the game's traffic.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Still present and undecided per the review. The docs (technical-notes, Staying clear of anti-cheat) now describe listing processes and reading the TCP table as allowed (no OpenProcess), but no decision is recorded here.
+<!-- SECTION:NOTES:END -->

@@ -158,6 +158,42 @@ mod tests {
         assert_eq!((reports[0].captured_at, &reports[0].content), (100.0, &gain_content(1086)));
     }
 
+    #[test]
+    fn a_change_before_any_name_is_bound_to_the_assumed_server_at_once() {
+        let mut binder = PetBinder::default();
+        assert!(binder.assume_server(character("Alpha")));
+
+        let report = binder.change(gain_content(1086), 100.0).expect("bound at once");
+
+        assert_eq!((report.character.server_id, report.captured_at), (1302, 100.0));
+        assert_eq!(binder.assumed_server(), Some((1302, 1)));
+        assert!(binder.assumed().is_none(), "no character was assumed, only the server");
+    }
+
+    #[test]
+    fn a_snapshot_is_not_bound_to_the_assumed_server_and_waits_for_the_name() {
+        let mut binder = PetBinder::default();
+        binder.assume_server(character("Alpha"));
+
+        assert!(binder.snapshot(snapshot_content(), 100.0).is_none());
+
+        let reports = binder.character_named(character("Beta"), 104.0);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].character.name, "Beta");
+    }
+
+    #[test]
+    fn the_games_name_replaces_the_assumed_server_and_one_already_given_is_never_replaced() {
+        let mut binder = PetBinder::default();
+        binder.assume_server(character("Alpha"));
+        binder.character_named(character("Beta"), 100.0);
+
+        assert_eq!(binder.assumed_server(), None);
+        assert!(!binder.assume_server(character("Alpha")));
+        let report = binder.change(gain_content(1086), 101.0).expect("bound");
+        assert_eq!(report.character.name, "Beta");
+    }
+
     fn state(level: u32, souls: u32) -> PetState {
         PetState { level, souls }
     }

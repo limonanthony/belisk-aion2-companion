@@ -4,6 +4,7 @@ title: Add tests for the high-risk contracts nobody tests
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:44'
+updated_date: '2026-10-12 15:05'
 labels:
   - maintenance
 dependencies: []
@@ -67,3 +68,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #4 clock/wall.rs, the nested-overlay keep_valid_fields case, short or empty network packets, a recording cut mid-payload and the ellipsis-menu outside click each have a test that fails when the behaviour is broken.
 - [ ] #5 No test added here recomputes the code's own formula, and no production behaviour changes.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Partly done. Tests exist for the overlay send gate, damage-over-time, history and bests, idle hide and wipes. This round added the real-fight replay test, a party-DPS test with an independent oracle and a long-session target test. Still missing: independent-oracle tests for the overlay DPS formula, the 1 s floor and the summon merge in calculator.rs.
+<!-- SECTION:NOTES:END -->

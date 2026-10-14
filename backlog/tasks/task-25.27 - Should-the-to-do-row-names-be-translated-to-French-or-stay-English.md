@@ -4,6 +4,7 @@ title: Should the to-do row names be translated to French or stay English?
 status: To Do
 assignee: []
 created_date: '2026-10-08 12:41'
+updated_date: '2026-10-12 15:05'
 labels:
   - research
 dependencies: []
@@ -53,3 +54,9 @@ Found by the code review of commit 7a48824 (2026-10-08). Line numbers refer to t
 - [ ] #1 The owner's decision (translate the rows, or keep English names as the rule) is recorded.
 - [ ] #2 Persisted row ids are unchanged: existing to-do data still loads after the change.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Not reviewed by the review of this date; unchanged. Still an open question for the user.
+<!-- SECTION:NOTES:END -->

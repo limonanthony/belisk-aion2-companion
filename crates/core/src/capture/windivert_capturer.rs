@@ -1,11 +1,10 @@
-use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex, OnceLock,
 };
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use windivert_sys::address::WINDIVERT_ADDRESS;
 use windivert_sys::{
@@ -16,15 +15,12 @@ use windows_048::Win32::Foundation::HANDLE;
 
 use crate::capture::capturer::CapturedPacket;
 use crate::capture::channel::Channel;
-use crate::capture::dispatcher::is_web_flow;
+use crate::capture::game_flow_gate::GameFlowGate;
 use crate::logger::AppLogger;
 
-const MAGIC_PATTERN: [u8; 3] = [0x0e, 0x00, 0x36];
 const FILTER: &str = "tcp and ip";
 const IPV4_MIN_HEADER_LEN: usize = 20;
 const TCP_MIN_HEADER_LEN: usize = 20;
-const CANDIDATE_STALE_AFTER: Duration = Duration::from_secs(30);
-const CANDIDATE_CLEANUP_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Set when Belisk's own open loaded the WinDivert driver.
 ///
@@ -38,32 +34,6 @@ static LOADED_BY_US: AtomicBool = AtomicBool::new(false);
 /// Handles Belisk holds; the driver is only unloaded once none is left, so a
 /// status probe never pulls it out from under a running capture.
 static OPEN_HANDLES: AtomicUsize = AtomicUsize::new(0);
-
-struct CandidateConnections {
-    last_magic_at: HashMap<(u16, u16), Instant>,
-}
-
-impl CandidateConnections {
-    fn new() -> Self {
-        Self {
-            last_magic_at: HashMap::new(),
-        }
-    }
-
-    fn observe_magic(&mut self, connection: (u16, u16), now: Instant) {
-        self.last_magic_at.insert(connection, now);
-    }
-
-    fn contains(&self, connection: &(u16, u16)) -> bool {
-        self.last_magic_at.contains_key(connection)
-    }
-
-    fn remove_stale(&mut self, now: Instant) {
-        self.last_magic_at.retain(|_, last_magic_at| {
-            now.saturating_duration_since(*last_magic_at) <= CANDIDATE_STALE_AFTER
-        });
-    }
-}
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,8 +79,7 @@ impl WinDivertCapturer {
         let capture_thread = thread::spawn(move || {
             let handle = HANDLE(raw_handle);
             let mut buffer = vec![0u8; WINDIVERT_MTU_MAX as usize];
-            let mut candidates = CandidateConnections::new();
-            let mut last_candidate_cleanup = Instant::now();
+            let mut gate = GameFlowGate::new(Instant::now());
 
             logger.info("WinDivert capture started");
 
@@ -141,26 +110,14 @@ impl WinDivertCapturer {
                     continue;
                 };
 
-                let connection = normalized_connection(packet.src_port, packet.dst_port);
                 let now = Instant::now();
-                if now.saturating_duration_since(last_candidate_cleanup)
-                    >= CANDIDATE_CLEANUP_INTERVAL
-                {
-                    candidates.remove_stale(now);
-                    last_candidate_cleanup = now;
-                }
-
-                if !is_web_flow(packet.src_port, packet.dst_port) && contains_magic(&packet.data) {
-                    if !candidates.contains(&connection) {
-                        logger.info(format!(
-                            "WinDivert capture candidate detected: {}-{}",
-                            connection.0, connection.1
-                        ));
-                    }
-                    candidates.observe_magic(connection, now);
-                }
-
-                if candidates.contains(&connection) {
+                let admitted = gate.admits(&packet, now, |connection| {
+                    logger.info(format!(
+                        "WinDivert capture candidate detected: {}-{}",
+                        connection.0, connection.1
+                    ));
+                });
+                if admitted {
                     let _ = channel.try_send(packet);
                 }
             }
@@ -377,20 +334,6 @@ fn parse_network_packet(packet: &[u8]) -> Option<CapturedPacket> {
     })
 }
 
-fn normalized_connection(src_port: u16, dst_port: u16) -> (u16, u16) {
-    if src_port <= dst_port {
-        (src_port, dst_port)
-    } else {
-        (dst_port, src_port)
-    }
-}
-
-fn contains_magic(payload: &[u8]) -> bool {
-    payload
-        .windows(MAGIC_PATTERN.len())
-        .any(|window| window == MAGIC_PATTERN)
-}
-
 fn current_timestamp_seconds() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -407,10 +350,7 @@ mod tests {
     use windivert_sys::address::WINDIVERT_ADDRESS;
     use windivert_sys::{WinDivertRecv, WinDivertShutdown, WinDivertShutdownMode, WINDIVERT_MTU_MAX};
 
-    use super::{
-        close_handle, normalized_connection, open_handle, parse_network_packet,
-        CandidateConnections,
-    };
+    use super::{close_handle, open_handle, parse_network_packet};
 
     #[test]
     fn a_missing_windivert_dll_is_an_error_not_a_crash() {
@@ -422,28 +362,6 @@ mod tests {
         let error = super::load_library().unwrap_err().to_string();
 
         assert!(error.contains("WinDivert.dll could not be loaded"), "{error}");
-    }
-
-    #[test]
-    fn keeps_candidate_with_recent_magic() {
-        let mut candidates = CandidateConnections::new();
-        let started_at = std::time::Instant::now();
-
-        candidates.observe_magic((10_007, 50_000), started_at);
-        candidates.remove_stale(started_at + Duration::from_secs(30));
-
-        assert!(candidates.contains(&(10_007, 50_000)));
-    }
-
-    #[test]
-    fn removes_candidate_without_magic_for_more_than_thirty_seconds() {
-        let mut candidates = CandidateConnections::new();
-        let started_at = std::time::Instant::now();
-
-        candidates.observe_magic((10_007, 50_000), started_at);
-        candidates.remove_stale(started_at + Duration::from_secs(31));
-
-        assert!(!candidates.contains(&(10_007, 50_000)));
     }
 
     #[test]
@@ -496,6 +414,5 @@ mod tests {
         assert_eq!(captured.dst_port, 10_007);
         assert_eq!(captured.sequence, 12_345);
         assert_eq!(captured.data, [0x33, 0x36, 0xaa, 0xbb]);
-        assert_eq!(normalized_connection(50_000, 10_007), (10_007, 50_000));
     }
 }

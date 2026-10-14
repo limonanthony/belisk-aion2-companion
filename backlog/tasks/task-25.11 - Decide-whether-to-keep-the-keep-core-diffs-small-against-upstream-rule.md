@@ -4,7 +4,7 @@ title: Remove the upstream-merge rule from the docs and code comments
 status: In Progress
 assignee: []
 created_date: '2026-10-08 12:38'
-updated_date: '2026-10-09 17:21'
+updated_date: '2026-10-12 15:05'
 labels:
   - documentation
 dependencies: []
@@ -74,4 +74,6 @@ Reading AGENTS.md, the removed docs/GPUI_MIGRATION.md (git history) and the core
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-09: Built and reviewed; not yet checked by the user. The upstream-merge rule and the merge instructions are gone from AGENTS.md and the removed docs/GPUI_MIGRATION.md (git history), and no code comment justifies a design by the upstream diff any more. Whether the region profile stays a global is TASK-25.18.
+
+2026-10-12 (full code review of this date, see TASK-36; fixes tested by agents only, not by the user): Fixed in code per the review: AGENTS.md has no upstream-merge rule and region.rs no longer justifies the process-wide profile with upstream.
 <!-- SECTION:NOTES:END -->

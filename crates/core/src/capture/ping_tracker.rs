@@ -1,22 +1,13 @@
-use std::collections::VecDeque;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const MARKER: [u8; 4] = [0x03, 0x36, 0x00, 0x00];
 const DOTNET_EPOCH_OFFSET_MS: i64 = 62_135_596_800_000;
 const MIN_PING_RS_BYTES: usize = 12;
 const MAX_PING_MS: f64 = 1000.0;
-const MAX_HISTORY: usize = 10_000;
-
-#[derive(Debug, Default)]
-struct PingTrackerInner {
-    last_ping_ms: Option<f64>,
-    history: VecDeque<(u64, f64)>,
-}
 
 #[derive(Debug, Default)]
 pub struct PingTracker {
-    inner: Mutex<PingTrackerInner>,
+    last_ping_ms: Mutex<Option<f64>>,
 }
 
 impl PingTracker {
@@ -58,12 +49,7 @@ impl PingTracker {
             let ping_ms = (arrival_ms - client_sent_unix_ms as f64).round();
 
             if (10.0..=MAX_PING_MS).contains(&ping_ms) {
-                let mut inner = self.inner.lock().unwrap();
-                inner.last_ping_ms = Some(ping_ms);
-                inner.history.push_back((current_time_ms(), ping_ms));
-                while inner.history.len() > MAX_HISTORY {
-                    inner.history.pop_front();
-                }
+                *self.last_ping_ms.lock().unwrap() = Some(ping_ms);
             }
 
             start = idx + MIN_PING_RS_BYTES;
@@ -71,18 +57,43 @@ impl PingTracker {
     }
 
     pub fn current_ping_ms(&self) -> Option<f64> {
-        self.inner.lock().unwrap().last_ping_ms
+        *self.last_ping_ms.lock().unwrap()
     }
 
     pub fn reset(&self) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.history.clear();
+        *self.last_ping_ms.lock().unwrap() = None;
     }
 }
 
-fn current_time_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or_default()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ARRIVED_AT_SECONDS: f64 = 1_700_000_000.0;
+
+    fn ping_reply_sent_ms_before_arrival(ms: i64) -> Vec<u8> {
+        let sent_dotnet_ms = (ARRIVED_AT_SECONDS * 1000.0) as i64 - ms + DOTNET_EPOCH_OFFSET_MS;
+        let mut data = MARKER.to_vec();
+        data.extend_from_slice(&sent_dotnet_ms.to_le_bytes());
+        data
+    }
+
+    #[test]
+    fn the_ping_is_the_time_between_the_game_sending_the_reply_and_its_capture() {
+        let tracker = PingTracker::new();
+
+        tracker.on_packet(&ping_reply_sent_ms_before_arrival(42), ARRIVED_AT_SECONDS);
+
+        assert_eq!(tracker.current_ping_ms(), Some(42.0));
+    }
+
+    #[test]
+    fn a_reset_forgets_the_ping_of_the_fight_before() {
+        let tracker = PingTracker::new();
+        tracker.on_packet(&ping_reply_sent_ms_before_arrival(42), ARRIVED_AT_SECONDS);
+
+        tracker.reset();
+
+        assert_eq!(tracker.current_ping_ms(), None);
+    }
 }

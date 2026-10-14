@@ -1,6 +1,7 @@
 use std::fs::{create_dir_all, rename, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -22,7 +23,7 @@ pub struct LogEvent {
 pub struct AppLogger {
     emit: Box<dyn Fn(LogEvent) + Send + Sync>,
     file_path: PathBuf,
-    debug_enabled: Mutex<bool>,
+    debug_enabled: AtomicBool,
     write_lock: Mutex<()>,
 }
 
@@ -37,22 +38,24 @@ impl AppLogger {
         Self {
             emit,
             file_path,
-            debug_enabled: Mutex::new(false),
+            debug_enabled: AtomicBool::new(false),
             write_lock: Mutex::new(()),
         }
     }
 
     pub fn set_debug_enabled(&self, enabled: bool) {
-        *self.debug_enabled.lock().unwrap() = enabled;
+        self.debug_enabled.store(enabled, Ordering::Relaxed);
     }
 
     pub fn is_debug_enabled(&self) -> bool {
-        *self.debug_enabled.lock().unwrap()
+        self.debug_enabled.load(Ordering::Relaxed)
     }
 
-    pub fn debug(&self, message: impl AsRef<str>) {
-        if *self.debug_enabled.lock().unwrap() {
-            self.write_line("DEBUG", message.as_ref());
+    /// `message` is only built when debug logging is on, so a call on a hot
+    /// path costs one atomic read otherwise.
+    pub fn debug(&self, message: impl FnOnce() -> String) {
+        if self.is_debug_enabled() {
+            self.write_line("DEBUG", &message());
         }
     }
 
@@ -123,5 +126,43 @@ impl AppLogger {
             line,
             timestamp,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn logger() -> AppLogger {
+        let dir = std::env::temp_dir().join(format!("belisk-logger-{}", std::process::id()));
+        AppLogger::new(dir.join("test.log"), Box::new(|_| {}))
+    }
+
+    #[test]
+    fn a_debug_message_is_not_built_while_debug_logging_is_off() {
+        let logger = logger();
+        let mut built = false;
+
+        logger.debug(|| {
+            built = true;
+            "never written".to_string()
+        });
+
+        assert!(!built);
+    }
+
+    #[test]
+    fn a_debug_message_is_written_while_debug_logging_is_on() {
+        let lines = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let collected = std::sync::Arc::clone(&lines);
+        let dir = std::env::temp_dir().join(format!("belisk-logger-on-{}", std::process::id()));
+        let logger = AppLogger::new(dir.join("test.log"), Box::new(move |event| collected.lock().unwrap().push(event.line)));
+        logger.set_debug_enabled(true);
+
+        logger.debug(|| "hello".to_string());
+
+        let lines = lines.lock().unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].ends_with("[DEBUG] hello"), "{}", lines[0]);
     }
 }

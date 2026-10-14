@@ -40,7 +40,7 @@ pub fn claim() -> Result<Claim, String> {
     claim_named(INSTANCE_NAME)
 }
 
-fn claim_named(name: &str) -> Result<Claim, String> {
+pub(crate) fn claim_named(name: &str) -> Result<Claim, String> {
     // The event is created before the lock, so whoever finds the lock held
     // finds the event too.
     let raise = unsafe { CreateEventW(None, false, false, &HSTRING::from(format!("{name}.raise"))) }

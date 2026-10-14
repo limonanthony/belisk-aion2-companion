@@ -169,8 +169,9 @@ recording never stops until the 30-minute rotation. Manual and automatic
 recordings still stop at the cap.
 
 Flows on port 80 or 443 (either side) are never game traffic: the rolling
-recorder's heartbeat fallback ignores them, and so do the dispatcher, the Npcap
-magic probe and WinDivert's candidate set. A CDN download on 443 can carry the
+recorder's heartbeat fallback ignores them, and so do the session and
+automatic recorders (`PacketRecorder::wants`), the dispatcher, the Npcap
+magic probe and the capture gate. A CDN download on 443 can carry the
 `0E 00 36` bytes by chance and was once taken for the game, filling a 512 MB
 file in 20 minutes.
 
@@ -178,7 +179,7 @@ file in 20 minutes.
 
 The dispatcher does not write recordings. Each recording has a writer thread
 (`capture/recording_queue.rs`): the dispatcher calls `RecordingQueue::offer`,
-which asks the sink whether it wants the packet (an atomic flag for
+which asks the sink whether it wants the packet (an atomic flag and the web-port test for
 `PacketRecorder`; the game-traffic filter for `RollingRecorder`, memory only, in
 a lock of its own), copies it into a bounded queue of 8,192 packets and returns.
 The writer thread calls `PacketRecorder::record`, rotates the rolling file and
@@ -201,8 +202,34 @@ the log at most every 30 s when something new was dropped, and stopping the
 meter writes the last one: `packets dropped: <n> before the dispatcher read them
 (queue full), <m> left out of recordings (queue full); totals <N> and <M>`. A
 drop before the dispatcher is missing from the game stream and can break
-reassembly; a recording drop leaves the meter's numbers alone. Npcap still
-forwards every TCP packet, not only candidate game flows.
+reassembly; a recording drop leaves the meter's numbers alone.
+
+Both capturers (Npcap's per-adapter thread and WinDivert's) queue a packet only
+when `capture/game_flow_gate.rs` admits it: never a flow on port 80 or 443, and
+otherwise only a port pair that carried the `0E 00 36` heartbeat within the last
+30 s (the packet with the heartbeat included, both directions, stale pairs
+forgotten once a second). Before this, Npcap queued every TCP packet and left the
+web flows to the dispatcher, so a download on the same adapter could fill the
+8,192-slot queue and push game packets out. The gate loses nothing the
+dispatcher would have used: the dispatcher creates a flow's assembler on the
+first packet with the heartbeat, so earlier packets never reach one. Checked on
+every recording in the recordings folder up to 230 MB (2026-10-06 to 12, the
+unfiltered session and rolling files of 2026-10-07/08 included): the gate
+dropped 0 packets of a flow that had an assembler (it drops only the few packets
+a flow carries before its first heartbeat, and web flows).
+
+### Replay fixture
+
+`crates/core/tests/replay_fixture.rs` replays `tests/fixtures/fight-anonymised.belisk`
+(273 KB, about a minute of a real fight: 41 players, 2,068,011 damage) through
+`DpsMeter` and checks the totals, the board, the local player, and that the
+fight lasts as recorded at two replay speeds. The fixture holds only the frames
+fight tracking reads, on a synthetic connection, with every name replaced by a
+placeholder of the same byte length and all other text filled; it is made with
+`cargo run -p packet-explorer -- fixture <recording> --out ...`, which refuses to
+write unless no original name remains and the core reads the result the same
+(`crates/core/tests/fixtures/README.md`). The expected total is what the core
+makes of the real frames, not an independent decoder's.
 
 ## Names and data
 
@@ -293,7 +320,10 @@ forwards every TCP packet, not only candidate game flows.
   tracked and then either has its HP back at full after falling below 98%, or is
   removed with flag 7 alive. The attempt is saved to History with `wiped: true`
   and the HP it had left, kept out of personal bests, and taken off the meter so
-  the next pull counts from zero.
+  the next pull counts from zero. Wipes and the idle reset run on the snapshot
+  tick: the core's default is `DEFAULT_DPS_SNAPSHOT_INTERVAL_MS = 100`
+  (`config.rs`, what the replay example uses); the app's live config sets 200 ms
+  (`crates/app/src/live_session.rs`, `dps_snapshot_interval_ms: 200`).
 - **Damage over time `05 38`**: only mode `0x0A` is damage. Mode `0x0B` is a
   self, party or pet effect.
 - **Buff removal `2C 38`** (`parser/buff_removal_record.rs`): ends the removed
@@ -323,6 +353,31 @@ forwards every TCP packet, not only candidate game flows.
   are folded (`DataStorage::own_actor_ids`, reset when the character changes); a
   namesake keeps its own row. The row lists the folded ids in
   `SessionPlayerStat::earlier_actor_ids`, and the session skill detail sums them.
+- **One assembler per flow, parsed in place.** A game flow has one `StreamAssembler`
+  (the full processor: identity, spawns, combat, tickets, pets); there is no second
+  nickname-only assembler any more, which had every `33 36`/`45 36`/`41 36` parsed
+  twice (two `CharacterSeen` for one login). The assembler owns its buffer, parses
+  it where it lies (no clone per step, no mutex) and drops the consumed prefix.
+  Past 50 MB buffered without a complete packet it logs a warning
+  (`stream buffer over ... bytes without a complete packet; discarding N buffered bytes and re-framing`),
+  drops what it holds with `discard_buffered` (which also resets the stall and
+  hunt state) and goes on with the chunk that crossed the limit. A stalled head is
+  resynced after `full_processor_stall_resync_delay_ms` (200 ms); the config field
+  `stall_resync_delay_ms` (1000 ms) belonged to the removed processor and is gone.
+- **Combat time is the packets' time.** Hits (`04 38`, `05 38`), the damage a
+  monster did, heal ticks and deaths are stamped with the capture time of the
+  packet they came in (`captured_at`: pcap's timestamp on Npcap, the PC's clock at
+  receipt on WinDivert, the recorded time on replay), not with the PC's clock when
+  the dispatcher parsed them. A replay at any `--speed`, paced or not, therefore
+  gives the recorded fight durations, combat times and DPS, and a clock jump
+  mid-fight no longer bends a live fight. "Now" for the parts that need it (the
+  idle reset in the snapshot loop and `combat_infos.time_now`, which the app uses
+  for how long ago a target was hit) is `DataStorage::data_clock_now()`: the
+  capture time of the newest packet a game flow parsed (`note_packet_time`, called
+  by `StreamProcessor::set_captured_at`) plus the real time since it was noted, so
+  a quiet connection still ages a fight; the PC's clock before any packet. Buff
+  intervals still use the PC's clock (their start comes from the server's time).
+  Test: `a_fight_lasts_as_long_as_it_was_recorded_however_fast_it_is_replayed`.
 
 ## Matching the game's Combat Analysis
 
@@ -594,11 +649,55 @@ Windows, and how plain GPUI gets it (`crates/app/src/overlay.rs`):
 |HWND|`Window` implements `raw_window_handle::HasWindowHandle`; `RawWindowHandle::Win32` gives it (`overlay::hwnd`)|
 |Drag by the header|The header's title area records the press and the window follows the pointer (`overlay::WindowDrag`). `WindowControlArea::Drag` is not used on overlays: Windows reports the pointer crossing between client and non-client area as a leave, GPUI clears its hover flag on either, and controls that show on hover flashed on every mouse move|
 |Per-monitor DPI|GPUI's embedded manifest declares PerMonitorV2 and ours keeps it|
+|Stays above the game|Shown windows are topmost, but Windows was seen leaving a full-screen game's normal window above Belisk's topmost windows (2026-10-11, 1.1.0: the toolbar covered by the game, a hidden soul tracker card under it). Belisk's overlays keep one fixed stack at the top of the topmost band (`toolbar/on_top.rs`, `Layer`): the toolbar at the bottom, the meter, the tools (History, detail, report, PvP, to-dos, Resources, Pets, the prompt, What's new, in the order they are stacked now, read from the z-order), the reminder card, and the soul tracker card on top, so none of Belisk's windows covers a card. Settings, a normal window, is never in it. A window is put on screen by `overlay::reveal` (shown with `SW_SHOWNOACTIVATE`, then `SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE)`; showing alone keeps a hidden window's old place, under the game), then the stack is put back in order (`toolbar::restack`: each overlay raised in turn, bottom first, without activating). That happens for every window of the secondary layer created hidden and shown once registered, one opened again, the reminder card and the soul tracker card on every reminder or gain even when they are already up (they may be covered), the toolbar at launch, the meter shown, what Alt+Shift+CapsLock or the tray's Show toolbar bring back. Once a second (live runs) the hub walks the z-order above each overlay on screen (`GW_HWNDPREV`, at most 64 windows; pid and window style only, nothing read from another process) and, when a normal window of another program overlaps one, puts the whole stack back on top in one pass, logging the covering window's class once per episode. Not while a drag moves an overlay or one of Belisk's windows is the foreground (typing, Settings); a topmost window of another program is never fought. While Alt+Shift+CapsLock has the rest hidden, the check still runs for the windows on screen (a soul tracker card a gain shows then), and the window calls run after the update, outside the App borrow. `ShowWindow` and `SetWindowPos` results are checked: `ShowWindow` answers whether the window was visible before, so the window's visibility is read back; a failure is logged as a warning and never logged as put back on top|
 
 Other rules:
 
 - `Application::run` needs no admin rights and no activation; the overlays never
   call `cx.activate`.
+- **Win32 calls that make Windows report a show, a move, a resize or a frame
+  change wait for the update to end.** Windows sends those messages
+  synchronously from the call that causes them, and GPUI answers them through
+  the `App`: `ShowWindow` makes it send `WM_SHOWWINDOW`, and `gpui-pre-windows`
+  draws the window inside that message (`events.rs`,
+  `handle_window_visibility_changed`); `SetWindowPos` with a move or a resize
+  (or `SWP_FRAMECHANGED` over a frame that changed the client area) makes it
+  send `WM_MOVE` and `WM_SIZE`, whose callbacks run `Window::bounds_changed`
+  (`window.rs`, `on_moved` / `on_resize`). Each updates the window through
+  `AsyncApp::update_window`, which fails with "RefCell already borrowed" while
+  an update holds the `App`, and the frame or the bounds report (scale factor,
+  viewport size, display, bounds observers) is lost. belisk.log showed the
+  error after every launch, from the toolbar being shown, and from every
+  window being reframed and placed, inside the update that opened it.
+  `overlay::after_update` runs such calls on the foreground executor after the
+  update returns, in the order asked. Deferred: the first show and every later
+  one (`overlay::reveal_after_update`: the meter's and the toolbar's,
+  `sync_meter_window`, Alt+Shift+CapsLock, the tray's Show toolbar and a second
+  launch's `bring_forward`, `secondary::show_again`, `reveal_and_restack`);
+  the frame change of `make_overlay` and of a lock (`set_click_through`); the
+  place of a new window (`overlay::place_after_update`, off screen
+  `off_screen::place_after_update` and `show_after_update`: the meter, the
+  toolbar, every secondary window, Settings and the font probe off screen),
+  whose corner is asked when it runs, so a window anchored to another opened in
+  the same update sees where that one was put, and which a secondary window
+  asks while its view is built, so a place the view asks of itself later
+  (`Stacking::place`, from its first frame on) is queued after it and not
+  undone by it; the fit to the card
+  (`fit_client_size`, the toolbar's `refit`), a card's place (`Stacking::place`)
+  and a drag's moves; and Settings' foreground request. A window is queued
+  frame change, place, show, so it is placed before it is shown, and `restack`
+  reads the overlays on screen and raises them after the shows queued before
+  it, so the order and `SWP_NOACTIVATE` are as before. Stays inside an update:
+  the style bits, the DWM attributes and the click-activation subclass
+  (`make_overlay` sends no move or size message, so a failure still fails the
+  open), `SetLayeredWindowAttributes`, and hiding (`WM_SHOWWINDOW` with 0 only
+  queues GPUI's visibility report); raising or lowering in the z-order
+  (`SWP_NOMOVE | SWP_NOSIZE`) sends no move or size message. The typing
+  exception's calls already ran from a spawned turn. Tested with
+  `win32_calls_asked_inside_an_update_run_in_order_after_it_returns` and
+  `a_window_placed_after_an_update_is_anchored_to_where_the_other_one_asked_in_it_was_put`;
+  the capture log (`--capture --fixtures`) holds no "already borrowed" line,
+  and only a real launch shows belisk.log without one.
 - No drop shadow on overlay cards or menus: over a bright scene the window edge
   clips it into a faint hard-edged rectangle, and the room for it would take
   clicks while unlocked (`HTTRANSPARENT` only passes clicks to windows of the
@@ -909,9 +1008,11 @@ once per snapshot), `fight.rs` (when the fight summary goes up and comes down, a
 unit-tested state machine), `motion.rs`, `settings.rs` (`OverlaySettings`) and
 `shades.rs`.
 
-- Snapshots of a target without a mob code are skipped; at most `max_player_count`
-  rows and your row is never the one dropped; bars are damage over top damage with
-  a 6 % floor; contribution or share; combat power grouped, DPS compact; masking
+- A current target the game has not described yet (no mob code) never takes the
+  boss focus, but its snapshot is still drawn (the engaged boss, the Session
+  board); at most `max_player_count` rows and your row is never the one dropped;
+  bars are damage over top damage with a 6 % floor; contribution or share; combat
+  power grouped, DPS compact; masking
   covers players and the target; personal-best pace after 10 s of a boss fight;
   the summary is final when the boss dies, provisional after the quiet limit,
   never for fights under 15 s, taken down when the fight resumes, the next boss
@@ -935,6 +1036,9 @@ unit-tested state machine), `motion.rs`, `settings.rs` (`OverlaySettings`) and
   no handlers (the window is click-through anyway). Its tooltip is drawn inside
   the card above the footer after 500 ms of rest, and none shows for the active
   side while the choice is automatic.
+- **Ping.** The last `03 36` echo's round trip; `PingTracker::reset` (a fight
+  reset) clears it, so the overlay shows no ping until the next echo instead of the
+  previous fight's. The unread 10,000-entry history is gone.
 - **Capsule.** Session: your rank, your damage, "Session" and the clock. Target:
   your DPS, the clock and the pace. Until the meter knows which row is you it
   shows the party's figure without a rank badge ("party damage" / "party DPS"),
@@ -958,9 +1062,10 @@ History, detail, report, PvP, Settings, the first-open prompt, the reminder card
 What's new, to-dos, Resources, the Pets window and the soul tracker card live in
 `crates/app/src/secondary/`.
 
-- **One window per kind**, in a registry (`registry.rs`, `WindowKind`). Opening a
-  kind that is open **raises it without activating it** (`SetWindowPos(HWND_TOPMOST,
-  SWP_NOACTIVATE)`); it does not toggle, since a window can sit behind others. The
+- **One window per kind**, in a registry (`registry.rs`, `WindowKind`). A window is
+  created hidden and shown once the registry keeps it; opening a kind that is
+  open shows it again at the top of its layer, without activating it (the stack in
+  "Overlay windows"); it does not toggle, since a window can sit behind others. The
   detail window is also pointed at the new player or board. A window is forgotten
   when its view is released, however it ends (its ×, or the app quitting, which
   closes them all).
@@ -975,8 +1080,38 @@ What's new, to-dos, Resources, the Pets window and the soul tracker card live in
   is open (detail to its right, history below it, PvP to its left; each flips to
   the opposite side when it does not fit, then is pulled inside the work area),
   else under the toolbar (`secondary::Stacking`, `placement::Stack`). Tools do not
-  remember a place of their own and do not follow the meter when it moves, except
-  the reminder card (below).
+  follow the meter when it moves, except the reminder card (below).
+- **Remembered places.** The meter, the toolbar, History, detail, fight report,
+  PvP, to-dos, Resources, Pets and Settings each reopen where the player last
+  left them, in the same run and after a restart; the reminder, soul tracker,
+  first-open prompt and What's new cards stay attached as above. A place is
+  the window's top-left corner in device pixels, saved when a drag of it ends
+  (`overlay::remember_drags`, see "A drag does not redraw the window"; Settings,
+  which has Windows' title bar, saves at `WM_EXITSIZEMOVE` instead:
+  `remember_os_moves`) into `settings.json`'s `windows` section as `meterAt`,
+  `toolbarAt`, `historyAt`, `detailAt`, `reportAt`, `pvpAt`, `todosAt`,
+  `resourcesAt`, `petsAt` and `settingsAt` (`{"x", "y"}`; absent = never dragged,
+  which opens as before; `settings::Spot`, `WindowSettings::remembered`). At open
+  `placement::remembered` ignores a place on no monitor (unplugged, layout
+  changed: the window opens as one never dragged does) and pulls one that sticks
+  out of its monitor's work area back inside (`placement::inside`, the rule
+  `beside` ends with), with the size the window has at open. A window that can
+  grow when it first fits its card (the meter, the tool windows; not the
+  toolbar) is armed at open (`overlay::pull_after_first_fit`): the first
+  `fit_client_size` after that is followed by one more pull inside the work
+  area (`pull_inside`), and a frame that needs no fit disarms it
+  (`first_fit_not_needed`), so a card that grows later, in a fight, never slides
+  the window. The place is asked inside the deferred placement
+  (`place_after_update`), never inside an update. Settings, a normal window,
+  is opened hidden when it has a place (`settings::open_window(.., shown)`),
+  moved there and then shown with `SW_SHOWNORMAL` in one deferred call
+  (`overlay::move_then_show_after_update`), so it never appears centred first;
+  without a place it opens shown and centred as before, and a place on no
+  monitor still shows it, centred. Detail
+  opens beside the meter until first dragged, then where it was left, unless
+  Settings › Overlay › "Detail opens" is "Centred": then it is always centred
+  and its drags are not saved (the stored values stay "beside" and "centred").
+  "Reset settings" clears every place with the rest of `windows`.
 - **Entry points.** The toolbar opens tools. A press on a meter row opens the
   detail window: on the Target board, that player on the board's target (the
   engaged boss, else the one being hit); on the Session board, that player's
@@ -1089,7 +1224,9 @@ only text and caret; the PvP view draws the box around it.
 
 - **Store.** `%APPDATA%/Belisk/settings.json`: versioned JSON, missing fields take
   defaults, unknown fields are ignored, values are clamped on load. Writes are
-  atomic and happen 400 ms after the last change, plus once on quit. Replay and
+  atomic and happen 400 ms after the last change on the background executor
+  (`background_save.rs`, shared with `todos.json` and `pets.json`), plus once on
+  quit; a failed write is retried every 10 s while Settings shows it. Replay and
   capture runs use an in-memory store and never touch the file.
 - **Live application.** `settings::Settings` is the one entity everything
   observes. A change replaces `MeterModel.settings` (the overlay and every
@@ -1127,14 +1264,23 @@ only text and caret; the PvP view draws the box around it.
 - **Settings window.** `Page` opens a section or About › Changelog from outside.
   Opening or reopening it brings it to the foreground; it never stays always on
   top while the player uses the game.
+- **Redraws.** The Settings window redraws on a settings change only when the
+  open page shows what changed (`Section::shows_a_change`: its own section, and
+  the overlay settings where a page shows a character's name, which follows the
+  masking) or the save failure under the page changed; the preview follows the
+  overlay settings by itself, and a language change redraws everything. Moving
+  the toolbar, remembering a character or a switch of another page does not
+  redraw it. The first-open prompt and What's new redraw only for their look
+  (the overlay settings) or the language.
 
 ## Event reminders
 
 `crates/app/src/reminders/`. A heads-up before the game's recurring timed events
 (Shugo Festival, Dimensional Invasion, Rift portals and others, some on by
-default). A lead of 1, 2, 3 or 5 minutes (default 1), a sound switch and a master
-switch live under `settings.json` → `reminders`; events starting in the same
-minute share one reminder.
+default). A lead of 1, 2, 3 or 5 minutes (default 1), a sound switch, a start
+alert switch (off by default, below) and a master switch live under
+`settings.json` → `reminders` (`leadMinutes`, `sound`, `startAlert`, `enabled`);
+events starting in the same minute share one reminder and one start alert.
 
 - **Data source.** MetaBot's event tables (`metabot.gg/en/aion-2/events`, as
   published for game build 0.0.4387.0), kept as data in `reminders/events.rs`. Its
@@ -1152,6 +1298,19 @@ minute share one reminder.
   to draw and plays Windows' own `Media\chimes.wav` (`PlaySoundW`, asynchronous,
   nothing bundled; the "SystemNotification" sound if the file is missing). Replay,
   capture and probe runs have no schedule and no sound.
+- **Start alert** (2026-10-14, `reminders.startAlert`, option A of the request). A
+  second card of the same kind, `CardKind::StartAlert` in `ShowReminder.kind`,
+  shown when the event starts: same window, placement, 30 s ring, pointer pause,
+  click dismissal, lock rule and chime as the reminder; only the header (`Under
+  way · 21:00`, `reminder-under-way`) and the accessibility label
+  (`reminder-start-label`) differ. `Planner::step` plans both kinds per start: the
+  alert is due at the start and may be shown until 60 s after it, at most once per
+  start (`last_alerted_start_ms`, so a re-plan inside the window does not show it
+  again); a wake later than that drops it and `take_missed` reports it, written as
+  a `dropped` line saying "start alert". A start already inside its 60 s when the
+  plan is made (launch, switch turned on) shows at once. A start's reminder is
+  shown before its alert; the master switch off means neither. The test card stays
+  a reminder. The decision log's `card`, `dropped` and `next` lines name the kind.
 - **The card** (`reminders/view.rs`, approved `reminders.html`) is its own overlay
   window (`WindowKind::Reminder`): frameless, topmost, tool window,
   `WS_EX_NOACTIVATE`, shown with `SW_SHOWNOACTIVATE`, so it never takes focus.
@@ -1285,15 +1444,70 @@ it (approved `pets.html`, values in tokens.md, "Pets").
   only at login and zone entry, so a session begun in game has no name for the
   binder: its soul gains waited and were dropped (the log of 2026-10-10 19:25
   shows "named from the remembered characters" and no `33 36`, and its 4 `0D 90`
-  never reached the app; the session of 18:34 had a `33 36` at once). When the
-  meter names the player from the remembered characters (`resolve_own_name`),
-  the ticket and pet binders take that character only when exactly one remembered
-  character has the actor's class (two of one class, or one name on two servers,
-  leave the messages waiting: the meter's pick of the most recent would bind them
-  to a possibly wrong name and server) (`CharacterBinder::assume_character`); the game's own name, when it arrives,
-  replaces it, and one the game already gave is never replaced. Gains from
-  before that moment, and any session with no remembered character of the
-  class, still wait for a `33 36`.
+  never reached the app; the session of 18:34 had a `33 36` at once). The same
+  happened on 2026-10-14 (17:05, Belisk started in game): the class, shown by a
+  skill hit, was known only at 17:12:58, and the 2 soul gains and 14 counter
+  gains of 17:08:39 to 17:12:04 had waited 15 s and been dropped, though all three
+  remembered characters were on server 1302.
+  **Pets bind by server first.** A pet collection belongs to a server, not to a
+  character (`Pets::apply` keys it by `report.character.server_id`), so when the
+  game has not named the player and every remembered character (`knownCharacters`)
+  is on one server, `DataStorage::assume_pet_server` binds the pet changes to that
+  server at once (`CharacterBinder::assume_server`; the report carries the most
+  recent remembered character as a stand-in, only its server counts). It runs when
+  the remembered characters are handed to the core (`set_known_characters`) and
+  again when a replay resets the binders, so a meter opened mid-game shows soul
+  gains, unlocks and counter gains live, without waiting for a class. The
+  collection snapshot is excluded: it only comes with a login and waits for the
+  `33 36` as before. With remembered characters on several servers, or none, the
+  rule below applies unchanged. Tickets never use it: their counts are per
+  character. The card's counts start from the stored collection (`pets.json`,
+  the last login) until a snapshot arrives; none is invented. If the assumption
+  is wrong (a character on a server not remembered yet), its souls and unlocks are
+  written into the assumed server's `pets.json` until the next login snapshot on
+  that server repairs it; the WARN line below says how many pet changes were bound
+  meanwhile.
+  **Alt of the same class.** When the meter names the player from the remembered
+  characters (`resolve_own_name`), the ticket and pet binders take that character
+  only when exactly one remembered character has the actor's class (two of one
+  class, or one name on two servers, leave the messages waiting: the meter's pick
+  of the most recent would bind them to a possibly wrong name and server)
+  (`CharacterBinder::assume_character`); pets already bound by server keep that
+  binding. The game's own name, when it arrives, replaces either assumption, and
+  one the game already gave is never replaced. Every assumption is written to
+  belisk.log at INFO: `pets bound to server <id> from the remembered characters:
+  all N are on it; ...`, `own character assumed from the remembered ones: <name>
+  (server <id>) is the only remembered <CLASS>; ticket and pet changes are bound
+  to it ...` ("ticket", "pet" or "ticket and pet", whichever took), or `own
+  character not assumed for tickets and pets: N remembered characters are a
+  <CLASS>; ...`. When the game then names the character (`33 36`) the log says
+  whether it held: INFO `the game named <name> (server <id>), as assumed; N ticket
+  and M pet changes were bound to it meanwhile`, or WARN `the game named <name>
+  (server <id>, <CLASS>), not the assumed <name> (server <id>, <CLASS>); N ticket
+  and M pet changes were bound to the wrong character meanwhile`; for the server
+  assumption INFO `the game named <name> (server <id>), the server assumed for
+  pets; N pet changes were bound to it meanwhile`, or WARN `the game named <name>
+  (server <id>, <CLASS>), not on the server <id> assumed for pets; N pet changes
+  were bound to the wrong server meanwhile`. **What the core cannot tell.** An
+  alt of the same class that is not remembered is taken for the
+  one remembered character of that class until the next `33 36`; no signal in the
+  traffic before it tells them apart (checked in belisk.log and its rolled file,
+  about one day: 1,168 `56 36` lines and 572 `33 36` lines of one player on one
+  world): the only own-actor packets before `33 36` are the remain-HP signature
+  (an actor id) and `56 36`, the combat power, a number that moves too much to
+  match a stored value (the values after one class's `33 36` ran from 4,056 to
+  66,317 within that day), so it neither matches a stored value nor separates two
+  same-class characters; the server address is the zone's (14 different addresses
+  for one world, and one address carried three of the player's classes), and the
+  world's id (1302) is only in `33 36`, while the `45 36` of other players name
+  every server. A remembered character's server is therefore not compared with
+  anything. Binding by combat power would need `KnownCharacter` to carry it (the
+  app's `settings.json`), and would still reject a character that gears up between
+  runs. Tickets of a session with no remembered character of the class still wait
+  for a `33 36`, as do pet changes when the remembered characters are on several
+  servers or none and no single class matches: gains from before that moment are
+  dropped once 15 s old. A player with characters on two servers, started
+  mid-game, can still lose pet changes made before the class shows.
 - **A maxed pet's souls.** Its loot gives no `0D 90`, only a `11 90` of +1 right
   after the pickup (`1E 56` entity 37308, mob 2100453 → kind 1; entity 49184, mob
   2100454 → kind 4 in session-1791634499923). `PetContent::CounterGains` carries
@@ -1362,9 +1576,12 @@ it (approved `pets.html`, values in tokens.md, "Pets").
   (the game turns them into crystals).
 - **Storage.** `pets.json` beside `settings.json`: versioned JSON, atomic write,
   a bad or newer file renamed `pets.json.bad-<seconds>`, a write 400 ms after the
-  last change, a flush when the app quits. The read, set-aside and write protocol
-  is `stored_file.rs`, shared with `settings.json` and `todos.json`. With no data
-  folder (replays, captures) the collection stays in memory.
+  last change on the background executor (`background_save.rs`, the one writer of
+  `settings.json`, `todos.json` and `pets.json`: writes carry a revision so a late
+  one never replaces a newer one, a failed write is retried every 10 s and logged
+  once, and the quit flushes on the UI thread). The read, set-aside and write
+  protocol is `stored_file.rs`. With no data folder (replays, captures) the
+  collection stays in memory.
 - **The Pets window** (`pets/view.rs`, `view/rows.rs`, opened by the toolbar's
   paw-print tool after To-dos; `secondary::open_pets`): left of the meter while it
   is open (the to-do window keeps its right), under the toolbar while it is
@@ -1408,7 +1625,14 @@ it (approved `pets.html`, values in tokens.md, "Pets").
   one `WM_MOVE` with the final position from the message loop, outside any GPUI
   handler. Pointer moves faster than the window can follow replace the pending
   target, so at most one `SetWindowPos` waits at a time; the target names its
-  window and is dropped if that window is no longer the one dragged.
+  window and is dropped if that window is no longer the one dragged. The end is
+  also where the window's place is saved ("Remembered places"): after the move
+  and the `WM_MOVE`, `report_left_at` reads the window's rectangle and tells the
+  listener `remember_drags` registered for it. Nothing hangs on a hit-tested
+  handler: the window lags the pointer, so the release often lands outside it,
+  where GPUI never runs the window's own `on_mouse_up` (that was why the
+  toolbar did not reopen where it was left; a press with no move ends without a
+  report).
 - **The scroll thumb** is the shared `chrome::scrollbar` (Secondary windows).
 - **The menu choice** (Show and Order) is kept in `pets.json` as `list`
   (`ListChoice`, `Pets::list_choice` / `set_list_choice`), the same on every
@@ -1441,18 +1665,19 @@ it (approved `pets.html`, values in tokens.md, "Pets").
   is closed or steps aside) and, while a reminder card is up, 6 px beyond it on
   the side the reminder took (`secondary::Card::PetCard`). A real gain replaces
   a test card.
-- **The card's window outlives the card.** Opening a window costs 0.2 to 0.4 s
-  (the log's reminder lines, "due" to "opened a card window", 190 to 384 ms on
-  2026-10-10), so a gain right after a card went showed its card late, while a
-  gain on a card still up showed at once. When its time is up (or on a click or
-  the ×) the card fades and parks: its window hides (`Stacking::hide`) and stays
-  registered, its ticker ends. The next gain shows it again at once
-  (`Stacking::reveal`) with that gain's pets alone and a new 10 s; a gain during
-  the fade cancels it. Alt+Shift+CapsLock puts an up card away at once (no
-  fade, `PetCardView::put_away`) instead of hiding it with the rest, so its time
-  never runs out unseen and showing everything again never brings back a card;
-  a gain shows it at once whether everything is hidden or not, as a new card
-  window did before.
+- **The card closes when it goes**, as the reminder card does: when its time is
+  up (or on a click or the ×) it fades over 150 ms and closes its window
+  (reduce motion: at once); a gain during the fade cancels it. The next gain
+  opens a new card with that gain's pets. Until 2026-10-11 a card that went
+  hid its window and waited for the next gain; a hidden window kept its old
+  z-order slot, which Windows had put under the full-screen game, so the card
+  came back unseen. Alt+Shift+CapsLock hides an up card with the other windows;
+  it keeps counting down and closes, so showing everything again does not find
+  it. A gain on the open card, shown or hidden by the shortcut, puts it on
+  screen at the top of Belisk's stack (`secondary::show_pet_card`): a card that is
+  up may be covered by the game. A gain with no card up opens a new one, on
+  screen, the same way. A reminder put on the reminder card that is up brings
+  that card up too (`secondary::show_reminder`).
 - **Settings › Pets** (`settings/view/pets_page.rs`, between To-dos and General):
   the four switches (the three under the master dim and leave the tab order when
   it is off, keeping their values), "Show a test card" (`Pets::show_test_card`
@@ -1493,12 +1718,17 @@ click-through.
   (`secondary::hide_all` / `show_again`), and each kind is looked up again in the
   registry when shown: a window closed meanwhile stays closed, and no stale handle
   (which Windows may have given to another program's window) is ever shown.
+- **The overlays' stack** is the hub's (`on_top.rs`, see "Overlay windows"): the
+  toolbar is revealed at launch and is the bottom of the stack, and the
+  once-a-second check puts the whole stack back on top when a normal window of
+  another program covers one of its windows.
 - The toolbar's counts and warning (`counts.rs`) come from the to-dos; the update
   icon is below.
 - Deviations from the approved pages: the bell dropdown's next reminders are
   plain rows; folded, the warning's tooltip hangs from its left edge; the toolbar
-  remembers its place and "Open the meter at launch", not which tools were open
-  (so tools do not reopen after a restart).
+  remembers its place (like every window, see "Remembered places") and "Open the
+  meter at launch", not which tools were open (so tools do not reopen after a
+  restart).
 
 ## Fight report window
 
@@ -1630,13 +1860,44 @@ The shipped exe has no console (`windows_subsystem = "windows"` without the
 to:
 
 - `crates/app/src/app_log.rs` holds the one `AppLogger` of the run. `run`
-  installs it before anything else (`%LOCALAPPDATA%/Belisk/logs/belisk.log` for a
-  live run, the temp folder's `belisk/gpui-app.log` for replays and captures,
-  which never touch the player's log) and hands the same logger to the meter, so
+  installs it once the launch is known to be the one that runs
+  (`%LOCALAPPDATA%/Belisk/logs/belisk.log` for a live run after `data_folder::settle`,
+  the temp folder's `belisk/gpui-app.log` for replays, captures, the `--apply-update`
+  helper and a second launch that only hands over, none of which touch the
+  player's log) and hands the same logger to the meter, so
   the app's lines and the core's interleave in one file. `app_log::error` and
   `app_log::warn` are free functions the windows call; a `probes` build also
   echoes them to its console. Before `install`, and in unit tests, a line is
   dropped.
+- GPUI and the crates under it log through the `log` crate. `app_log::install`
+  installs a `log` logger that forwards their warnings and errors (debug and
+  info are filtered before formatting) as `[target] message`; a record GPUI
+  raises from code in the cargo registry has no target, so it is written as
+  `[file:line] message` (`log_err()` passes the caller's location). A line
+  repeated at once is counted and told with the next one, and past 20 lines a
+  minute the rest are counted until the next minute; counts not yet told are told
+  when the logger is flushed, which the quit does. A line is built only when it is
+  written: a repeat is recognised by comparing the record with the last line
+  written up to the first difference, and a line past the limit is not built. Two
+  lines GPUI writes at every launch on a PC without the Windows graphics debug
+  layer are left out (the DXGI debug interface that "is missing or mismatched",
+  matched by its HRESULT `0x887A002D`, and "Failed to get DXGI debug interface"
+  from `gpui_windows::directx_devices`); nothing broader is filtered.
+- `AppLogger::debug` takes a closure (`logger.debug(|| format!(...))`) and runs it
+  only while "Debug log" is on, so the hot parsers (damage, buffs, summons, the
+  reassembly counters) build no string, and no hex dump of a payload, otherwise.
+  The flag is an atomic. Per-spawn and per-HP-packet lines of the summon parser are
+  debug now (they were INFO, written on the dispatcher thread, and the remain-HP
+  parser cloned the whole actor-name map per packet; it asks
+  `DataStorage::is_player` / `actor_name` instead).
+- Window traces: Alt+Shift+CapsLock hiding and showing everything (`INFO`, with
+  the windows' kinds), the tray's Show toolbar with the toolbar's state
+  (visible, topmost, windows above it, the class covering it), the toolbar's
+  window found hidden without the shortcut (`WARN`, once until it shows again),
+  and the overlays put back on top over a covering window (`INFO`, its class,
+  once per episode; `WARN` with the error when Windows refused, never logged as
+  done). A window that could not be shown or raised (`ShowWindow`,
+  `SetWindowPos`) is a `WARN`.
 - Levels: a file that could not be read, set aside or saved (history, personal
   bests, settings, to-dos), a window that could not be opened, the meter or the
   single-instance listener failing to start: `ERROR`. A window that could not be
@@ -1653,6 +1914,19 @@ to:
 
 The updater is `crates/app/src/update/`; how it works and its trust model are in
 [updates.md](./updates.md), and releasing is in [releasing.md](./releasing.md).
+
+A download holds no connection while the player fights: the engine drops the
+body when a fight begins and, when it ends, asks again with a `Range` request
+from the bytes it has (nothing is opened at all when the fight is already on at
+the start). Every request has a body timeout (`Http::get`, ureq's
+`timeout_recv_body`, a total budget, not per read): 30 s for the release answer
+and the small assets, and for the archive the time its remaining bytes need at the
+1 MB/s cap plus 60 s. A half-open connection therefore ends in a read error, which
+resumes from the bytes already written like any lost connection (three
+reconnects at most), and Cancel or turning automatic download off is seen after
+the read in progress, at most that long. Tests: the fake HTTP counts the open
+bodies at each check during a fight, and a loopback server that stalls its body
+shows the timeout.
 
 ## Data folder
 
@@ -1676,12 +1950,20 @@ Until `settle` has run, `data_dir()` and `log_dir()` answer `None`, so replays,
 captures and the `--apply-update` helper can never create the player's folders.
 Tests use temp folders, never the real ones.
 
+The single-instance claim (`single_instance::claim`) comes before `settle`: a
+second launch hands over to the running one and returns without moving or
+creating anything, and logs to the temp folder's `belisk/gpui-app.log` like a
+replay, since the player's log folder is not settled for it. So a failed move
+that "retries next launch" is retried by a launch that holds the instance, never
+under a running one (`launch` in `lib.rs`, tested with a second claim of the
+same name).
+
 ## Version and changelog
 
-The version is 1.0.0 for `meter-core` and the app. `CHANGELOG.md` and
-`CHANGELOG.fr.md` hold this app's own changelog, read by the app
-(`crates/app/src/changelog/`). The upstream project's release history is kept
-unedited in [aether-changelog.md](./aether-changelog.md).
+The app (`belisk`) is 1.1.0 and `meter-core` 1.0.2, each set in its own
+`Cargo.toml`. `CHANGELOG.md` and `CHANGELOG.fr.md` hold this app's own
+changelog, read by the app (`crates/app/src/changelog/`). The upstream project's
+release history is kept unedited in [aether-changelog.md](./aether-changelog.md).
 
 The app embeds both and parses them with its own parser for a small Markdown
 subset; `cargo test` fails on syntax outside it and when the two languages differ
