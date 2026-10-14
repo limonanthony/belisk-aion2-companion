@@ -2,12 +2,15 @@
 //! summary of the final snapshot. No capture driver is loaded and no elevation
 //! is needed.
 //!
-//!     cargo run --example replay -- <recording> [--names] [--tickets] [--pets] [--fights on|off|from-identity|from-tickets] [--speed N] [--data-dir <dir> [--delete-first-record] [--record]]
+//!     cargo run --example replay -- <recording> [--names] [--tickets] [--pets] [--remembered <name>:<server>:<CLASS>]... [--fights on|off|from-identity|from-tickets] [--speed N] [--data-dir <dir> [--delete-first-record] [--record]]
 //!
 //! Other players' names are only printed with `--names`. `--tickets` lists the
 //! ticket events the core emitted, with the capture time as Unix seconds.
 //! `--pets` lists the pet events (collection snapshot, soul gains with their
 //! source, counter gains with the mobs and pets whose loot was just picked up).
+//! `--remembered <name>:<server>:<CLASS>` (repeatable) hands the meter the
+//! characters earlier runs saw the player as, most recent first, as the app
+//! does from its settings; without it the replay knows none.
 //! `--fights off` replays with fight tracking off, as with the DPS meter
 //! closed; `--fights from-identity` turns it on when the game first names the
 //! player's character, and `--fights from-tickets` at the first ticket event,
@@ -36,6 +39,7 @@ use std::time::{Duration, Instant};
 use meter_core::capture::recorder::replay_recording;
 use meter_core::engine::meter::DpsMeter;
 use meter_core::events::{EventSink, MeterEvent};
+use meter_core::identity::KnownCharacter;
 use meter_core::pets::{PetContent, PetReport};
 use meter_core::tickets::{TicketContent, TicketReport};
 use meter_core::logger::AppLogger;
@@ -141,6 +145,17 @@ impl EventSink for CollectingSink {
     }
 }
 
+fn remembered_character(text: &str) -> Option<KnownCharacter> {
+    let mut parts = text.split(':');
+    let name = parts.next().filter(|name| !name.is_empty())?;
+    let server_id = parts.next()?.parse().ok()?;
+    let class = parts.next().filter(|class| !class.is_empty())?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(KnownCharacter { name: name.to_string(), server_id, class: class.to_string(), key: None })
+}
+
 fn main() -> ExitCode {
     let mut path = None;
     let mut show_names = false;
@@ -151,6 +166,7 @@ fn main() -> ExitCode {
     let mut data_dir = None;
     let mut delete_first_record = false;
     let mut record = false;
+    let mut remembered = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -185,6 +201,13 @@ fn main() -> ExitCode {
             },
             "--delete-first-record" => delete_first_record = true,
             "--record" => record = true,
+            "--remembered" => match args.next().as_deref().and_then(remembered_character) {
+                Some(character) => remembered.push(character),
+                None => {
+                    eprintln!("--remembered takes <name>:<server>:<CLASS>, for example Lyvara:1302:CHANTER");
+                    return ExitCode::FAILURE;
+                }
+            },
             _ if path.is_none() => path = Some(arg),
             _ => {
                 eprintln!("unexpected argument: {arg}");
@@ -193,7 +216,7 @@ fn main() -> ExitCode {
         }
     }
     let Some(path) = path else {
-        eprintln!("usage: replay <recording> [--names] [--tickets] [--pets] [--fights on|off|from-identity|from-tickets] [--speed N] [--data-dir <dir> [--delete-first-record] [--record]]");
+        eprintln!("usage: replay <recording> [--names] [--tickets] [--pets] [--remembered <name>:<server>:<CLASS>]... [--fights on|off|from-identity|from-tickets] [--speed N] [--data-dir <dir> [--delete-first-record] [--record]]");
         return ExitCode::FAILURE;
     };
     if (delete_first_record || record) && data_dir.is_none() {
@@ -201,7 +224,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    match run(path, show_names, show_tickets, show_pets, fights, speed, data_dir, delete_first_record, record) {
+    match run(path, show_names, show_tickets, show_pets, fights, speed, data_dir, delete_first_record, record, remembered) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("replay failed: {error}");
@@ -220,6 +243,7 @@ fn run(
     data_dir: Option<PathBuf>,
     delete_first_record: bool,
     record: bool,
+    remembered: Vec<KnownCharacter>,
 ) -> Result<(), String> {
     let (outcome_tx, outcome_rx) = mpsc::channel();
     let sink = Arc::new(CollectingSink {
@@ -244,6 +268,7 @@ fn run(
     config.hide_unknown_players = false;
     config.max_player_count = 1_000;
     meter.apply_config(config);
+    meter.set_known_characters(remembered);
 
     meter.start_for_replay();
     if record {
